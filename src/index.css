@@ -1,0 +1,121 @@
+/* Paleta de colores y tipografía iOS */
+:root {
+  --azul-marino: #0B1D3A; /* Elegante y profundo */
+  --azul-electrico: #007AFF; /* Azul brillante clásico de iOS */
+  --fondo-app: #F2F2F7; /* Gris extra claro típico de fondo en iPhone */
+  --blanco-tarjeta: #FFFFFF;
+  --texto-principal: #1C1C1E;
+  --texto-secundario: #8E8E93;
+}
+
+/* Tipografía elegante y profesional (Estilo nativo Apple) */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--fondo-app);
+  color: var(--texto-principal);
+  -webkit-font-smoothing: antialiased; /* Hace que las letras se vean muy nítidas */
+}
+
+/* Contenedor que simula la pantalla del celular en tu computadora */
+.ios-app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 480px; 
+  margin: 0 auto;
+  background-color: var(--fondo-app);
+  box-shadow: 0 0 20px rgba(0,0,0,0.1);
+  position: relative;
+}
+
+/* Cabecera estilo iOS */
+.ios-header {
+  background-color: var(--azul-marino);
+  color: white;
+  padding: 20px;
+  text-align: center;
+  padding-top: 30px; 
+  border-bottom-left-radius: 24px;
+  border-bottom-right-radius: 24px;
+  box-shadow: 0 4px 15px rgba(11, 29, 58, 0.3);
+}
+
+.ios-header h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* Espacio donde irán nuestras funciones */
+.ios-main {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+/* Tarjeta de contenido (Card) */
+.card {
+  background-color: var(--blanco-tarjeta);
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+  margin-bottom: 20px;
+}
+
+.card h2 {
+  margin-top: 0;
+  color: var(--azul-marino);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.card p {
+  color: var(--texto-secundario);
+  font-size: 15px;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+/* Botón Deportivo y Eléctrico */
+.btn-electric {
+  background: linear-gradient(135deg, var(--azul-electrico), #0056b3);
+  color: white;
+  border: none;
+  padding: 16px 20px;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  width: 100%;
+  cursor: pointer;
+  transition: transform 0.2s;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+}
+
+.btn-electric:active {
+  transform: scale(0.96); /* Efecto de hundirse al presionar */
+}
+
+/* Barra de navegación inferior (Bottom Tab Bar iOS) */
+.ios-bottom-nav {
+  display: flex;
+  justify-content: space-around;
+  background-color: var(--blanco-tarjeta);
+  padding: 15px 10px 25px 10px;
+  border-top: 1px solid rgba(0,0,0,0.05);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+}
+
+.nav-item {
+  color: var(--texto-secundario);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.nav-item.active {
+  color: var(--azul-electrico);
+  font-weight: 700;
+}

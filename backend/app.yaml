@@ -1,0 +1,41 @@
+name: ccf-backend
+services:
+- github:
+    branch: main
+    repo: tu-usuario/app-centro-de-cultura
+    build_command: npm install
+    run_command: npm start
+  http_port: 3000
+  name: api
+  source_dir: backend
+  health_check:
+    http_path: /api/health
+  envs:
+  - key: DATABASE_URL
+    scope: RUN_AND_BUILD_TIME
+    value: ${db.DATABASE_URL}
+  - key: NODE_ENV
+    value: production
+  - key: PORT
+    value: "3000"
+  - key: JWT_SECRET
+    value: ""
+  - key: FRONTEND_URL
+    value: ""
+  - key: TWILIO_ACCOUNT_SID
+    value: ""
+  - key: TWILIO_AUTH_TOKEN
+    value: ""
+  - key: TWILIO_PHONE_NUMBER
+    value: ""
+  - key: GOOGLE_SHEET_ID
+    value: ""
+  - key: GOOGLE_API_KEY
+    value: ""
+
+databases:
+- engine: PG
+  name: db
+  production: true
+  version: "15"
+  size: db-s-1vcpu-1gb
