@@ -97,6 +97,48 @@ const detectarCamposFaltantesCuenta = (cuenta) => {
   return faltantes;
 };
 
+const ensureSuperAdminAccount = async () => {
+  const enabled = String(process.env.AUTO_BOOTSTRAP_SUPER_ADMIN || '').toLowerCase() === 'true';
+  if (!enabled) return;
+
+  const email = process.env.SUPER_ADMIN_EMAIL;
+  const rut = process.env.SUPER_ADMIN_RUT;
+  const password = process.env.SUPER_ADMIN_PASSWORD;
+  const nombres = process.env.SUPER_ADMIN_NOMBRES || 'Super';
+  const apellido = process.env.SUPER_ADMIN_APELLIDO || 'Admin';
+
+  if (!email || !rut || !password) {
+    console.warn('⚠️ AUTO_BOOTSTRAP_SUPER_ADMIN activo pero faltan variables SUPER_ADMIN_EMAIL/RUT/PASSWORD');
+    return;
+  }
+
+  if (!validarRutChileno(rut)) {
+    console.warn('⚠️ SUPER_ADMIN_RUT inválido, no se creó cuenta super admin');
+    return;
+  }
+
+  const rutFmt = formatearRut(rut);
+
+  await pool.query(
+    `INSERT INTO cuentas (
+      correo, rut, password, nombres, apellido_paterno, rol, estado,
+      es_socio, forzar_clave, autorizacion_imagen
+    ) VALUES ($1,$2,$3,$4,$5,'super_admin','activo',false,false,true)
+    ON CONFLICT (correo)
+    DO UPDATE SET
+      rut = EXCLUDED.rut,
+      password = EXCLUDED.password,
+      nombres = EXCLUDED.nombres,
+      apellido_paterno = EXCLUDED.apellido_paterno,
+      rol = 'super_admin',
+      estado = 'activo',
+      updated_at = NOW()`,
+    [email, rutFmt, password, nombres, apellido]
+  );
+
+  console.log(`🔐 Super admin asegurado: ${email} (${rutFmt})`);
+};
+
 // ========== HEALTH CHECK ==========
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date() });
@@ -1771,6 +1813,10 @@ app.listen(PORT, () => {
   console.log(`📍 URL: http://localhost:${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🗄️  Base de datos: ${process.env.DATABASE_URL ? 'Conectada ✓' : 'No configurada ✗'}\n`);
+
+  ensureSuperAdminAccount().catch((error) => {
+    console.error('❌ Error asegurando super admin:', error.message);
+  });
 });
 
 module.exports = app;
