@@ -55,10 +55,7 @@ const validarRutChileno = (rut = '') => {
   }
 
   const resto = 11 - (suma % 11);
-  let dvEsperado = '';
-  if (resto === 11) dvEsperado = '0';
-  else if (resto === 10) dvEsperado = 'K';
-  else dvEsperado = String(resto);
+  const dvEsperado = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
 
   return dv === dvEsperado;
 };

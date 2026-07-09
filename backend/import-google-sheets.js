@@ -113,7 +113,7 @@ function parseDateLike(raw) {
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
 
-  const dmy = value.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  const dmy = value.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (dmy) {
     const dd = dmy[1].padStart(2, '0');
     const mm = dmy[2].padStart(2, '0');
