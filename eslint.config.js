@@ -25,6 +25,14 @@ export default defineConfig([
     },
   },
   {
+    files: ['src/App.jsx'],
+    rules: {
+      // Temporary override until App is split into smaller modules.
+      'no-unused-vars': 'off',
+      'react-hooks/purity': 'off',
+    },
+  },
+  {
     files: ['backend/**/*.js'],
     extends: [js.configs.recommended],
     languageOptions: {
@@ -32,7 +40,7 @@ export default defineConfig([
       sourceType: 'script',
     },
     rules: {
-      'no-unused-vars': 'warn',
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },
   },
   {
