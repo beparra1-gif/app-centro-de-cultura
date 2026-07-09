@@ -21,6 +21,9 @@ import PupiloSelector from './components/PupiloSelector';
 import KioscoPanel from './components/KioscoPanel';
 import SuperAdminPanel from './components/SuperAdminPanel';
 import MesaControlPanel from './components/MesaControlPanel';
+import PerfilTesoreriaPanel from './components/PerfilTesoreriaPanel';
+import StaffAsistenciaPanel from './components/StaffAsistenciaPanel';
+import StaffEvaluacionPanel from './components/StaffEvaluacionPanel';
 import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
@@ -1941,201 +1944,6 @@ function App() {
     );
   };
 
-  const renderPerfilTesoreria = () => {
-    let tarifaMensual = 0; 
-    const utmActual = getUTMLastDayPreviousMonth(mockTesoreriaDB.utmValor); // UTM dinámico del mes anterior
-    const cuotaSocio = utmActual * 0.003; 
-    
-    if (mockTesoreriaDB.esSocio) { 
-      tarifaMensual += cuotaSocio; 
-      if (mockTesoreriaDB.pupilos.length === 1) tarifaMensual += 15000; 
-      else if (mockTesoreriaDB.pupilos.length >= 2) tarifaMensual += 24000; 
-    } else { 
-      tarifaMensual += 30000 * mockTesoreriaDB.pupilos.length; 
-    }
-    
-    const tarifaRedondeada = Math.round(tarifaMensual); 
-    const totalSeleccionado = tarifaRedondeada * mesesSeleccionados.length; 
-    const totalFinalPagar = tipoPago === 'completo' ? totalSeleccionado : (Number(montoAbono) || 0);
-    
-    const toggleMes = (idMes, estado) => { 
-      if (estado === 'pagado') return; 
-      if (mesesSeleccionados.includes(idMes)) { setMesesSeleccionados(mesesSeleccionados.filter(m => m !== idMes)); } 
-      else { setMesesSeleccionados([...mesesSeleccionados, idMes]); } 
-    };
-
-    return (
-      <div className="fade-in">
-        {/* PREMIUM UPGRADE: VISTA DUAL SOCIO/PUPILOS */}
-        <div className="status-account-card payment-overview-card mt-15">
-          <div className="status-header">
-            <div>
-              <span style={{fontSize: '11px', color: 'rgba(255,255,255,0.6)', fontWeight: '800', textTransform: 'uppercase', letterSpacing:'0.5px'}}>Mensualidad / Perfil</span>
-              <h3 className="status-titular" style={{color:'white'}}>{mockTesoreriaDB.titular}</h3>
-              <span className="status-rol">{mockTesoreriaDB.esSocio ? 'Socio Activo Club Cultura Física' : 'Apoderado Base'}</span>
-            </div>
-            <div className={`status-badge ${mockTesoreriaDB.estadoCuenta === 'Al Día' ? 'ok' : 'moroso'}`}>
-              {mockTesoreriaDB.estadoCuenta}
-            </div>
-          </div>
-          {mockTesoreriaDB.estadoCuenta === 'Moroso' && (
-            <div className="status-alert"><AlertTriangle size={16}/> Presenta {mockTesoreriaDB.mesesAtraso} meses de atraso en cuotas.</div>
-          )}
-        </div>
-
-        {/* FICHA DEL SOCIO */}
-        <div className="card ficha-socio-card mt-15 fade-in">
-          <div style={{display:'flex', alignItems:'center', gap:'14px'}}>
-            <div className="ficha-avatar">👤</div>
-            <div style={{flex:1}}>
-              <h4 style={{margin:'0 0 3px 0', fontSize:'16px', fontWeight:'900', color:'var(--texto-principal)'}}>{mockTesoreriaDB.titular}</h4>
-              <span style={{fontSize:'12px', fontWeight:'800', color:'var(--azul-electrico)', display:'block'}}>{
-                mockTesoreriaDB.esSocio ? '🏅 Socio Activo · Club Centro de Cultura Física' : '👥 Apoderado'
-              }</span>
-              {mockTesoreriaDB.pupilos.length > 0 && (
-                <p style={{margin:'6px 0 0 0', fontSize:'12px', color:'var(--texto-secundario)', fontWeight:'700', lineHeight:'1.4'}}>
-                  👨‍👧‍👦 Apoderado de: {mockTesoreriaDB.pupilos.map(p => p.nombre).join(' · ')}
-                </p>
-              )}
-            </div>
-            <div style={{textAlign:'right', flexShrink:0}}>
-              <span style={{fontSize:'10px', color:'var(--texto-secundario)', fontWeight:'800', textTransform:'uppercase', display:'block', marginBottom:'3px'}}>Cuota vigente</span>
-              <strong style={{fontSize:'18px', color:'var(--texto-principal)', fontWeight:'900'}}>${tarifaRedondeada.toLocaleString('es-CL')}</strong>
-              <span style={{fontSize:'11px', color:'var(--texto-secundario)', display:'block', fontWeight:'700'}}>/mes</span>
-            </div>
-          </div>
-        </div>
-
-        {/* RESUMEN DE DEUDA (solo si moroso) */}
-        {mockTesoreriaDB.estadoCuenta === 'Moroso' && (
-          <div className="card fade-in mt-15 compact-debt-summary" style={{borderLeft:'4px solid var(--rojo-alerta)', background:'linear-gradient(135deg, rgba(255,59,48,0.08), rgba(255,59,48,0.02))'}}>
-            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'center'}}>
-              <div>
-                <h4 style={{margin:'0 0 8px 0', fontSize:'14px', color:'var(--rojo-alerta)', fontWeight:'900', display:'flex', alignItems:'center', gap:'6px'}}><AlertTriangle size={18}/> Deuda Pendiente</h4>
-                <p style={{margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700'}}>{mockTesoreriaDB.mesesAtraso} {mockTesoreriaDB.mesesAtraso === 1 ? 'mes' : 'meses'} adeudados</p>
-              </div>
-              <div style={{textAlign: 'right'}}>
-                <span style={{fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textTransform: 'uppercase', display: 'block', marginBottom: '4px'}}>Total Estimado</span>
-                <strong style={{fontSize: '20px', color: 'var(--rojo-alerta)', fontWeight: '900'}}>-${(tarifaRedondeada * mockTesoreriaDB.mesesAtraso).toLocaleString('es-CL')}</strong>
-              </div>
-            </div>
-            <div style={{marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,59,48,0.15)', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700'}}>
-              <span>Cuota mensual: <strong style={{color: 'var(--texto-principal)'}}>${tarifaRedondeada.toLocaleString('es-CL')}</strong></span>
-            </div>
-          </div>
-        )}
-
-        <h3 className="section-title mt-20">Panel de Pagos 2026</h3>
-        
-        {/* TOGGLE VISTA GRID/LISTA */}
-        <div style={{display: 'flex', gap: '10px', marginBottom: '15px', justifyContent: 'flex-end'}}>
-          <button 
-            className={`btn-toggle-view ${pagoViewMode === 'grid' ? 'activo' : ''}`}
-            onClick={() => setPageViewMode('grid')}
-            title="Vista Cuadrícula"
-            style={{padding: '8px 14px', borderRadius: '10px', border: '1px solid var(--borde-suave)', background: pagoViewMode === 'grid' ? 'var(--azul-electrico)' : 'transparent', color: pagoViewMode === 'grid' ? 'white' : 'var(--texto-principal)', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s ease'}}
-          >
-            <LayoutGrid size={16} /> Cuadrícula
-          </button>
-          <button 
-            className={`btn-toggle-view ${pagoViewMode === 'list' ? 'activo' : ''}`}
-            onClick={() => setPageViewMode('list')}
-            title="Vista Lista"
-            style={{padding: '8px 14px', borderRadius: '10px', border: '1px solid var(--borde-suave)', background: pagoViewMode === 'list' ? 'var(--azul-electrico)' : 'transparent', color: pagoViewMode === 'list' ? 'white' : 'var(--texto-principal)', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s ease'}}
-          >
-            <List size={16} /> Lista Compacta
-          </button>
-        </div>
-
-        <div className="card finanzas-card payment-card">
-          {mockTesoreriaDB.esSocio && (
-             <div className="mb-20">
-               <h4 style={{margin: '0 0 10px 0', fontSize: '14px', color: 'var(--texto-heading)', fontWeight: '800'}}>1. Cuotas de Socio: <span className="payment-chip">Socio activo</span></h4>
-               <div className={pagoViewMode === 'grid' ? 'grid-12-meses' : 'lista-12-meses'}>
-                 {mock12Meses.map((item) => (
-                   <div key={item.id} onClick={() => toggleMes(item.id, item.estado)} className={`mes-box mes-${item.estado} ${mesesSeleccionados.includes(item.id) ? 'seleccionado' : ''}`}>
-                     <span className="mes-box-nombre">{item.mes}</span>
-                   </div>
-                 ))}
-               </div>
-             </div>
-          )}
-          
-          {mockTesoreriaDB.pupilos.map(pupilo => (
-             <div key={pupilo.id} className="mb-20" style={{borderTop: '1px dashed rgba(0,0,0,0.1)', paddingTop: '15px'}}>
-               <h4 style={{margin: '0 0 10px 0', fontSize: '14px', color: 'var(--texto-heading)', fontWeight: '800'}}>2. Mensualidad Deportista: {pupilo.nombre.split(' ')[0]} <span className="payment-chip">Inscripción</span></h4>
-               <div className={pagoViewMode === 'grid' ? 'grid-12-meses' : 'lista-12-meses'}>
-                 {mock12Meses.map((item) => (
-                   <div key={item.id + pupilo.id} className={`mes-box mes-${item.estado}`}>
-                     <span className="mes-box-nombre">{item.mes}</span>
-                   </div>
-                 ))}
-               </div>
-             </div>
-          ))}
-
-          {/* MOTOR DE PAGOS AVANZADO */}
-          {mesesSeleccionados.length > 0 && !comprobanteSubido && (
-            <div className="dynamic-checkout-box fade-in mt-20">
-               <h4 className="form-subtitle">Resumen de Liquidación</h4>
-               <div className="checkbox-grid mb-15">
-                 <label className="checkbox-item"><input type="checkbox" checked readOnly/> Pago Cuota Socio</label>
-                 <label className="checkbox-item"><input type="checkbox" checked readOnly/> Pago Cuota Deportista</label>
-               </div>
-               
-               <div className="desglose-row"><span>Valor Unificado (Socio + Deportista):</span><strong>${tarifaRedondeada.toLocaleString('es-CL')} / mes</strong></div>
-               <div className="desglose-row total-calc"><span>Total a Pagar ({mesesSeleccionados.length} meses):</span><strong>${totalSeleccionado.toLocaleString('es-CL')}</strong></div>
-               
-               <div className="tipo-pago-grid mb-15 mt-15" style={{display: 'flex', gap: '10px'}}>
-                 <button className={`btn-metodo-pago ${tipoPago === 'completo' ? 'activo' : ''}`} onClick={() => setTipoPago('completo')}>Deuda Completa</button>
-                 <button className={`btn-metodo-pago ${tipoPago === 'abono' ? 'activo' : ''}`} onClick={() => setTipoPago('abono')}>Abono Parcial</button>
-               </div>
-               
-               {tipoPago === 'abono' && (
-                 <div className="input-group mb-15">
-                   <label style={{fontSize: '12px', fontWeight: 'bold'}}>Monto a abonar (CLP)</label>
-                   <input type="number" className="form-input mt-5" value={montoAbono} onChange={(e) => setMontoAbono(e.target.value)} placeholder="Ej: 15000"/>
-                 </div>
-               )}
-
-               <div className="checkout-total-box mt-10">
-                 <span>Monto a Transferir</span>
-                 <h2>${totalFinalPagar.toLocaleString('es-CL')}</h2>
-               </div>
-               <div className="btn-pago-cta mt-15" onClick={() => {
-                 setComprobanteSubido(true);
-                 setPagosPendientesAdmin(prev => [...prev, {
-                   id: nextId(),
-                   familia: mockTesoreriaDB.titular,
-                   monto: totalFinalPagar,
-                   detalle: `${tipoPago === 'completo' ? 'Pago total' : 'Abono $' + Number(montoAbono).toLocaleString('es-CL')} — ${mesesSeleccionados.length} mes(es) — Comprobante adjunto`
-                 }]);
-               }}>
-                 <Camera size={24} color="white"/>
-                 <div>
-                   <strong style={{display:'block', fontSize:'14px'}}>Adjuntar y Enviar Comprobante</strong>
-                   <span style={{fontSize:'11px', opacity:.8}}>JPG · PDF · PNG · Imagen WhatsApp</span>
-                 </div>
-               </div>
-            </div>
-          )}
-          
-          {/* FLUJO DE VALIDACIÓN */}
-          {comprobanteSubido && (
-            <div className="fade-in text-center py-20 mt-20 review-card">
-              <Clock size={40} color="#FF9500" style={{margin: '0 auto'}}/>
-              <h3 style={{color: '#FF9500', margin: '15px 0 10px 0', fontSize: '20px', fontWeight: '900'}}>Pago en Revisión</h3>
-              <p style={{fontSize: '14px', margin: 0, color: 'var(--texto-secundario)', lineHeight: '1.5'}}>Tesorería ha recibido tu comprobante. Será validado a la brevedad y recibirás una notificación.</p>
-              <button className="btn-secondary mt-20" style={{color: '#FF9500', background: 'rgba(255,149,0,0.1)'}} onClick={() => { setComprobanteSubido(false); setMesesSeleccionados([]); setMontoAbono(''); }}>
-                Entendido, volver
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   const renderAcademia = () => {
     const handleResponderQuiz = (opcion) => {
       if (quizCompletado) return;
@@ -2208,164 +2016,6 @@ function App() {
               </div>
             )}
           </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ==========================================
-  // 6. ECOSISTEMA DEL STAFF TÉCNICO (ENTRENADOR)
-  // ==========================================
-  const renderStaffAsistencia = () => {
-    // Calculo de porcentajes antes de guardar
-    const presentes = rosterEquipo.filter(j => j.estadoAsistencia === 'presente').length;
-    const ausentes = rosterEquipo.filter(j => j.estadoAsistencia === 'ausente').length;
-    const justificados = rosterEquipo.filter(j => j.estadoAsistencia === 'justificado').length;
-    const totalLista = rosterEquipo.length;
-    const porcentaje = Math.round((presentes / (totalLista - justificados)) * 100) || 0;
-
-    const cambiarEstado = (id, nuevoEstado) => { 
-      setRosterEquipo(rosterEquipo.map(j => j.id === id ? { ...j, estadoAsistencia: nuevoEstado } : j)); 
-    };
-
-    return (
-      <div className="mt-20 fade-in">
-        <div className="segment-control mb-20">
-          <div className={`segment-btn ${vistaStaff === 'asistencia' ? 'active' : ''}`} onClick={() => setVistaStaff('asistencia')}>Pasar Lista</div>
-          <div className={`segment-btn ${vistaStaff === 'historial' ? 'active' : ''}`} onClick={() => setVistaStaff('historial')}>Historial</div>
-        </div>
-
-        {vistaStaff === 'asistencia' && (
-          <div className="card">
-            <h4 className="form-subtitle">Configurar Entrenamiento</h4>
-            <div style={{display:'flex', gap:'10px'}} className="mb-15">
-              <select className="form-input" value={filtroRamaStaff} onChange={(e)=>setFiltroRamaStaff(e.target.value)}><option>Masculina</option><option>Femenina</option></select>
-              <select className="form-input" value={filtroCatStaff} onChange={(e)=>setFiltroCatStaff(e.target.value)}><option>U13</option><option>U15</option><option>U17</option></select>
-            </div>
-            
-            <div className="staff-header-info mb-15" style={{borderBottom: '1px solid rgba(0,0,0,0.05)', paddingBottom: '15px'}}>
-              <h4 style={{margin: '0 0 5px 0', color: 'var(--texto-heading)'}}>Cargando Nómina: {filtroCatStaff} {filtroRamaStaff}</h4>
-            </div>
-            
-            <div className="roster-list">
-              {rosterEquipo.map(jugador => (
-                <div key={jugador.id} className="roster-item" style={{display:'flex', flexDirection: 'column', gap: '12px', padding:'15px 0', borderBottom:'1px solid rgba(0,0,0,0.05)'}}>
-                  <div className="jugador-info-staff" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <div>
-                      <span className="roster-nombre" style={{fontWeight: '800', color: 'var(--texto-principal)', fontSize: '15px'}}>{jugador.nombre}</span>
-                      <span style={{fontSize: '11px', color: 'var(--texto-secundario)', marginLeft: '10px', fontWeight: 'bold'}}>Nac: {jugador.año}</span>
-                    </div>
-                  </div>
-                  
-                  {/* PREMIUM UPGRADE: Botonera de Gestos Rápidos (Swipe-like) */}
-                  <div style={{display: 'flex', gap: '8px', width: '100%'}}>
-                    <button onClick={() => cambiarEstado(jugador.id, 'presente')} style={{flex: 1, padding: '10px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'presente' ? 'var(--verde-victoria)' : 'var(--fondo-app)', color: jugador.estadoAsistencia === 'presente' ? 'white' : 'var(--texto-secundario)', transition: '0.2s'}}>✓ PRESENTE</button>
-                    <button onClick={() => cambiarEstado(jugador.id, 'ausente')} style={{flex: 1, padding: '10px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'ausente' ? '#FF3B30' : 'var(--fondo-app)', color: jugador.estadoAsistencia === 'ausente' ? 'white' : 'var(--texto-secundario)', transition: '0.2s'}}>❌ AUSENTE</button>
-                    <button onClick={() => cambiarEstado(jugador.id, 'justificado')} style={{flex: 1, padding: '10px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'justificado' ? '#FF9500' : 'var(--fondo-app)', color: jugador.estadoAsistencia === 'justificado' ? 'white' : 'var(--texto-secundario)', transition: '0.2s'}}>🚑 JUSTIFIC.</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            {/* Resumen pre-guardado */}
-            <div className="mt-20" style={{background: 'rgba(0,122,255,0.05)', borderRadius: '16px', padding: '20px'}}>
-              <h5 style={{margin: '0 0 15px 0', fontSize: '15px', color: 'var(--texto-heading)'}}>Resumen a Guardar:</h5>
-              <div className="desglose-row"><span>Asistencia Efectiva:</span><strong style={{color: porcentaje > 70 ? 'var(--verde-victoria)' : '#FF3B30', fontSize: '16px'}}>{porcentaje}%</strong></div>
-              <div className="desglose-row"><span>Presentes en Cancha:</span><strong>{presentes}</strong></div>
-              <div className="desglose-row"><span>Ausentes (Sin aviso):</span><strong style={{color: '#FF3B30'}}>{ausentes}</strong></div>
-              <div className="desglose-row"><span>Con Licencia Médica:</span><strong style={{color: '#FF9500'}}>{justificados}</strong></div>
-            </div>
-
-            <button className="btn-electric mt-20" onClick={() => alert("Asistencia guardada en la base de datos de Auditoría.")}>
-              <Save size={18}/> Confirmar y Guardar Asistencia
-            </button>
-          </div>
-        )}
-
-        {vistaStaff === 'historial' && (
-          <div className="card fade-in">
-             <h4 className="form-subtitle">Registros Anteriores</h4>
-             <input type="date" className="form-input mb-15"/>
-             <p className="text-center text-muted" style={{fontStyle: 'italic', fontSize: '13px'}}>Seleccione una fecha para editar la asistencia pasada.</p>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderStaffEvaluacion = () => {
-    const dataEvalLive = [
-      { subject: 'Tiro', score: evalTiro, fullMark: 100 }, 
-      { subject: 'Defensa', score: evalDefensa, fullMark: 100 }, 
-      { subject: 'Físico', score: evalFisico, fullMark: 100 }, 
-      { subject: 'Táctica', score: evalTactico, fullMark: 100 }
-    ];
-
-    return (
-      <div className="mt-20 fade-in">
-        <div className="card mb-15">
-           <h4 className="form-subtitle">Selección de Jugador</h4>
-           <div style={{display:'flex', gap:'10px'}} className="mb-10">
-              <select className="form-input"><option>Femenina</option><option>Masculina</option></select>
-              <select className="form-input"><option>U15</option></select>
-           </div>
-           <select className="form-input" style={{background: 'rgba(0,122,255,0.05)', borderColor: 'var(--azul-electrico)', color: 'var(--texto-heading)', fontWeight: '800'}}>
-             <option>Tomás Parra (#8) - Asist: 92% | Nvl: 12</option>
-             <option>Luis Soto (#10) - Asist: 85% | Nvl: 10</option>
-           </select>
-        </div>
-
-        <div className="card grafico-card-dark" style={{background: '#1a2a42', borderRadius: '20px', overflow: 'hidden'}}>
-          <h4 style={{color: 'white', textAlign: 'center', margin: '20px 0 0 0'}}>Radar Biomecánico</h4>
-          <ResponsiveContainer width="100%" height={250}>
-            <RadarChart cx="50%" cy="50%" outerRadius="65%" data={dataEvalLive}>
-              <PolarGrid stroke="rgba(255,255,255,0.15)" />
-              <PolarAngleAxis dataKey="subject" tick={{ fill: '#ffffff', fontSize: 12, fontWeight: 800 }} />
-              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-              <Radar dataKey="score" stroke="#00C7BE" strokeWidth={3} fill="#00C7BE" fillOpacity={0.5} />
-            </RadarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="card mt-20">
-          <h4 className="form-subtitle">Ajuste de Parámetros (Sliders)</h4>
-          <div className="slider-group" style={{marginBottom: '15px'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}><label style={{fontSize: '14px', fontWeight: '800'}}>Tiro Exterior</label><span style={{color: 'var(--azul-electrico)', fontWeight: 'bold'}}>{evalTiro}</span></div>
-            <input type="range" min="0" max="100" value={evalTiro} onChange={(e) => setEvalTiro(e.target.value)} style={{width:'100%'}}/>
-          </div>
-          <div className="slider-group" style={{marginBottom: '15px'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}><label style={{fontSize: '14px', fontWeight: '800'}}>Defensa y Recuperación</label><span style={{color: 'var(--azul-electrico)', fontWeight: 'bold'}}>{evalDefensa}</span></div>
-            <input type="range" min="0" max="100" value={evalDefensa} onChange={(e) => setEvalDefensa(e.target.value)} style={{width:'100%'}}/>
-          </div>
-          <div className="slider-group" style={{marginBottom: '15px'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}><label style={{fontSize: '14px', fontWeight: '800'}}>Capacidad Física</label><span style={{color: 'var(--azul-electrico)', fontWeight: 'bold'}}>{evalFisico}</span></div>
-            <input type="range" min="0" max="100" value={evalFisico} onChange={(e) => setEvalFisico(e.target.value)} style={{width:'100%'}}/>
-          </div>
-          <div className="slider-group" style={{marginBottom: '15px'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}><label style={{fontSize: '14px', fontWeight: '800'}}>Inteligencia Táctica</label><span style={{color: 'var(--azul-electrico)', fontWeight: 'bold'}}>{evalTactico}</span></div>
-            <input type="range" min="0" max="100" value={evalTactico} onChange={(e) => setEvalTactico(e.target.value)} style={{width:'100%'}}/>
-          </div>
-        </div>
-
-        {/* FEEDBACK DE STAFF Y METAS */}
-        <div className="card mt-20">
-          <h4 className="form-subtitle"><FileText size={16}/> Notas de Evaluación (Apoderado)</h4>
-          <div className="input-group mb-15">
-            <label style={{fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px'}}>Fortaleza Principal Actual</label>
-            <input type="text" className="form-input" placeholder="Ej: Excelente visión de juego perimetral" value={notasEvaluacion.fortaleza} onChange={(e)=>setNotasEvaluacion({...notasEvaluacion, fortaleza: e.target.value})} />
-          </div>
-          <div className="input-group mb-15">
-            <label style={{fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px'}}>Aspecto Crítico a Mejorar</label>
-            <input type="text" className="form-input" placeholder="Ej: Transición defensiva lenta" value={notasEvaluacion.mejora} onChange={(e)=>setNotasEvaluacion({...notasEvaluacion, mejora: e.target.value})} />
-          </div>
-          <div className="input-group mb-20">
-            <label style={{fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px'}}>Metas Corto Plazo (1 Mes)</label>
-            <textarea className="form-input" rows="3" placeholder="Ej: Aumentar el % de tiros libres." value={notasEvaluacion.metas} onChange={(e)=>setNotasEvaluacion({...notasEvaluacion, metas: e.target.value})}></textarea>
-          </div>
-          
-          <button className="btn-electric" onClick={() => alert("Evaluación guardada. Se ha enviado la alerta al Apoderado para firmar el Acuse de Recibo.")}>
-            <Save size={18}/> Emitir Evaluación Formal
-          </button>
         </div>
       </div>
     );
@@ -2505,10 +2155,48 @@ function App() {
               />
             )}
             {rolUsuario === 'jugador' && pantallaActiva === 'academia' && renderAcademia()}
-            {(rolUsuario === 'jugador' || rolUsuario === 'admin' || rolUsuario === 'super_admin') && pantallaActiva === 'perfil' && renderPerfilTesoreria()}
+            {(rolUsuario === 'jugador' || rolUsuario === 'admin' || rolUsuario === 'super_admin') && pantallaActiva === 'perfil' && (
+              <PerfilTesoreriaPanel
+                mesesSeleccionados={mesesSeleccionados}
+                setMesesSeleccionados={setMesesSeleccionados}
+                tipoPago={tipoPago}
+                setTipoPago={setTipoPago}
+                montoAbono={montoAbono}
+                setMontoAbono={setMontoAbono}
+                comprobanteSubido={comprobanteSubido}
+                setComprobanteSubido={setComprobanteSubido}
+                setPagosPendientesAdmin={setPagosPendientesAdmin}
+                pagoViewMode={pagoViewMode}
+                setPageViewMode={setPageViewMode}
+              />
+            )}
             {(rolUsuario === 'jugador' || rolUsuario === 'visita' || rolUsuario === 'super_admin') && pantallaActiva === 'jugador' && renderTarjetaJugador()}
-            {(rolUsuario === 'staff' || rolUsuario === 'super_admin') && pantallaActiva === 'asistencia_staff' && renderStaffAsistencia()}
-            {(rolUsuario === 'staff' || rolUsuario === 'super_admin') && pantallaActiva === 'evaluacion_staff' && renderStaffEvaluacion()}
+            {(rolUsuario === 'staff' || rolUsuario === 'super_admin') && pantallaActiva === 'asistencia_staff' && (
+              <StaffAsistenciaPanel
+                vistaStaff={vistaStaff}
+                setVistaStaff={setVistaStaff}
+                filtroRamaStaff={filtroRamaStaff}
+                setFiltroRamaStaff={setFiltroRamaStaff}
+                filtroCatStaff={filtroCatStaff}
+                setFiltroCatStaff={setFiltroCatStaff}
+                rosterEquipo={rosterEquipo}
+                setRosterEquipo={setRosterEquipo}
+              />
+            )}
+            {(rolUsuario === 'staff' || rolUsuario === 'super_admin') && pantallaActiva === 'evaluacion_staff' && (
+              <StaffEvaluacionPanel
+                evalTiro={evalTiro}
+                setEvalTiro={setEvalTiro}
+                evalDefensa={evalDefensa}
+                setEvalDefensa={setEvalDefensa}
+                evalFisico={evalFisico}
+                setEvalFisico={setEvalFisico}
+                evalTactico={evalTactico}
+                setEvalTactico={setEvalTactico}
+                notasEvaluacion={notasEvaluacion}
+                setNotasEvaluacion={setNotasEvaluacion}
+              />
+            )}
             {(rolUsuario === 'mesa' || rolUsuario === 'super_admin') && pantallaActiva === 'scoreboard_live' && (
               <MesaControlPanel
                 jugadorSeleccionadoLive={jugadorSeleccionadoLive}
@@ -2662,6 +2350,7 @@ function App() {
 }
 
 export default App;
+
 
 
 
