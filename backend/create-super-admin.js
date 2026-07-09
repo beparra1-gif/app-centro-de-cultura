@@ -1,9 +1,20 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+const rawDatabaseUrl = String(process.env.DATABASE_URL || '');
+const safeDatabaseUrl = rawDatabaseUrl.includes('sslmode=require')
+  ? rawDatabaseUrl.replace('sslmode=require', 'sslmode=no-verify')
+  : rawDatabaseUrl;
+
+const shouldUseSsl =
+  String(process.env.NODE_ENV || '').toLowerCase() === 'production' ||
+  rawDatabaseUrl.includes('ondigitalocean.com') ||
+  rawDatabaseUrl.includes('sslmode=require') ||
+  rawDatabaseUrl.includes('sslmode=no-verify');
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionString: safeDatabaseUrl,
+  ssl: shouldUseSsl ? { rejectUnauthorized: false } : false,
 });
 
 const normalizarRut = (rut = '') => String(rut).replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();

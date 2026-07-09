@@ -63,9 +63,20 @@ const HEADER_ALIASES = {
   reserva_bus_acomapañante: 'reserva_bus_acompanante',
 };
 
+const rawDatabaseUrl = String(DATABASE_URL || '');
+const safeDatabaseUrl = rawDatabaseUrl.includes('sslmode=require')
+  ? rawDatabaseUrl.replace('sslmode=require', 'sslmode=no-verify')
+  : rawDatabaseUrl;
+
+const shouldUseSsl =
+  String(NODE_ENV || '').toLowerCase() === 'production' ||
+  rawDatabaseUrl.includes('ondigitalocean.com') ||
+  rawDatabaseUrl.includes('sslmode=require') ||
+  rawDatabaseUrl.includes('sslmode=no-verify');
+
 const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionString: safeDatabaseUrl,
+  ssl: shouldUseSsl ? { rejectUnauthorized: false } : false,
 });
 
 function normalizeKey(value) {
