@@ -782,7 +782,7 @@ function App() {
 
     return (
       <div className="card mt-20 fade-in" style={{background: 'linear-gradient(135deg, rgba(0, 122, 255, 0.05), rgba(52, 199, 89, 0.05))', border: '1px solid var(--borde-suave)'}}>
-        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px'}}>
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', gap: '8px', flexWrap: 'wrap'}}>
           <h4 style={{margin: 0, color: 'var(--texto-heading)', fontSize: '18px', fontWeight: '800'}}>📢 Nueva Comunicación</h4>
           <button onClick={() => setMostrarFormComunicaciones(false)} style={{background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer'}}>✕</button>
         </div>
@@ -2033,7 +2033,7 @@ function App() {
 
   const renderWhatsAppPanel = () => {
     return (
-      <div style={{
+      <div className="floating-panel whatsapp-panel" style={{
         position: 'fixed',
         top: '90px',
         right: '15px',
@@ -2383,7 +2383,7 @@ function App() {
       <div className="mt-20">
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px'}}>
           <h4 style={{color: 'var(--texto-heading)', margin: 0, fontSize: '18px', fontWeight: '800'}}>📊 Reportes de Actividad</h4>
-          <div style={{display: 'flex', gap: '8px'}}>
+          <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
             <button onClick={() => setMostrarHistorialNotif(true)} style={{padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--borde-suave)', background: 'var(--blanco-tarjeta)', color: 'var(--texto-principal)', fontSize: '12px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px'}}>
               📜 Historial
             </button>
@@ -2393,7 +2393,7 @@ function App() {
           </div>
         </div>
 
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px'}}>
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px', marginBottom: '15px'}}>
           <select value={filtroReporteFecha} onChange={e => setFiltroReporteFecha(e.target.value)} style={{padding: '8px', borderRadius: '6px', border: '1px solid var(--borde-suave)', fontSize: '12px'}}>
             <option value="semana">📅 Esta semana</option>
             <option value="mes">📆 Este mes</option>
@@ -2406,14 +2406,14 @@ function App() {
           </select>
         </div>
 
-        <div className="segment-control mb-20" style={{background: 'var(--blanco-tarjeta)'}}>
-          <div className={`segment-btn ${vistaReportes === 'engagement' ? 'active' : ''}`} onClick={() => setVistaReportes('engagement')} style={{flex: 1}}>
+        <div className="segment-control mb-20" style={{background: 'var(--blanco-tarjeta)', flexWrap: 'wrap', gap: '4px'}}>
+          <div className={`segment-btn ${vistaReportes === 'engagement' ? 'active' : ''}`} onClick={() => setVistaReportes('engagement')} style={{flex: '1 1 150px'}}>
             📈 Engagement
           </div>
-          <div className={`segment-btn ${vistaReportes === 'comentaristas' ? 'active' : ''}`} onClick={() => setVistaReportes('comentaristas')} style={{flex: 1}}>
+          <div className={`segment-btn ${vistaReportes === 'comentaristas' ? 'active' : ''}`} onClick={() => setVistaReportes('comentaristas')} style={{flex: '1 1 150px'}}>
             💬 Top Comentaristas
           </div>
-          <div className={`segment-btn ${vistaReportes === 'comunicaciones-top' ? 'active' : ''}`} onClick={() => setVistaReportes('comunicaciones-top')} style={{flex: 1}}>
+          <div className={`segment-btn ${vistaReportes === 'comunicaciones-top' ? 'active' : ''}`} onClick={() => setVistaReportes('comunicaciones-top')} style={{flex: '1 1 150px'}}>
             🏆 Comunicaciones Top
           </div>
         </div>
@@ -2429,7 +2429,7 @@ function App() {
               </div>
             ) : (
               <>
-            <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '15px'}}>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px', marginBottom: '15px'}}>
               <div className="card" style={{background: 'linear-gradient(135deg, rgba(0, 122, 255, 0.1), rgba(0, 122, 255, 0.05))', borderLeft: '4px solid var(--azul-electrico)'}}>
                 <h6 style={{margin: '0 0 6px 0', fontSize: '11px', fontWeight: '600', color: 'var(--texto-secundario)'}}>💬 Comentarios</h6>
                 <h3 style={{margin: 0, fontSize: '28px', fontWeight: '800', color: 'var(--azul-electrico)'}}>{reportes.totalComentarios}</h3>
@@ -2444,7 +2444,7 @@ function App() {
               </div>
             </div>
 
-            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px'}}>
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '15px'}}>
               <div className="card" style={{textAlign: 'center'}}>
                 <h6 style={{margin: '0 0 10px 0', fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)'}}>📊 Gráfico Pie</h6>
                 {renderGraficoSVG('pie')}
@@ -2499,7 +2499,7 @@ function App() {
                       <h6 style={{margin: 0, fontWeight: '700', fontSize: '13px', color: 'var(--texto-principal)', maxWidth: '70%'}}>{com.titulo}</h6>
                       <span style={{background: 'var(--azul-electrico)', color: 'white', padding: '4px 8px', borderRadius: '12px', fontWeight: '700', fontSize: '11px'}}>#{i + 1}</span>
                     </div>
-                    <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', fontSize: '12px'}}>
+                    <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))', gap: '10px', fontSize: '12px'}}>
                       <div style={{background: 'rgba(0, 122, 255, 0.08)', padding: '6px', borderRadius: '4px', textAlign: 'center'}}>
                         <p style={{margin: 0, fontWeight: '700', color: 'var(--azul-electrico)'}}>{com.comentarios}</p>
                         <p style={{margin: '2px 0 0 0', fontSize: '10px', color: 'var(--texto-secundario)'}}>💬 Comentarios</p>
@@ -3773,7 +3773,7 @@ function App() {
       {/* Panel antiguo de notificaciones - REMOVIDO EN FAVOR DE RENDERNOTIFICACIONES */}
 
       {showSettings && (
-        <div style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
+        <div className="floating-panel settings-panel" style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
           {renderSettingsPanel()}
         </div>
       )}
@@ -3781,7 +3781,7 @@ function App() {
       {mostrarNotificaciones && renderNotificaciones()}
 
       {mostrarBusqueda && (
-        <div style={{position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '500px', maxHeight: '600px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
+        <div className="floating-panel search-panel" style={{position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '500px', maxHeight: '600px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
           {renderBusqueda()}
         </div>
       )}

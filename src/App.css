@@ -1275,3 +1275,23 @@ body {
   border-color: var(--azul-electrico);
   box-shadow: 0 4px 12px rgba(0,122,255,0.28);
 }
+
+/* ==========================================
+   16. AJUSTES FINOS MÓVIL (PANELES FLOTANTES)
+   ========================================= */
+.floating-panel {
+  box-sizing: border-box;
+}
+
+@media (max-width: 767px) {
+  .floating-panel.settings-panel,
+  .floating-panel.whatsapp-panel,
+  .floating-panel.search-panel {
+    left: 12px !important;
+    right: 12px !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: calc(100vh - 120px) !important;
+    transform: none !important;
+  }
+}
