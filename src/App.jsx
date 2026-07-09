@@ -156,6 +156,7 @@ function App() {
   const [resultadosBusqueda, setResultadosBusqueda] = useState({ comunicaciones: [], comentarios: [], usuarios: [] });
   const [mostrarBusqueda, setMostrarBusqueda] = useState(false);
   const [vistaReportes, setVistaReportes] = useState('engagement'); // engagement, comentaristas, comunicaciones-top
+  const [cuentasIncompletas, setCuentasIncompletas] = useState([]);
   
   // --- ESTADOS: FASE 6 - REPORTES AVANZADOS, PDF, GRÁFICOS ---
   const [historialNotificaciones, setHistorialNotificaciones] = useState([]);
@@ -258,6 +259,8 @@ function App() {
   const [filtroMorosos, setFiltroMorosos] = useState('todos');
   const [logAuditoria, setLogAuditoria] = useState(mockAuditoria);
   const [destinatarios, setDestinatarios] = useState({ admin: false, staff: false, socios: true, apoderados: true, deportistas: true });
+  const [cuentaEditando, setCuentaEditando] = useState(null);
+  const [guardandoCuenta, setGuardandoCuenta] = useState(false);
   
   const [busquedaPermisos, setBusquedaPermisos] = useState('');
   const [filtroRolPermisos, setFiltroRolPermisos] = useState('Todos');
@@ -318,6 +321,30 @@ function App() {
         const contactosRes = await api.whatsappAPI.getContactos();
         if (contactosRes && contactosRes.length > 0) {
           setContactosWhatsApp(contactosRes);
+        }
+
+        // Cargar cuentas incompletas para solicitar actualización de datos
+        const cuentasIncompletasRes = await api.cuentasAPI.getIncompletas();
+        if (Array.isArray(cuentasIncompletasRes)) {
+          setCuentasIncompletas(cuentasIncompletasRes);
+          if (cuentasIncompletasRes.length > 0) {
+            const nombres = cuentasIncompletasRes
+              .slice(0, 3)
+              .map(c => `${c.nombres || 'Sin nombre'} ${c.apellido_paterno || ''}`.trim())
+              .join(', ');
+
+            setNotificaciones(prev => ([
+              {
+                id: Date.now(),
+                tipo: 'datos',
+                titulo: 'Cuentas con datos pendientes',
+                mensaje: `Hay ${cuentasIncompletasRes.length} cuentas que deben actualizar datos (ej: ${nombres}).`,
+                leida: false,
+                firmada: false
+              },
+              ...prev
+            ]));
+          }
         }
 
         console.log('✅ Datos del API cargados correctamente');
@@ -419,6 +446,55 @@ function App() {
         ? { ...u, permisos: { ...u.permisos, [modulo]: !u.permisos[modulo] } }
         : u
     ));
+  };
+
+  const abrirEdicionCuenta = (cuenta) => {
+    setCuentaEditando({
+      id: cuenta.id,
+      correo: cuenta.correo || '',
+      rut: cuenta.rut || '',
+      nombres: cuenta.nombres || '',
+      apellido_paterno: cuenta.apellido_paterno || '',
+      apellido_materno: cuenta.apellido_materno || '',
+      telefono: cuenta.telefono || '',
+      direccion: cuenta.direccion || '',
+      comuna: cuenta.comuna || '',
+      rol: cuenta.rol || 'apoderado',
+      estado_civil: cuenta.estado_civil || '',
+      profesion_oficio: cuenta.profesion_oficio || '',
+      nombre_segundo_contacto: cuenta.nombre_segundo_contacto || '',
+      parentesco_segundo_contacto: cuenta.parentesco_segundo_contacto || '',
+      num_segundo_contacto: cuenta.num_segundo_contacto || '',
+      es_socio: Boolean(cuenta.es_socio),
+      dia_pago_acordado: cuenta.dia_pago_acordado || '',
+    });
+    setVistaAdmin('cuentas');
+  };
+
+  const actualizarCampoCuenta = (campo, valor) => {
+    setCuentaEditando((prev) => ({ ...prev, [campo]: valor }));
+  };
+
+  const guardarCuentaPendiente = async () => {
+    if (!cuentaEditando) return;
+
+    if (!api.validarRutChileno(cuentaEditando.rut)) {
+      alert('El RUT ingresado no es valido. Revisa digito verificador.');
+      return;
+    }
+
+    try {
+      setGuardandoCuenta(true);
+      await api.cuentasAPI.update(cuentaEditando.id, cuentaEditando);
+      const cuentasIncompletasRes = await api.cuentasAPI.getIncompletas();
+      setCuentasIncompletas(Array.isArray(cuentasIncompletasRes) ? cuentasIncompletasRes : []);
+      alert('Cuenta actualizada correctamente.');
+      setCuentaEditando(null);
+    } catch (error) {
+      alert(`No se pudo guardar la cuenta: ${error.message}`);
+    } finally {
+      setGuardandoCuenta(false);
+    }
   };
 
   // ==========================================
@@ -3250,6 +3326,7 @@ function App() {
             <div className={`segment-btn ${vistaAdmin === 'citaciones' ? 'active' : ''}`} onClick={() => setVistaAdmin('citaciones')}>Citaciones</div>
             <div className={`segment-btn ${vistaAdmin === 'auditoria' ? 'active' : ''}`} onClick={() => setVistaAdmin('auditoria')}>Auditoría</div>
             <div className={`segment-btn ${vistaAdmin === 'reportes' ? 'active' : ''}`} onClick={() => setVistaAdmin('reportes')}>📊 Reportes</div>
+            <div className={`segment-btn ${vistaAdmin === 'cuentas' ? 'active' : ''}`} onClick={() => setVistaAdmin('cuentas')}>🧾 Cuentas</div>
             <div className={`segment-btn ${vistaAdmin === 'salud' ? 'active' : ''}`} onClick={() => { setVistaAdmin('salud'); generarAlertas(); }}>🏥 Salud</div>
             <div className={`segment-btn ${vistaAdmin === 'permisos' ? 'active' : ''}`} onClick={() => setVistaAdmin('permisos')}>Ajustes</div>
           </div>
@@ -3426,6 +3503,77 @@ function App() {
         )}
 
         {vistaAdmin === 'reportes' && renderReportes()}
+
+        {vistaAdmin === 'cuentas' && (
+          <div className="fade-in">
+            <h3 className="section-title">Cuentas por Actualizar</h3>
+            <p style={{fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '12px'}}>
+              Completa los datos faltantes y valida RUT chileno antes de guardar.
+            </p>
+
+            {cuentasIncompletas.length === 0 && (
+              <div className="card text-center" style={{fontWeight: '700', color: 'var(--verde-victoria)'}}>
+                Todo bien: no hay cuentas pendientes de completar.
+              </div>
+            )}
+
+            {cuentasIncompletas.map((c) => (
+              <div key={c.id} className="card" style={{marginBottom: '10px', borderLeft: '4px solid #FF9500'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'10px'}}>
+                  <div>
+                    <strong style={{fontSize:'14px'}}>{`${c.nombres || 'Sin nombre'} ${c.apellido_paterno || ''}`.trim()}</strong>
+                    <div style={{fontSize:'12px', color:'var(--texto-secundario)', marginTop:'4px'}}>
+                      {c.correo || 'Sin correo'} · {c.rut || 'Sin RUT'}
+                    </div>
+                    <div style={{display:'flex', flexWrap:'wrap', gap:'6px', marginTop:'8px'}}>
+                      {(c.campos_faltantes || []).map((f) => (
+                        <span key={f} style={{fontSize:'11px', background:'rgba(255,149,0,0.14)', color:'#b36200', padding:'4px 8px', borderRadius:'999px', fontWeight:'800'}}>
+                          Falta: {f}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <button className="btn-notificar" onClick={() => abrirEdicionCuenta(c)}>
+                    Completar
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {cuentaEditando && (
+              <div className="card" style={{marginTop:'14px', border:'1px solid var(--azul-electrico)'}}>
+                <h4 className="form-subtitle">Editar Cuenta #{cuentaEditando.id}</h4>
+                <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaEditando.correo} onChange={(e)=>actualizarCampoCuenta('correo', e.target.value)} /></div>
+                <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaEditando.rut} onChange={(e)=>actualizarCampoCuenta('rut', e.target.value)} style={{borderColor: cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) ? '#FF3B30' : undefined}} /></div>
+                {cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) && <p style={{fontSize:'12px', color:'#FF3B30', marginTop:'-6px'}}>RUT invalido</p>}
+                <div className="form-group"><label>Nombres</label><input className="form-input" value={cuentaEditando.nombres} onChange={(e)=>actualizarCampoCuenta('nombres', e.target.value)} /></div>
+                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={cuentaEditando.apellido_paterno} onChange={(e)=>actualizarCampoCuenta('apellido_paterno', e.target.value)} /></div>
+                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={cuentaEditando.apellido_materno} onChange={(e)=>actualizarCampoCuenta('apellido_materno', e.target.value)} /></div>
+                <div className="form-group"><label>Telefono</label><input className="form-input" value={cuentaEditando.telefono} onChange={(e)=>actualizarCampoCuenta('telefono', e.target.value)} /></div>
+                <div className="form-group"><label>Direccion</label><input className="form-input" value={cuentaEditando.direccion} onChange={(e)=>actualizarCampoCuenta('direccion', e.target.value)} /></div>
+                <div className="form-group"><label>Comuna</label><input className="form-input" value={cuentaEditando.comuna} onChange={(e)=>actualizarCampoCuenta('comuna', e.target.value)} /></div>
+                <div className="form-group"><label>Rol</label><input className="form-input" value={cuentaEditando.rol} onChange={(e)=>actualizarCampoCuenta('rol', e.target.value)} /></div>
+                <div className="form-group"><label>Estado Civil</label><input className="form-input" value={cuentaEditando.estado_civil} onChange={(e)=>actualizarCampoCuenta('estado_civil', e.target.value)} /></div>
+                <div className="form-group"><label>Profesion u Oficio</label><input className="form-input" value={cuentaEditando.profesion_oficio} onChange={(e)=>actualizarCampoCuenta('profesion_oficio', e.target.value)} /></div>
+                <div className="form-group"><label>Segundo Contacto</label><input className="form-input" value={cuentaEditando.nombre_segundo_contacto} onChange={(e)=>actualizarCampoCuenta('nombre_segundo_contacto', e.target.value)} /></div>
+                <div className="form-group"><label>Parentesco Segundo Contacto</label><input className="form-input" value={cuentaEditando.parentesco_segundo_contacto} onChange={(e)=>actualizarCampoCuenta('parentesco_segundo_contacto', e.target.value)} /></div>
+                <div className="form-group"><label>Numero Segundo Contacto</label><input className="form-input" value={cuentaEditando.num_segundo_contacto} onChange={(e)=>actualizarCampoCuenta('num_segundo_contacto', e.target.value)} /></div>
+                <div className="form-group"><label>Dia Pago Acordado</label><input className="form-input" type="number" min="1" max="31" value={cuentaEditando.dia_pago_acordado} onChange={(e)=>actualizarCampoCuenta('dia_pago_acordado', e.target.value)} /></div>
+                <label style={{display:'flex', alignItems:'center', gap:'8px', marginBottom:'12px', fontSize:'13px'}}>
+                  <input type="checkbox" checked={Boolean(cuentaEditando.es_socio)} onChange={(e)=>actualizarCampoCuenta('es_socio', e.target.checked)} />
+                  Es socio
+                </label>
+
+                <div style={{display:'flex', gap:'8px'}}>
+                  <button className="btn-electric" onClick={guardarCuentaPendiente} disabled={guardandoCuenta || !api.validarRutChileno(cuentaEditando.rut)}>
+                    {guardandoCuenta ? 'Guardando...' : 'Guardar Cuenta'}
+                  </button>
+                  <button className="btn-secondary" onClick={() => setCuentaEditando(null)}>Cancelar</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {vistaAdmin === 'salud' && (
           <div className="fade-in">

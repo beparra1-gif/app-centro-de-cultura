@@ -24,6 +24,79 @@ pool.on('error', (err) => {
   console.error('Error en pool:', err);
 });
 
+const normalizarRut = (rut = '') => {
+  return String(rut).replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+};
+
+const validarRutChileno = (rut = '') => {
+  const limpio = normalizarRut(rut);
+  if (!/^\d{7,8}[0-9K]$/.test(limpio)) return false;
+
+  const cuerpo = limpio.slice(0, -1);
+  const dv = limpio.slice(-1);
+
+  let suma = 0;
+  let multiplo = 2;
+
+  for (let i = cuerpo.length - 1; i >= 0; i -= 1) {
+    suma += Number(cuerpo[i]) * multiplo;
+    multiplo = multiplo === 7 ? 2 : multiplo + 1;
+  }
+
+  const resto = 11 - (suma % 11);
+  let dvEsperado = '';
+  if (resto === 11) dvEsperado = '0';
+  else if (resto === 10) dvEsperado = 'K';
+  else dvEsperado = String(resto);
+
+  return dv === dvEsperado;
+};
+
+const formatearRut = (rut = '') => {
+  const limpio = normalizarRut(rut);
+  if (limpio.length < 2) return limpio;
+  const cuerpo = limpio.slice(0, -1);
+  const dv = limpio.slice(-1);
+  return `${cuerpo}-${dv}`;
+};
+
+const camposObligatoriosCuenta = [
+  'correo',
+  'rut',
+  'nombres',
+  'apellido_paterno',
+  'telefono',
+  'direccion',
+  'comuna',
+  'rol'
+];
+
+const detectarCamposFaltantesCuenta = (cuenta) => {
+  const faltantes = [];
+  for (const campo of camposObligatoriosCuenta) {
+    const valor = cuenta[campo];
+    if (valor == null || String(valor).trim() === '') {
+      faltantes.push(campo);
+    }
+  }
+
+  const correo = String(cuenta.correo || '').toLowerCase();
+  if (correo.endsWith('@actualizar.local')) {
+    faltantes.push('correo');
+  }
+
+  const rut = String(cuenta.rut || '').toUpperCase();
+  if (rut.startsWith('PENDIENTE-RUT-')) {
+    faltantes.push('rut');
+  }
+
+  if (cuenta.rut && !validarRutChileno(cuenta.rut)) {
+    faltantes.push('rut_valido');
+  }
+
+  return faltantes;
+};
+
 // ========== HEALTH CHECK ==========
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date() });
@@ -271,6 +344,266 @@ app.post('/api/usuarios', async (req, res) => {
     );
     res.json(result.rows[0]);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 4.1 ENDPOINTS: CUENTAS (APODERADOS/SOCIOS/STAFF)
+// ==========================================
+
+// GET: Todas las cuentas
+app.get('/api/cuentas', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM cuentas ORDER BY apellido_paterno ASC, nombres ASC`
+    );
+
+    const cuentas = result.rows.map((cuenta) => ({
+      ...cuenta,
+      rut: cuenta.rut ? formatearRut(cuenta.rut) : cuenta.rut,
+      campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
+    }));
+
+    res.json(cuentas);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: Cuentas con información incompleta
+app.get('/api/cuentas/incompletas', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM cuentas ORDER BY updated_at DESC');
+    const incompletas = result.rows
+      .map((cuenta) => ({
+        ...cuenta,
+        rut: cuenta.rut ? formatearRut(cuenta.rut) : cuenta.rut,
+        campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
+      }))
+      .filter((cuenta) => cuenta.campos_faltantes.length > 0);
+
+    res.json(incompletas);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: Cuenta por ID
+app.get('/api/cuentas/:id', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM cuentas WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Cuenta no encontrada' });
+    }
+
+    const cuenta = result.rows[0];
+    res.json({
+      ...cuenta,
+      rut: cuenta.rut ? formatearRut(cuenta.rut) : cuenta.rut,
+      campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: Crear cuenta
+app.post('/api/cuentas', async (req, res) => {
+  const {
+    correo,
+    rut,
+    password,
+    nombres,
+    apellido_paterno,
+    apellido_materno,
+    fecha_nacimiento,
+    estado_civil,
+    direccion,
+    comuna,
+    prefijo_tel,
+    telefono,
+    profesion_oficio,
+    nombre_segundo_contacto,
+    parentesco_segundo_contacto,
+    num_segundo_contacto,
+    es_socio,
+    fecha_ingreso_socio,
+    rol,
+    forzar_clave,
+    foto_perfil_url,
+    estado,
+    autorizacion_imagen,
+    dia_pago_acordado,
+  } = req.body;
+
+  if (!correo || !rut) {
+    return res.status(400).json({ error: 'correo y rut son obligatorios' });
+  }
+
+  if (!validarRutChileno(rut)) {
+    return res.status(400).json({ error: 'RUT chileno inválido' });
+  }
+
+  try {
+    const rutNormalizado = formatearRut(rut);
+    const result = await pool.query(
+      `INSERT INTO cuentas (
+        correo, rut, password, nombres, apellido_paterno, apellido_materno,
+        fecha_nacimiento, estado_civil, direccion, comuna, prefijo_tel, telefono,
+        profesion_oficio, nombre_segundo_contacto, parentesco_segundo_contacto,
+        num_segundo_contacto, es_socio, fecha_ingreso_socio, rol, forzar_clave,
+        foto_perfil_url, estado, autorizacion_imagen, dia_pago_acordado
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+      ) RETURNING *`,
+      [
+        correo,
+        rutNormalizado,
+        password || null,
+        nombres || null,
+        apellido_paterno || null,
+        apellido_materno || null,
+        fecha_nacimiento || null,
+        estado_civil || null,
+        direccion || null,
+        comuna || null,
+        prefijo_tel || null,
+        telefono || null,
+        profesion_oficio || null,
+        nombre_segundo_contacto || null,
+        parentesco_segundo_contacto || null,
+        num_segundo_contacto || null,
+        es_socio ?? false,
+        fecha_ingreso_socio || null,
+        rol || 'apoderado',
+        forzar_clave ?? false,
+        foto_perfil_url || null,
+        estado || 'activo',
+        autorizacion_imagen ?? false,
+        dia_pago_acordado || null,
+      ]
+    );
+
+    const cuenta = result.rows[0];
+    res.json({
+      ...cuenta,
+      campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
+    });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'correo o rut ya existe' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT: Actualizar cuenta
+app.put('/api/cuentas/:id', async (req, res) => {
+  const {
+    correo,
+    rut,
+    password,
+    nombres,
+    apellido_paterno,
+    apellido_materno,
+    fecha_nacimiento,
+    estado_civil,
+    direccion,
+    comuna,
+    prefijo_tel,
+    telefono,
+    profesion_oficio,
+    nombre_segundo_contacto,
+    parentesco_segundo_contacto,
+    num_segundo_contacto,
+    es_socio,
+    fecha_ingreso_socio,
+    rol,
+    forzar_clave,
+    foto_perfil_url,
+    estado,
+    autorizacion_imagen,
+    dia_pago_acordado,
+  } = req.body;
+
+  if (rut && !validarRutChileno(rut)) {
+    return res.status(400).json({ error: 'RUT chileno inválido' });
+  }
+
+  try {
+    const rutNormalizado = rut ? formatearRut(rut) : null;
+    const result = await pool.query(
+      `UPDATE cuentas SET
+        correo = COALESCE($1, correo),
+        rut = COALESCE($2, rut),
+        password = COALESCE($3, password),
+        nombres = COALESCE($4, nombres),
+        apellido_paterno = COALESCE($5, apellido_paterno),
+        apellido_materno = COALESCE($6, apellido_materno),
+        fecha_nacimiento = COALESCE($7, fecha_nacimiento),
+        estado_civil = COALESCE($8, estado_civil),
+        direccion = COALESCE($9, direccion),
+        comuna = COALESCE($10, comuna),
+        prefijo_tel = COALESCE($11, prefijo_tel),
+        telefono = COALESCE($12, telefono),
+        profesion_oficio = COALESCE($13, profesion_oficio),
+        nombre_segundo_contacto = COALESCE($14, nombre_segundo_contacto),
+        parentesco_segundo_contacto = COALESCE($15, parentesco_segundo_contacto),
+        num_segundo_contacto = COALESCE($16, num_segundo_contacto),
+        es_socio = COALESCE($17, es_socio),
+        fecha_ingreso_socio = COALESCE($18, fecha_ingreso_socio),
+        rol = COALESCE($19, rol),
+        forzar_clave = COALESCE($20, forzar_clave),
+        foto_perfil_url = COALESCE($21, foto_perfil_url),
+        estado = COALESCE($22, estado),
+        autorizacion_imagen = COALESCE($23, autorizacion_imagen),
+        dia_pago_acordado = COALESCE($24, dia_pago_acordado),
+        updated_at = NOW()
+      WHERE id = $25
+      RETURNING *`,
+      [
+        correo || null,
+        rutNormalizado,
+        password || null,
+        nombres || null,
+        apellido_paterno || null,
+        apellido_materno || null,
+        fecha_nacimiento || null,
+        estado_civil || null,
+        direccion || null,
+        comuna || null,
+        prefijo_tel || null,
+        telefono || null,
+        profesion_oficio || null,
+        nombre_segundo_contacto || null,
+        parentesco_segundo_contacto || null,
+        num_segundo_contacto || null,
+        es_socio,
+        fecha_ingreso_socio || null,
+        rol || null,
+        forzar_clave,
+        foto_perfil_url || null,
+        estado || null,
+        autorizacion_imagen,
+        dia_pago_acordado || null,
+        req.params.id,
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Cuenta no encontrada' });
+    }
+
+    const cuenta = result.rows[0];
+    res.json({
+      ...cuenta,
+      campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
+    });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'correo o rut ya existe' });
+    }
     res.status(500).json({ error: err.message });
   }
 });

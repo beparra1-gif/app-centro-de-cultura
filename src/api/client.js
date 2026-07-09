@@ -146,6 +146,68 @@ export const usuariosAPI = {
   }
 };
 
+// ========== CUENTAS ==========
+
+export const cuentasAPI = {
+  // Obtener todas
+  getAll: async () => {
+    const response = await fetch(`${API_BASE_URL}/cuentas`);
+    return handleResponse(response);
+  },
+
+  // Obtener incompletas
+  getIncompletas: async () => {
+    const response = await fetch(`${API_BASE_URL}/cuentas/incompletas`);
+    return handleResponse(response);
+  },
+
+  // Obtener por ID
+  getById: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/cuentas/${id}`);
+    return handleResponse(response);
+  },
+
+  // Crear
+  create: async (data) => {
+    const response = await fetch(`${API_BASE_URL}/cuentas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return handleResponse(response);
+  },
+
+  // Actualizar
+  update: async (id, data) => {
+    const response = await fetch(`${API_BASE_URL}/cuentas/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return handleResponse(response);
+  }
+};
+
+// Utilitario de validación RUT chileno para formularios del frontend
+export const validarRutChileno = (rut = '') => {
+  const limpio = String(rut).replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+  if (!/^\d{7,8}[0-9K]$/.test(limpio)) return false;
+
+  const cuerpo = limpio.slice(0, -1);
+  const dv = limpio.slice(-1);
+
+  let suma = 0;
+  let multiplo = 2;
+  for (let i = cuerpo.length - 1; i >= 0; i -= 1) {
+    suma += Number(cuerpo[i]) * multiplo;
+    multiplo = multiplo === 7 ? 2 : multiplo + 1;
+  }
+
+  const resto = 11 - (suma % 11);
+  const esperado = resto === 11 ? '0' : resto === 10 ? 'K' : String(resto);
+  return dv === esperado;
+};
+
 // ========== WHATSAPP ==========
 
 export const whatsappAPI = {
