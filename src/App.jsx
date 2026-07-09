@@ -16,6 +16,7 @@ import {
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
 import ResultadosCards from './components/ResultadosCards';
+import PupiloSelector from './components/PupiloSelector';
 import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
@@ -2395,29 +2396,6 @@ function App() {
   // 5. MÓDULOS DE JUGADOR, ACADEMIA Y TESORERÍA
   // ==========================================
 
-  // PREMIUM UPGRADE: Selector Global de Hijos (Pupilos)
-  const renderSelectorPupilo = () => {
-    if (mockTesoreriaDB.pupilos && mockTesoreriaDB.pupilos.length > 1 && rolUsuario === 'jugador') {
-      return (
-        <div className="card mb-15 fade-in player-pill-card" style={{padding: '15px', background: 'var(--azul-marino)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: '16px'}}>
-          <span style={{fontSize: '13px', fontWeight: '800', color: 'white'}}><Users size={16} style={{marginRight: '5px'}}/> Perfil Activo:</span>
-          <select 
-            className="form-input dark-select" 
-            style={{width: 'auto', background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none', padding: '8px 12px', fontSize: '13px'}} 
-            value={pupiloActivo.id} 
-            onChange={(e) => {
-              const pupilo = mockTesoreriaDB.pupilos.find(p => p.id === parseInt(e.target.value));
-              if(pupilo) setPupiloActivo(pupilo);
-            }}
-          >
-            {mockTesoreriaDB.pupilos.map(p => <option key={p.id} value={p.id} style={{color: 'black'}}>{p.nombre}</option>)}
-          </select>
-        </div>
-      );
-    }
-    return null;
-  };
-
   const renderTarjetaJugador = () => {
     let claseRareza = "holo-bronce"; let textoRareza = "BRONCE";
     const nivelActual = rolUsuario === 'visita' ? 'MAX' : pupiloActivo.nivel;
@@ -2430,7 +2408,12 @@ function App() {
 
     return (
       <div className="fade-in player-screen-shell">
-        {renderSelectorPupilo()}
+        <PupiloSelector
+          pupilos={mockTesoreriaDB.pupilos}
+          pupiloActivo={pupiloActivo}
+          rolUsuario={rolUsuario}
+          onChangePupilo={setPupiloActivo}
+        />
         
         <div className="holographic-wrapper horizontal-holo">
           <div className={`holographic-card horizontal ${claseRareza}`}>
@@ -2703,7 +2686,12 @@ function App() {
 
     return (
       <div className="mt-20 fade-in">
-        {renderSelectorPupilo()}
+        <PupiloSelector
+          pupilos={mockTesoreriaDB.pupilos}
+          pupiloActivo={pupiloActivo}
+          rolUsuario={rolUsuario}
+          onChangePupilo={setPupiloActivo}
+        />
         
         {/* PREMIUM UPGRADE: Barra de Experiencia Adictiva */}
         <div className={`card academy-hero-card gamificacion-card mb-20 ${animacionXP ? 'xp-boost-anim' : ''}`} style={{background: 'linear-gradient(135deg, #2E0B5B, #00C7BE)', color: 'white', border: 'none', position: 'relative', overflow: 'hidden'}}>
