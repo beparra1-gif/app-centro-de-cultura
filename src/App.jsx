@@ -14,6 +14,7 @@ import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
 } from 'recharts';
 import * as api from './api/client';
+import { nextId } from './utils/runtimeId';
 import {
   mockNotificaciones,
   mockAuditoria,
@@ -28,13 +29,6 @@ import {
   mockQuiz,
   mockMorosos,
 } from './data/mockData';
-
-let nextRuntimeId = 1000;
-const nextId = () => {
-  const id = nextRuntimeId;
-  nextRuntimeId += 1;
-  return id;
-};
 
 // ==========================================
 // 2. COMPONENTE PRINCIPAL (APP)
