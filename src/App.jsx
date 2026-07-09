@@ -100,6 +100,13 @@ const mockMorosos = [
   { id: 6, nombre: 'Pedro Navarro H.', tipo: 'socio', mesesDeuda: 1, montoDeuda: 33000, contacto: '+56 9 5566 7788', pupilos: [] },
 ];
 
+let nextRuntimeId = 1000;
+const nextId = () => {
+  const id = nextRuntimeId;
+  nextRuntimeId += 1;
+  return id;
+};
+
 // ==========================================
 // 2. COMPONENTE PRINCIPAL (APP)
 // ==========================================
@@ -258,6 +265,7 @@ function App() {
   const [vistaAdmin, setVistaAdmin] = useState('dashboard');
   const [filtroMorosos, setFiltroMorosos] = useState('todos');
   const [logAuditoria, setLogAuditoria] = useState(mockAuditoria);
+
   const [destinatarios, setDestinatarios] = useState({ admin: false, staff: false, socios: true, apoderados: true, deportistas: true });
   const [cuentaEditando, setCuentaEditando] = useState(null);
   const [guardandoCuenta, setGuardandoCuenta] = useState(false);
@@ -335,7 +343,7 @@ function App() {
 
             setNotificaciones(prev => ([
               {
-                id: Date.now(),
+                id: nextId(),
                 tipo: 'datos',
                 titulo: 'Cuentas con datos pendientes',
                 mensaje: `Hay ${cuentasIncompletasRes.length} cuentas que deben actualizar datos (ej: ${nombres}).`,
@@ -596,7 +604,8 @@ function App() {
     return partidos.map((partido) => {
       const esVictoria = partido.miEquipo > partido.rival; 
       const dif = Math.abs(partido.miEquipo - partido.rival); 
-      const fraseRandom = esVictoria ? frasesVictoria[Math.floor(Math.random() * frasesVictoria.length)] : frasesDerrota[Math.floor(Math.random() * frasesDerrota.length)];
+      const frases = esVictoria ? frasesVictoria : frasesDerrota;
+      const fraseRandom = frases[partido.id % frases.length];
       
       return (
         <div key={partido.id} className={`card-resultado ${esVictoria ? "resultado-ganado" : "resultado-perdido"}`}>
@@ -884,7 +893,7 @@ function App() {
     const addComentario = (comId, texto, parentId = null) => {
       if(!texto.trim()) return;
       const nuevoComentario = {
-        id: Math.random(),
+        id: nextId(),
         usuario: rolUsuario === 'admin' ? 'Administrador' : rolUsuario === 'staff' ? 'Entrenador' : rolUsuario === 'socio' ? 'Socio' : 'Usuario',
         avatar: rolUsuario === 'admin' ? '👨‍💼' : rolUsuario === 'staff' ? '👨‍🏫' : rolUsuario === 'socio' ? '👤' : '👤',
         texto: texto,
@@ -1238,7 +1247,7 @@ function App() {
   // FASE 5: Funciones de Notificaciones, Búsqueda y Reportes
   const addNotificacion = (tipo, titulo, descripcion, comId = null) => {
     const nuevaNotif = {
-      id: Math.random(),
+      id: nextId(),
       tipo: tipo, // 'comentario', 'rsvp', 'comunicacion', 'encuesta'
       titulo: titulo,
       descripcion: descripcion,
@@ -1438,7 +1447,7 @@ function App() {
   // FASE 6: Funciones de Gráficos, PDF y Historial
   const addNotificacionHistorial = (tipo, titulo, descripcion) => {
     const notif = {
-      id: Math.random(),
+      id: nextId(),
       tipo, titulo, descripcion,
       timestamp: new Date(),
       leida: false
@@ -1624,7 +1633,7 @@ function App() {
                           comunicaciones.reduce((sum, c) => sum + Object.values(c.reacciones || {}).reduce((s, r) => s + r, 0), 0);
     if (totalEngagement < 15) {
       nuevasAlertas.push({
-        id: Date.now() + Math.random(),
+        id: nextId(),
         tipo: 'engagement',
         titulo: '📉 Engagement Bajo',
         descripcion: `Solo ${totalEngagement} interacciones en últimas 24h`,
@@ -1640,7 +1649,7 @@ function App() {
     });
     if (comSinRespuesta.length > 0) {
       nuevasAlertas.push({
-        id: Date.now() + Math.random(),
+        id: nextId(),
         tipo: 'respuesta',
         titulo: '💬 Sin Respuestas',
         descripcion: `${comSinRespuesta.length} comunicaciones esperando respuesta`,
@@ -1653,7 +1662,7 @@ function App() {
     const stockCritico = inventarioProductos.filter(p => p.stock < 5);
     if (stockCritico.length > 0) {
       nuevasAlertas.push({
-        id: Date.now() + Math.random(),
+        id: nextId(),
         tipo: 'stock',
         titulo: '⚠️ Stock Crítico',
         descripcion: `${stockCritico.length} productos con stock bajo`,
@@ -1664,7 +1673,7 @@ function App() {
     
     // Alerta 4: Usuarios inactivos
     nuevasAlertas.push({
-      id: Date.now() + Math.random(),
+      id: nextId(),
       tipo: 'inactividad',
       titulo: '😴 Usuarios Inactivos',
       descripcion: '3 usuarios sin actividad > 7 días',
@@ -1682,7 +1691,8 @@ function App() {
   const renderTimelineActividad = () => {
     const horas = Array.from({length: 24}, (_, i) => ({
       hora: `${i.toString().padStart(2, '0')}:00`,
-      cantidad: Math.floor(Math.random() * 15) + (i >= 18 && i <= 22 ? 5 : 0)
+      // Curva estable con pico vespertino para evitar datos aleatorios en cada render.
+      cantidad: Math.max(1, Math.round(6 + (Math.sin((i - 5) * 0.55) + 1) * 4 + (i >= 18 && i <= 22 ? 5 : 0)))
     }));
     const maxCantidad = Math.max(...horas.map(h => h.cantidad), 1);
     
@@ -1706,7 +1716,7 @@ function App() {
 
   const crearPushNotificacion = (tipo, titulo, descripcion, urgencia = 'Baja') => {
     const nuevaPush = {
-      id: Date.now() + Math.random(),
+      id: nextId(),
       tipo,
       titulo,
       descripcion,
@@ -2793,7 +2803,7 @@ function App() {
                <div className="btn-pago-cta mt-15" onClick={() => {
                  setComprobanteSubido(true);
                  setPagosPendientesAdmin(prev => [...prev, {
-                   id: Date.now(),
+                   id: nextId(),
                    familia: mockTesoreriaDB.titular,
                    monto: totalFinalPagar,
                    detalle: `${tipoPago === 'completo' ? 'Pago total' : 'Abono $' + Number(montoAbono).toLocaleString('es-CL')} — ${mesesSeleccionados.length} mes(es) — Comprobante adjunto`
@@ -3095,7 +3105,7 @@ function App() {
     const registrarCuentaPendiente = (e) => {
       e.preventDefault();
       const nuevaDeuda = { 
-        id: Date.now(), nombre: nombreFiado, detalle: detalleFiado || carritoKiosco.map(i => `${i.cant}x ${i.nombre}`).join(', '), 
+        id: nextId(), nombre: nombreFiado, detalle: detalleFiado || carritoKiosco.map(i => `${i.cant}x ${i.nombre}`).join(', '), 
         monto: totalCarrito, fecha: new Date().toLocaleDateString('es-CL')
       };
       let nuevoInv = [...inventarioProductos];
@@ -3222,7 +3232,7 @@ function App() {
             </div>
             <div className="card mt-15">
               <h4 className="form-subtitle" style={{color: '#FF3B30'}}><Wallet size={16}/> Registrar Egreso (Salida)</h4>
-              <div style={{display:'flex', gap:'10px'}} className="mt-10"><input type="text" className="form-input" style={{flex: 2}} placeholder="Glosa (Ej: Árbitros)" value={gastoRegistro.desc} onChange={(e)=>setGastoRegistro({...gastoRegistro, desc: e.target.value})}/><input type="number" className="form-input" style={{flex: 1}} placeholder="Monto" value={gastoRegistro.monto} onChange={(e)=>setGastoRegistro({...gastoRegistro, monto: e.target.value})}/><button className="btn-electric" style={{background:'#FF3B30', width:'auto', padding:'0 15px'}} onClick={()=>{ if(!gastoRegistro.desc || !gastoRegistro.monto) return; setEgresosLista([...egresosLista, {id: Date.now(), desc: gastoRegistro.desc, monto: Number(gastoRegistro.monto)}]); setGastoRegistro({desc:'', monto:''}); }}>Restar</button></div>
+              <div style={{display:'flex', gap:'10px'}} className="mt-10"><input type="text" className="form-input" style={{flex: 2}} placeholder="Glosa (Ej: Árbitros)" value={gastoRegistro.desc} onChange={(e)=>setGastoRegistro({...gastoRegistro, desc: e.target.value})}/><input type="number" className="form-input" style={{flex: 1}} placeholder="Monto" value={gastoRegistro.monto} onChange={(e)=>setGastoRegistro({...gastoRegistro, monto: e.target.value})}/><button className="btn-electric" style={{background:'#FF3B30', width:'auto', padding:'0 15px'}} onClick={()=>{ if(!gastoRegistro.desc || !gastoRegistro.monto) return; setEgresosLista([...egresosLista, {id: nextId(), desc: gastoRegistro.desc, monto: Number(gastoRegistro.monto)}]); setGastoRegistro({desc:'', monto:''}); }}>Restar</button></div>
               {egresosLista.length > 0 && (<div className="egresos-list mt-15"><span style={{fontSize:'12px', fontWeight:'800', color:'var(--texto-secundario)'}}>Egresos de Hoy</span>{egresosLista.map(eg => (<div key={eg.id} className="egreso-row mt-5"><span className="egreso-desc">❌ {eg.desc}</span><span className="egreso-monto">-${eg.monto.toLocaleString('es-CL')}</span></div>))}</div>)}
             </div>
             <button className="btn-secondary mt-15" style={{background: 'rgba(0,122,255,0.1)'}} onClick={()=>alert("Descargando PDF del Libro de Caja...")}><FileDown size={18}/> Exportar Reporte del Día</button>
@@ -3244,7 +3254,7 @@ function App() {
               </div>
               <button className="btn-electric" onClick={() => {
                 if(!nuevoProducto.nombre || !nuevoProducto.precio) return alert("Faltan datos");
-                setInventarioProductos([...inventarioProductos, { id: Date.now(), ...nuevoProducto, stock: 10, ventas: 0 }]);
+                setInventarioProductos([...inventarioProductos, { id: nextId(), ...nuevoProducto, stock: 10, ventas: 0 }]);
                 setNuevoProducto({ nombre: '', emoji: '', costo: '', precio: '', categoria: 'Bebida' }); alert("Producto Creado");
               }}>Añadir al Catálogo</button>
             </div>
@@ -3646,7 +3656,7 @@ function App() {
       if (tipo === 'FALTA') setLiveScore(prev => ({ ...prev, faltasLocal: prev.faltasLocal + 1 }));
       
       const logTexto = puntos > 0 ? `${nombreJugador} anota ${puntos} pts` : `${nombreJugador} registra ${tipo}`;
-      setPlayByPlay([{ id: Date.now(), tiempo: liveScore.reloj, texto: logTexto }, ...playByPlay]);
+      setPlayByPlay([{ id: nextId(), tiempo: liveScore.reloj, texto: logTexto }, ...playByPlay]);
       setJugadorSeleccionadoLive(null);
     };
 
@@ -3710,7 +3720,7 @@ function App() {
 
         <div className="card mt-20">
            <h4 className="form-subtitle"><FileText size={16}/> Línea de Tiempo (Play-by-Play)</h4>
-           <div style={{display: 'flex', gap: '10px'}} className="mb-15"><input type="text" className="form-input" placeholder="Nota rápida..." value={notaScouting} onChange={(e) => setNotaScouting(e.target.value)} /><button className="btn-electric" style={{width: 'auto', padding: '0 20px'}} onClick={() => { if(!notaScouting) return; setPlayByPlay([{ id: Date.now(), tiempo: "DT", texto: `📝 ${notaScouting}` }, ...playByPlay]); setNotaScouting(''); }}>Log</button></div>
+           <div style={{display: 'flex', gap: '10px'}} className="mb-15"><input type="text" className="form-input" placeholder="Nota rápida..." value={notaScouting} onChange={(e) => setNotaScouting(e.target.value)} /><button className="btn-electric" style={{width: 'auto', padding: '0 20px'}} onClick={() => { if(!notaScouting) return; setPlayByPlay([{ id: nextId(), tiempo: "DT", texto: `📝 ${notaScouting}` }, ...playByPlay]); setNotaScouting(''); }}>Log</button></div>
            <div className="play-by-play-box">{playByPlay.length === 0 ? <p className="text-center text-muted" style={{fontSize: '13px', fontStyle: 'italic', margin: '20px 0'}}>Inicio de transmisión.</p> : playByPlay.map(play => (<div key={play.id} className="play-row"><span className="play-tiempo">{play.tiempo}</span><span className="play-texto">{play.texto}</span></div>))}</div>
         </div>
       </div>

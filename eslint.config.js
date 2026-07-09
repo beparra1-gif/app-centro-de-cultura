@@ -29,7 +29,6 @@ export default defineConfig([
     rules: {
       // Temporary override until App is split into smaller modules.
       'no-unused-vars': 'off',
-      'react-hooks/purity': 'off',
     },
   },
   {
