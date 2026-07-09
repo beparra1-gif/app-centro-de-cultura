@@ -4,7 +4,7 @@
   "description": "Backend API para Centro de Cultura Física",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "npm run migrate && node server.js",
     "dev": "nodemon server.js",
     "migrate": "node migrations/init.js",
     "import:sheets": "node import-google-sheets.js",
