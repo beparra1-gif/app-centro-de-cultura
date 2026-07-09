@@ -15,9 +15,14 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ========== DATABASE POOL ==========
+const shouldUseSsl =
+  String(process.env.NODE_ENV || '').toLowerCase() === 'production' ||
+  String(process.env.DATABASE_URL || '').includes('ondigitalocean.com') ||
+  String(process.env.DATABASE_URL || '').includes('sslmode=require');
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: shouldUseSsl ? { rejectUnauthorized: false } : false
 });
 
 pool.on('error', (err) => {
