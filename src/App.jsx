@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import './App.css';
 import { 
   Home, User, Trophy, CreditCard, Shirt, CheckCircle, Bell, LogOut, 
-  Settings, LayoutGrid, List, CalendarDays, Star, Target, MapPin, 
+  Settings, LayoutGrid, List, Star, Target, MapPin, 
   Brain, PlayCircle, BookOpen, Video, Users, Sliders, HeartPulse, 
   Save, Monitor, Activity, ArrowRight, ArrowLeft, AlertTriangle, 
   FileText, Flag, QrCode, Lock, Camera, ChevronRight, ChevronLeft, 
@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
+import ResultadosCards from './components/ResultadosCards';
 import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
@@ -505,54 +506,6 @@ function App() {
     </div>
   );
 
-  const renderTarjetasResultados = (partidos) => {
-    const frasesVictoria = ["¡Tremendo triunfo! 🔥", "¡La casa se respeta! 🏰", "¡Qué partidazo jugamos! 🏀"];
-    const frasesDerrota = ["A levantar cabeza para el próximo 💪", "Aprender de los errores y seguir 📈", "¡No bajamos los brazos! 😤"];
-    
-    return partidos.map((partido) => {
-      const esVictoria = partido.miEquipo > partido.rival; 
-      const dif = Math.abs(partido.miEquipo - partido.rival); 
-      const frases = esVictoria ? frasesVictoria : frasesDerrota;
-      const fraseRandom = frases[partido.id % frases.length];
-      
-      return (
-        <div key={partido.id} className={`card-resultado ${esVictoria ? "resultado-ganado" : "resultado-perdido"}`}>
-
-          {/* Competición centrada arriba */}
-          <div className="resultado-competicion">
-            <span className={`badge-rama badge-rama-lg ${partido.rama === "Femenina" ? "badge-femenina" : "badge-masculina"}`}>
-              {partido.rama} · {partido.categoria}
-            </span>
-            <span className="torneo-label"><Trophy size={13}/> {partido.torneo}</span>
-            <span className="fecha-label"><CalendarDays size={12}/> {partido.fecha}</span>
-          </div>
-
-          {/* Marcador con logos placeholder */}
-          <div className="marcador-container">
-            <div className="equipo">
-              <div className="equipo-logo-placeholder">🛡️</div>
-              <span className="nombre-equipo">C.C. Física</span>
-              <span className="puntaje">{partido.miEquipo}</span>
-            </div>
-            <span className="vs">VS</span>
-            <div className="equipo">
-              <div className="equipo-logo-placeholder rival">{partido.nombreRival.substring(0,3).toUpperCase()}</div>
-              <span className="nombre-equipo">{partido.nombreRival}</span>
-              <span className="puntaje">{partido.rival}</span>
-            </div>
-          </div>
-
-          <div className="resultado-footer">
-            <span className="margen-puntos" style={{color: esVictoria ? 'var(--verde-victoria)' : 'var(--azul-electrico)'}}>
-              {esVictoria ? `🏆 Ganamos por ${dif} pts` : `💪 Perdimos por ${dif} pts`}
-            </span>
-            <span className="frase-motivacional">{fraseRandom}</span>
-          </div>
-        </div>
-      )
-    });
-  };
-
   const renderFachadaPublica = () => (
     <>
       {vistaPublica === 'inicio' && (
@@ -642,7 +595,7 @@ function App() {
       {vistaPublica === 'resultados' && (
         <div className="fade-in">
           <h3 className="section-title mt-20">Últimos Resultados</h3>
-          {renderTarjetasResultados(partidosPrueba)}
+          <ResultadosCards partidos={partidosPrueba} />
         </div>
       )}
     </>
@@ -1138,9 +1091,9 @@ function App() {
         ) : (
           <div className="mt-20 fade-in">
             <h4 className="rama-title femenina">🏀 Rama Femenina</h4>
-            {renderTarjetasResultados(partidosPrueba.filter(p => p.rama === "Femenina"))}
+            <ResultadosCards partidos={partidosPrueba.filter(p => p.rama === "Femenina")} />
             <h4 className="rama-title masculina mt-20">🏀 Rama Masculina</h4>
-            {renderTarjetasResultados(partidosPrueba.filter(p => p.rama === "Masculina"))}
+            <ResultadosCards partidos={partidosPrueba.filter(p => p.rama === "Masculina")} />
           </div>
         )}
       </div>
