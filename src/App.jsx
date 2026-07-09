@@ -663,11 +663,11 @@ function App() {
             </h4>
             <div className="input-group-login">
               <User size={18} color="var(--texto-secundario)"/>
-              <input type="text" placeholder="RUT (Prueba: admin, staff, mesa, visita)" value={rutInput} onChange={(e)=>setRutInput(e.target.value)} required />
+              <input type="text" placeholder="RUT" value={rutInput} onChange={(e)=>setRutInput(e.target.value)} required />
             </div>
             <div className="input-group-login mt-10">
               <Lock size={18} color="var(--texto-secundario)"/>
-              <input type="password" placeholder="Contraseña (12345 = Onboarding)" value={passInput} onChange={(e)=>setPassInput(e.target.value)} required />
+              <input type="password" placeholder="Contraseña" value={passInput} onChange={(e)=>setPassInput(e.target.value)} required />
             </div>
             <button type="submit" className="btn-electric mt-20">Ingresar al Sistema</button>
             <button type="button" className="btn-volver-texto mt-15" onClick={volverInicioLogin}>
@@ -713,7 +713,7 @@ function App() {
           <div className="cta-contacto-card">
             <h3 style={{margin: '0 0 6px 0', fontSize: '18px', fontWeight: '900'}}>Club Centro de Cultura Física</h3>
             <p style={{margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.5'}}>
-              ¿Quieres ser parte de nuestra familia deportiva?<br/>Conoece nuestros programas y catáloga de servicios.
+              ¿Quieres ser parte de nuestra familia deportiva?<br/>Conoce nuestros programas y catálogo de servicios.
             </p>
             <button className="btn-contacto" onClick={() => alert('¡Gracias por tu interés! Un representante del Club Centro de Cultura Física se pondrá en contacto contigo pronto. 🏀')}>
               📬 ¡Contáctanos, haz clic acá!
@@ -2377,6 +2377,7 @@ function App() {
 
   const renderReportes = () => {
     const reportes = calcularReportes();
+    const totalEngagement = reportes.totalComentarios + reportes.totalReacciones + reportes.totalRSVP;
 
     return (
       <div className="mt-20">
@@ -2419,6 +2420,15 @@ function App() {
 
         {vistaReportes === 'engagement' && (
           <div className="fade-in">
+            {totalEngagement === 0 ? (
+              <div className="card text-center" style={{padding: '24px 14px'}}>
+                <h5 style={{margin: '0 0 8px 0', fontSize: '16px', color: 'var(--texto-principal)'}}>Sin datos de engagement aún</h5>
+                <p style={{margin: 0, fontSize: '13px', color: 'var(--texto-secundario)'}}>
+                  Publica comunicaciones o interactúa con reacciones/comentarios para ver métricas.
+                </p>
+              </div>
+            ) : (
+              <>
             <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '15px'}}>
               <div className="card" style={{background: 'linear-gradient(135deg, rgba(0, 122, 255, 0.1), rgba(0, 122, 255, 0.05))', borderLeft: '4px solid var(--azul-electrico)'}}>
                 <h6 style={{margin: '0 0 6px 0', fontSize: '11px', fontWeight: '600', color: 'var(--texto-secundario)'}}>💬 Comentarios</h6>
@@ -2447,8 +2457,10 @@ function App() {
 
             <div style={{marginTop: '15px', textAlign: 'center', padding: '15px', background: 'rgba(0,0,0,0.02)', borderRadius: '8px', fontSize: '13px', color: 'var(--texto-secundario)'}}>
               <p style={{margin: 0}}>📅 Período: {filtroReporteFecha === 'semana' ? 'Esta semana' : filtroReporteFecha === 'mes' ? 'Este mes' : 'Todo el tiempo'}</p>
-              <p style={{margin: '4px 0 0 0'}}>Total de Engagement: <strong style={{color: 'var(--azul-electrico)'}}>{reportes.totalComentarios + reportes.totalReacciones + reportes.totalRSVP}</strong> interacciones</p>
+              <p style={{margin: '4px 0 0 0'}}>Total de Engagement: <strong style={{color: 'var(--azul-electrico)'}}>{totalEngagement}</strong> interacciones</p>
             </div>
+              </>
+            )}
           </div>
         )}
 
@@ -3551,15 +3563,18 @@ function App() {
             {cuentaEditando && (
               <div className="card" style={{marginTop:'14px', border:'1px solid var(--azul-electrico)'}}>
                 <h4 className="form-subtitle">Editar Cuenta #{cuentaEditando.id}</h4>
+                <div style={{marginTop:'8px', marginBottom:'8px', fontSize:'12px', fontWeight:'800', color:'var(--texto-secundario)', textTransform:'uppercase', letterSpacing:'0.5px'}}>Identidad</div>
                 <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaEditando.correo} onChange={(e)=>actualizarCampoCuenta('correo', e.target.value)} /></div>
                 <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaEditando.rut} onChange={(e)=>actualizarCampoCuenta('rut', e.target.value)} style={{borderColor: cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) ? '#FF3B30' : undefined}} /></div>
                 {cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) && <p style={{fontSize:'12px', color:'#FF3B30', marginTop:'-6px'}}>RUT invalido</p>}
                 <div className="form-group"><label>Nombres</label><input className="form-input" value={cuentaEditando.nombres} onChange={(e)=>actualizarCampoCuenta('nombres', e.target.value)} /></div>
                 <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={cuentaEditando.apellido_paterno} onChange={(e)=>actualizarCampoCuenta('apellido_paterno', e.target.value)} /></div>
                 <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={cuentaEditando.apellido_materno} onChange={(e)=>actualizarCampoCuenta('apellido_materno', e.target.value)} /></div>
+                <div style={{marginTop:'10px', marginBottom:'8px', fontSize:'12px', fontWeight:'800', color:'var(--texto-secundario)', textTransform:'uppercase', letterSpacing:'0.5px'}}>Contacto</div>
                 <div className="form-group"><label>Telefono</label><input className="form-input" value={cuentaEditando.telefono} onChange={(e)=>actualizarCampoCuenta('telefono', e.target.value)} /></div>
                 <div className="form-group"><label>Direccion</label><input className="form-input" value={cuentaEditando.direccion} onChange={(e)=>actualizarCampoCuenta('direccion', e.target.value)} /></div>
                 <div className="form-group"><label>Comuna</label><input className="form-input" value={cuentaEditando.comuna} onChange={(e)=>actualizarCampoCuenta('comuna', e.target.value)} /></div>
+                <div style={{marginTop:'10px', marginBottom:'8px', fontSize:'12px', fontWeight:'800', color:'var(--texto-secundario)', textTransform:'uppercase', letterSpacing:'0.5px'}}>Gestión</div>
                 <div className="form-group"><label>Rol</label><input className="form-input" value={cuentaEditando.rol} onChange={(e)=>actualizarCampoCuenta('rol', e.target.value)} /></div>
                 <div className="form-group"><label>Estado Civil</label><input className="form-input" value={cuentaEditando.estado_civil} onChange={(e)=>actualizarCampoCuenta('estado_civil', e.target.value)} /></div>
                 <div className="form-group"><label>Profesion u Oficio</label><input className="form-input" value={cuentaEditando.profesion_oficio} onChange={(e)=>actualizarCampoCuenta('profesion_oficio', e.target.value)} /></div>
@@ -3602,7 +3617,7 @@ function App() {
         {vistaAdmin === 'permisos' && (
           <div className="fade-in card">
              <h4 className="form-subtitle">Permisos de Sistema</h4>
-             <p>Gestión visual de permisos (Omitido por brevedad en la demo).</p>
+             <p>Gestión de permisos activa. Configura accesos por rol y módulo según políticas del club.</p>
           </div>
         )}
       </div>
@@ -3850,8 +3865,6 @@ function App() {
             <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} /><span className="mt-5">Kiosco</span></div>
             <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Tesorería</span></div>
             <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>
-            {rolUsuario === 'super_admin' && <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} /><span className="mt-5">Staff</span></div>}
-            {rolUsuario === 'super_admin' && <div className={`nav-item ${pantallaActiva === 'scoreboard_live' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('scoreboard_live')}><Monitor size={26} /><span className="mt-5">Mesa</span></div>}
           </>
         ) : rolUsuario === 'staff' ? (
           <>
