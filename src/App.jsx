@@ -16,6 +16,13 @@ import {
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
 import {
+  getUTMLastDayPreviousMonth,
+  getColorUrgencia,
+  getColorPorCategoria,
+  colorTipo,
+  calcularEff,
+} from './utils/appHelpers';
+import {
   mockNotificaciones,
   mockAuditoria,
   mockComunicaciones,
@@ -290,28 +297,6 @@ function App() {
   }, []);
   
   // Efecto Skeleton Loader al cambiar de pantalla
-  // Calcula la UTM del último día del mes anterior
-  const getUTMLastDayPreviousMonth = () => {
-    // Para Julio 2026, retorna UTM del 30 Junio 2026
-    const utmPorMes = {
-      'enero': 68900,
-      'febrero': 69300,
-      'marzo': 69800,
-      'abril': 70100,
-      'mayo': 70800,
-      'junio': 71506, // 30 Junio 2026
-      'julio': 71506, // Usar junio
-      'agosto': 72000,
-      'septiembre': 72500,
-      'octubre': 73000,
-      'noviembre': 73500,
-      'diciembre': 74000
-    };
-    const today = new Date(2026, 6, 9); // Hoy es 9 de julio 2026
-    const ultimoDiaMesAnterior = new Date(today.getFullYear(), today.getMonth(), 0);
-    const mesAnterior = ultimoDiaMesAnterior.toLocaleString('es-ES', {month: 'long'}).replace('de ', '').toLowerCase();
-    return utmPorMes[mesAnterior] || mockTesoreriaDB.utmValor;
-  };
 
   const cambiarPantallaConLoader = (pantalla) => {
     setIsAppLoading(true);
@@ -705,11 +690,6 @@ function App() {
         ? formCom.audiencia.filter(a => a !== aud)
         : [...formCom.audiencia, aud];
       setFormCom({...formCom, audiencia: nuevaAudiencia});
-    };
-
-    const getColorUrgencia = (urgencia) => {
-      const colores = { 'Baja': '#34C759', 'Media': '#FF9500', 'Alta': '#FF3B30', 'Crítica': '#8B0000' };
-      return colores[urgencia] || '#007AFF';
     };
 
     return (
@@ -2564,7 +2544,7 @@ function App() {
 
   const renderPerfilTesoreria = () => {
     let tarifaMensual = 0; 
-    const utmActual = getUTMLastDayPreviousMonth(); // UTM dinámico del mes anterior
+    const utmActual = getUTMLastDayPreviousMonth(mockTesoreriaDB.utmValor); // UTM dinámico del mes anterior
     const cuotaSocio = utmActual * 0.003; 
     
     if (mockTesoreriaDB.esSocio) { 
@@ -2995,14 +2975,6 @@ function App() {
     const totalGastos = egresosLista.reduce((a, b) => a + b.monto, 0);
     const cajaNetaFinal = (Number(datosCaja.montoInicial) || 0) + cajaEfectivoKiosco + cajaEfectivoEntradas - totalGastos;
 
-    // PREMIUM UPGRADE: Colorimetría Cognitiva para Cajeros
-    const getColorPorCategoria = (categoria) => {
-      if(categoria === 'Bebida') return { border: '#4DD0E1', bg: '#E0F7FA', text: '#006064' }; // Azul Hielo
-      if(categoria === 'Comida') return { border: '#FFB74D', bg: '#FFF3E0', text: '#E65100' }; // Naranja Cálido
-      if(categoria === 'Entradas') return { border: '#BA68C8', bg: '#F3E5F5', text: '#4A148C' }; // Morado Eléctrico
-      return { border: 'rgba(0,0,0,0.05)', bg: 'var(--blanco-tarjeta)', text: 'var(--texto-principal)' };
-    };
-
     const finalizarDespachoPOS = (metodo) => {
       let nuevoInventario = [...inventarioProductos];
       let sEK = 0; let sTK = 0; let sEE = 0; let sTE = 0;
@@ -3264,12 +3236,6 @@ function App() {
     const morososFiltrados = filtroMorosos === 'todos' ? mockMorosos
       : filtroMorosos === 'socios' ? mockMorosos.filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado')
       : mockMorosos.filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado');
-    const colorTipo = (tipo) => {
-      if (tipo === 'socio') return { bg: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)' };
-      if (tipo === 'apoderado') return { bg: 'rgba(255,149,0,0.12)', color: '#b36200' };
-      return { bg: 'rgba(110,50,200,0.12)', color: '#6E32C8' };
-    };
-
     return (
       <div className="admin-container fade-in">
         <div className="scroll-horizontal-menu mb-15">
@@ -3561,8 +3527,6 @@ function App() {
   // 9. MESA FIBA AVANZADA (CHROMA KEY & TIMEOUTS)
   // ==========================================
   const renderMesaControl = () => {
-    const calcularEff = (j) => (j.pts + j.reb + j.ast + j.stl + j.blk) - (j.to);
-    
     const ejecutarAccionFIBA = (tipo, puntos = 0) => {
       if (!jugadorSeleccionadoLive) return alert("Selecciona un jugador del Roster primero.");
       let nombreJugador = "";
