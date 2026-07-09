@@ -393,7 +393,7 @@ function App() {
     switch(pantallaActiva) {
       case 'comunicaciones': return "Muro Social";
       case 'academia': return "Academia Club";
-      case 'perfil': return rolUsuario === 'admin' ? "Validación Tesorería" : "Mi Cuenta";
+      case 'perfil': return (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? "Validación Tesorería" : "Mi Cuenta";
       case 'jugador': return "Pase Digital";
       case 'asistencia_staff': return "Control Asistencia";
       case 'evaluacion_staff': return "Lab Rendimiento";
@@ -407,19 +407,27 @@ function App() {
   const abrirFormularioLogin = (tipo) => { setTipoLoginSeleccionado(tipo); setMostrarFormularioLogin(true); setRutInput(tipo === 'invitado' ? 'visita' : ''); };
   const volverInicioLogin = () => { setMostrarFormularioLogin(false); setRutInput(''); setPassInput(''); };
 
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
     if(!rutInput || !passInput) return alert("Ingresa tu RUT y contraseña.");
-    
-    let perfilDetectado = 'jugador'; 
-    if(rutInput.toLowerCase().includes('admin')) perfilDetectado = 'admin';
-    if(rutInput.toLowerCase().includes('staff')) perfilDetectado = 'staff';
-    if(rutInput.toLowerCase().includes('mesa')) perfilDetectado = 'mesa';
-    if(tipoLoginSeleccionado === 'invitado' || rutInput.toLowerCase().includes('visita')) perfilDetectado = 'visita';
 
-    if(passInput === '12345') {
-      setRolUsuarioTemporal(perfilDetectado); setIsOnboarding(true); setOnboardingStep(1); setOnboardingProgress(15);
-    } else { iniciarSesionFinal(perfilDetectado); }
+    if(tipoLoginSeleccionado === 'invitado' || rutInput.toLowerCase().includes('visita')) {
+      iniciarSesionFinal('visita');
+      return;
+    }
+
+    try {
+      const loginRes = await api.authAPI.login(rutInput, passInput);
+      const perfilDetectado = loginRes?.user?.rol || 'jugador';
+
+      if(passInput === '12345') {
+        setRolUsuarioTemporal(perfilDetectado); setIsOnboarding(true); setOnboardingStep(1); setOnboardingProgress(15);
+      } else {
+        iniciarSesionFinal(perfilDetectado);
+      }
+    } catch (error) {
+      alert(error.message || 'No se pudo iniciar sesión. Revisa RUT y contraseña.');
+    }
   };
 
   const avanzarOnboarding = () => {
@@ -431,7 +439,7 @@ function App() {
   const iniciarSesionFinal = (perfil) => {
     setRolUsuario(perfil);
     if(perfil === 'mesa') setPantallaActiva('scoreboard_live');
-    else if(perfil === 'admin') setPantallaActiva('admin_dashboard');
+    else if(perfil === 'admin' || perfil === 'super_admin') setPantallaActiva('admin_dashboard');
     else if(perfil === 'staff') setPantallaActiva('asistencia_staff'); 
     else if(perfil === 'jugador' || perfil === 'visita') setPantallaActiva('jugador');
     else setPantallaActiva('comunicaciones');
@@ -503,7 +511,7 @@ function App() {
   
   // PANEL DE CONFIGURACIÓN Y PERFIL
   const renderSettingsPanel = () => {
-    if (rolUsuario === 'admin') {
+    if (rolUsuario === 'admin' || rolUsuario === 'super_admin') {
       const permisosDisponibles = ['kiosco', 'inventario', 'citaciones', 'mesa', 'validacion_pagos', 'auditoria', 'resumen'];
       const usuariosFiltrados = matrixPermisos.filter(u => u.nombre.toLowerCase().includes(busquedaPermisos.toLowerCase()) && (filtroRolPermisos === 'Todos' || u.rol === filtroRolPermisos));
       return <div style={{padding: '12px'}}><h4 style={{margin: '0 0 10px 0', fontSize: '14px', fontWeight: '900'}}>🔐 Control de Permisos</h4><input type="text" placeholder="Buscar..." value={busquedaPermisos} onChange={(e) => setBusquedaPermisos(e.target.value)} style={{width: '100%', padding: '8px', marginBottom: '10px', borderRadius: '8px', border: '1px solid var(--borde-suave)', fontSize: '12px'}} /><div style={{display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap'}}>{['Todos', 'Admin', 'Staff', 'Socio', 'Jugador'].map(r => <button key={r} onClick={() => setFiltroRolPermisos(r)} style={{padding: '6px 10px', borderRadius: '8px', background: filtroRolPermisos === r ? 'var(--azul-electrico)' : 'var(--fondo-input)', color: filtroRolPermisos === r ? 'white' : 'var(--texto-principal)', fontSize: '11px', fontWeight: '700', border: 'none', cursor: 'pointer'}}>{r}</button>)}</div><div style={{maxHeight: '300px', overflowY: 'auto'}}>{usuariosFiltrados.map(u => <div key={u.id} style={{marginBottom: '8px', padding: '8px', background: 'var(--fondo-card-sutil)', borderRadius: '8px', border: '1px solid var(--borde-suave)'}}><strong style={{fontSize: '11px', display: 'block'}}>{u.nombre}</strong><span style={{fontSize: '10px', color: 'var(--texto-secundario)'}}>{u.rol}</span><div style={{marginTop: '6px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '4px'}}>{permisosDisponibles.map(p => <button key={p} onClick={() => togglePermiso(u.id, p)} style={{padding: '4px 6px', fontSize: '9px', borderRadius: '6px', background: u.permisos[p] ? 'rgba(52,199,89,0.2)' : 'transparent', border: u.permisos[p] ? '1px solid var(--verde-victoria)' : '1px solid rgba(0,0,0,0.1)', color: u.permisos[p] ? 'var(--verde-victoria)' : 'var(--texto-secundario)', fontWeight: '700', cursor: 'pointer'}}>{u.permisos[p] ? '✓' : '○'} {p.split('_')[0]}</button>)}</div></div>)}</div></div>;
@@ -3805,13 +3813,13 @@ function App() {
             {!rolUsuario && renderFachadaPublica()}
             {rolUsuario && pantallaActiva === 'comunicaciones' && renderComunicaciones()}
             {rolUsuario === 'jugador' && pantallaActiva === 'academia' && renderAcademia()}
-            {(rolUsuario === 'jugador' || rolUsuario === 'admin') && pantallaActiva === 'perfil' && renderPerfilTesoreria()}
-            {(rolUsuario === 'jugador' || rolUsuario === 'visita') && pantallaActiva === 'jugador' && renderTarjetaJugador()}
-            {rolUsuario === 'staff' && pantallaActiva === 'asistencia_staff' && renderStaffAsistencia()}
-            {rolUsuario === 'staff' && pantallaActiva === 'evaluacion_staff' && renderStaffEvaluacion()}
-            {rolUsuario === 'mesa' && pantallaActiva === 'scoreboard_live' && renderMesaControl()}
-            {rolUsuario === 'admin' && pantallaActiva === 'kiosco' && renderKioscoCaja()}
-            {rolUsuario === 'admin' && pantallaActiva === 'admin_dashboard' && renderSuperAdmin()}
+            {(rolUsuario === 'jugador' || rolUsuario === 'admin' || rolUsuario === 'super_admin') && pantallaActiva === 'perfil' && renderPerfilTesoreria()}
+            {(rolUsuario === 'jugador' || rolUsuario === 'visita' || rolUsuario === 'super_admin') && pantallaActiva === 'jugador' && renderTarjetaJugador()}
+            {(rolUsuario === 'staff' || rolUsuario === 'super_admin') && pantallaActiva === 'asistencia_staff' && renderStaffAsistencia()}
+            {(rolUsuario === 'staff' || rolUsuario === 'super_admin') && pantallaActiva === 'evaluacion_staff' && renderStaffEvaluacion()}
+            {(rolUsuario === 'mesa' || rolUsuario === 'super_admin') && pantallaActiva === 'scoreboard_live' && renderMesaControl()}
+            {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && pantallaActiva === 'kiosco' && renderKioscoCaja()}
+            {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && pantallaActiva === 'admin_dashboard' && renderSuperAdmin()}
           </>
         )}
       </main>
@@ -3836,12 +3844,14 @@ function App() {
             <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Mi Cuenta</span></div>
             <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><User size={26} /><span className="mt-5">Jugador</span></div>
           </>
-        ) : rolUsuario === 'admin' ? (
+        ) : rolUsuario === 'admin' || rolUsuario === 'super_admin' ? (
           <>
             <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><Activity size={26} /><span className="mt-5">Admin</span></div>
             <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} /><span className="mt-5">Kiosco</span></div>
             <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Tesorería</span></div>
             <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>
+            {rolUsuario === 'super_admin' && <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} /><span className="mt-5">Staff</span></div>}
+            {rolUsuario === 'super_admin' && <div className={`nav-item ${pantallaActiva === 'scoreboard_live' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('scoreboard_live')}><Monitor size={26} /><span className="mt-5">Mesa</span></div>}
           </>
         ) : rolUsuario === 'staff' ? (
           <>

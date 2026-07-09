@@ -103,6 +103,60 @@ app.get('/api/health', (req, res) => {
 });
 
 // ==========================================
+// AUTH: LOGIN BÁSICO POR RUT/PASSWORD
+// ==========================================
+app.post('/api/auth/login', async (req, res) => {
+  const { rut, password } = req.body;
+
+  if (!rut || !password) {
+    return res.status(400).json({ error: 'rut y password son obligatorios' });
+  }
+
+  try {
+    const rutNormalizado = normalizarRut(rut);
+    const result = await pool.query(
+      `SELECT id, correo, rut, password, nombres, apellido_paterno, rol, estado
+       FROM cuentas
+       WHERE UPPER(REPLACE(REPLACE(rut, '.', ''), '-', '')) = $1
+       LIMIT 1`,
+      [rutNormalizado]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    const cuenta = result.rows[0];
+    if (cuenta.estado && String(cuenta.estado).toLowerCase() !== 'activo') {
+      return res.status(403).json({ error: 'Cuenta inactiva' });
+    }
+
+    if (!cuenta.password || String(cuenta.password) !== String(password)) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    const rolDb = String(cuenta.rol || '').toLowerCase();
+    const rolSistema = rolDb === 'super_admin' || rolDb === 'superadmin' ? 'super_admin' : rolDb || 'jugador';
+
+    res.json({
+      ok: true,
+      user: {
+        id: cuenta.id,
+        nombre: `${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim() || cuenta.correo,
+        correo: cuenta.correo,
+        rut: formatearRut(cuenta.rut),
+        rol: rolSistema,
+        access_profiles: rolSistema === 'super_admin'
+          ? ['super_admin', 'admin', 'staff', 'mesa', 'jugador', 'visita']
+          : [rolSistema]
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // 1. ENDPOINTS: COMUNICACIONES
 // ==========================================
 
