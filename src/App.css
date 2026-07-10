@@ -338,8 +338,8 @@ button,
 }
 
 .home-header-club-mark {
-  width: min(290px, 100%);
-  max-height: 36px;
+  width: min(100%, 560px);
+  max-height: 54px;
   object-fit: contain;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.28));
 }
