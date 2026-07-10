@@ -25,6 +25,11 @@ import StaffAsistenciaPanel from './components/StaffAsistenciaPanel';
 import StaffEvaluacionPanel from './components/StaffEvaluacionPanel';
 import AcademiaPanel from './components/AcademiaPanel';
 import TarjetaJugadorPanel from './components/TarjetaJugadorPanel';
+import PushToast from './components/PushToast';
+import PushPreferenciasPanel from './components/PushPreferenciasPanel';
+import PushHistorialModal from './components/PushHistorialModal';
+import WhatsAppPanel from './components/WhatsAppPanel';
+import WhatsAppHistorialModal from './components/WhatsAppHistorialModal';
 import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
@@ -447,7 +452,11 @@ function App() {
           </div>
           <button onClick={() => alert('Próximamente')} style={{padding: '6px', borderRadius: '6px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '700', border: '1px solid rgba(0,122,255,0.3)', cursor: 'pointer'}}>🔑 Contraseña</button>
           <hr style={{margin: '10px 0', border: 'none', borderTop: '1px solid var(--borde-suave)'}}/>
-          {renderPreferenciasPush()}
+          <PushPreferenciasPanel
+            preferenciasSonido={preferenciasSonido}
+            setPreferenciasSonido={setPreferenciasSonido}
+            reproducirSonido={reproducirSonido}
+          />
         </div>
       );
     }
@@ -1228,201 +1237,6 @@ function App() {
     }
   };
 
-  const renderPushNotificacion = () => {
-    if (pushNotificaciones.length === 0) return null;
-
-    const push = pushNotificaciones[pushNotificaciones.length - 1];
-    const colorUrgencia = push.urgencia === 'Crítica' ? '#FF3B30' : 
-                          push.urgencia === 'Alta' ? '#FF9500' : 
-                          push.urgencia === 'Media' ? '#FFD60A' : '#34C759';
-
-    return (
-      <div style={{
-        position: 'fixed',
-        top: '70px',
-        right: '15px',
-        width: '320px',
-        background: 'var(--blanco-tarjeta)',
-        borderRadius: '12px',
-        boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-        padding: '15px',
-        borderLeft: `4px solid ${colorUrgencia}`,
-        zIndex: 1000,
-        animation: 'slideInRight 0.4s ease',
-        '@keyframes slideInRight': {
-          from: { transform: 'translateX(350px)', opacity: 0 },
-          to: { transform: 'translateX(0)', opacity: 1 }
-        }
-      }}>
-        <div style={{display: 'flex', alignItems: 'flex-start', gap: '10px'}}>
-          <span style={{fontSize: '20px', marginTop: '2px'}}>
-            {push.tipo === 'alerta' ? '🚨' : push.tipo === 'comunicacion' ? '💬' : push.tipo === 'pago' ? '💳' : '📨'}
-          </span>
-          <div style={{flex: 1}}>
-            <h6 style={{margin: '0 0 4px 0', fontSize: '13px', fontWeight: '700', color: 'var(--texto-principal)'}}>{
-              push.titulo
-            }</h6>
-            <p style={{margin: '0 0 8px 0', fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.4'}}>
-              {push.descripcion}
-            </p>
-            <div style={{display: 'flex', gap: '8px', fontSize: '10px', color: 'var(--texto-secundario)'}}>
-              <span>🕐 {push.timestamp.toLocaleTimeString('es-CL', {hour: '2-digit', minute: '2-digit'})}</span>
-              <span style={{color: colorUrgencia, fontWeight: '600'}}>● {push.urgencia}</span>
-            </div>
-          </div>
-          <button onClick={() => setPushNotificaciones(prev => prev.filter(p => p.id !== push.id))} style={{
-            background: 'none',
-            border: 'none',
-            fontSize: '16px',
-            cursor: 'pointer',
-            color: 'var(--texto-secundario)'
-          }}>✕</button>
-        </div>
-      </div>
-    );
-  };
-
-  const renderPreferenciasPush = () => {
-    return (
-      <div className="card fade-in" style={{marginTop: '15px'}}>
-        <h5 style={{margin: '0 0 15px 0', fontSize: '14px', fontWeight: '700', color: 'var(--texto-principal)'}}>🔔 Preferencias de Notificaciones Push</h5>
-        
-        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--borde-suave)'}}>
-          <label style={{fontSize: '12px', fontWeight: '600', color: 'var(--texto-principal)'}}>Habilitar Notificaciones</label>
-          <button onClick={() => setPreferenciasSonido({...preferenciasSonido, habilitado: !preferenciasSonido.habilitado})} style={{
-            padding: '6px 12px',
-            borderRadius: '20px',
-            border: 'none',
-            background: preferenciasSonido.habilitado ? 'var(--azul-electrico)' : 'var(--borde-suave)',
-            color: preferenciasSonido.habilitado ? 'white' : 'var(--texto-principal)',
-            fontSize: '11px',
-            fontWeight: '600',
-            cursor: 'pointer'
-          }}>{
-            preferenciasSonido.habilitado ? '✓ Activo' : 'Inactivo'
-          }</button>
-        </div>
-
-        <div style={{marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--borde-suave)'}}>
-          <label style={{fontSize: '12px', fontWeight: '600', color: 'var(--texto-principal)', display: 'block', marginBottom: '6px'}}>Sonido de Alerta</label>
-          <select value={preferenciasSonido.sonidoAlerta} onChange={e => setPreferenciasSonido({...preferenciasSonido, sonidoAlerta: e.target.value})} style={{
-            width: '100%',
-            padding: '8px',
-            borderRadius: '6px',
-            border: '1px solid var(--borde-suave)',
-            fontSize: '12px',
-            background: 'var(--blanco-tarjeta)',
-            color: 'var(--texto-principal)'
-          }}>
-            <option value="campana">🔔 Campana Clásica</option>
-            <option value="tono">📱 Tono Moderno</option>
-          </select>
-          <button onClick={() => reproducirSonido(preferenciasSonido.sonidoAlerta)} style={{
-            marginTop: '8px',
-            padding: '6px 10px',
-            borderRadius: '6px',
-            border: '1px solid var(--borde-suave)',
-            background: 'rgba(0,122,255,0.08)',
-            color: 'var(--azul-electrico)',
-            fontSize: '11px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            width: '100%'
-          }}>🔊 Reproducir Preview</button>
-        </div>
-
-        <div style={{marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--borde-suave)'}}>
-          <label style={{fontSize: '12px', fontWeight: '600', color: 'var(--texto-principal)', display: 'block', marginBottom: '6px'}}>Volumen ({preferenciasSonido.volumen}%)</label>
-          <input type="range" min="0" max="100" value={preferenciasSonido.volumen} onChange={e => setPreferenciasSonido({...preferenciasSonido, volumen: parseInt(e.target.value)})} style={{
-            width: '100%',
-            cursor: 'pointer'
-          }}/>
-        </div>
-
-        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-          <label style={{fontSize: '12px', fontWeight: '600', color: 'var(--texto-principal)'}}>Vibración</label>
-          <button onClick={() => setPreferenciasSonido({...preferenciasSonido, vibración: !preferenciasSonido.vibración})} style={{
-            padding: '6px 12px',
-            borderRadius: '20px',
-            border: 'none',
-            background: preferenciasSonido.vibración ? '#34C759' : 'var(--borde-suave)',
-            color: preferenciasSonido.vibración ? 'white' : 'var(--texto-principal)',
-            fontSize: '11px',
-            fontWeight: '600',
-            cursor: 'pointer'
-          }}>{
-            preferenciasSonido.vibración ? '✓ Activo' : 'Inactivo'
-          }</button>
-        </div>
-      </div>
-    );
-  };
-
-  const renderHistorialPush = () => {
-    return (
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        background: 'rgba(0,0,0,0.5)',
-        zIndex: 998,
-        display: 'flex',
-        alignItems: 'flex-end',
-        animation: 'fadeIn 0.3s ease'
-      }} onClick={() => setMostrarHistorialPush(false)}>
-        <div style={{
-          width: '100%',
-          background: 'var(--blanco-tarjeta)',
-          borderRadius: '24px 24px 0 0',
-          padding: '20px',
-          maxHeight: '80vh',
-          overflowY: 'auto',
-          animation: 'slideUp 0.4s ease'
-        }} onClick={e => e.stopPropagation()}>
-          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px'}}>
-            <h4 style={{margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--texto-principal)'}}>📲 Historial de Push</h4>
-            <button onClick={() => setMostrarHistorialPush(false)} style={{background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer'}}>✕</button>
-          </div>
-
-          {historialPushTotal.length === 0 ? (
-            <p style={{textAlign: 'center', color: 'var(--texto-secundario)', fontSize: '13px'}}>Sin notificaciones aún</p>
-          ) : (
-            <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
-              {historialPushTotal.slice().reverse().map(push => (
-                <div key={push.id} style={{
-                  background: push.leida ? 'rgba(0,0,0,0.01)' : 'rgba(0,122,255,0.05)',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  borderLeft: push.urgencia === 'Crítica' ? '4px solid #FF3B30' : 
-                              push.urgencia === 'Alta' ? '4px solid #FF9500' : 
-                              push.urgencia === 'Media' ? '4px solid #FFD60A' : '4px solid #34C759',
-                  display: 'flex',
-                  gap: '10px',
-                  alignItems: 'flex-start'
-                }}>
-                  <span style={{fontSize: '18px', marginTop: '2px'}}>
-                    {push.tipo === 'alerta' ? '🚨' : push.tipo === 'comunicacion' ? '💬' : push.tipo === 'pago' ? '💳' : '📨'}
-                  </span>
-                  <div style={{flex: 1}}>
-                    <p style={{margin: '0 0 4px 0', fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)'}}>{push.titulo}</p>
-                    <p style={{margin: '0 0 4px 0', fontSize: '11px', color: 'var(--texto-secundario)'}}>{push.descripcion}</p>
-                    <span style={{fontSize: '10px', color: 'var(--texto-secundario)'}}>🕐 {push.timestamp.toLocaleTimeString('es-CL')}</span>
-                  </div>
-                  <div style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px'}}>
-                    <span style={{fontSize: '11px', fontWeight: '600', color: push.urgencia === 'Crítica' ? '#FF3B30' : push.urgencia === 'Alta' ? '#FF9500' : '#34C759'}}>● {push.urgencia}</span>
-                    {!push.leida && <span style={{fontSize: '9px', background: 'var(--azul-electrico)', color: 'white', padding: '2px 6px', borderRadius: '3px', fontWeight: '600'}}>NUEVA</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   // ========== FASE 9: INTEGRACIÓN WHATSAPP + WEBHOOKS BIDIRECCIONALES ==========
 
   const enviarPorWhatsApp = async (numero, mensaje, tipo = 'general', comId = null) => {
@@ -1486,254 +1300,6 @@ function App() {
     } catch (error) {
       console.error('Error eliminando contacto:', error);
     }
-  };
-
-  const renderWhatsAppPanel = () => {
-    return (
-      <div className="floating-panel whatsapp-panel" style={{
-        position: 'fixed',
-        top: '90px',
-        right: '15px',
-        width: '380px',
-        background: 'var(--blanco-tarjeta)',
-        borderRadius: '16px',
-        boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
-        zIndex: 997,
-        padding: '20px',
-        maxHeight: '80vh',
-        overflowY: 'auto',
-        animation: 'slideInRight 0.4s ease'
-      }}>
-        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px'}}>
-          <h4 style={{margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--texto-principal)'}}>💬 WhatsApp</h4>
-          <button onClick={() => setMostrarWhatsAppPanel(false)} style={{background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer'}}>✕</button>
-        </div>
-
-        <div style={{display: 'flex', gap: '6px', marginBottom: '15px', borderBottom: '1px solid var(--borde-suave)', paddingBottom: '12px'}}>
-          <button onClick={() => setMostrarWhatsAppPanel('enviar')} style={{flex: 1, padding: '6px', borderRadius: '6px', background: 'rgba(52,199,89,0.2)', color: '#34C759', fontSize: '11px', fontWeight: '700', border: '1px solid #34C759', cursor: 'pointer'}}>📤 Enviar</button>
-          <button onClick={() => setMostrarHistorialWA(true)} style={{flex: 1, padding: '6px', borderRadius: '6px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '700', border: '1px solid rgba(0,122,255,0.3)', cursor: 'pointer'}}>📜 Historial</button>
-          <button onClick={() => setMostrarWhatsAppPanel('contactos')} style={{flex: 1, padding: '6px', borderRadius: '6px', background: 'rgba(255,159,64,0.1)', color: '#FF9500', fontSize: '11px', fontWeight: '700', border: '1px solid rgba(255,159,64,0.3)', cursor: 'pointer'}}>👥 Contactos</button>
-        </div>
-
-        {mostrarWhatsAppPanel === 'enviar' && (
-          <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
-            <div>
-              <label style={{fontSize: '11px', fontWeight: '700', color: 'var(--texto-principal)', display: 'block', marginBottom: '4px'}}>Destinatario</label>
-              <select style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '6px',
-                border: '1px solid var(--borde-suave)',
-                fontSize: '12px',
-                background: 'var(--blanco-tarjeta)',
-                color: 'var(--texto-principal)'
-              }} onChange={e => setPhoneNumberToValidate(e.target.value)}>
-                <option value="">-- Seleccionar --</option>
-                {contactosWhatsApp.filter(c => c.activo).map(c => (
-                  <option key={c.id} value={c.numero}>{c.nombre} ({c.numero})</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={{fontSize: '11px', fontWeight: '700', color: 'var(--texto-principal)', display: 'block', marginBottom: '4px'}}>Tipo de Mensaje</label>
-              <select value={templateMensaje} onChange={e => setTemplateMensaje(e.target.value)} style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '6px',
-                border: '1px solid var(--borde-suave)',
-                fontSize: '12px',
-                background: 'var(--blanco-tarjeta)',
-                color: 'var(--texto-principal)'
-              }}>
-                <option value="alerta">🚨 Alerta Crítica</option>
-                <option value="pago">💳 Confirmación Pago</option>
-                <option value="confirmacion">✅ Confirmación General</option>
-                <option value="general">📝 Personalizado</option>
-              </select>
-            </div>
-
-            {templateMensaje === 'general' && (
-              <div>
-                <label style={{fontSize: '11px', fontWeight: '700', color: 'var(--texto-principal)', display: 'block', marginBottom: '4px'}}>Tu Mensaje</label>
-                <textarea value={mensajeCustomWA} onChange={e => setMensajeCustomWA(e.target.value)} placeholder="Escribe tu mensaje..." style={{
-                  width: '100%',
-                  padding: '8px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--borde-suave)',
-                  fontSize: '12px',
-                  background: 'var(--blanco-tarjeta)',
-                  color: 'var(--texto-principal)',
-                  minHeight: '80px',
-                  fontFamily: 'inherit',
-                  resize: 'vertical'
-                }}/>
-              </div>
-            )}
-
-            {templateMensaje !== 'general' && (
-              <div style={{
-                background: 'rgba(0,0,0,0.02)',
-                padding: '10px',
-                borderRadius: '8px',
-                fontSize: '11px',
-                color: 'var(--texto-principal)',
-                lineHeight: '1.5',
-                whiteSpace: 'pre-wrap',
-                fontFamily: 'monospace'
-              }}>
-                {obtenerTemplateWhatsApp(templateMensaje, { alertas: 2, monto: 45000, fecha: '09/07/2026' })}
-              </div>
-            )}
-
-            <button onClick={() => {
-              if (!phoneNumberToValidate) {
-                alert('Selecciona un destinatario');
-                return;
-              }
-              enviarPorWhatsApp(phoneNumberToValidate, obtenerTemplateWhatsApp(templateMensaje, { alertas: 2, monto: 45000, fecha: '09/07/2026' }), templateMensaje);
-              setPhoneNumberToValidate('');
-              setMensajeCustomWA('');
-              setMostrarWhatsAppPanel(false);
-            }} style={{
-              padding: '10px',
-              borderRadius: '6px',
-              border: 'none',
-              background: '#34C759',
-              color: 'white',
-              fontSize: '12px',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}>✓ Enviar por WhatsApp</button>
-          </div>
-        )}
-
-        {mostrarWhatsAppPanel === 'contactos' && (
-          <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
-            <h5 style={{margin: '0 0 8px 0', fontSize: '13px', fontWeight: '700', color: 'var(--texto-principal)'}}>Gestionar Contactos</h5>
-            
-            <div>
-              <input type="text" placeholder="Nombre" value={nuevoContactoWA.nombre} onChange={e => setNuevoContactoWA({...nuevoContactoWA, nombre: e.target.value})} style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '6px',
-                border: '1px solid var(--borde-suave)',
-                fontSize: '12px',
-                marginBottom: '6px',
-                background: 'var(--blanco-tarjeta)',
-                color: 'var(--texto-principal)'
-              }}/>
-              <input type="text" placeholder="Número (+56 o 9XXXX)" value={nuevoContactoWA.numero} onChange={e => setNuevoContactoWA({...nuevoContactoWA, numero: e.target.value})} style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '6px',
-                border: '1px solid var(--borde-suave)',
-                fontSize: '12px',
-                marginBottom: '6px',
-                background: 'var(--blanco-tarjeta)',
-                color: 'var(--texto-principal)'
-              }}/>
-              <button onClick={agregarContactoWhatsApp} style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '6px',
-                border: 'none',
-                background: 'rgba(52,199,89,0.2)',
-                color: '#34C759',
-                fontSize: '11px',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}>+ Agregar Contacto</button>
-            </div>
-
-            <div style={{marginTop: '10px', borderTop: '1px solid var(--borde-suave)', paddingTop: '10px'}}>
-              {contactosWhatsApp.map(c => (
-                <div key={c.id} style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '8px',
-                  background: 'rgba(0,0,0,0.02)',
-                  borderRadius: '6px',
-                  marginBottom: '6px',
-                  fontSize: '11px'
-                }}>
-                  <div>
-                    <p style={{margin: '0 0 2px 0', fontWeight: '700', color: 'var(--texto-principal)'}}>{c.nombre}</p>
-                    <p style={{margin: 0, fontSize: '10px', color: 'var(--texto-secundario)'}}>{c.numero}</p>
-                  </div>
-                  <button onClick={() => eliminarContactoWhatsApp(c.id)} style={{
-                    background: 'rgba(255,59,48,0.2)',
-                    border: '1px solid rgba(255,59,48,0.3)',
-                    color: '#FF3B30',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    fontSize: '10px',
-                    fontWeight: '700',
-                    cursor: 'pointer'
-                  }}>Eliminar</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderHistorialWhatsApp = () => {
-    return (
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        background: 'rgba(0,0,0,0.5)',
-        zIndex: 996,
-        display: 'flex',
-        alignItems: 'flex-end',
-        animation: 'fadeIn 0.3s ease'
-      }} onClick={() => setMostrarHistorialWA(false)}>
-        <div style={{
-          width: '100%',
-          background: 'var(--blanco-tarjeta)',
-          borderRadius: '24px 24px 0 0',
-          padding: '20px',
-          maxHeight: '80vh',
-          overflowY: 'auto',
-          animation: 'slideUp 0.4s ease'
-        }} onClick={e => e.stopPropagation()}>
-          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px'}}>
-            <h4 style={{margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--texto-principal)'}}>💬 Historial WhatsApp</h4>
-            <button onClick={() => setMostrarHistorialWA(false)} style={{background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer'}}>✕</button>
-          </div>
-
-          <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
-            {historialWhatsApp.slice().reverse().map(msg => (
-              <div key={msg.id} style={{
-                background: msg.tipo === 'salida' ? 'rgba(52,199,89,0.08)' : 'rgba(0,122,255,0.08)',
-                padding: '12px',
-                borderRadius: '8px',
-                borderLeft: msg.tipo === 'salida' ? '4px solid #34C759' : '4px solid var(--azul-electrico)',
-                display: 'flex',
-                gap: '10px'
-              }}>
-                <span style={{fontSize: '16px'}}>{msg.tipo === 'salida' ? '📤' : '📥'}</span>
-                <div style={{flex: 1}}>
-                  <p style={{margin: '0 0 4px 0', fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)'}}>{msg.contacto}</p>
-                  <p style={{margin: '0 0 4px 0', fontSize: '11px', color: 'var(--texto-principal)', lineHeight: '1.4'}}>{msg.mensaje}</p>
-                  <div style={{display: 'flex', gap: '8px', fontSize: '10px', color: 'var(--texto-secundario)'}}>
-                    <span>🕐 {msg.timestamp.toLocaleTimeString('es-CL', {hour: '2-digit', minute: '2-digit'})}</span>
-                    <span style={{color: msg.estado === 'entregado' ? '#34C759' : '#FF9500'}}>✓ {msg.estado === 'entregado' ? 'Entregado' : 'Enviando'}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
   };
 
   // ==========================================
@@ -1812,16 +1378,48 @@ function App() {
       {mostrarHistorialNotif && renderHistorialNotificaciones()}
 
       {/* PUSH NOTIFICATIONS FLOTANTES */}
-      {renderPushNotificacion()}
+      <PushToast
+        pushNotificaciones={pushNotificaciones}
+        setPushNotificaciones={setPushNotificaciones}
+      />
       
       {/* HISTORIAL DE PUSH MODAL */}
-      {mostrarHistorialPush && renderHistorialPush()}
+      {mostrarHistorialPush && (
+        <PushHistorialModal
+          historialPushTotal={historialPushTotal}
+          setMostrarHistorialPush={setMostrarHistorialPush}
+        />
+      )}
 
       {/* WHATSAPP PANEL */}
-      {mostrarWhatsAppPanel && renderWhatsAppPanel()}
+      {mostrarWhatsAppPanel && (
+        <WhatsAppPanel
+          mostrarWhatsAppPanel={mostrarWhatsAppPanel}
+          setMostrarWhatsAppPanel={setMostrarWhatsAppPanel}
+          setMostrarHistorialWA={setMostrarHistorialWA}
+          contactosWhatsApp={contactosWhatsApp}
+          setPhoneNumberToValidate={setPhoneNumberToValidate}
+          templateMensaje={templateMensaje}
+          setTemplateMensaje={setTemplateMensaje}
+          mensajeCustomWA={mensajeCustomWA}
+          setMensajeCustomWA={setMensajeCustomWA}
+          obtenerTemplateWhatsApp={obtenerTemplateWhatsApp}
+          phoneNumberToValidate={phoneNumberToValidate}
+          enviarPorWhatsApp={enviarPorWhatsApp}
+          nuevoContactoWA={nuevoContactoWA}
+          setNuevoContactoWA={setNuevoContactoWA}
+          agregarContactoWhatsApp={agregarContactoWhatsApp}
+          eliminarContactoWhatsApp={eliminarContactoWhatsApp}
+        />
+      )}
       
       {/* HISTORIAL WHATSAPP MODAL */}
-      {mostrarHistorialWA && renderHistorialWhatsApp()}
+      {mostrarHistorialWA && (
+        <WhatsAppHistorialModal
+          historialWhatsApp={historialWhatsApp}
+          setMostrarHistorialWA={setMostrarHistorialWA}
+        />
+      )}
 
       {/* BADGE COUNTER EN HEADER */}
       {badgeCount > 0 && (
@@ -2088,6 +1686,8 @@ function App() {
 }
 
 export default App;
+
+
 
 
 
