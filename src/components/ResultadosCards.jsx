@@ -26,13 +26,13 @@ export default function ResultadosCards({ partidos }) {
 
         <div className="marcador-container">
           <div className="equipo">
-            <LogoAvatar nombre={partido.equipoLocalNombre || 'Centro de Cultura Física'} logoUrl={partido.equipoLocalLogoUrl} size={54} borderRadius="20px" />
+            <LogoAvatar nombre={partido.equipoLocalNombre || 'Centro de Cultura Física'} logoUrl={partido.equipoLocalLogoUrl || '/logos/club-logo.png'} size={54} borderRadius="20px" />
             <span className="nombre-equipo">{partido.equipoLocalNombre || 'C.C. Física'}</span>
             <span className="puntaje">{partido.miEquipo}</span>
           </div>
           <span className="vs">VS</span>
           <div className="equipo">
-            <LogoAvatar nombre={partido.nombreRival} size={54} borderRadius="20px" fallbackText={partido.nombreRival.substring(0, 3).toUpperCase()} style={{ background: 'linear-gradient(180deg, rgba(255,149,0,0.12), rgba(255,59,48,0.12))' }} />
+            <LogoAvatar nombre={partido.nombreRival} logoUrl={partido.rivalLogoUrl || partido.equipoVisitaLogoUrl || ''} size={54} borderRadius="20px" fallbackText={partido.nombreRival.substring(0, 3).toUpperCase()} style={{ background: 'linear-gradient(180deg, rgba(255,149,0,0.12), rgba(255,59,48,0.12))' }} />
             <span className="nombre-equipo">{partido.nombreRival}</span>
             <span className="puntaje">{partido.rival}</span>
           </div>

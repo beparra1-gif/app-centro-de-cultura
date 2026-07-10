@@ -93,7 +93,7 @@ function App() {
     periodo: 1, reloj: "10:00", timeoutsLocal: 3, timeoutsVisita: 3, flecha: 'LOCAL',
     equipoLocalNombre: 'Centro de Cultura Física',
     equipoVisitaNombre: 'Visitante',
-    equipoLocalLogoUrl: '',
+    equipoLocalLogoUrl: '/logos/club-logo.png',
     equipoVisitaLogoUrl: '',
   });
   const [jugadorSeleccionadoLive, setJugadorSeleccionadoLive] = useState(null);
@@ -447,8 +447,9 @@ function App() {
           rival: Number(p.pts_visitante || 0),
           nombreRival: p.equipo_visitante || p.equipo_visitante_nombre || 'Rival',
           equipoLocalNombre: p.equipo_local || p.equipo_local_nombre || 'Centro de Cultura Física',
-          equipoLocalLogoUrl: p.logo_local_url || p.equipo_local_logo_url || '',
+          equipoLocalLogoUrl: p.logo_local_url || p.equipo_local_logo_url || '/logos/club-logo.png',
           equipoVisitaLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
+          rivalLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
         }));
         setPartidosResumen(partidosTransformados);
       }
@@ -1388,7 +1389,12 @@ function App() {
         </div>
         <div className="logo-temporal" style={{ background: 'none', width: 'auto', flex: 1, minWidth: 0, padding: '0 10px' }}>
           {!rolUsuario
-            ? <h1 className="home-header-title">Centro de Cultura Física Viña del Mar</h1>
+            ? (
+              <div className="home-header-brand">
+                <img src="/logos/Club-frase.png" alt="Club Centro de Cultura Física" className="home-header-club-mark" />
+                <span className="home-header-subtitle">Viña Del Mar</span>
+              </div>
+            )
             : <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '900', letterSpacing: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getHeaderTitle()}</h2>
           }
         </div>

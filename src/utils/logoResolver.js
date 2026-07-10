@@ -31,9 +31,21 @@ export const construirLogoCandidates = ({ nombre = '', logoUrl = '', slug = '', 
   const urlDirecta = String(logoUrl || '').trim();
   const slugBase = normalizarSlugLogo(slug || nombre);
   const tipoBase = normalizarSlugLogo(tipo);
+  const nombreNormalizado = normalizarSlugLogo(nombre);
+
+  const esNuestroClub = [
+    'centro-de-cultura-fisica',
+    'club-centro-de-cultura-fisica',
+    'ccf',
+    'club-cultura-fisica',
+  ].some((alias) => nombreNormalizado === alias || nombreNormalizado.includes(alias));
 
   if (urlDirecta) {
     candidatos.push(urlDirecta);
+  }
+
+  if (esNuestroClub) {
+    candidatos.push('/logos/club-logo.png');
   }
 
   if (slugBase) {

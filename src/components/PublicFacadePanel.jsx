@@ -21,8 +21,11 @@ function PublicFacadePanel({
     <>
       {vistaPublica === 'inicio' && (
         <div className="text-center login-card-main hero-panel" style={{ borderRadius: '28px', boxShadow: '0 18px 44px rgba(15,23,42,0.08)' }}>
-          <span className="hero-badge" style={{ borderRadius: '999px', padding: '7px 12px', fontWeight: '800' }}>Portal Oficial</span>
-          <LogoAvatar nombre="Centro de Cultura Física" tipo="club" size={78} borderRadius="24px" className="home-brand-logo-only" />
+          <span className="hero-badge" style={{ borderRadius: '999px', padding: '7px 12px', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <LogoAvatar nombre="Centro de Cultura Física" logoUrl="/logos/club-logo.png" size={22} borderRadius="999px" />
+            Portal Oficial
+          </span>
+          <LogoAvatar nombre="Centro de Cultura Física" logoUrl="/logos/club-logo.png" tipo="club" size={78} borderRadius="999px" className="home-brand-logo-only" />
 
           {!mostrarFormularioLogin ? (
             <div className="login-botones-iniciales">
