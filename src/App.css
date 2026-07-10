@@ -333,23 +333,33 @@ button,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 8px;
   width: 100%;
 }
 
 .home-header-club-mark {
-  width: min(240px, 100%);
-  max-height: 28px;
+  width: min(290px, 100%);
+  max-height: 36px;
   object-fit: contain;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.28));
 }
 
 .home-header-subtitle {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.92);
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: none;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.hero-official-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
 .header-btn-zone { min-width: 60px; display: flex; justify-content: flex-start; }
@@ -646,7 +656,7 @@ button,
 .login-card-main { padding: 30px 20px; border-radius: 28px; background: linear-gradient(145deg, var(--fondo-card-sutil), var(--fondo-card-tintado)); box-shadow: 0 20px 45px rgba(0,0,0,0.08); }
 .home-brand-logo-only {
   display: block;
-  margin: 14px auto 20px auto;
+  margin: 0 auto 20px auto;
   width: 108px !important;
   height: 108px !important;
   box-shadow: 0 10px 24px rgba(0,0,0,0.08);
