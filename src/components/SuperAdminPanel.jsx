@@ -657,7 +657,7 @@ function SuperAdminPanel({
               </span>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 1fr) auto', gap: '10px', marginTop: '12px', alignItems: 'end' }}>
+            <div className="sync-toolbar" style={{ marginTop: '12px' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Token de sincronización</label>
                 <input
@@ -668,17 +668,17 @@ function SuperAdminPanel({
                   onChange={(e) => setSyncToken(e.target.value)}
                 />
               </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button className="btn-secondary" onClick={consultarEstadoSync} disabled={loadingSyncStatus || syncSheetsRunning}>
+              <div className="sync-actions">
+                <button className="btn-secondary sync-action-btn" onClick={consultarEstadoSync} disabled={loadingSyncStatus || syncSheetsRunning}>
                   {loadingSyncStatus ? 'Consultando...' : 'Consultar estado'}
                 </button>
-                <button className="btn-secondary" onClick={cargarDetalleCalidad} disabled={loadingQualityDetails || syncSheetsRunning}>
+                <button className="btn-secondary sync-action-btn" onClick={cargarDetalleCalidad} disabled={loadingQualityDetails || syncSheetsRunning}>
                   {loadingQualityDetails ? 'Cargando detalle...' : 'Ver detalle correcciones'}
                 </button>
-                <button className="btn-secondary" onClick={cargarConflictosJugadores} disabled={loadingJugadoresConflicts || syncSheetsRunning}>
+                <button className="btn-secondary sync-action-btn" onClick={cargarConflictosJugadores} disabled={loadingJugadoresConflicts || syncSheetsRunning}>
                   {loadingJugadoresConflicts ? 'Cargando conflictos...' : 'Conflictos RUT jugadores'}
                 </button>
-                <button className="btn-electric" onClick={ejecutarSyncSheets} disabled={syncSheetsRunning}>
+                <button className="btn-electric sync-action-btn" onClick={ejecutarSyncSheets} disabled={syncSheetsRunning}>
                   <RefreshCcw size={15} /> {syncSheetsRunning ? 'Sincronizando...' : 'Sincronizar ahora'}
                 </button>
               </div>
