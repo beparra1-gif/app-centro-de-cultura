@@ -122,6 +122,8 @@ function SuperAdminPanel({
   const [filtroTipoPerfil, setFiltroTipoPerfil] = useState('todos');
   const [filtroRamaJugadores, setFiltroRamaJugadores] = useState('todas');
   const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState('todas');
+  const [filtroPupiloManual, setFiltroPupiloManual] = useState('');
+  const [procesandoPupiloRut, setProcesandoPupiloRut] = useState('');
   const [editandoTipo, setEditandoTipo] = useState(null);
   const [cuentaAdminEdit, setCuentaAdminEdit] = useState(null);
   const [jugadorAdminEdit, setJugadorAdminEdit] = useState(null);
@@ -327,6 +329,59 @@ function SuperAdminPanel({
     filtroRamaJugadores,
     filtroCategoriaJugadores,
   ]);
+
+  const pupilosAsignadosCuenta = useMemo(() => {
+    if (!cuentaEditando) return [];
+    const correoCuenta = String(cuentaEditando.correo || '').trim().toLowerCase();
+    if (!correoCuenta) return [];
+
+    return (jugadoresAdmin || []).filter((j) => String(j.correo_apoderado || '').trim().toLowerCase() === correoCuenta);
+  }, [cuentaEditando, jugadoresAdmin]);
+
+  const jugadoresDisponiblesAsignacion = useMemo(() => {
+    if (!cuentaEditando) return [];
+    const correoCuenta = String(cuentaEditando.correo || '').trim().toLowerCase();
+    const q = String(filtroPupiloManual || '').trim().toLowerCase();
+
+    return (jugadoresAdmin || []).filter((j) => {
+      if ((j.estado || 'ACTIVO').toUpperCase() === 'BAJA') return false;
+      if (correoCuenta && String(j.correo_apoderado || '').trim().toLowerCase() === correoCuenta) return false;
+
+      if (!q) return true;
+      const txt = `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''} ${j.rut_jugador || ''} ${j.rama || ''} ${j.categoria || ''}`.toLowerCase();
+      return txt.includes(q);
+    });
+  }, [cuentaEditando, jugadoresAdmin, filtroPupiloManual]);
+
+  const asignarPupiloACuenta = async (jugador) => {
+    const correoCuenta = String(cuentaEditando?.correo || '').trim();
+    if (!correoCuenta) {
+      alert('Debes guardar un correo válido en la cuenta antes de asignar pupilos.');
+      return;
+    }
+
+    try {
+      setProcesandoPupiloRut(jugador.rut_jugador || '');
+      await guardarJugadorAdmin({ ...jugador, correo_apoderado: correoCuenta }, jugador.rut_jugador);
+      alert(`Pupilo asignado a ${correoCuenta}.`);
+    } catch (error) {
+      alert(`No se pudo asignar el pupilo: ${error.message}`);
+    } finally {
+      setProcesandoPupiloRut('');
+    }
+  };
+
+  const quitarPupiloDeCuenta = async (jugador) => {
+    try {
+      setProcesandoPupiloRut(jugador.rut_jugador || '');
+      await guardarJugadorAdmin({ ...jugador, correo_apoderado: '' }, jugador.rut_jugador);
+      alert('Pupilo desasignado correctamente.');
+    } catch (error) {
+      alert(`No se pudo quitar el pupilo: ${error.message}`);
+    } finally {
+      setProcesandoPupiloRut('');
+    }
+  };
 
   const iniciarEdicion = (item) => {
     if (item.tipo === 'cuenta') {
@@ -1814,6 +1869,72 @@ function SuperAdminPanel({
                 <input type="checkbox" checked={Boolean(cuentaEditando.es_socio)} onChange={(e) => actualizarCampoCuenta('es_socio', e.target.checked)} />
                 Es socio
               </label>
+
+              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><Users size={15} /> Pupilos del apoderado</h4>
+                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0 }}>
+                  Asigna o corrige manualmente los hijos/pupilos para esta cuenta usando el correo del apoderado.
+                </p>
+
+                {!String(cuentaEditando.correo || '').trim() && (
+                  <div style={{ fontSize: '12px', color: '#b36200', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '10px', padding: '8px 10px', marginBottom: '10px' }}>
+                    Guarda un correo válido en la cuenta antes de asignar pupilos.
+                  </div>
+                )}
+
+                <div style={{ marginBottom: '10px' }}>
+                  <strong style={{ fontSize: '12px' }}>Pupilos actualmente asociados ({pupilosAsignadosCuenta.length})</strong>
+                  <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {pupilosAsignadosCuenta.map((j) => (
+                      <div key={`pupilo-asig-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'rgba(0,122,255,0.07)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: '10px', padding: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.categoria || 'Sin categoría'}</div>
+                        </div>
+                        <button
+                          className="btn-secondary"
+                          style={{ width: 'auto', padding: '7px 10px' }}
+                          onClick={() => quitarPupiloDeCuenta(j)}
+                          disabled={procesandoPupiloRut === String(j.rut_jugador || '')}
+                        >
+                          {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Quitando...' : 'Quitar'}
+                        </button>
+                      </div>
+                    ))}
+                    {pupilosAsignadosCuenta.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin pupilos asociados.</span>}
+                  </div>
+                </div>
+
+                <div>
+                  <strong style={{ fontSize: '12px' }}>Buscar y asignar pupilo</strong>
+                  <input
+                    className="form-input"
+                    style={{ marginTop: '8px' }}
+                    placeholder="Buscar por nombre, RUT, rama o categoría"
+                    value={filtroPupiloManual}
+                    onChange={(e) => setFiltroPupiloManual(e.target.value)}
+                  />
+                  <div style={{ marginTop: '8px', maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {jugadoresDisponiblesAsignacion.slice(0, 30).map((j) => (
+                      <div key={`pupilo-disp-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'var(--fondo-app)', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '10px', padding: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.rama || 'Sin rama'} · {j.categoria || 'Sin categoría'}</div>
+                        </div>
+                        <button
+                          className="btn-pill btn-success"
+                          style={{ width: 'auto', padding: '7px 11px' }}
+                          onClick={() => asignarPupiloACuenta(j)}
+                          disabled={procesandoPupiloRut === String(j.rut_jugador || '') || !String(cuentaEditando.correo || '').trim()}
+                        >
+                          {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Asignando...' : 'Asignar'}
+                        </button>
+                      </div>
+                    ))}
+                    {jugadoresDisponiblesAsignacion.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>No hay jugadores para asignar con ese filtro.</span>}
+                  </div>
+                </div>
+              </div>
 
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button className="btn-electric" onClick={guardarCuentaPendiente} disabled={guardandoCuenta || !api.validarRutChileno(cuentaEditando.rut)}>
