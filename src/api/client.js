@@ -203,20 +203,28 @@ export const cuentasAPI = {
 
   // Crear
   create: async (data) => {
+    const payload = { ...data };
+    if (Object.prototype.hasOwnProperty.call(payload, 'logo_url')) {
+      delete payload.logo_url;
+    }
     const response = await fetch(`${API_BASE_URL}/cuentas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+      body: JSON.stringify(payload)
     });
     return handleResponse(response);
   },
 
   // Actualizar
   update: async (id, data) => {
+    const payload = { ...data };
+    if (Object.prototype.hasOwnProperty.call(payload, 'logo_url')) {
+      delete payload.logo_url;
+    }
     const response = await fetch(`${API_BASE_URL}/cuentas/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+      body: JSON.stringify(payload)
     });
     return handleResponse(response);
   }
