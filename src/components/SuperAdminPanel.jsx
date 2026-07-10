@@ -1229,7 +1229,7 @@ function SuperAdminPanel({
                           : `${u.raw.correo || '-'} · ${u.raw.rut || '-'} · ${(u.raw.rol || 'sin rol').toUpperCase()}`}
                       </div>
                     </div>
-                    <button className="btn-notificar" onClick={() => iniciarEdicion(u)}>
+                    <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
                       Modificar
                     </button>
                   </div>

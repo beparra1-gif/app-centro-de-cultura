@@ -589,6 +589,48 @@ button,
 .btn-secondary:hover { transform: translateY(-1px); background: linear-gradient(180deg, rgba(0, 122, 255, 0.16) 0%, rgba(0, 122, 255, 0.10) 100%); box-shadow: 0 8px 18px rgba(0,122,255,0.10); }
 .btn-secondary:active { transform: scale(0.96); }
 
+.btn-modificar {
+  border: 1px solid rgba(0, 122, 255, 0.28);
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.16) 0%, rgba(0, 122, 255, 0.1) 100%);
+  color: var(--azul-electrico);
+  border-radius: 12px;
+  padding: 9px 14px;
+  min-width: 96px;
+  min-height: 36px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(0, 122, 255, 0.14);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.btn-modificar:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 122, 255, 0.4);
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.2) 0%, rgba(0, 122, 255, 0.13) 100%);
+  box-shadow: 0 8px 18px rgba(0, 122, 255, 0.2);
+}
+
+.btn-modificar:active {
+  transform: scale(0.97);
+}
+
+.btn-modificar:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2), 0 8px 18px rgba(0, 122, 255, 0.2);
+}
+
+@media (max-width: 768px) {
+  .btn-modificar {
+    min-width: 102px;
+    min-height: 38px;
+    font-size: 14px;
+    border-radius: 13px;
+  }
+}
+
 .btn-pill {
   border: none;
   border-radius: 999px;
