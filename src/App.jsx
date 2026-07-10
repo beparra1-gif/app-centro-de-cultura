@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import './App.css';
 import { 
   Home, User, Trophy, CreditCard, Shirt, CheckCircle, Bell, LogOut, 
@@ -15,29 +15,7 @@ import {
 } from 'recharts';
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
-import ResultadosCards from './components/ResultadosCards';
-import ComunicacionesPanel from './components/ComunicacionesPanel';
-import KioscoPanel from './components/KioscoPanel';
-import SuperAdminPanel from './components/SuperAdminPanel';
-import MesaControlPanel from './components/MesaControlPanel';
-import PerfilTesoreriaPanel from './components/PerfilTesoreriaPanel';
-import StaffAsistenciaPanel from './components/StaffAsistenciaPanel';
-import StaffEvaluacionPanel from './components/StaffEvaluacionPanel';
-import AcademiaPanel from './components/AcademiaPanel';
-import TarjetaJugadorPanel from './components/TarjetaJugadorPanel';
-import PushToast from './components/PushToast';
-import PushPreferenciasPanel from './components/PushPreferenciasPanel';
-import PushHistorialModal from './components/PushHistorialModal';
-import WhatsAppPanel from './components/WhatsAppPanel';
-import WhatsAppHistorialModal from './components/WhatsAppHistorialModal';
-import SettingsPanel from './components/SettingsPanel';
 import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
-import OnboardingModal from './components/OnboardingModal';
-import PublicFacadePanel from './components/PublicFacadePanel';
-import ComunicacionFormPanel from './components/ComunicacionFormPanel';
-import NotificationsPanel from './components/NotificationsPanel';
-import SearchPanel from './components/SearchPanel';
-import NotificationHistoryPanel from './components/NotificationHistoryPanel';
 import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
@@ -55,6 +33,27 @@ import {
   mockEvaluacion,
   mockQuiz,
 } from './data/mockData';
+
+const ComunicacionesPanel = lazy(() => import('./components/ComunicacionesPanel'));
+const KioscoPanel = lazy(() => import('./components/KioscoPanel'));
+const SuperAdminPanel = lazy(() => import('./components/SuperAdminPanel'));
+const MesaControlPanel = lazy(() => import('./components/MesaControlPanel'));
+const PerfilTesoreriaPanel = lazy(() => import('./components/PerfilTesoreriaPanel'));
+const StaffAsistenciaPanel = lazy(() => import('./components/StaffAsistenciaPanel'));
+const StaffEvaluacionPanel = lazy(() => import('./components/StaffEvaluacionPanel'));
+const AcademiaPanel = lazy(() => import('./components/AcademiaPanel'));
+const TarjetaJugadorPanel = lazy(() => import('./components/TarjetaJugadorPanel'));
+const PushToast = lazy(() => import('./components/PushToast'));
+const PushHistorialModal = lazy(() => import('./components/PushHistorialModal'));
+const WhatsAppPanel = lazy(() => import('./components/WhatsAppPanel'));
+const WhatsAppHistorialModal = lazy(() => import('./components/WhatsAppHistorialModal'));
+const SettingsPanel = lazy(() => import('./components/SettingsPanel'));
+const OnboardingModal = lazy(() => import('./components/OnboardingModal'));
+const PublicFacadePanel = lazy(() => import('./components/PublicFacadePanel'));
+const ComunicacionFormPanel = lazy(() => import('./components/ComunicacionFormPanel'));
+const NotificationsPanel = lazy(() => import('./components/NotificationsPanel'));
+const SearchPanel = lazy(() => import('./components/SearchPanel'));
+const NotificationHistoryPanel = lazy(() => import('./components/NotificationHistoryPanel'));
 
 // ==========================================
 // 2. COMPONENTE PRINCIPAL (APP)
@@ -886,6 +885,7 @@ function App() {
   // 10. ESTRUCTURA HTML FINAL (APP)
   // ==========================================
   return (
+    <Suspense fallback={<SkeletonLoaderPanel />}>
     <div className="ios-app-container" data-theme={temaOscuro ? 'dark' : 'light'}>
       {isOnboarding && (
         <OnboardingModal
@@ -1320,6 +1320,7 @@ function App() {
         </div>
       )}
     </div>
+    </Suspense>
   )
 }
 

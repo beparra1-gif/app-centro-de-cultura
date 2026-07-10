@@ -32,6 +32,15 @@ export default defineConfig([
     },
   },
   {
+    files: ['src/**/*.test.{js,jsx}', 'src/**/*.spec.{js,jsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.vitest,
+      },
+    },
+  },
+  {
     files: ['backend/**/*.js'],
     extends: [js.configs.recommended],
     languageOptions: {
