@@ -744,6 +744,10 @@ function App() {
       throw new Error('RUT de jugador es obligatorio.');
     }
 
+    if (!api.validarRutChileno(payload.rut_jugador)) {
+      throw new Error('RUT chileno invalido para jugador.');
+    }
+
     if (rutOriginal) {
       await api.jugadoresAPI.update(rutOriginal, payload);
     } else {

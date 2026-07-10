@@ -136,6 +136,8 @@ function SuperAdminPanel({
   const [loadingSyncStatus, setLoadingSyncStatus] = useState(false);
   const [loadingQualityDetails, setLoadingQualityDetails] = useState(false);
   const [qualityDetailResult, setQualityDetailResult] = useState(null);
+  const [loadingJugadoresConflicts, setLoadingJugadoresConflicts] = useState(false);
+  const [jugadoresConflictsResult, setJugadoresConflictsResult] = useState(null);
 
   const [nuevoJugadorVisita, setNuevoJugadorVisita] = useState({
     rut_visita: '',
@@ -528,6 +530,41 @@ function SuperAdminPanel({
     }
   };
 
+  const cargarConflictosJugadores = async () => {
+    const token = syncToken.trim();
+    if (!token) {
+      alert('Ingresa el token para consultar conflictos de jugadores.');
+      return;
+    }
+
+    try {
+      setLoadingJugadoresConflicts(true);
+      const resultado = await api.adminAPI.getJugadoresRutConflicts(token);
+      setJugadoresConflictsResult(resultado?.detail || null);
+    } catch (error) {
+      alert(`No se pudieron obtener conflictos: ${error.message}`);
+    } finally {
+      setLoadingJugadoresConflicts(false);
+    }
+  };
+
+  const prepararJugadorCorregidoDesdeConflicto = (fila) => {
+    setTipoNuevoUsuario('jugador');
+    setVistaAdmin('usuarios');
+    setNuevoJugador({
+      rut_jugador: '',
+      correo_apoderado: fila.correo_apoderado || '',
+      nombres: fila.nombres || '',
+      apellido_paterno: fila.apellido_paterno || '',
+      apellido_materno: fila.apellido_materno || '',
+      rama: fila.rama || 'MASCULINA',
+      categoria: fila.categoria || 'SUB-13',
+      estado: fila.estado || 'ACTIVO',
+      foto_jugador: '',
+    });
+    alert('Ficha precargada desde conflicto. Ingresa el RUT correcto y guarda el nuevo jugador.');
+  };
+
   return (
     <div className="admin-container fade-in">
       <div className="scroll-horizontal-menu mb-15">
@@ -579,6 +616,9 @@ function SuperAdminPanel({
                 </button>
                 <button className="btn-secondary" onClick={cargarDetalleCalidad} disabled={loadingQualityDetails || syncSheetsRunning}>
                   {loadingQualityDetails ? 'Cargando detalle...' : 'Ver detalle correcciones'}
+                </button>
+                <button className="btn-secondary" onClick={cargarConflictosJugadores} disabled={loadingJugadoresConflicts || syncSheetsRunning}>
+                  {loadingJugadoresConflicts ? 'Cargando conflictos...' : 'Conflictos RUT jugadores'}
                 </button>
                 <button className="btn-electric" onClick={ejecutarSyncSheets} disabled={syncSheetsRunning}>
                   <RefreshCcw size={15} /> {syncSheetsRunning ? 'Sincronizando...' : 'Sincronizar ahora'}
@@ -678,6 +718,56 @@ function SuperAdminPanel({
                   <button className="btn-secondary" onClick={() => setVistaAdmin('cuentas')}>Ir a cuentas</button>
                   <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Ir a jugadores</button>
                   <button className="btn-secondary" onClick={() => setVistaAdmin('pagos')}>Ir a pagos</button>
+                </div>
+              </div>
+            )}
+
+            {jugadoresConflictsResult && (
+              <div className="card" style={{ marginTop: '12px', borderRadius: '20px', borderLeft: '4px solid #FF9500' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <h4 className="form-subtitle" style={{ marginBottom: 0 }}><AlertTriangle size={16} /> Conflictos RUT en hoja jugadores</h4>
+                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: '999px' }}>
+                    Conflictos: {jugadoresConflictsResult?.totalConflictos ?? 0} · Filas hoja: {jugadoresConflictsResult?.totalFilas ?? 0}
+                  </span>
+                </div>
+
+                <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {(jugadoresConflictsResult.conflictos || []).map((conflicto, idx) => (
+                    <div key={`conf-rut-${conflicto.rutNormalizado || idx}`} style={{ border: '1px solid rgba(255,149,0,0.25)', borderRadius: '14px', padding: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: '13px' }}>RUT en conflicto: {conflicto.rut || conflicto.rutNormalizado}</strong>
+                        <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200' }}>Filas repetidas: {conflicto.totalFilas}</span>
+                      </div>
+
+                      {conflicto.jugadorActual && (
+                        <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                          Jugador actual en sistema: {(conflicto.jugadorActual.nombres || '').trim()} {(conflicto.jugadorActual.apellido_paterno || '').trim()} · {conflicto.jugadorActual.rama || 'Sin rama'} · {conflicto.jugadorActual.categoria || 'Sin categoría'}
+                        </div>
+                      )}
+
+                      <div style={{ marginTop: '8px', display: 'grid', gap: '8px' }}>
+                        {(conflicto.filas || []).map((fila, filaIdx) => (
+                          <div key={`conf-fila-${conflicto.rutNormalizado || idx}-${fila.filaSheet || filaIdx}`} style={{ background: 'rgba(255,149,0,0.08)', borderRadius: '10px', padding: '8px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '700' }}>
+                              Fila {fila.filaSheet}: {(fila.nombres || '').trim()} {(fila.apellido_paterno || '').trim()} {(fila.apellido_materno || '').trim()}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>
+                              Correo apoderado: {fila.correo_apoderado || 'Sin correo'} · Rama: {fila.rama || 'Sin rama'} · Categoría: {fila.categoria || 'Sin categoría'}
+                            </div>
+                            <div style={{ marginTop: '6px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <button className="btn-secondary" onClick={() => prepararJugadorCorregidoDesdeConflicto(fila)}>Crear ficha corregida</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {(jugadoresConflictsResult.conflictos || []).length === 0 && (
+                    <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      No hay conflictos de RUT repetido en la hoja JUGADORES.
+                    </div>
+                  )}
                 </div>
               </div>
             )}

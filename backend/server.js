@@ -3,6 +3,8 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
+const { parse } = require('csv-parse/sync');
 const multer = require('multer');
 require('dotenv').config();
 const cron = require('node-cron');
@@ -200,6 +202,96 @@ const detectarCamposFaltantesCuenta = (cuenta) => {
   }
 
   return faltantes;
+};
+
+const extractSheetId = (input = '') => {
+  const trimmed = String(input || '').trim();
+  if (!trimmed) return '';
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : trimmed;
+};
+
+const normalizarRutComparacion = (rut = '') => {
+  return String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+};
+
+const obtenerConflictosRutJugadoresSheet = async () => {
+  const sheetId = extractSheetId(process.env.GOOGLE_SHEET_ID || '');
+  if (!sheetId) {
+    throw new Error('Falta GOOGLE_SHEET_ID para auditar conflictos de RUT en jugadores.');
+  }
+
+  const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('JUGADORES')}`;
+  const response = await axios.get(url, { timeout: 30000 });
+  const rows = parse(response.data, {
+    columns: true,
+    skip_empty_lines: true,
+    bom: true,
+    trim: true,
+    relax_column_count: true,
+  });
+
+  const grupos = new Map();
+  rows.forEach((row, index) => {
+    const rutRaw = row.rut_jugador || row.RUT_JUGADOR || '';
+    const rutNormalizado = normalizarRutComparacion(rutRaw);
+    if (!rutNormalizado) return;
+
+    if (!grupos.has(rutNormalizado)) {
+      grupos.set(rutNormalizado, {
+        rut: String(rutRaw || '').trim(),
+        rutNormalizado,
+        totalFilas: 0,
+        filas: [],
+      });
+    }
+
+    const grupo = grupos.get(rutNormalizado);
+    grupo.totalFilas += 1;
+    grupo.filas.push({
+      filaSheet: index + 2,
+      rut_jugador: String(rutRaw || '').trim(),
+      nombres: String(row.nombres || row.NOMBRES || '').trim(),
+      apellido_paterno: String(row.apellido_paterno || row.APELLIDO_PATERNO || '').trim(),
+      apellido_materno: String(row.apellido_materno || row.APELLIDO_MATERNO || '').trim(),
+      correo_apoderado: String(row.correo_apoderado || row.CORREO_APODERADO || '').trim(),
+      rama: String(row.rama || row.RAMA || '').trim(),
+      categoria: String(row.categoria || row.CATEGORIA || '').trim(),
+      estado: String(row.estado || row.ESTADO || '').trim(),
+    });
+  });
+
+  const conflictos = [];
+  const rutsConflicto = [...grupos.entries()]
+    .filter(([, grupo]) => grupo.totalFilas > 1)
+    .map(([rut]) => rut);
+
+  for (const rutNormalizado of rutsConflicto) {
+    const grupo = grupos.get(rutNormalizado);
+    const jugadorDbRes = await pool.query(
+      `SELECT rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria, correo_apoderado, estado, updated_at
+       FROM jugadores
+       WHERE UPPER(REPLACE(REPLACE(COALESCE(rut_jugador, ''), '.', ''), '-', '')) = $1
+       LIMIT 1`,
+      [rutNormalizado]
+    );
+
+    const jugadorActual = jugadorDbRes.rows[0] || null;
+    conflictos.push({
+      rut: grupo.rut,
+      rutNormalizado: grupo.rutNormalizado,
+      totalFilas: grupo.totalFilas,
+      jugadorActual,
+      filas: grupo.filas,
+    });
+  }
+
+  return {
+    sheetId,
+    totalFilas: rows.length,
+    totalConflictos: conflictos.length,
+    conflictos,
+  };
 };
 
 const obtenerResumenCalidadDatos = async () => {
@@ -491,6 +583,27 @@ app.get('/api/admin/data-quality/details', async (req, res) => {
     return res.json({ ok: true, detail, generatedAt: new Date().toISOString() });
   } catch (error) {
     return res.status(500).json({ error: 'No se pudo calcular detalle de calidad.', detail: error.message });
+  }
+});
+
+app.get('/api/admin/jugadores-rut-conflicts', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Consulta de conflictos deshabilitada: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para consultar conflictos de jugadores.' });
+  }
+
+  try {
+    const detail = await obtenerConflictosRutJugadoresSheet();
+    return res.json({ ok: true, detail, generatedAt: new Date().toISOString() });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo calcular conflictos de jugadores.', detail: error.message });
   }
 });
 

@@ -365,6 +365,15 @@ export const adminAPI = {
       },
     });
     return handleResponse(response);
+  },
+
+  getJugadoresRutConflicts: async (token) => {
+    const response = await fetch(`${API_BASE_URL}/admin/jugadores-rut-conflicts`, {
+      headers: {
+        'x-sync-token': token,
+      },
+    });
+    return handleResponse(response);
   }
 };
 
