@@ -1209,9 +1209,9 @@ app.post('/api/cuentas', async (req, res) => {
         fecha_nacimiento, estado_civil, direccion, comuna, prefijo_tel, telefono,
         profesion_oficio, nombre_segundo_contacto, parentesco_segundo_contacto,
         num_segundo_contacto, es_socio, fecha_ingreso_socio, rol, forzar_clave,
-        foto_perfil_url, logo_url, estado, autorizacion_imagen, dia_pago_acordado
+        foto_perfil_url, estado, autorizacion_imagen, dia_pago_acordado
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
       ) RETURNING *`,
       [
         correo,
@@ -1234,7 +1234,6 @@ app.post('/api/cuentas', async (req, res) => {
         fecha_ingreso_socio || null,
         rol || 'apoderado',
         forzar_clave ?? false,
-        logoPerfilUrl,
         logoPerfilUrl,
         estado || 'activo',
         autorizacion_imagen ?? false,
@@ -1315,12 +1314,11 @@ app.put('/api/cuentas/:id', async (req, res) => {
         rol = COALESCE($19, rol),
         forzar_clave = COALESCE($20, forzar_clave),
         foto_perfil_url = COALESCE($21, foto_perfil_url),
-        logo_url = COALESCE($22, logo_url),
-        estado = COALESCE($23, estado),
-        autorizacion_imagen = COALESCE($24, autorizacion_imagen),
-        dia_pago_acordado = COALESCE($25, dia_pago_acordado),
+        estado = COALESCE($22, estado),
+        autorizacion_imagen = COALESCE($23, autorizacion_imagen),
+        dia_pago_acordado = COALESCE($24, dia_pago_acordado),
         updated_at = NOW()
-      WHERE id = $26
+      WHERE id = $25
       RETURNING *`,
       [
         correo || null,
@@ -1343,7 +1341,6 @@ app.put('/api/cuentas/:id', async (req, res) => {
         fecha_ingreso_socio || null,
         rol || null,
         forzar_clave,
-        logoPerfilUrl,
         logoPerfilUrl,
         estado || null,
         autorizacion_imagen,
