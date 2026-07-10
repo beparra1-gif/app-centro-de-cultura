@@ -16,6 +16,7 @@ import {
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
 import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
+import ApiStatusBanner from './components/ApiStatusBanner';
 import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
@@ -237,6 +238,9 @@ function App() {
   const [comentariosUI, setComentariosUI] = useState({}); // {comId: [{id, usuario, texto, timestamp, respuestas: [], likes}, ...]}
   const [formComentario, setFormComentario] = useState({}); // {comId: 'texto', comId_respuesta_parentId: 'texto'}
   const [mostrarFormComentario, setMostrarFormComentario] = useState({}); // {comId: true/false}
+  const [apiOffline, setApiOffline] = useState(false);
+  const [apiRetrying, setApiRetrying] = useState(false);
+  const [apiStatusMessage, setApiStatusMessage] = useState('');
 
   const [nominaCita, setNominaCita] = useState([
     { id: 201, nombre: "Martina Parra", dorsal: 10, pos: "Base", activo: true, deuda: false, lesion: false, citado: false, catOriginal: 'U15' },
@@ -248,67 +252,75 @@ function App() {
   // 3. LÓGICA BASE Y EFECTOS
   // ==========================================
 
+  const cargarDatos = async ({ manual = false } = {}) => {
+    if (manual) setApiRetrying(true);
+
+    try {
+      const [comunicacionesRes, contactosRes, cuentasIncompletasRes] = await Promise.all([
+        api.comunicacionesAPI.getAll(),
+        api.whatsappAPI.getContactos(),
+        api.cuentasAPI.getIncompletas(),
+      ]);
+
+      if (Array.isArray(comunicacionesRes) && comunicacionesRes.length > 0) {
+        setComunicaciones(comunicacionesRes.map(c => ({
+          id: c.id,
+          TITULO: c.titulo,
+          CUERPO_TEXTO: c.cuerpo_texto,
+          FECHA: new Date(c.created_at).toLocaleDateString('es-CL'),
+          TIPO_COMUNICADO: c.tipo,
+          rama: c.rama,
+          categoria: c.categoria,
+          urgencia: c.urgencia,
+          solicita_asistencia: c.solicita_asistencia,
+          reacciones: c.reacciones || {},
+          asistencias: c.asistencias || []
+        })));
+      }
+
+      if (Array.isArray(contactosRes) && contactosRes.length > 0) {
+        setContactosWhatsApp(contactosRes);
+      }
+
+      if (Array.isArray(cuentasIncompletasRes)) {
+        setCuentasIncompletas(cuentasIncompletasRes);
+        if (cuentasIncompletasRes.length > 0) {
+          const nombres = cuentasIncompletasRes
+            .slice(0, 3)
+            .map(c => `${c.nombres || 'Sin nombre'} ${c.apellido_paterno || ''}`.trim())
+            .join(', ');
+
+          setNotificaciones(prev => ([
+            {
+              id: nextId(),
+              tipo: 'datos',
+              titulo: 'Cuentas con datos pendientes',
+              mensaje: `Hay ${cuentasIncompletasRes.length} cuentas que deben actualizar datos (ej: ${nombres}).`,
+              leida: false,
+              firmada: false
+            },
+            ...prev
+          ]));
+        }
+      }
+
+      setApiOffline(false);
+      setApiStatusMessage('');
+    } catch (error) {
+      // Fallback silencioso a datos mock para demo cuando el backend está caído.
+      setApiOffline(true);
+      setApiStatusMessage(error?.message || 'Sin conexión con backend');
+    } finally {
+      if (manual) setApiRetrying(false);
+    }
+  };
+
   // Cargar datos del API al montar el componente
   useEffect(() => {
-    const cargarDatos = async () => {
-      try {
-        // Cargar comunicaciones
-        const comunicacionesRes = await api.comunicacionesAPI.getAll();
-        if (comunicacionesRes && comunicacionesRes.length > 0) {
-          setComunicaciones(comunicacionesRes.map(c => ({
-            id: c.id,
-            TITULO: c.titulo,
-            CUERPO_TEXTO: c.cuerpo_texto,
-            FECHA: new Date(c.created_at).toLocaleDateString('es-CL'),
-            TIPO_COMUNICADO: c.tipo,
-            rama: c.rama,
-            categoria: c.categoria,
-            urgencia: c.urgencia,
-            solicita_asistencia: c.solicita_asistencia,
-            reacciones: c.reacciones || {},
-            asistencias: c.asistencias || []
-          })));
-        }
-
-        // Cargar contactos WhatsApp
-        const contactosRes = await api.whatsappAPI.getContactos();
-        if (contactosRes && contactosRes.length > 0) {
-          setContactosWhatsApp(contactosRes);
-        }
-
-        // Cargar cuentas incompletas para solicitar actualización de datos
-        const cuentasIncompletasRes = await api.cuentasAPI.getIncompletas();
-        if (Array.isArray(cuentasIncompletasRes)) {
-          setCuentasIncompletas(cuentasIncompletasRes);
-          if (cuentasIncompletasRes.length > 0) {
-            const nombres = cuentasIncompletasRes
-              .slice(0, 3)
-              .map(c => `${c.nombres || 'Sin nombre'} ${c.apellido_paterno || ''}`.trim())
-              .join(', ');
-
-            setNotificaciones(prev => ([
-              {
-                id: nextId(),
-                tipo: 'datos',
-                titulo: 'Cuentas con datos pendientes',
-                mensaje: `Hay ${cuentasIncompletasRes.length} cuentas que deben actualizar datos (ej: ${nombres}).`,
-                leida: false,
-                firmada: false
-              },
-              ...prev
-            ]));
-          }
-        }
-
-        console.log('✅ Datos del API cargados correctamente');
-      } catch (error) {
-        console.error('⚠️ Error cargando datos del API:', error);
-        // Mantener datos mock como fallback
-      }
-    };
-
-    // Pequeña pausa para que el servidor esté listo
-    setTimeout(cargarDatos, 1000);
+    const timer = setTimeout(() => {
+      void cargarDatos();
+    }, 1000);
+    return () => clearTimeout(timer);
   }, []);
   
   // Efecto Skeleton Loader al cambiar de pantalla
@@ -940,6 +952,15 @@ function App() {
           )}
         </div>
       </header>
+
+      <ApiStatusBanner
+        visible={apiOffline}
+        message={apiStatusMessage}
+        retrying={apiRetrying}
+        onRetry={() => {
+          void cargarDatos({ manual: true });
+        }}
+      />
 
       {/* Panel antiguo de notificaciones - REMOVIDO EN FAVOR DE RENDERNOTIFICACIONES */}
 
