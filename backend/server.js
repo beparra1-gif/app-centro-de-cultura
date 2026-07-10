@@ -607,6 +607,66 @@ app.get('/api/admin/jugadores-rut-conflicts', async (req, res) => {
   }
 });
 
+app.post('/api/admin/jugadores-rut-conflicts/resolve', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Resolucion de conflictos deshabilitada: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para resolver conflictos de jugadores.' });
+  }
+
+  const {
+    rut,
+    filaSheet,
+    accion = 'correccion_manual',
+    observaciones = '',
+    usuario = 'superadmin',
+  } = req.body || {};
+
+  if (!String(rut || '').trim()) {
+    return res.status(400).json({ error: 'rut es obligatorio para registrar la resolucion.' });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO auditoria (
+         usuario_id,
+         tabla_afectada,
+         tipo_accion,
+         registro_id,
+         valores_anteriores,
+         valores_nuevos,
+         ip_usuario,
+         descripcion
+       ) VALUES (
+         NULL,
+         'jugadores',
+         'resolver_conflicto_rut',
+         NULL,
+         $1::json,
+         $2::json,
+         $3,
+         $4
+       )`,
+      [
+        JSON.stringify({ rut, filaSheet: filaSheet || null, estado: 'pendiente_revision' }),
+        JSON.stringify({ accion, observaciones, usuario }),
+        req.ip || req.headers['x-forwarded-for'] || 'desconocida',
+        `Conflicto de RUT resuelto por superadmin. RUT: ${rut}${filaSheet ? ` | Fila sheet: ${filaSheet}` : ''}`,
+      ]
+    );
+
+    return res.json({ ok: true, message: 'Resolucion registrada en auditoria.' });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo registrar la resolucion del conflicto.', detail: error.message });
+  }
+});
+
 app.post('/api/admin/sync-sheets', async (req, res) => {
   const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
   if (!configuredToken) {

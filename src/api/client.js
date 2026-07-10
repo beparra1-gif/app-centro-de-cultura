@@ -374,6 +374,18 @@ export const adminAPI = {
       },
     });
     return handleResponse(response);
+  },
+
+  resolveJugadoresRutConflict: async (token, payload) => {
+    const response = await fetch(`${API_BASE_URL}/admin/jugadores-rut-conflicts/resolve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-sync-token': token,
+      },
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
   }
 };
 

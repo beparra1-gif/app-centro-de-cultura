@@ -138,6 +138,9 @@ function SuperAdminPanel({
   const [qualityDetailResult, setQualityDetailResult] = useState(null);
   const [loadingJugadoresConflicts, setLoadingJugadoresConflicts] = useState(false);
   const [jugadoresConflictsResult, setJugadoresConflictsResult] = useState(null);
+  const [resolviendoConflictoRut, setResolviendoConflictoRut] = useState('');
+  const [subiendoFotoJugadorNuevo, setSubiendoFotoJugadorNuevo] = useState(false);
+  const [subiendoFotoJugadorEdit, setSubiendoFotoJugadorEdit] = useState(false);
 
   const [nuevoJugadorVisita, setNuevoJugadorVisita] = useState({
     rut_visita: '',
@@ -315,7 +318,7 @@ function SuperAdminPanel({
 
     setEditandoTipo('jugador');
     setCuentaAdminEdit(null);
-    setJugadorAdminEdit({ ...item.raw });
+    setJugadorAdminEdit({ ...item.raw, rut_original: item.raw.rut_jugador });
   };
 
   const guardarEdicionActual = async () => {
@@ -328,7 +331,7 @@ function SuperAdminPanel({
       }
 
       if (editandoTipo === 'jugador' && jugadorAdminEdit) {
-        await guardarJugadorAdmin(jugadorAdminEdit, jugadorAdminEdit.rut_jugador);
+        await guardarJugadorAdmin(jugadorAdminEdit, jugadorAdminEdit.rut_original || jugadorAdminEdit.rut_jugador);
         alert('Jugador actualizado correctamente.');
       }
 
@@ -565,6 +568,61 @@ function SuperAdminPanel({
     alert('Ficha precargada desde conflicto. Ingresa el RUT correcto y guarda el nuevo jugador.');
   };
 
+  const resolverConflictoRut = async (conflicto, fila) => {
+    const token = syncToken.trim();
+    if (!token) {
+      alert('Ingresa el token para registrar la resolución.');
+      return;
+    }
+
+    const observaciones = window.prompt('Observaciones de resolución (opcional):', 'Corrección aplicada desde panel superadmin.') || '';
+    const opId = `${conflicto.rutNormalizado || conflicto.rut}-${fila.filaSheet}`;
+
+    try {
+      setResolviendoConflictoRut(opId);
+      await api.adminAPI.resolveJugadoresRutConflict(token, {
+        rut: conflicto.rut || conflicto.rutNormalizado,
+        filaSheet: fila.filaSheet,
+        accion: 'correccion_desde_panel',
+        observaciones,
+        usuario: 'super_admin',
+      });
+      alert('Resolución registrada en auditoría.');
+    } catch (error) {
+      alert(`No se pudo registrar resolución: ${error.message}`);
+    } finally {
+      setResolviendoConflictoRut('');
+    }
+  };
+
+  const subirFotoJugadorDesdeGaleria = async (file, target = 'nuevo') => {
+    if (!file) return;
+
+    try {
+      if (target === 'nuevo') setSubiendoFotoJugadorNuevo(true);
+      else setSubiendoFotoJugadorEdit(true);
+
+      const formData = new FormData();
+      formData.append('nombre', `jugador-${Date.now()}`);
+      formData.append('tipo', 'jugador-foto');
+      formData.append('archivo', file);
+
+      const resultado = await api.assetsAPI.uploadLogo(formData);
+      const fotoUrl = resultado?.url || '';
+
+      if (target === 'nuevo') {
+        setNuevoJugador((prev) => ({ ...prev, foto_jugador: fotoUrl }));
+      } else {
+        setJugadorAdminEdit((prev) => ({ ...(prev || {}), foto_jugador: fotoUrl }));
+      }
+    } catch (error) {
+      alert(`No se pudo subir la foto: ${error.message}`);
+    } finally {
+      if (target === 'nuevo') setSubiendoFotoJugadorNuevo(false);
+      else setSubiendoFotoJugadorEdit(false);
+    }
+  };
+
   return (
     <div className="admin-container fade-in">
       <div className="scroll-horizontal-menu mb-15">
@@ -756,6 +814,13 @@ function SuperAdminPanel({
                             </div>
                             <div style={{ marginTop: '6px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                               <button className="btn-secondary" onClick={() => prepararJugadorCorregidoDesdeConflicto(fila)}>Crear ficha corregida</button>
+                              <button
+                                className="btn-secondary"
+                                onClick={() => resolverConflictoRut(conflicto, fila)}
+                                disabled={resolviendoConflictoRut === `${conflicto.rutNormalizado || conflicto.rut}-${fila.filaSheet}`}
+                              >
+                                {resolviendoConflictoRut === `${conflicto.rutNormalizado || conflicto.rut}-${fila.filaSheet}` ? 'Registrando...' : 'Resolver conflicto'}
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -970,15 +1035,18 @@ function SuperAdminPanel({
             <div className="card">
               <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-                <div className="form-group"><label>RUT Jugador</label><input className="form-input" value={jugadorAdminEdit.rut_jugador || ''} disabled /></div>
+                <div className="form-group"><label>RUT Jugador</label><input className="form-input" value={jugadorAdminEdit.rut_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
                 <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={jugadorAdminEdit.correo_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
                 <div className="form-group"><label>Nombres</label><input className="form-input" value={jugadorAdminEdit.nombres || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
                 <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={jugadorAdminEdit.apellido_paterno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
                 <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={jugadorAdminEdit.apellido_materno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
                 <div className="form-group"><label>Rama</label><select className="form-input" value={jugadorAdminEdit.rama || 'MASCULINA'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
                 <div className="form-group"><label>Categoría</label><input className="form-input" value={jugadorAdminEdit.categoria || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, categoria: e.target.value }))} /></div>
+                <div className="form-group"><label>Foto jugador (URL)</label><input className="form-input" value={jugadorAdminEdit.foto_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, foto_jugador: e.target.value }))} /></div>
+                <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'edit')} /></div>
                 <div className="form-group"><label>Estado</label><select className="form-input" value={jugadorAdminEdit.estado || 'ACTIVO'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option><option value="BAJA">Baja</option></select></div>
               </div>
+              {subiendoFotoJugadorEdit && <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>Subiendo foto...</p>}
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
                 <button className="btn-secondary" onClick={() => { setEditandoTipo(null); setJugadorAdminEdit(null); }}>Cancelar</button>
@@ -1016,9 +1084,12 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Rama *</label><select className="form-input" value={nuevoJugador.rama} onChange={(e) => setNuevoJugador((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
                 <div className="form-group"><label>Categoría *</label><input className="form-input" value={nuevoJugador.categoria} onChange={(e) => setNuevoJugador((p) => ({ ...p, categoria: e.target.value }))} /></div>
                 <div className="form-group"><label>Logo / imagen</label><input className="form-input" value={nuevoJugador.foto_jugador} onChange={(e) => setNuevoJugador((p) => ({ ...p, foto_jugador: e.target.value }))} placeholder="URL interna cargada desde galería" /></div>
+                <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'nuevo')} /></div>
                 <div className="form-group"><label>Estado</label><select className="form-input" value={nuevoJugador.estado} onChange={(e) => setNuevoJugador((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option></select></div>
               </div>
             )}
+
+            {subiendoFotoJugadorNuevo && <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>Subiendo foto...</p>}
 
             <button className="btn-electric" onClick={guardarNuevoUsuario} disabled={guardandoUsuario}>
               {guardandoUsuario ? 'Guardando...' : 'Guardar nuevo usuario'}

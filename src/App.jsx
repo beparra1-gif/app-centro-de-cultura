@@ -748,7 +748,11 @@ function App() {
       throw new Error('RUT chileno invalido para jugador.');
     }
 
-    if (rutOriginal) {
+    if (rutOriginal && String(payload.rut_jugador || '').trim().toUpperCase() !== String(rutOriginal || '').trim().toUpperCase()) {
+      // Keep original record for traceability and create corrected record with the new RUT.
+      await api.jugadoresAPI.update(rutOriginal, { estado: 'BAJA' });
+      await api.jugadoresAPI.create({ ...payload, estado: payload.estado || 'ACTIVO' });
+    } else if (rutOriginal) {
       await api.jugadoresAPI.update(rutOriginal, payload);
     } else {
       await api.jugadoresAPI.create(payload);

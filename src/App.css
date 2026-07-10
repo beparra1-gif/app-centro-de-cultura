@@ -551,6 +551,51 @@ button,
 .btn-secondary:hover { transform: translateY(-1px); background: linear-gradient(180deg, rgba(0, 122, 255, 0.16) 0%, rgba(0, 122, 255, 0.10) 100%); box-shadow: 0 8px 18px rgba(0,122,255,0.10); }
 .btn-secondary:active { transform: scale(0.96); }
 
+.btn-pill {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%);
+  box-shadow: 0 8px 18px rgba(0,122,255,0.22);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+.btn-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(0,122,255,0.28);
+}
+.btn-pill:active {
+  transform: scale(0.97);
+}
+
+.btn-success {
+  background: linear-gradient(180deg, #34c759 0%, #28a745 100%);
+  box-shadow: 0 8px 18px rgba(52,199,89,0.24);
+}
+
+.btn-danger {
+  background: linear-gradient(180deg, #ff6a5f 0%, #ff3b30 100%);
+  box-shadow: 0 8px 18px rgba(255,59,48,0.24);
+}
+
+.btn-circle {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 900;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .btn-whatsapp {
   background: #25D366;
   color: white;

@@ -1,4 +1,5 @@
 import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { nextId } from '../utils/runtimeId';
 import { getColorPorCategoria } from '../utils/appHelpers';
 
@@ -43,6 +44,63 @@ function KioscoPanel({
   const totalCarrito = carritoKiosco.reduce((a, b) => a + (b.precio * b.cant), 0);
   const totalGastos = egresosLista.reduce((a, b) => a + b.monto, 0);
   const cajaNetaFinal = (Number(datosCaja.montoInicial) || 0) + cajaEfectivoKiosco + cajaEfectivoEntradas - totalGastos;
+
+  const exportarCajaPdf = () => {
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const marginX = 40;
+    let y = 50;
+    const lineGap = 18;
+
+    const resumen = [
+      'CENTRO DE CULTURA FISICA - REPORTE DIARIO DE CAJA',
+      `Fecha: ${datosCaja.dia || new Date().toISOString().slice(0, 10)}`,
+      `Responsable: ${datosCaja.responsable || 'N/D'}`,
+      `Ticket final: #${ticketCounter.toString().padStart(3, '0')}`,
+      '---',
+      `Apertura: $${Number(datosCaja.montoInicial || 0).toLocaleString('es-CL')}`,
+      `Kiosco efectivo: $${Number(cajaEfectivoKiosco || 0).toLocaleString('es-CL')}`,
+      `Kiosco transferencia: $${Number(cajaTransferKiosco || 0).toLocaleString('es-CL')}`,
+      `Entradas efectivo: $${Number(cajaEfectivoEntradas || 0).toLocaleString('es-CL')}`,
+      `Entradas transferencia: $${Number(cajaTransferEntradas || 0).toLocaleString('es-CL')}`,
+      `Total egresos: $${Number(totalGastos || 0).toLocaleString('es-CL')}`,
+      `Caja neta final: $${Number(cajaNetaFinal || 0).toLocaleString('es-CL')}`,
+      `Pendientes (fiados): $${Number(fiadosLista.reduce((acc, f) => acc + Number(f.monto || 0), 0) || 0).toLocaleString('es-CL')}`,
+    ];
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(resumen[0], marginX, y);
+    y += lineGap;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    resumen.slice(1).forEach((line) => {
+      if (y > 780) {
+        doc.addPage();
+        y = 50;
+      }
+      doc.text(line, marginX, y);
+      y += lineGap;
+    });
+
+    if (egresosLista.length > 0) {
+      y += 10;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Detalle de egresos:', marginX, y);
+      y += lineGap;
+      doc.setFont('helvetica', 'normal');
+      egresosLista.forEach((eg) => {
+        if (y > 780) {
+          doc.addPage();
+          y = 50;
+        }
+        doc.text(`- ${eg.desc}: $${Number(eg.monto || 0).toLocaleString('es-CL')}`, marginX + 10, y);
+        y += lineGap;
+      });
+    }
+
+    doc.save(`reporte-caja-${datosCaja.dia || 'dia'}.pdf`);
+  };
 
   const finalizarDespachoPOS = (metodo) => {
     let nuevoInventario = [...inventarioProductos];
@@ -123,7 +181,7 @@ function KioscoPanel({
     <div className="kiosco-container fade-in kiosco-shell">
       <div className="staff-header-info mb-15 kiosco-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', padding: '16px 18px', borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
         <div><h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)', fontSize: '15px' }}>Caja Activa: {datosCaja.dia}</h4><span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: 'bold' }}>👤 {datosCaja.responsable} | 🎫 Ticket: #{ticketCounter.toString().padStart(3, '0')}</span></div>
-        <button style={{ background: 'linear-gradient(180deg, #FF6A5F 0%, #FF3B30 100%)', color: 'white', border: 'none', padding: '10px 14px', borderRadius: '999px', fontSize: '11px', fontWeight: '900', cursor: 'pointer', boxShadow: '0 10px 18px rgba(255,59,48,0.22)' }} onClick={() => setCajaAbierta(false)}>Cerrar Turno</button>
+        <button className="btn-pill btn-danger" onClick={() => setCajaAbierta(false)}>Cerrar Turno</button>
       </div>
 
       {modalPagoPOS === 'efectivo' && (
@@ -222,7 +280,7 @@ function KioscoPanel({
             <div style={{ display: 'flex', gap: '10px' }} className="mt-10"><input type="text" className="form-input" style={{ flex: 2 }} placeholder="Glosa (Ej: Árbitros)" value={gastoRegistro.desc} onChange={(e) => setGastoRegistro({ ...gastoRegistro, desc: e.target.value })} /><input type="number" className="form-input" style={{ flex: 1 }} placeholder="Monto" value={gastoRegistro.monto} onChange={(e) => setGastoRegistro({ ...gastoRegistro, monto: e.target.value })} /><button className="btn-electric" style={{ background: '#FF3B30', width: 'auto', padding: '0 15px' }} onClick={() => { if (!gastoRegistro.desc || !gastoRegistro.monto) return; setEgresosLista([...egresosLista, { id: nextId(), desc: gastoRegistro.desc, monto: Number(gastoRegistro.monto) }]); setGastoRegistro({ desc: '', monto: '' }); }}>Restar</button></div>
             {egresosLista.length > 0 && (<div className="egresos-list mt-15"><span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>Egresos de Hoy</span>{egresosLista.map(eg => (<div key={eg.id} className="egreso-row mt-5"><span className="egreso-desc">❌ {eg.desc}</span><span className="egreso-monto">-${eg.monto.toLocaleString('es-CL')}</span></div>))}</div>)}
           </div>
-          <button className="btn-secondary mt-15" style={{ background: 'rgba(0,122,255,0.1)' }} onClick={() => alert('Descargando PDF del Libro de Caja...')}><FileDown size={18} /> Exportar Reporte del Día</button>
+          <button className="btn-secondary mt-15" style={{ background: 'rgba(0,122,255,0.1)' }} onClick={exportarCajaPdf}><FileDown size={18} /> Exportar Reporte del Día (PDF)</button>
         </div>
       )}
 
@@ -253,9 +311,9 @@ function KioscoPanel({
                   <div><span style={{ fontSize: '24px', marginRight: '10px' }}>{prod.emoji}</span><strong style={{ color: 'var(--texto-principal)' }}>{prod.nombre}</strong><br /><span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: 'bold' }}>Costo: ${prod.costo} | Venta: ${prod.precio}</span></div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <button style={{ width: '28px', height: '28px', border: 'none', borderRadius: '999px', background: 'var(--rojo-alerta)', color: 'white', fontWeight: '900', fontSize: '17px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }} onClick={() => setInventarioProductos(inventarioProductos.map(p => p.id === prod.id ? { ...p, stock: Math.max(0, p.stock - 1) } : p))}>-</button>
+                      <button className="btn-circle btn-danger" onClick={() => setInventarioProductos(inventarioProductos.map(p => p.id === prod.id ? { ...p, stock: Math.max(0, p.stock - 1) } : p))}>-</button>
                       <input type="number" style={{ width: '50px', textAlign: 'center', padding: '4px 4px', border: '1.5px solid var(--borde-suave)', borderRadius: '999px', background: 'var(--fondo-input)', color: prod.stock <= 5 ? '#FF3B30' : 'var(--texto-principal)', fontWeight: '900', fontSize: '14px' }} value={prod.stock} onChange={(e) => setInventarioProductos(inventarioProductos.map(p => p.id === prod.id ? { ...p, stock: Math.max(0, parseInt(e.target.value, 10) || 0) } : p))} />
-                      <button style={{ width: '28px', height: '28px', border: 'none', borderRadius: '999px', background: 'var(--verde-victoria)', color: 'white', fontWeight: '900', fontSize: '17px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }} onClick={() => setInventarioProductos(inventarioProductos.map(p => p.id === prod.id ? { ...p, stock: p.stock + 1 } : p))}>+</button>
+                      <button className="btn-circle btn-success" onClick={() => setInventarioProductos(inventarioProductos.map(p => p.id === prod.id ? { ...p, stock: p.stock + 1 } : p))}>+</button>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--fondo-input)', padding: '4px 8px', borderRadius: '999px', border: '1.5px solid var(--borde-suave)' }}>
                       <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800' }}>$</span>
@@ -296,8 +354,8 @@ function KioscoPanel({
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><h4 style={{ margin: 0, color: 'var(--texto-principal)' }}>{f.nombre}</h4><span style={{ fontWeight: '900', color: '#FF9500', fontSize: '16px' }}>${f.monto.toLocaleString('es-CL')}</span></div>
               <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', margin: '8px 0' }}>{f.detalle}</p>
               <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                <button style={{ flex: 1, padding: '9px 8px', fontSize: '12px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', boxShadow: '0 4px 10px rgba(52,199,89,0.28)' }} onClick={() => { if (window.confirm('¿Deuda cancelada en EFECTIVO?')) { setCajaEfectivoKiosco(p => p + f.monto); setFiadosLista(fiadosLista.filter(i => i.id !== f.id)); setTicketCounter(c => c + 1); } }}>💵 Efectivo</button>
-                <button style={{ flex: 1, padding: '9px 8px', fontSize: '12px', background: 'var(--azul-electrico)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', boxShadow: '0 4px 10px rgba(0,122,255,0.28)' }} onClick={() => { if (window.confirm('¿Deuda cancelada por TRANSFERENCIA?')) { setCajaTransferKiosco(p => p + f.monto); setFiadosLista(fiadosLista.filter(i => i.id !== f.id)); setTicketCounter(c => c + 1); } }}>📱 Transfer</button>
+                <button className="btn-pill btn-success" style={{ flex: 1 }} onClick={() => { if (window.confirm('¿Deuda cancelada en EFECTIVO?')) { setCajaEfectivoKiosco(p => p + f.monto); setFiadosLista(fiadosLista.filter(i => i.id !== f.id)); setTicketCounter(c => c + 1); } }}>💵 Efectivo</button>
+                <button className="btn-pill" style={{ flex: 1 }} onClick={() => { if (window.confirm('¿Deuda cancelada por TRANSFERENCIA?')) { setCajaTransferKiosco(p => p + f.monto); setFiadosLista(fiadosLista.filter(i => i.id !== f.id)); setTicketCounter(c => c + 1); } }}>📱 Transfer</button>
               </div>
             </div>
           ))}
