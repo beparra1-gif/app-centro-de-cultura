@@ -113,6 +113,8 @@ function App() {
   const [mostrarBusqueda, setMostrarBusqueda] = useState(false);
   const [vistaReportes, setVistaReportes] = useState('engagement'); // engagement, comentaristas, comunicaciones-top
   const [cuentasIncompletas, setCuentasIncompletas] = useState([]);
+  const [cuentasAdmin, setCuentasAdmin] = useState([]);
+  const [jugadoresAdmin, setJugadoresAdmin] = useState([]);
   
   // --- ESTADOS: FASE 6 - REPORTES AVANZADOS, PDF, GRÁFICOS ---
   const [historialNotificaciones, setHistorialNotificaciones] = useState([]);
@@ -256,10 +258,12 @@ function App() {
     if (manual) setApiRetrying(true);
 
     try {
-      const [comunicacionesRes, contactosRes, cuentasIncompletasRes] = await Promise.all([
+      const [comunicacionesRes, contactosRes, cuentasIncompletasRes, cuentasRes, jugadoresRes] = await Promise.all([
         api.comunicacionesAPI.getAll(),
         api.whatsappAPI.getContactos(),
         api.cuentasAPI.getIncompletas(),
+        api.cuentasAPI.getAll(),
+        api.jugadoresAPI.getAll(),
       ]);
 
       if (Array.isArray(comunicacionesRes) && comunicacionesRes.length > 0) {
@@ -302,6 +306,14 @@ function App() {
             ...prev
           ]));
         }
+      }
+
+      if (Array.isArray(cuentasRes)) {
+        setCuentasAdmin(cuentasRes);
+      }
+
+      if (Array.isArray(jugadoresRes)) {
+        setJugadoresAdmin(jugadoresRes);
       }
 
       setApiOffline(false);
@@ -426,6 +438,18 @@ function App() {
     setCuentaEditando((prev) => ({ ...prev, [campo]: valor }));
   };
 
+  const recargarUsuariosAdmin = async () => {
+    const [cuentasRes, cuentasIncompletasRes, jugadoresRes] = await Promise.all([
+      api.cuentasAPI.getAll(),
+      api.cuentasAPI.getIncompletas(),
+      api.jugadoresAPI.getAll(),
+    ]);
+
+    setCuentasAdmin(Array.isArray(cuentasRes) ? cuentasRes : []);
+    setCuentasIncompletas(Array.isArray(cuentasIncompletasRes) ? cuentasIncompletasRes : []);
+    setJugadoresAdmin(Array.isArray(jugadoresRes) ? jugadoresRes : []);
+  };
+
   const guardarCuentaPendiente = async () => {
     if (!cuentaEditando) return;
 
@@ -437,8 +461,7 @@ function App() {
     try {
       setGuardandoCuenta(true);
       await api.cuentasAPI.update(cuentaEditando.id, cuentaEditando);
-      const cuentasIncompletasRes = await api.cuentasAPI.getIncompletas();
-      setCuentasIncompletas(Array.isArray(cuentasIncompletasRes) ? cuentasIncompletasRes : []);
+      await recargarUsuariosAdmin();
       alert('Cuenta actualizada correctamente.');
       setCuentaEditando(null);
     } catch (error) {
@@ -446,6 +469,34 @@ function App() {
     } finally {
       setGuardandoCuenta(false);
     }
+  };
+
+  const guardarCuentaAdmin = async (payload, id = null) => {
+    if (!payload?.rut || !api.validarRutChileno(payload.rut)) {
+      throw new Error('RUT invalido para la cuenta.');
+    }
+
+    if (id) {
+      await api.cuentasAPI.update(id, payload);
+    } else {
+      await api.cuentasAPI.create(payload);
+    }
+
+    await recargarUsuariosAdmin();
+  };
+
+  const guardarJugadorAdmin = async (payload, rutOriginal = null) => {
+    if (!payload?.rut_jugador) {
+      throw new Error('RUT de jugador es obligatorio.');
+    }
+
+    if (rutOriginal) {
+      await api.jugadoresAPI.update(rutOriginal, payload);
+    } else {
+      await api.jugadoresAPI.create(payload);
+    }
+
+    await recargarUsuariosAdmin();
   };
 
   // ==========================================
@@ -938,7 +989,7 @@ function App() {
                 )}
               </div>
               <button className="btn-icon-header" onClick={() => setMostrarWhatsAppPanel(mostrarWhatsAppPanel ? false : 'enviar')} title="WhatsApp" style={{position: 'relative'}}>
-                <span style={{fontSize: '20px'}}>💬</span>
+                <MessageCircle size={22} color="white" />
                 {contactosWhatsApp.filter(c => c.activo).length > 0 && (
                   <span style={{position: 'absolute', top: '-5px', right: '-5px', background: '#34C759', color: 'white', fontSize: '10px', fontWeight: '900', padding: '3px 6px', borderRadius: '10px', border: '2px solid var(--azul-marino)'}}>
                     {contactosWhatsApp.filter(c => c.activo).length}
@@ -1282,6 +1333,10 @@ function App() {
                 saludDelSistema={saludDelSistema}
                 comunicacionesCount={comunicaciones.length}
                 calcularScoreDeCliente={calcularScoreDeCliente}
+                cuentasAdmin={cuentasAdmin}
+                jugadoresAdmin={jugadoresAdmin}
+                guardarCuentaAdmin={guardarCuentaAdmin}
+                guardarJugadorAdmin={guardarJugadorAdmin}
               />
             )}
           </>
@@ -1308,12 +1363,20 @@ function App() {
             <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Mi Cuenta</span></div>
             <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><User size={26} /><span className="mt-5">Jugador</span></div>
           </>
-        ) : rolUsuario === 'admin' || rolUsuario === 'super_admin' ? (
+        ) : rolUsuario === 'admin' ? (
           <>
             <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><Activity size={26} /><span className="mt-5">Admin</span></div>
             <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} /><span className="mt-5">Kiosco</span></div>
             <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Tesorería</span></div>
             <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>
+          </>
+        ) : rolUsuario === 'super_admin' ? (
+          <>
+            <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><ShieldAlert size={26} /><span className="mt-5">Panel</span></div>
+            <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>
+            <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} /><span className="mt-5">Staff</span></div>
+            <div className={`nav-item ${pantallaActiva === 'scoreboard_live' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('scoreboard_live')}><Monitor size={26} /><span className="mt-5">Mesa</span></div>
+            <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} /><span className="mt-5">Kiosco</span></div>
           </>
         ) : rolUsuario === 'staff' ? (
           <>

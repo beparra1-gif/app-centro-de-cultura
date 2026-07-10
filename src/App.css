@@ -257,8 +257,8 @@ body {
   justify-content: center; 
 }
 
-.header-btn-zone { width: 60px; display: flex; justify-content: flex-start; }
-.header-btn-zone.right { justify-content: flex-end; }
+.header-btn-zone { min-width: 60px; display: flex; justify-content: flex-start; }
+.header-btn-zone.right { justify-content: flex-end; flex: 1; min-width: 0; }
 .btn-icon-header { 
   background: none; border: none; color: white; cursor: pointer; 
   display: flex; flex-direction: column; align-items: center; 
@@ -288,12 +288,25 @@ body {
   box-shadow: 0 8px 24px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.18);
   border: 1px solid rgba(255,255,255,0.12);
   z-index: 100;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.ios-bottom-nav::-webkit-scrollbar { display: none; }
 
 .nav-item { 
   display: flex; flex-direction: column; align-items: center; 
   color: var(--texto-secundario); font-size: 12px; font-weight: 800; 
-  cursor: pointer; gap: 6px; width: 25%; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); 
+  cursor: pointer; gap: 4px; width: 25%; min-width: 64px; max-width: 92px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: center;
+}
+.nav-item span {
+  margin-top: 0 !important;
+  font-size: 10px;
+  line-height: 1.15;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .nav-item:hover { color: var(--texto-principal); }
 .nav-item.active { 
@@ -545,7 +558,7 @@ body {
    ========================================= */
 .scroll-horizontal-menu { display: flex; overflow-x: auto; padding-bottom: 10px; margin-bottom: 15px;}
 .segment-control { display: flex; background: var(--fondo-input); border-radius: 16px; padding: 5px; min-width: max-content; }
-.segment-btn { text-align: center; padding: 12px 20px; font-size: 14px; font-weight: 800; color: var(--texto-secundario); border-radius: 14px; cursor: pointer; transition: 0.25s; }
+.segment-btn { text-align: center; padding: 12px 20px; font-size: 14px; font-weight: 800; color: var(--texto-secundario); border-radius: 14px; cursor: pointer; transition: 0.25s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
 .segment-btn:hover { color: var(--texto-principal); }
 .segment-btn.active { background-color: var(--blanco-tarjeta); color: var(--texto-principal); box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 4px 14px rgba(0,0,0,0.06); }
 

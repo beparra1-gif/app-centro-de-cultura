@@ -1,4 +1,20 @@
-import { Bell, CheckSquare, FileText, History, User, XSquare } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import {
+  Activity,
+  Bell,
+  CheckSquare,
+  FileText,
+  Filter,
+  History,
+  Plus,
+  Search,
+  Shield,
+  Stethoscope,
+  User,
+  UserPlus,
+  Users,
+  XSquare,
+} from 'lucide-react';
 import * as api from '../api/client';
 import { colorTipo } from '../utils/appHelpers';
 import { mockMorosos } from '../data/mockData';
@@ -41,6 +57,10 @@ function SuperAdminPanel({
   saludDelSistema,
   comunicacionesCount,
   calcularScoreDeCliente,
+  cuentasAdmin,
+  jugadoresAdmin,
+  guardarCuentaAdmin,
+  guardarJugadorAdmin,
 }) {
   const enviarAlerta = () => { alert('Notificación enviada por App y Correo a los destinatarios.'); };
   const togglePermiso = (idUsuario, permiso) => { void idUsuario; void permiso; };
@@ -63,18 +83,191 @@ function SuperAdminPanel({
       ? mockMorosos.filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado')
       : mockMorosos.filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado');
 
+  const [filtroUsuariosTexto, setFiltroUsuariosTexto] = useState('');
+  const [filtroTipoPerfil, setFiltroTipoPerfil] = useState('todos');
+  const [filtroRamaJugadores, setFiltroRamaJugadores] = useState('todas');
+  const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState('todas');
+  const [editandoTipo, setEditandoTipo] = useState(null);
+  const [cuentaAdminEdit, setCuentaAdminEdit] = useState(null);
+  const [jugadorAdminEdit, setJugadorAdminEdit] = useState(null);
+  const [tipoNuevoUsuario, setTipoNuevoUsuario] = useState('cuenta');
+  const [guardandoUsuario, setGuardandoUsuario] = useState(false);
+
+  const [nuevaCuenta, setNuevaCuenta] = useState({
+    correo: '',
+    rut: '',
+    password: '',
+    nombres: '',
+    apellido_paterno: '',
+    apellido_materno: '',
+    telefono: '',
+    direccion: '',
+    comuna: '',
+    rol: 'apoderado',
+    estado: 'activo',
+    es_socio: false,
+    forzar_clave: true,
+  });
+
+  const [nuevoJugador, setNuevoJugador] = useState({
+    rut_jugador: '',
+    correo_apoderado: '',
+    nombres: '',
+    apellido_paterno: '',
+    apellido_materno: '',
+    rama: 'MASCULINA',
+    categoria: 'SUB-13',
+    estado: 'ACTIVO',
+  });
+
+  const categoriasUnicas = useMemo(() => {
+    const valores = jugadoresAdmin
+      .map(j => (j.categoria || '').trim())
+      .filter(Boolean);
+    return [...new Set(valores)].sort((a, b) => a.localeCompare(b, 'es'));
+  }, [jugadoresAdmin]);
+
+  const listadoUsuarios = useMemo(() => {
+    const cuentas = (cuentasAdmin || []).map((c) => ({
+      id: `cuenta-${c.id}`,
+      tipo: 'cuenta',
+      perfil: (c.rol || 'apoderado').toLowerCase(),
+      nombre: `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || c.correo,
+      busqueda: `${c.nombres || ''} ${c.apellido_paterno || ''} ${c.apellido_materno || ''} ${c.correo || ''} ${c.rut || ''} ${c.rol || ''}`.toLowerCase(),
+      rama: null,
+      categoria: null,
+      raw: c,
+    }));
+
+    const jugadores = (jugadoresAdmin || []).map((j) => ({
+      id: `jugador-${j.rut_jugador}`,
+      tipo: 'jugador',
+      perfil: 'jugador',
+      nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim() || j.rut_jugador,
+      busqueda: `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''} ${j.rut_jugador || ''} ${j.rama || ''} ${j.categoria || ''}`.toLowerCase(),
+      rama: (j.rama || '').toLowerCase(),
+      categoria: (j.categoria || '').toLowerCase(),
+      raw: j,
+    }));
+
+    return [...cuentas, ...jugadores];
+  }, [cuentasAdmin, jugadoresAdmin]);
+
+  const usuariosFiltrados = useMemo(() => {
+    const q = filtroUsuariosTexto.trim().toLowerCase();
+
+    return listadoUsuarios.filter((u) => {
+      if (filtroTipoPerfil !== 'todos' && u.perfil !== filtroTipoPerfil) return false;
+      if (q && !u.busqueda.includes(q)) return false;
+
+      if (filtroTipoPerfil === 'jugador') {
+        if (filtroRamaJugadores !== 'todas' && u.rama !== filtroRamaJugadores.toLowerCase()) return false;
+        if (filtroCategoriaJugadores !== 'todas' && u.categoria !== filtroCategoriaJugadores.toLowerCase()) return false;
+      }
+
+      return true;
+    });
+  }, [
+    listadoUsuarios,
+    filtroUsuariosTexto,
+    filtroTipoPerfil,
+    filtroRamaJugadores,
+    filtroCategoriaJugadores,
+  ]);
+
+  const iniciarEdicion = (item) => {
+    if (item.tipo === 'cuenta') {
+      setEditandoTipo('cuenta');
+      setJugadorAdminEdit(null);
+      setCuentaAdminEdit({ ...item.raw });
+      return;
+    }
+
+    setEditandoTipo('jugador');
+    setCuentaAdminEdit(null);
+    setJugadorAdminEdit({ ...item.raw });
+  };
+
+  const guardarEdicionActual = async () => {
+    try {
+      setGuardandoUsuario(true);
+
+      if (editandoTipo === 'cuenta' && cuentaAdminEdit) {
+        await guardarCuentaAdmin(cuentaAdminEdit, cuentaAdminEdit.id);
+        alert('Cuenta actualizada correctamente.');
+      }
+
+      if (editandoTipo === 'jugador' && jugadorAdminEdit) {
+        await guardarJugadorAdmin(jugadorAdminEdit, jugadorAdminEdit.rut_jugador);
+        alert('Jugador actualizado correctamente.');
+      }
+
+      setEditandoTipo(null);
+      setCuentaAdminEdit(null);
+      setJugadorAdminEdit(null);
+    } catch (error) {
+      alert(`No se pudo guardar: ${error.message}`);
+    } finally {
+      setGuardandoUsuario(false);
+    }
+  };
+
+  const guardarNuevoUsuario = async () => {
+    try {
+      setGuardandoUsuario(true);
+
+      if (tipoNuevoUsuario === 'cuenta') {
+        await guardarCuentaAdmin(nuevaCuenta);
+        setNuevaCuenta({
+          correo: '',
+          rut: '',
+          password: '',
+          nombres: '',
+          apellido_paterno: '',
+          apellido_materno: '',
+          telefono: '',
+          direccion: '',
+          comuna: '',
+          rol: 'apoderado',
+          estado: 'activo',
+          es_socio: false,
+          forzar_clave: true,
+        });
+        alert('Cuenta creada correctamente.');
+      } else {
+        await guardarJugadorAdmin(nuevoJugador);
+        setNuevoJugador({
+          rut_jugador: '',
+          correo_apoderado: '',
+          nombres: '',
+          apellido_paterno: '',
+          apellido_materno: '',
+          rama: 'MASCULINA',
+          categoria: 'SUB-13',
+          estado: 'ACTIVO',
+        });
+        alert('Jugador creado correctamente.');
+      }
+    } catch (error) {
+      alert(`No se pudo crear: ${error.message}`);
+    } finally {
+      setGuardandoUsuario(false);
+    }
+  };
+
   return (
     <div className="admin-container fade-in">
       <div className="scroll-horizontal-menu mb-15">
         <div className="segment-control" style={{ minWidth: '550px' }}>
-          <div className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}>Resumen</div>
-          <div className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}>Validar Pago</div>
-          <div className={`segment-btn ${vistaAdmin === 'citaciones' ? 'active' : ''}`} onClick={() => setVistaAdmin('citaciones')}>Citaciones</div>
-          <div className={`segment-btn ${vistaAdmin === 'auditoria' ? 'active' : ''}`} onClick={() => setVistaAdmin('auditoria')}>Auditoría</div>
-          <div className={`segment-btn ${vistaAdmin === 'reportes' ? 'active' : ''}`} onClick={() => setVistaAdmin('reportes')}>📊 Reportes</div>
-          <div className={`segment-btn ${vistaAdmin === 'cuentas' ? 'active' : ''}`} onClick={() => setVistaAdmin('cuentas')}>🧾 Cuentas</div>
-          <div className={`segment-btn ${vistaAdmin === 'salud' ? 'active' : ''}`} onClick={() => { setVistaAdmin('salud'); generarAlertas(); }}>🏥 Salud</div>
-          <div className={`segment-btn ${vistaAdmin === 'permisos' ? 'active' : ''}`} onClick={() => setVistaAdmin('permisos')}>Ajustes</div>
+          <div className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}><Activity size={14} /> Resumen</div>
+          <div className={`segment-btn ${vistaAdmin === 'usuarios' ? 'active' : ''}`} onClick={() => setVistaAdmin('usuarios')}><Users size={14} /> Usuarios</div>
+          <div className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Validar Pago</div>
+          <div className={`segment-btn ${vistaAdmin === 'citaciones' ? 'active' : ''}`} onClick={() => setVistaAdmin('citaciones')}><UserPlus size={14} /> Citaciones</div>
+          <div className={`segment-btn ${vistaAdmin === 'auditoria' ? 'active' : ''}`} onClick={() => setVistaAdmin('auditoria')}><History size={14} /> Auditoría</div>
+          <div className={`segment-btn ${vistaAdmin === 'reportes' ? 'active' : ''}`} onClick={() => setVistaAdmin('reportes')}><FileText size={14} /> Reportes</div>
+          <div className={`segment-btn ${vistaAdmin === 'cuentas' ? 'active' : ''}`} onClick={() => setVistaAdmin('cuentas')}><Shield size={14} /> Cuentas</div>
+          <div className={`segment-btn ${vistaAdmin === 'salud' ? 'active' : ''}`} onClick={() => { setVistaAdmin('salud'); generarAlertas(); }}><Stethoscope size={14} /> Salud</div>
+          <div className={`segment-btn ${vistaAdmin === 'permisos' ? 'active' : ''}`} onClick={() => setVistaAdmin('permisos')}><Filter size={14} /> Ajustes</div>
         </div>
       </div>
 
@@ -168,6 +361,168 @@ function SuperAdminPanel({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {vistaAdmin === 'usuarios' && (
+        <div className="fade-in">
+          <h3 className="section-title">Gestión de Usuarios y Jugadores</h3>
+          <div className="card">
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Buscar</label>
+                <div style={{ position: 'relative' }}>
+                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+                  <input
+                    className="form-input"
+                    style={{ paddingLeft: '32px' }}
+                    placeholder="Nombre, correo, RUT, rol o categoría"
+                    value={filtroUsuariosTexto}
+                    onChange={(e) => setFiltroUsuariosTexto(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Tipo de perfil</label>
+                <select className="form-input" value={filtroTipoPerfil} onChange={(e) => setFiltroTipoPerfil(e.target.value)}>
+                  <option value="todos">Todos</option>
+                  <option value="jugador">Jugador</option>
+                  <option value="apoderado">Apoderado</option>
+                  <option value="staff">Staff</option>
+                  <option value="admin">Admin</option>
+                  <option value="super_admin">Super Admin</option>
+                </select>
+              </div>
+            </div>
+
+            {filtroTipoPerfil === 'jugador' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginTop: '8px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Rama</label>
+                  <select className="form-input" value={filtroRamaJugadores} onChange={(e) => setFiltroRamaJugadores(e.target.value)}>
+                    <option value="todas">Todas</option>
+                    <option value="masculina">Masculina</option>
+                    <option value="femenina">Femenina</option>
+                    <option value="mixta">Mixta</option>
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Categoría</label>
+                  <select className="form-input" value={filtroCategoriaJugadores} onChange={(e) => setFiltroCategoriaJugadores(e.target.value)}>
+                    <option value="todas">Todas</option>
+                    {categoriasUnicas.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginTop: '12px', maxHeight: '320px', overflowY: 'auto' }}>
+              {usuariosFiltrados.length === 0 && (
+                <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay resultados con los filtros actuales.</p>
+              )}
+
+              {usuariosFiltrados.map((u) => (
+                <div key={u.id} className="card" style={{ marginBottom: '10px', borderLeft: `4px solid ${u.tipo === 'jugador' ? 'var(--azul-electrico)' : '#FF9500'}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                    <div>
+                      <strong style={{ fontSize: '14px' }}>{u.nombre}</strong>
+                      <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>
+                        {u.tipo === 'jugador'
+                          ? `${u.raw.rut_jugador || '-'} · ${u.raw.rama || 'Sin rama'} · ${u.raw.categoria || 'Sin categoría'}`
+                          : `${u.raw.correo || '-'} · ${u.raw.rut || '-'} · ${(u.raw.rol || 'sin rol').toUpperCase()}`}
+                      </div>
+                    </div>
+                    <button className="btn-notificar" onClick={() => iniciarEdicion(u)}>
+                      Modificar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {editandoTipo === 'cuenta' && cuentaAdminEdit && (
+            <div className="card">
+              <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaAdminEdit.correo || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, correo: e.target.value }))} /></div>
+                <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaAdminEdit.rut || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rut: e.target.value }))} /></div>
+                <div className="form-group"><label>Nombres</label><input className="form-input" value={cuentaAdminEdit.nombres || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={cuentaAdminEdit.apellido_paterno || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={cuentaAdminEdit.apellido_materno || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                <div className="form-group"><label>Teléfono</label><input className="form-input" value={cuentaAdminEdit.telefono || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, telefono: e.target.value }))} /></div>
+                <div className="form-group"><label>Dirección</label><input className="form-input" value={cuentaAdminEdit.direccion || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, direccion: e.target.value }))} /></div>
+                <div className="form-group"><label>Comuna</label><input className="form-input" value={cuentaAdminEdit.comuna || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, comuna: e.target.value }))} /></div>
+                <div className="form-group"><label>Rol</label><select className="form-input" value={cuentaAdminEdit.rol || 'apoderado'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rol: e.target.value }))}><option value="apoderado">Apoderado</option><option value="staff">Staff</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
+                <div className="form-group"><label>Estado</label><select className="form-input" value={cuentaAdminEdit.estado || 'activo'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="activo">Activo</option><option value="inactivo">Inactivo</option></select></div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
+                <button className="btn-secondary" onClick={() => { setEditandoTipo(null); setCuentaAdminEdit(null); }}>Cancelar</button>
+              </div>
+            </div>
+          )}
+
+          {editandoTipo === 'jugador' && jugadorAdminEdit && (
+            <div className="card">
+              <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                <div className="form-group"><label>RUT Jugador</label><input className="form-input" value={jugadorAdminEdit.rut_jugador || ''} disabled /></div>
+                <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={jugadorAdminEdit.correo_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
+                <div className="form-group"><label>Nombres</label><input className="form-input" value={jugadorAdminEdit.nombres || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={jugadorAdminEdit.apellido_paterno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={jugadorAdminEdit.apellido_materno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                <div className="form-group"><label>Rama</label><select className="form-input" value={jugadorAdminEdit.rama || 'MASCULINA'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
+                <div className="form-group"><label>Categoría</label><input className="form-input" value={jugadorAdminEdit.categoria || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, categoria: e.target.value }))} /></div>
+                <div className="form-group"><label>Estado</label><select className="form-input" value={jugadorAdminEdit.estado || 'ACTIVO'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option><option value="BAJA">Baja</option></select></div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
+                <button className="btn-secondary" onClick={() => { setEditandoTipo(null); setJugadorAdminEdit(null); }}>Cancelar</button>
+              </div>
+            </div>
+          )}
+
+          <div className="card">
+            <h4 className="form-subtitle"><Plus size={16} /> Agregar Nuevo Usuario</h4>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'cuenta' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'cuenta' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('cuenta')}>Cuenta</button>
+              <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'jugador' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'jugador' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('jugador')}>Jugador</button>
+            </div>
+
+            {tipoNuevoUsuario === 'cuenta' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
+                <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
+                <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
+                <div className="form-group"><label>Rol *</label><select className="form-input" value={nuevaCuenta.rol} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rol: e.target.value }))}><option value="apoderado">Apoderado</option><option value="staff">Staff</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
+                <div className="form-group"><label>Nombres</label><input className="form-input" value={nuevaCuenta.nombres} onChange={(e) => setNuevaCuenta((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={nuevaCuenta.apellido_paterno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevaCuenta.apellido_materno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                <div className="form-group"><label>Teléfono</label><input className="form-input" value={nuevaCuenta.telefono} onChange={(e) => setNuevaCuenta((p) => ({ ...p, telefono: e.target.value }))} /></div>
+                <div className="form-group"><label>Dirección</label><input className="form-input" value={nuevaCuenta.direccion} onChange={(e) => setNuevaCuenta((p) => ({ ...p, direccion: e.target.value }))} /></div>
+                <div className="form-group"><label>Comuna</label><input className="form-input" value={nuevaCuenta.comuna} onChange={(e) => setNuevaCuenta((p) => ({ ...p, comuna: e.target.value }))} /></div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                <div className="form-group"><label>RUT Jugador *</label><input className="form-input" value={nuevoJugador.rut_jugador} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
+                <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={nuevoJugador.correo_apoderado} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
+                <div className="form-group"><label>Nombres *</label><input className="form-input" value={nuevoJugador.nombres} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Paterno *</label><input className="form-input" value={nuevoJugador.apellido_paterno} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevoJugador.apellido_materno} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                <div className="form-group"><label>Rama *</label><select className="form-input" value={nuevoJugador.rama} onChange={(e) => setNuevoJugador((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
+                <div className="form-group"><label>Categoría *</label><input className="form-input" value={nuevoJugador.categoria} onChange={(e) => setNuevoJugador((p) => ({ ...p, categoria: e.target.value }))} /></div>
+                <div className="form-group"><label>Estado</label><select className="form-input" value={nuevoJugador.estado} onChange={(e) => setNuevoJugador((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option></select></div>
+              </div>
+            )}
+
+            <button className="btn-electric" onClick={guardarNuevoUsuario} disabled={guardandoUsuario}>
+              {guardandoUsuario ? 'Guardando...' : 'Guardar nuevo usuario'}
+            </button>
+          </div>
         </div>
       )}
 

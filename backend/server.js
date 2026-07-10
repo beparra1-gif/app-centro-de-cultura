@@ -941,6 +941,155 @@ app.post('/api/jugadores', async (req, res) => {
   }
 });
 
+// PUT: Actualizar jugador por RUT
+app.put('/api/jugadores/:rut', async (req, res) => {
+  const {
+    correo_apoderado,
+    correo_jugador,
+    password_jugador,
+    forzar_clave_jugador,
+    parentesco_apoderado,
+    nombres,
+    apellido_paterno,
+    apellido_materno,
+    fecha_nacimiento,
+    año_nacimiento,
+    colegio,
+    rama,
+    categoria,
+    posicion_de_juego,
+    estatura,
+    peso,
+    mano_habil,
+    numero_camiseta,
+    club_anterior,
+    fecha_ingreso,
+    mes_inicio_cobro,
+    beca,
+    valor_mensualidad,
+    matricula_pagada,
+    talla_camiseta,
+    talla_short,
+    polera_entregada,
+    poleron_entregado,
+    derechos_imagen,
+    prevision,
+    tipo_sangre,
+    alergias,
+    nombre_emergencia,
+    parentesco_emergencia,
+    num_emergencia,
+    estado,
+    foto_jugador,
+    estado_deportivo,
+    fecha_inicio_baja,
+    fecha_fin_baja,
+    xp_puntos,
+  } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE jugadores SET
+        correo_apoderado = COALESCE($1, correo_apoderado),
+        correo_jugador = COALESCE($2, correo_jugador),
+        password_jugador = COALESCE($3, password_jugador),
+        forzar_clave_jugador = COALESCE($4, forzar_clave_jugador),
+        parentesco_apoderado = COALESCE($5, parentesco_apoderado),
+        nombres = COALESCE($6, nombres),
+        apellido_paterno = COALESCE($7, apellido_paterno),
+        apellido_materno = COALESCE($8, apellido_materno),
+        fecha_nacimiento = COALESCE($9, fecha_nacimiento),
+        año_nacimiento = COALESCE($10, año_nacimiento),
+        colegio = COALESCE($11, colegio),
+        rama = COALESCE($12, rama),
+        categoria = COALESCE($13, categoria),
+        posicion_de_juego = COALESCE($14, posicion_de_juego),
+        estatura = COALESCE($15, estatura),
+        peso = COALESCE($16, peso),
+        mano_habil = COALESCE($17, mano_habil),
+        numero_camiseta = COALESCE($18, numero_camiseta),
+        club_anterior = COALESCE($19, club_anterior),
+        fecha_ingreso = COALESCE($20, fecha_ingreso),
+        mes_inicio_cobro = COALESCE($21, mes_inicio_cobro),
+        beca = COALESCE($22, beca),
+        valor_mensualidad = COALESCE($23, valor_mensualidad),
+        matricula_pagada = COALESCE($24, matricula_pagada),
+        talla_camiseta = COALESCE($25, talla_camiseta),
+        talla_short = COALESCE($26, talla_short),
+        polera_entregada = COALESCE($27, polera_entregada),
+        poleron_entregado = COALESCE($28, poleron_entregado),
+        derechos_imagen = COALESCE($29, derechos_imagen),
+        prevision = COALESCE($30, prevision),
+        tipo_sangre = COALESCE($31, tipo_sangre),
+        alergias = COALESCE($32, alergias),
+        nombre_emergencia = COALESCE($33, nombre_emergencia),
+        parentesco_emergencia = COALESCE($34, parentesco_emergencia),
+        num_emergencia = COALESCE($35, num_emergencia),
+        estado = COALESCE($36, estado),
+        foto_jugador = COALESCE($37, foto_jugador),
+        estado_deportivo = COALESCE($38, estado_deportivo),
+        fecha_inicio_baja = COALESCE($39, fecha_inicio_baja),
+        fecha_fin_baja = COALESCE($40, fecha_fin_baja),
+        xp_puntos = COALESCE($41, xp_puntos),
+        updated_at = NOW()
+      WHERE rut_jugador = $42
+      RETURNING *`,
+      [
+        correo_apoderado ?? null,
+        correo_jugador ?? null,
+        password_jugador ?? null,
+        forzar_clave_jugador ?? null,
+        parentesco_apoderado ?? null,
+        nombres ?? null,
+        apellido_paterno ?? null,
+        apellido_materno ?? null,
+        fecha_nacimiento ?? null,
+        año_nacimiento ?? null,
+        colegio ?? null,
+        rama ?? null,
+        categoria ?? null,
+        posicion_de_juego ?? null,
+        estatura ?? null,
+        peso ?? null,
+        mano_habil ?? null,
+        numero_camiseta ?? null,
+        club_anterior ?? null,
+        fecha_ingreso ?? null,
+        mes_inicio_cobro ?? null,
+        beca ?? null,
+        valor_mensualidad ?? null,
+        matricula_pagada ?? null,
+        talla_camiseta ?? null,
+        talla_short ?? null,
+        polera_entregada ?? null,
+        poleron_entregado ?? null,
+        derechos_imagen ?? null,
+        prevision ?? null,
+        tipo_sangre ?? null,
+        alergias ?? null,
+        nombre_emergencia ?? null,
+        parentesco_emergencia ?? null,
+        num_emergencia ?? null,
+        estado ?? null,
+        foto_jugador ?? null,
+        estado_deportivo ?? null,
+        fecha_inicio_baja ?? null,
+        fecha_fin_baja ?? null,
+        xp_puntos ?? null,
+        req.params.rut,
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Jugador no encontrado' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==========================================
 // 10. ENDPOINTS: PAGOS MENSUALIDADES (FASE 1)
 // ==========================================

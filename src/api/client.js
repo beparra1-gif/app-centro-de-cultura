@@ -339,7 +339,17 @@ export const jugadoresAPI = {
       body: JSON.stringify(datos)
     });
     return handleResponse(response);
-  }
+  },
+
+  // Actualizar por RUT
+  update: async (rut, datos) => {
+    const response = await fetch(`${API_BASE_URL}/jugadores/${rut}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
 };
 
 // ========== PAGOS MENSUALIDADES (FASE 1) ==========
