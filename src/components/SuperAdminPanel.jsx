@@ -22,6 +22,7 @@ import {
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import { colorTipo } from '../utils/appHelpers';
+import { nextId } from '../utils/runtimeId';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { cuentasDemo } from '../data/demoAccounts';
 import ReportesPanel from './ReportesPanel';
@@ -126,8 +127,20 @@ function SuperAdminPanel({
   const [guardandoUsuario, setGuardandoUsuario] = useState(false);
   const [citaRama, setCitaRama] = useState('todas');
   const [citaCategoria, setCitaCategoria] = useState('todas');
+  const [categoriasExtraCitacion, setCategoriasExtraCitacion] = useState([]);
   const [seleccionCitacion, setSeleccionCitacion] = useState({});
   const [autorizacionMorosos, setAutorizacionMorosos] = useState({});
+  const [citacionActivaId, setCitacionActivaId] = useState(null);
+  const [citaForm, setCitaForm] = useState(() => ({
+    tipo_competencia: 'Liga',
+    competencia_nombre: '',
+    competencia_logo_url: '',
+    dia_citacion: new Date().toISOString().slice(0, 10),
+    hora_citacion: '16:00',
+    hora_presentacion: '15:30',
+    rival_nombre: '',
+    rival_logo_url: '',
+  }));
   const [jugadorVisitaEdit, setJugadorVisitaEdit] = useState(null);
   const [guardandoVisita, setGuardandoVisita] = useState(false);
   const [syncToken, setSyncToken] = useState('');
@@ -247,16 +260,21 @@ function SuperAdminPanel({
 
   const jugadorasCitacion = useMemo(() => {
     const base = (jugadoresAdmin || []).filter((j) => (j.estado || 'ACTIVO').toUpperCase() !== 'BAJA');
+    const categoriasPermitidas = new Set(
+      [citaCategoria, ...categoriasExtraCitacion]
+        .map((c) => String(c || '').trim().toLowerCase())
+        .filter((c) => c && c !== 'todas')
+    );
 
     return base.filter((j) => {
       const rama = (j.rama || '').toLowerCase();
       const categoria = (j.categoria || '').toLowerCase();
 
       if (citaRama !== 'todas' && rama !== citaRama.toLowerCase()) return false;
-      if (citaCategoria !== 'todas' && categoria !== citaCategoria.toLowerCase()) return false;
+      if (categoriasPermitidas.size > 0 && !categoriasPermitidas.has(categoria)) return false;
       return true;
     });
-  }, [jugadoresAdmin, citaRama, citaCategoria]);
+  }, [jugadoresAdmin, citaRama, citaCategoria, categoriasExtraCitacion]);
 
   const cuposCitados = Object.values(seleccionCitacion).filter(Boolean).length;
 
@@ -621,6 +639,84 @@ function SuperAdminPanel({
       if (target === 'nuevo') setSubiendoFotoJugadorNuevo(false);
       else setSubiendoFotoJugadorEdit(false);
     }
+  };
+
+  const toggleCategoriaExtraCitacion = (categoria) => {
+    const valor = String(categoria || '').trim();
+    if (!valor || valor.toLowerCase() === 'todas') return;
+    setCategoriasExtraCitacion((prev) => (
+      prev.includes(valor)
+        ? prev.filter((c) => c !== valor)
+        : [...prev, valor]
+    ));
+  };
+
+  const actualizarRespuestaConvocado = (citacionId, rut, payload = {}) => {
+    setNominaCita((prev) => (prev || []).map((c) => {
+      if (c.id !== citacionId) return c;
+      return {
+        ...c,
+        convocados: (c.convocados || []).map((conv) => {
+          if (conv.rut_jugador !== rut) return conv;
+          return {
+            ...conv,
+            ...payload,
+            actualizado_en: new Date().toISOString(),
+          };
+        }),
+      };
+    }));
+  };
+
+  const crearCitacion = () => {
+    if (!String(citaForm.competencia_nombre || '').trim()) {
+      alert('Debes indicar el nombre de la competencia o torneo.');
+      return;
+    }
+    if (!String(citaForm.rival_nombre || '').trim()) {
+      alert('Debes indicar el equipo rival.');
+      return;
+    }
+
+    const convocados = jugadorasCitacion
+      .filter((j) => Boolean(seleccionCitacion[j.rut_jugador]))
+      .map((j) => ({
+        rut_jugador: j.rut_jugador,
+        nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim(),
+        categoria: j.categoria || 'Sin categoría',
+        rama: j.rama || 'Sin rama',
+        correo_apoderado: j.correo_apoderado || '',
+        respuesta: 'pendiente',
+        justificacion: '',
+        actualizado_en: null,
+      }));
+
+    if (convocados.length === 0) {
+      alert('Selecciona al menos una jugadora o jugador para crear la citación.');
+      return;
+    }
+
+    const citacion = {
+      id: nextId(),
+      tipo_competencia: citaForm.tipo_competencia,
+      competencia_nombre: citaForm.competencia_nombre,
+      competencia_logo_url: citaForm.competencia_logo_url || '/logos/club-logo.png',
+      dia_citacion: citaForm.dia_citacion,
+      hora_citacion: citaForm.hora_citacion,
+      hora_presentacion: citaForm.hora_presentacion,
+      rival_nombre: citaForm.rival_nombre,
+      rival_logo_url: citaForm.rival_logo_url || '/logos/club-logo.png',
+      rama: citaRama,
+      categoria_base: citaCategoria,
+      categorias_apoyo: categoriasExtraCitacion,
+      convocados,
+      creado_en: new Date().toISOString(),
+    };
+
+    setNominaCita((prev) => [citacion, ...(prev || [])]);
+    setCitacionActivaId(citacion.id);
+    setSeleccionCitacion({});
+    alert(`Citación creada y enviada para ${convocados.length} convocados. Puedes monitorear respuestas en la barra de estado.`);
   };
 
   return (
@@ -1306,6 +1402,47 @@ function SuperAdminPanel({
                 {cuposCitados}/12 Cupos
               </span>
             </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '15px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Tipo de competencia</label>
+                <select className="form-input" value={citaForm.tipo_competencia} onChange={(e) => setCitaForm((p) => ({ ...p, tipo_competencia: e.target.value }))}>
+                  <option value="Liga">Liga</option>
+                  <option value="Campeonato">Campeonato</option>
+                  <option value="Copa">Copa</option>
+                  <option value="Amistoso">Amistoso</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Competencia / torneo</label>
+                <input className="form-input" value={citaForm.competencia_nombre} onChange={(e) => setCitaForm((p) => ({ ...p, competencia_nombre: e.target.value }))} placeholder="Ej: Liga ARBAM U15" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Logo competencia (URL)</label>
+                <input className="form-input" value={citaForm.competencia_logo_url} onChange={(e) => setCitaForm((p) => ({ ...p, competencia_logo_url: e.target.value }))} placeholder="Opcional" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Día citación</label>
+                <input type="date" className="form-input" value={citaForm.dia_citacion} onChange={(e) => setCitaForm((p) => ({ ...p, dia_citacion: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Hora citación</label>
+                <input type="time" className="form-input" value={citaForm.hora_citacion} onChange={(e) => setCitaForm((p) => ({ ...p, hora_citacion: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Hora presentación / llegada</label>
+                <input type="time" className="form-input" value={citaForm.hora_presentacion} onChange={(e) => setCitaForm((p) => ({ ...p, hora_presentacion: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Equipo rival</label>
+                <input className="form-input" value={citaForm.rival_nombre} onChange={(e) => setCitaForm((p) => ({ ...p, rival_nombre: e.target.value }))} placeholder="Ej: Club Deportivo X" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Logo rival (URL)</label>
+                <input className="form-input" value={citaForm.rival_logo_url} onChange={(e) => setCitaForm((p) => ({ ...p, rival_logo_url: e.target.value }))} placeholder="Opcional" />
+              </div>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '15px' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Rama</label>
@@ -1317,13 +1454,56 @@ function SuperAdminPanel({
                 </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Categoría</label>
+                <label>Categoría base</label>
                 <select className="form-input" value={citaCategoria} onChange={(e) => setCitaCategoria(e.target.value)}>
                   <option value="todas">Todas</option>
                   {categoriasUnicas.map((cat) => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Citar jugadoras de otras categorías
+              </label>
+              <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {categoriasUnicas.map((cat) => {
+                  const activa = categoriasExtraCitacion.includes(cat);
+                  return (
+                    <button
+                      key={`cat-extra-${cat}`}
+                      type="button"
+                      className="filter-chip"
+                      style={{
+                        border: '1px solid rgba(0,122,255,0.24)',
+                        background: activa ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.08)',
+                        color: activa ? 'white' : 'var(--azul-electrico)',
+                        fontWeight: '800',
+                      }}
+                      onClick={() => toggleCategoriaExtraCitacion(cat)}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="card" style={{ marginBottom: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <LogoAvatar nombre={citaForm.competencia_nombre || 'Competencia'} logoUrl={citaForm.competencia_logo_url || '/logos/club-logo.png'} size={30} borderRadius="999px" />
+                  <span style={{ fontWeight: '800', fontSize: '12px' }}>{citaForm.tipo_competencia}: {citaForm.competencia_nombre || 'Sin definir'}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <LogoAvatar nombre={citaForm.rival_nombre || 'Rival'} logoUrl={citaForm.rival_logo_url || '/logos/club-logo.png'} size={30} borderRadius="999px" />
+                  <span style={{ fontWeight: '800', fontSize: '12px' }}>vs {citaForm.rival_nombre || 'Sin rival'}</span>
+                </div>
+              </div>
+              <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                Día {citaForm.dia_citacion} · Citación {citaForm.hora_citacion} · Presentación {citaForm.hora_presentacion} · Rama {citaRama} · Base {citaCategoria}
               </div>
             </div>
 
@@ -1384,8 +1564,60 @@ function SuperAdminPanel({
                 />
               </div>
             );})}
-            <button className="btn-electric mt-20" onClick={() => alert(`Citación preparada para ${cuposCitados} jugadoras/jugadores.`)}>CONFIRMAR Y CITAR</button>
+            <button className="btn-electric mt-20" onClick={crearCitacion}>CONFIRMAR Y CITAR</button>
           </div>
+
+          {(nominaCita || []).length > 0 && (
+            <div className="card mt-15">
+              <h4 className="form-subtitle" style={{ marginBottom: '10px' }}>Estado de citaciones enviadas</h4>
+              {(nominaCita || []).map((cita) => {
+                const total = (cita.convocados || []).length;
+                const confirmados = (cita.convocados || []).filter((x) => x.respuesta === 'si').length;
+                const noAsisten = (cita.convocados || []).filter((x) => x.respuesta === 'no').length;
+                const justificados = (cita.convocados || []).filter((x) => x.respuesta === 'justificado').length;
+                const respondidos = confirmados + noAsisten + justificados;
+                const progreso = total > 0 ? Math.round((respondidos / total) * 100) : 0;
+                const abierta = citacionActivaId === cita.id;
+
+                return (
+                  <div key={`cita-status-${cita.id}`} style={{ border: '1px solid rgba(0,122,255,0.14)', borderRadius: '14px', padding: '12px', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '13px' }}>{cita.tipo_competencia} · {cita.competencia_nombre} · vs {cita.rival_nombre}</strong>
+                      <button className="btn-secondary" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => setCitacionActivaId(abierta ? null : cita.id)}>
+                        {abierta ? 'Ocultar detalle' : 'Ver detalle'}
+                      </button>
+                    </div>
+                    <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      {cita.dia_citacion} · Citación {cita.hora_citacion} · Presentación {cita.hora_presentacion}
+                    </div>
+                    <div className="recaud-bar mt-10"><div className="recaud-bar-fill" style={{ width: `${progreso}%`, background: 'linear-gradient(90deg, var(--azul-electrico), var(--verde-victoria))' }} /></div>
+                    <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      {progreso}% respondida · Asisten {confirmados} · No asisten {noAsisten} · Justificados {justificados} · Pendientes {Math.max(total - respondidos, 0)}
+                    </div>
+
+                    {abierta && (
+                      <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {(cita.convocados || []).map((conv) => (
+                          <div key={`conv-${cita.id}-${conv.rut_jugador}`} style={{ background: 'var(--fondo-app)', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '10px', padding: '8px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '800' }}>{conv.nombre} · {conv.rama} · {conv.categoria}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{conv.correo_apoderado || 'Sin correo apoderado'}</div>
+                            <div style={{ marginTop: '6px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              <button className="btn-secondary" style={{ width: 'auto', padding: '7px 10px', background: conv.respuesta === 'si' ? 'rgba(52,199,89,0.2)' : undefined }} onClick={() => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { respuesta: 'si', justificacion: '' })}>Asiste</button>
+                              <button className="btn-secondary" style={{ width: 'auto', padding: '7px 10px', background: conv.respuesta === 'no' ? 'rgba(255,59,48,0.2)' : undefined }} onClick={() => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { respuesta: 'no' })}>No asiste</button>
+                              <button className="btn-secondary" style={{ width: 'auto', padding: '7px 10px', background: conv.respuesta === 'justificado' ? 'rgba(255,149,0,0.2)' : undefined }} onClick={() => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { respuesta: 'justificado' })}>Justifica</button>
+                            </div>
+                            {(conv.respuesta === 'no' || conv.respuesta === 'justificado') && (
+                              <input className="form-input" style={{ marginTop: '6px' }} placeholder="Motivo / justificación" value={conv.justificacion || ''} onChange={(e) => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { justificacion: e.target.value })} />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -1497,9 +1729,9 @@ function SuperAdminPanel({
             </div>
           )}
 
-          {cuentasIncompletas.map((c) => (
+          {!cuentaEditando && cuentasIncompletas.map((c) => (
             <div key={c.id} className="card" style={{ marginBottom: '10px', borderLeft: '4px solid #FF9500' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div>
                   <strong style={{ fontSize: '14px' }}>{`${c.nombres || 'Sin nombre'} ${c.apellido_paterno || ''}`.trim()}</strong>
                   <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>
@@ -1513,7 +1745,7 @@ function SuperAdminPanel({
                     ))}
                   </div>
                 </div>
-                <button className="btn-notificar" onClick={() => abrirEdicionCuenta(c)}>
+                <button className="btn-pill btn-success cuenta-completar-btn" onClick={() => abrirEdicionCuenta(c)}>
                   Completar
                 </button>
               </div>
@@ -1521,9 +1753,13 @@ function SuperAdminPanel({
           ))}
 
           {cuentaEditando && (
-            <div className="card" style={{ marginTop: '14px', border: '1px solid var(--azul-electrico)' }}>
-              <h4 className="form-subtitle">Editar Cuenta #{cuentaEditando.id}</h4>
+            <div className="card cuenta-edit-screen" style={{ marginTop: '14px', border: '1px solid var(--azul-electrico)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <h4 className="form-subtitle" style={{ marginBottom: 0 }}>Editar Cuenta #{cuentaEditando.id}</h4>
+                <button className="btn-secondary" style={{ width: 'auto', padding: '9px 14px' }} onClick={() => setCuentaEditando(null)}>Salir</button>
+              </div>
               <div style={{ marginTop: '8px', marginBottom: '8px', fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Identidad</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
               <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaEditando.correo} onChange={(e) => actualizarCampoCuenta('correo', e.target.value)} /></div>
               <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaEditando.rut} onChange={(e) => actualizarCampoCuenta('rut', e.target.value)} style={{ borderColor: cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) ? '#FF3B30' : undefined }} /></div>
               {cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) && <p style={{ fontSize: '12px', color: '#FF3B30', marginTop: '-6px' }}>RUT invalido</p>}
@@ -1542,6 +1778,7 @@ function SuperAdminPanel({
               <div className="form-group"><label>Parentesco Segundo Contacto</label><input className="form-input" value={cuentaEditando.parentesco_segundo_contacto} onChange={(e) => actualizarCampoCuenta('parentesco_segundo_contacto', e.target.value)} /></div>
               <div className="form-group"><label>Numero Segundo Contacto</label><input className="form-input" value={cuentaEditando.num_segundo_contacto} onChange={(e) => actualizarCampoCuenta('num_segundo_contacto', e.target.value)} /></div>
               <div className="form-group"><label>Dia Pago Acordado</label><input className="form-input" type="number" min="1" max="31" value={cuentaEditando.dia_pago_acordado} onChange={(e) => actualizarCampoCuenta('dia_pago_acordado', e.target.value)} /></div>
+              </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontSize: '13px' }}>
                 <input type="checkbox" checked={Boolean(cuentaEditando.es_socio)} onChange={(e) => actualizarCampoCuenta('es_socio', e.target.checked)} />
                 Es socio
@@ -1549,9 +1786,9 @@ function SuperAdminPanel({
 
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button className="btn-electric" onClick={guardarCuentaPendiente} disabled={guardandoCuenta || !api.validarRutChileno(cuentaEditando.rut)}>
-                  {guardandoCuenta ? 'Guardando...' : 'Guardar Cuenta'}
+                  {guardandoCuenta ? 'Guardando...' : 'Guardar'}
                 </button>
-                <button className="btn-secondary" onClick={() => setCuentaEditando(null)}>Cancelar</button>
+                <button className="btn-secondary" onClick={() => setCuentaEditando(null)}>Salir</button>
               </div>
             </div>
           )}

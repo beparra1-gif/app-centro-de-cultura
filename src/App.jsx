@@ -381,7 +381,11 @@ function App() {
 
         const nuevoRoster = jugadoresRes.slice(0, 24).map((j, idx) => ({
           id: idx + 1,
+          rut_jugador: j.rut_jugador || `sin-rut-${idx + 1}`,
           nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim(),
+          correo_apoderado: j.correo_apoderado || '',
+          rama: j.rama || 'MASCULINA',
+          categoria: j.categoria || 'SUB-13',
           dorsal: j.numero_camiseta || idx + 1,
           año: j.año_nacimiento || 0,
           estadoAsistencia: 'pendiente',
