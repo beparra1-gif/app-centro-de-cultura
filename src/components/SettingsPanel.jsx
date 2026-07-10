@@ -8,8 +8,6 @@ function SettingsPanel({
   setFiltroRolPermisos,
   matrixPermisos,
   togglePermiso,
-  temaOscuro,
-  setTemaOscuro,
   preferenciasSonido,
   setPreferenciasSonido,
   reproducirSonido,
@@ -76,13 +74,7 @@ function SettingsPanel({
   return (
     <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: '900' }}>Mi Perfil</h4>
-      <div>
-        <label style={{ fontSize: '11px', fontWeight: '700', display: 'block', marginBottom: '4px' }}>Tema</label>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button onClick={() => setTemaOscuro(false)} style={{ flex: 1, padding: '6px', borderRadius: '6px', background: !temaOscuro ? 'var(--azul-electrico)' : 'var(--fondo-input)', color: !temaOscuro ? 'white' : 'var(--texto-principal)', fontSize: '11px', fontWeight: '700', border: 'none', cursor: 'pointer' }}>Claro</button>
-          <button onClick={() => setTemaOscuro(true)} style={{ flex: 1, padding: '6px', borderRadius: '6px', background: temaOscuro ? 'var(--azul-electrico)' : 'var(--fondo-input)', color: temaOscuro ? 'white' : 'var(--texto-principal)', fontSize: '11px', fontWeight: '700', border: 'none', cursor: 'pointer' }}>Oscuro</button>
-        </div>
-      </div>
+      <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>Tema único activo: Claro</div>
       <button onClick={() => alert('Proximamente')} style={{ padding: '6px', borderRadius: '6px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '700', border: '1px solid rgba(0,122,255,0.3)', cursor: 'pointer' }}>Contrasena</button>
       <hr style={{ margin: '10px 0', border: 'none', borderTop: '1px solid var(--borde-suave)' }} />
       <PushPreferenciasPanel

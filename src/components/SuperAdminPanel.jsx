@@ -61,11 +61,15 @@ function SuperAdminPanel({
   jugadoresAdmin,
   guardarCuentaAdmin,
   guardarJugadorAdmin,
+  validarPagoMensualidad,
 }) {
   const enviarAlerta = () => { alert('Notificación enviada por App y Correo a los destinatarios.'); };
   const togglePermiso = (idUsuario, permiso) => { void idUsuario; void permiso; };
   void enviarAlerta;
   void togglePermiso;
+  void setPagosPendientesAdmin;
+  void nominaCita;
+  void setNominaCita;
 
   const af = {
     totalSocios: 85, sociosAlDia: 67, sociosMorosos: 18,
@@ -92,6 +96,9 @@ function SuperAdminPanel({
   const [jugadorAdminEdit, setJugadorAdminEdit] = useState(null);
   const [tipoNuevoUsuario, setTipoNuevoUsuario] = useState('cuenta');
   const [guardandoUsuario, setGuardandoUsuario] = useState(false);
+  const [citaRama, setCitaRama] = useState('todas');
+  const [citaCategoria, setCitaCategoria] = useState('todas');
+  const [seleccionCitacion, setSeleccionCitacion] = useState({});
 
   const [nuevaCuenta, setNuevaCuenta] = useState({
     correo: '',
@@ -126,6 +133,26 @@ function SuperAdminPanel({
       .filter(Boolean);
     return [...new Set(valores)].sort((a, b) => a.localeCompare(b, 'es'));
   }, [jugadoresAdmin]);
+
+  const pagosPendientesReales = useMemo(
+    () => (pagosPendientesAdmin || []).filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente'),
+    [pagosPendientesAdmin]
+  );
+
+  const jugadorasCitacion = useMemo(() => {
+    const base = (jugadoresAdmin || []).filter((j) => (j.estado || 'ACTIVO').toUpperCase() !== 'BAJA');
+
+    return base.filter((j) => {
+      const rama = (j.rama || '').toLowerCase();
+      const categoria = (j.categoria || '').toLowerCase();
+
+      if (citaRama !== 'todas' && rama !== citaRama.toLowerCase()) return false;
+      if (citaCategoria !== 'todas' && categoria !== citaCategoria.toLowerCase()) return false;
+      return true;
+    });
+  }, [jugadoresAdmin, citaRama, citaCategoria]);
+
+  const cuposCitados = Object.values(seleccionCitacion).filter(Boolean).length;
 
   const listadoUsuarios = useMemo(() => {
     const cuentas = (cuentasAdmin || []).map((c) => ({
@@ -258,7 +285,7 @@ function SuperAdminPanel({
   return (
     <div className="admin-container fade-in">
       <div className="scroll-horizontal-menu mb-15">
-        <div className="segment-control" style={{ minWidth: '550px' }}>
+        <div className="segment-control" style={{ minWidth: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
           <div className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}><Activity size={14} /> Resumen</div>
           <div className={`segment-btn ${vistaAdmin === 'usuarios' ? 'active' : ''}`} onClick={() => setVistaAdmin('usuarios')}><Users size={14} /> Usuarios</div>
           <div className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Validar Pago</div>
@@ -529,23 +556,52 @@ function SuperAdminPanel({
       {vistaAdmin === 'pagos' && (
         <div className="fade-in">
           <h3 className="section-title">Bandeja de Validación</h3>
-          {pagosPendientesAdmin.length === 0 ? <p className="text-muted text-center italic mt-20">Sin comprobantes pendientes.</p> : null}
-          {pagosPendientesAdmin.map(pago => (
+          {pagosPendientesReales.length === 0 ? <p className="text-muted text-center italic mt-20">Sin comprobantes pendientes.</p> : null}
+          {pagosPendientesReales.map((pago) => (
             <div key={pago.id} className="card" style={{ borderLeft: '4px solid var(--azul-electrico)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div><h4 style={{ margin: 0, color: 'var(--texto-heading)', fontSize: '16px' }}>{pago.familia}</h4><span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>ID Transacción: #{pago.id}</span></div>
-                <span style={{ fontWeight: '900', fontSize: '20px', color: 'var(--azul-electrico)' }}>${pago.monto.toLocaleString('es-CL')}</span>
+                <div>
+                  <h4 style={{ margin: 0, color: 'var(--texto-heading)', fontSize: '16px' }}>
+                    {`${pago.nombres || 'Jugador'} ${pago.apellido_paterno || ''}`.trim()}
+                  </h4>
+                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>
+                    ID pago: #{pago.id} · RUT: {pago.rut_jugador || 'N/A'}
+                  </span>
+                </div>
+                <span style={{ fontWeight: '900', fontSize: '20px', color: 'var(--azul-electrico)' }}>
+                  ${Number(pago.monto_total_pagado || 0).toLocaleString('es-CL')}
+                </span>
               </div>
-              <p style={{ fontSize: '13px', margin: '15px 0', color: 'var(--texto-principal)' }}><strong>Detalle:</strong> {pago.detalle}</p>
+              <p style={{ fontSize: '13px', margin: '15px 0', color: 'var(--texto-principal)' }}>
+                <strong>Detalle:</strong> {pago.concepto_pago || 'Mensualidad'} · {pago.meses_correspondientes || 'Sin meses indicados'}
+              </p>
 
               <div className="foto-upload-box mb-15" style={{ padding: '15px', background: 'rgba(0,122,255,0.05)', borderColor: 'rgba(0,122,255,0.2)' }}>
                 <FileText size={24} color="var(--azul-electrico)" />
-                <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--azul-electrico)' }}>Ver Comprobante Adjunto</span>
+                <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--azul-electrico)' }}>
+                  {pago.comprobante_url ? `Comprobante: ${pago.comprobante_url}` : 'Sin comprobante adjunto'}
+                </span>
               </div>
 
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button style={{ flex: 1, padding: '12px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }} onClick={() => { alert('Pago Aprobado.'); setPagosPendientesAdmin(pagosPendientesAdmin.filter(p => p.id !== pago.id)); }}><CheckSquare size={16} /> Aprobar</button>
-                <button style={{ flex: 1, padding: '12px', background: '#FF3B30', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }} onClick={() => alert('Pago Rechazado.')}><XSquare size={16} /> Rechazar</button>
+                <button
+                  style={{ flex: 1, padding: '12px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                  onClick={async () => {
+                    await validarPagoMensualidad(pago.id, 'aprobado');
+                    alert('Pago aprobado correctamente.');
+                  }}
+                >
+                  <CheckSquare size={16} /> Aprobar
+                </button>
+                <button
+                  style={{ flex: 1, padding: '12px', background: '#FF3B30', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                  onClick={async () => {
+                    await validarPagoMensualidad(pago.id, 'rechazado');
+                    alert('Pago rechazado correctamente.');
+                  }}
+                >
+                  <XSquare size={16} /> Rechazar
+                </button>
               </div>
             </div>
           ))}
@@ -572,28 +628,63 @@ function SuperAdminPanel({
           <div className="card mt-15">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h4 className="form-subtitle" style={{ margin: 0 }}>Nómina FIBA (Tope 12)</h4>
-              <span style={{ background: nominaCita.filter(j => j.citado).length >= 12 ? '#FF3B30' : 'var(--verde-victoria)', color: 'white', padding: '6px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: '900' }}>
-                {nominaCita.filter(j => j.citado).length}/12 Cupos
+              <span style={{ background: cuposCitados >= 12 ? '#FF3B30' : 'var(--verde-victoria)', color: 'white', padding: '6px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: '900' }}>
+                {cuposCitados}/12 Cupos
               </span>
             </div>
-            <button className="btn-secondary mb-15" style={{ fontSize: '13px', padding: '12px' }}><User size={16} /> Subir jugador de otra categoría (Call-up)</button>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '15px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Rama</label>
+                <select className="form-input" value={citaRama} onChange={(e) => setCitaRama(e.target.value)}>
+                  <option value="todas">Todas</option>
+                  <option value="masculina">Masculina</option>
+                  <option value="femenina">Femenina</option>
+                  <option value="mixta">Mixta</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Categoría</label>
+                <select className="form-input" value={citaCategoria} onChange={(e) => setCitaCategoria(e.target.value)}>
+                  <option value="todas">Todas</option>
+                  {categoriasUnicas.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-            {nominaCita.map(jugador => (
-              <div key={jugador.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', background: jugador.deuda ? 'rgba(255,59,48,0.05)' : (jugador.lesion ? 'rgba(0,0,0,0.05)' : 'var(--fondo-app)'), border: `1px solid ${jugador.deuda ? '#FF3B30' : 'rgba(0,0,0,0.05)'}`, borderRadius: '12px', marginBottom: '10px' }}>
+            <button className="btn-secondary mb-15" style={{ fontSize: '13px', padding: '12px' }}>
+              <User size={16} /> Lista conectada a datos actuales
+            </button>
+
+            {jugadorasCitacion.length === 0 && (
+              <p className="text-muted text-center italic mt-20">No hay jugadoras/jugadores para los filtros seleccionados.</p>
+            )}
+
+            {jugadorasCitacion.map((jugador) => (
+              <div key={jugador.rut_jugador} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', background: 'var(--fondo-app)', border: '1px solid rgba(0,0,0,0.05)', borderRadius: '12px', marginBottom: '10px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <strong style={{ fontSize: '15px', color: 'var(--texto-principal)' }}>{jugador.nombre} {jugador.deuda && '⚠️'} {jugador.lesion && '🚑'}</strong>
-                  <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px', fontWeight: 'bold' }}>POS: {jugador.pos} | Cat: {jugador.catOriginal}</span>
+                  <strong style={{ fontSize: '15px', color: 'var(--texto-principal)' }}>{`${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim()}</strong>
+                  <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px', fontWeight: 'bold' }}>
+                    RUT: {jugador.rut_jugador} | Rama: {jugador.rama || 'N/A'} | Cat: {jugador.categoria || 'N/A'}
+                  </span>
                 </div>
-                {jugador.lesion ? (
-                  <span style={{ fontSize: '11px', color: '#FF3B30', fontWeight: '900' }}>NO DISPONIBLE</span>
-                ) : jugador.deuda ? (
-                  <button style={{ background: '#FF9500', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }} onClick={() => alert('Excepción autorizada. Administrador asume responsabilidad.')}>Forzar Citación</button>
-                ) : (
-                  <input type="checkbox" style={{ width: '24px', height: '24px', accentColor: 'var(--azul-electrico)' }} checked={jugador.citado} disabled={!jugador.citado && nominaCita.filter(j => j.citado).length >= 12} onChange={() => setNominaCita(nominaCita.map(j => j.id === jugador.id ? { ...j, citado: !j.citado } : j))} />
-                )}
+
+                <input
+                  type="checkbox"
+                  style={{ width: '24px', height: '24px', accentColor: 'var(--azul-electrico)' }}
+                  checked={Boolean(seleccionCitacion[jugador.rut_jugador])}
+                  disabled={!seleccionCitacion[jugador.rut_jugador] && cuposCitados >= 12}
+                  onChange={() => {
+                    setSeleccionCitacion((prev) => ({
+                      ...prev,
+                      [jugador.rut_jugador]: !prev[jugador.rut_jugador],
+                    }));
+                  }}
+                />
               </div>
             ))}
-            <button className="btn-electric mt-20" onClick={() => alert('Citación publicada y enviada a los Muros.')}>CONFIRMAR Y CITAR</button>
+            <button className="btn-electric mt-20" onClick={() => alert(`Citación preparada para ${cuposCitados} jugadoras/jugadores.`)}>CONFIRMAR Y CITAR</button>
           </div>
         </div>
       )}

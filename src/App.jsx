@@ -8,7 +8,7 @@ import {
   FileText, Flag, QrCode, Lock, Camera, ChevronRight, ChevronLeft, 
   ShieldAlert, Zap, MessageCircle, Clock, FileDown, 
   History, CheckSquare, 
-  XSquare, Moon, Sun, Search
+  XSquare, Search
 } from 'lucide-react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
@@ -61,7 +61,7 @@ const NotificationHistoryPanel = lazy(() => import('./components/NotificationHis
 // ==========================================
 function App() {
   // --- ESTADOS: GLOBAL Y TEMA ---
-  const [temaOscuro, setTemaOscuro] = useState(true); // Iniciamos en Modo Noche (Premium)
+  const temaOscuro = false;
   const [isAppLoading, setIsAppLoading] = useState(false); // Skeleton Loaders
   
   // --- ESTADOS: NAVEGACIÓN Y LOGIN ---
@@ -179,9 +179,7 @@ function App() {
   const [tipoPago, setTipoPago] = useState('completo'); 
   const [montoAbono, setMontoAbono] = useState('');
   const [comprobanteSubido, setComprobanteSubido] = useState(false);
-  const [pagosPendientesAdmin, setPagosPendientesAdmin] = useState([
-    { id: 901, familia: 'Familia Parra Silva', detalle: 'Cuota Socio + U15 (Mes Jul)', monto: 45000, estado: 'Pendiente' }
-  ]);
+  const [pagosPendientesAdmin, setPagosPendientesAdmin] = useState([]);
 
   // --- ESTADOS: KIOSCO POS, INVENTARIO Y CAJA (PREMIUM) ---
   const [cajaAbierta, setCajaAbierta] = useState(false);
@@ -258,12 +256,13 @@ function App() {
     if (manual) setApiRetrying(true);
 
     try {
-      const [comunicacionesRes, contactosRes, cuentasIncompletasRes, cuentasRes, jugadoresRes] = await Promise.all([
+      const [comunicacionesRes, contactosRes, cuentasIncompletasRes, cuentasRes, jugadoresRes, pagosMensualidadesRes] = await Promise.all([
         api.comunicacionesAPI.getAll(),
         api.whatsappAPI.getContactos(),
         api.cuentasAPI.getIncompletas(),
         api.cuentasAPI.getAll(),
         api.jugadoresAPI.getAll(),
+        api.pagosMensualidadesAPI.getAll(),
       ]);
 
       if (Array.isArray(comunicacionesRes) && comunicacionesRes.length > 0) {
@@ -314,6 +313,10 @@ function App() {
 
       if (Array.isArray(jugadoresRes)) {
         setJugadoresAdmin(jugadoresRes);
+      }
+
+      if (Array.isArray(pagosMensualidadesRes)) {
+        setPagosPendientesAdmin(pagosMensualidadesRes.filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente'));
       }
 
       setApiOffline(false);
@@ -450,6 +453,15 @@ function App() {
     setJugadoresAdmin(Array.isArray(jugadoresRes) ? jugadoresRes : []);
   };
 
+  const recargarPagosMensualidades = async () => {
+    const pagosRes = await api.pagosMensualidadesAPI.getAll();
+    setPagosPendientesAdmin(
+      Array.isArray(pagosRes)
+        ? pagosRes.filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente')
+        : []
+    );
+  };
+
   const guardarCuentaPendiente = async () => {
     if (!cuentaEditando) return;
 
@@ -497,6 +509,11 @@ function App() {
     }
 
     await recargarUsuariosAdmin();
+  };
+
+  const validarPagoMensualidad = async (id, estadoPago) => {
+    await api.pagosMensualidadesAPI.validar(id, estadoPago);
+    await recargarPagosMensualidades();
   };
 
   // ==========================================
@@ -961,19 +978,19 @@ function App() {
       {/* HEADER DINÁMICO E INTELIGENTE */}
       <header className="ios-header">
         <div className="header-btn-zone">
-          <button className="btn-icon-header" onClick={() => setTemaOscuro(!temaOscuro)}>
-            {temaOscuro ? <Sun size={24} color="#FFD700" /> : <Moon size={24} color="white" />}
-          </button>
+          <div className="btn-icon-header" style={{ cursor: 'default' }}>
+            <ShieldAlert size={22} color="#FFD700" />
+          </div>
         </div>
-        <div className="logo-temporal" style={{background: 'none', width: 'auto'}}>
+        <div className="logo-temporal" style={{ background: 'none', width: 'auto', flex: 1, minWidth: 0, padding: '0 10px' }}>
           {!rolUsuario
             ? <span style={{fontSize:'24px', lineHeight:'1'}}>🛡️</span>
-            : <h2 style={{margin: 0, fontSize: '16px', fontWeight: '900', letterSpacing: '1px'}}>{getHeaderTitle()}</h2>
+            : <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '900', letterSpacing: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getHeaderTitle()}</h2>
           }
         </div>
         <div className="header-btn-zone right">
           {rolUsuario && (
-            <div style={{display: 'flex', gap: '15px', alignItems: 'center'}}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'flex-end', width: '100%', flexWrap: 'nowrap' }}>
               <button className="btn-icon-header" onClick={() => setMostrarBusqueda(!mostrarBusqueda)} title="Búsqueda Global">
                 <Search size={24} color="white" />
               </button>
@@ -1025,8 +1042,6 @@ function App() {
             setFiltroRolPermisos={setFiltroRolPermisos}
             matrixPermisos={matrixPermisos}
             togglePermiso={togglePermiso}
-            temaOscuro={temaOscuro}
-            setTemaOscuro={setTemaOscuro}
             preferenciasSonido={preferenciasSonido}
             setPreferenciasSonido={setPreferenciasSonido}
             reproducirSonido={reproducirSonido}
@@ -1128,7 +1143,7 @@ function App() {
       )}
 
       {/* RUTEADOR CENTRAL CON SKELETON LOADERS */}
-      <main className="ios-main">
+      <main className={`ios-main ${isAppLoading ? 'screen-loading' : 'screen-ready'}`}>
         {isAppLoading ? <SkeletonLoaderPanel /> : (
           <>
             {!rolUsuario && (
@@ -1337,6 +1352,7 @@ function App() {
                 jugadoresAdmin={jugadoresAdmin}
                 guardarCuentaAdmin={guardarCuentaAdmin}
                 guardarJugadorAdmin={guardarJugadorAdmin}
+                validarPagoMensualidad={validarPagoMensualidad}
               />
             )}
           </>

@@ -221,7 +221,10 @@ body {
   overflow-y: auto; 
   scroll-behavior: smooth; 
   padding-bottom: 110px; /* Evita que el Bottom Nav tape el contenido */
+  transition: opacity 0.28s ease, transform 0.28s ease;
 }
+.ios-main.screen-loading { opacity: 0.55; transform: translateY(4px); }
+.ios-main.screen-ready { opacity: 1; transform: translateY(0); }
 
 /* Scrollbars Nativos Invisibles */
 .ios-main::-webkit-scrollbar, 
@@ -238,8 +241,8 @@ body {
   background: linear-gradient(160deg, var(--azul-marino) 0%, #0d2244 100%);
   color: white; 
   padding: 15px 20px; 
-  display: flex; 
-  justify-content: space-between; 
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
   align-items: center; 
   padding-top: env(safe-area-inset-top, 48px);
   border-bottom-left-radius: 30px; 
@@ -255,6 +258,7 @@ body {
   display: flex; 
   align-items: center; 
   justify-content: center; 
+  min-width: 0;
 }
 
 .header-btn-zone { min-width: 60px; display: flex; justify-content: flex-start; }
@@ -557,6 +561,7 @@ body {
    8. MURO RRSS Y CITACIONES
    ========================================= */
 .scroll-horizontal-menu { display: flex; overflow-x: auto; padding-bottom: 10px; margin-bottom: 15px;}
+.scroll-horizontal-menu { scrollbar-width: none; }
 .segment-control { display: flex; background: var(--fondo-input); border-radius: 16px; padding: 5px; min-width: max-content; }
 .segment-btn { text-align: center; padding: 12px 20px; font-size: 14px; font-weight: 800; color: var(--texto-secundario); border-radius: 14px; cursor: pointer; transition: 0.25s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
 .segment-btn:hover { color: var(--texto-principal); }
@@ -572,6 +577,24 @@ body {
 }
 .ios-app-container[data-theme="dark"] .text-muted {
   color: var(--texto-secundario);
+}
+
+@media (max-width: 520px) {
+  .ios-header {
+    grid-template-columns: 44px 1fr auto;
+    padding: 12px 14px;
+  }
+
+  .header-btn-zone { min-width: 44px; }
+
+  .header-btn-zone.right > div {
+    gap: 8px !important;
+  }
+
+  .segment-btn {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
 }
 
 .ios-rrss-card { padding: 24px; border-radius: 22px; box-shadow: 0 14px 32px rgba(0,0,0,0.05); border: 1px solid var(--borde-suave); background-color: var(--blanco-tarjeta); margin-bottom: 14px; }
