@@ -335,12 +335,15 @@ button,
   justify-content: center;
   gap: 8px;
   width: 100%;
+  min-height: 90px;
 }
 
 .home-header-club-mark {
-  width: min(100%, 560px);
-  max-height: 54px;
-  object-fit: contain;
+  width: min(100%, 760px);
+  height: 96px;
+  max-height: 96px;
+  object-fit: cover;
+  object-position: center;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.28));
 }
 
