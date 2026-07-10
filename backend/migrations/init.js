@@ -189,6 +189,9 @@ const createSchema = async () => {
     `);
     console.log('✅ Tabla jugadores creada');
 
+    await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS foto_jugador VARCHAR(255)`);
+    console.log('✅ Columna foto_jugador verificada en jugadores');
+
     // Tabla: cuentas (Apoderados + Staff)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS cuentas (
@@ -222,6 +225,9 @@ const createSchema = async () => {
       )
     `);
     console.log('✅ Tabla cuentas creada');
+
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS logo_url VARCHAR(255)`);
+    console.log('✅ Columna logo_url verificada en cuentas');
 
     // Tabla: pagos_mensualidades (Mejorada)
     await pool.query(`
@@ -543,6 +549,9 @@ const createSchema = async () => {
       )
     `);
     console.log('✅ Tabla jugadores_visita creada');
+
+    await pool.query(`ALTER TABLE jugadores_visita ADD COLUMN IF NOT EXISTS club_logo_url VARCHAR(255)`);
+    console.log('✅ Columna club_logo_url verificada en jugadores_visita');
 
     // ==================== FASE 3: TABLAS ADMINISTRATIVAS ====================
 

@@ -1,10 +1,28 @@
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
 require('dotenv').config();
 const cron = require('node-cron');
+const { runImportFromSheets } = require('./import-google-sheets');
 
 const app = express();
+let isSheetsSyncRunning = false;
+let lastSheetsSyncStatus = null;
+
+const getSyncTokenFromRequest = (req) => {
+  const headerToken = req.headers['x-sync-token'];
+  if (headerToken) return String(headerToken).trim();
+
+  const authHeader = String(req.headers.authorization || '');
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+
+  return '';
+};
 
 // ========== MIDDLEWARE ==========
 app.use(cors({
@@ -13,6 +31,55 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+const normalizarSlugLogo = (texto = '') => {
+  return String(texto)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+};
+
+const logosPublicDir = path.join(__dirname, '..', 'public', 'logos');
+fs.mkdirSync(logosPublicDir, { recursive: true });
+
+const storageLogo = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, logosPublicDir),
+  filename: (req, file, cb) => {
+    const nombreBase = normalizarSlugLogo(`${req.body.tipo || 'logo'}-${req.body.nombre || 'sin-nombre'}`) || 'logo-sin-nombre';
+    const extension = path.extname(file.originalname).toLowerCase() || '.png';
+    cb(null, `${nombreBase}${extension}`);
+  },
+});
+
+const uploadLogo = multer({
+  storage: storageLogo,
+  fileFilter: (_req, file, cb) => {
+    const permitido = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'];
+    if (!permitido.includes(file.mimetype)) {
+      cb(new Error('Formato de logo no permitido. Usa PNG, JPG, WEBP o SVG.'));
+      return;
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+app.post('/api/assets/logos', uploadLogo.single('archivo'), (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: 'Debes seleccionar un archivo de logo.' });
+    return;
+  }
+
+  res.json({
+    nombre: req.body.nombre || '',
+    tipo: req.body.tipo || 'logo',
+    archivo: req.file.filename,
+    url: `/logos/${req.file.filename}`,
+  });
+});
 
 // ========== DATABASE POOL ==========
 const rawDatabaseUrl = String(process.env.DATABASE_URL || '');
@@ -66,6 +133,25 @@ const formatearRut = (rut = '') => {
   const cuerpo = limpio.slice(0, -1);
   const dv = limpio.slice(-1);
   return `${cuerpo}-${dv}`;
+};
+
+const columnasTablaCache = new Map();
+
+const obtenerColumnasTabla = async (tabla) => {
+  if (columnasTablaCache.has(tabla)) {
+    return columnasTablaCache.get(tabla);
+  }
+
+  const resultado = await pool.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1`,
+    [tabla]
+  );
+
+  const columnas = new Set(resultado.rows.map((fila) => fila.column_name));
+  columnasTablaCache.set(tabla, columnas);
+  return columnas;
 };
 
 const camposObligatoriosCuenta = [
@@ -150,6 +236,95 @@ const ensureSuperAdminAccount = async () => {
 // ========== HEALTH CHECK ==========
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date() });
+});
+
+app.get('/api/admin/sync-sheets/status', (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Consulta de sincronizacion deshabilitada: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para consultar sincronizacion.' });
+  }
+
+  return res.json({
+    running: isSheetsSyncRunning,
+    lastSync: lastSheetsSyncStatus,
+  });
+});
+
+app.post('/api/admin/sync-sheets', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Sincronizacion deshabilitada: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para sincronizar.' });
+  }
+
+  if (isSheetsSyncRunning) {
+    return res.status(409).json({ error: 'Ya hay una sincronizacion en curso.' });
+  }
+
+  isSheetsSyncRunning = true;
+  lastSheetsSyncStatus = {
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    syncedAt: lastSheetsSyncStatus?.syncedAt || null,
+    totals: lastSheetsSyncStatus?.totals || null,
+  };
+
+  try {
+    const result = await runImportFromSheets({ logger: console });
+    const totals = result.summary.reduce(
+      (acc, item) => {
+        acc.total += item.total;
+        acc.importadas += item.imported;
+        acc.omitidas += item.skipped;
+        acc.errores += item.errors;
+        return acc;
+      },
+      { total: 0, importadas: 0, omitidas: 0, errores: 0 }
+    );
+
+    lastSheetsSyncStatus = {
+      status: 'success',
+      sheetId: result.sheetId,
+      totals,
+      detail: result.summary,
+      startedAt: lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
+      syncedAt: new Date().toISOString(),
+    };
+
+    return res.json({
+      ok: true,
+      sheetId: result.sheetId,
+      totals,
+      detail: result.summary,
+      syncedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    lastSheetsSyncStatus = {
+      status: 'error',
+      startedAt: lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
+      syncedAt: new Date().toISOString(),
+      error: error.message,
+    };
+    return res.status(500).json({
+      error: 'Fallo la sincronizacion desde Google Sheets.',
+      detail: error.message,
+    });
+  } finally {
+    isSheetsSyncRunning = false;
+  }
 });
 
 // ==========================================
@@ -536,6 +711,7 @@ app.post('/api/cuentas', async (req, res) => {
     rol,
     forzar_clave,
     foto_perfil_url,
+    logo_url,
     estado,
     autorizacion_imagen,
     dia_pago_acordado,
@@ -551,15 +727,16 @@ app.post('/api/cuentas', async (req, res) => {
 
   try {
     const rutNormalizado = formatearRut(rut);
+    const logoPerfilUrl = foto_perfil_url || logo_url || null;
     const result = await pool.query(
       `INSERT INTO cuentas (
         correo, rut, password, nombres, apellido_paterno, apellido_materno,
         fecha_nacimiento, estado_civil, direccion, comuna, prefijo_tel, telefono,
         profesion_oficio, nombre_segundo_contacto, parentesco_segundo_contacto,
         num_segundo_contacto, es_socio, fecha_ingreso_socio, rol, forzar_clave,
-        foto_perfil_url, estado, autorizacion_imagen, dia_pago_acordado
+        foto_perfil_url, logo_url, estado, autorizacion_imagen, dia_pago_acordado
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
       ) RETURNING *`,
       [
         correo,
@@ -582,7 +759,8 @@ app.post('/api/cuentas', async (req, res) => {
         fecha_ingreso_socio || null,
         rol || 'apoderado',
         forzar_clave ?? false,
-        foto_perfil_url || null,
+        logoPerfilUrl,
+        logoPerfilUrl,
         estado || 'activo',
         autorizacion_imagen ?? false,
         dia_pago_acordado || null,
@@ -629,6 +807,7 @@ app.put('/api/cuentas/:id', async (req, res) => {
     estado,
     autorizacion_imagen,
     dia_pago_acordado,
+    logo_url,
   } = req.body;
 
   if (rut && !validarRutChileno(rut)) {
@@ -637,6 +816,7 @@ app.put('/api/cuentas/:id', async (req, res) => {
 
   try {
     const rutNormalizado = rut ? formatearRut(rut) : null;
+    const logoPerfilUrl = foto_perfil_url || logo_url || null;
     const result = await pool.query(
       `UPDATE cuentas SET
         correo = COALESCE($1, correo),
@@ -660,11 +840,12 @@ app.put('/api/cuentas/:id', async (req, res) => {
         rol = COALESCE($19, rol),
         forzar_clave = COALESCE($20, forzar_clave),
         foto_perfil_url = COALESCE($21, foto_perfil_url),
-        estado = COALESCE($22, estado),
-        autorizacion_imagen = COALESCE($23, autorizacion_imagen),
-        dia_pago_acordado = COALESCE($24, dia_pago_acordado),
+        logo_url = COALESCE($22, logo_url),
+        estado = COALESCE($23, estado),
+        autorizacion_imagen = COALESCE($24, autorizacion_imagen),
+        dia_pago_acordado = COALESCE($25, dia_pago_acordado),
         updated_at = NOW()
-      WHERE id = $25
+      WHERE id = $26
       RETURNING *`,
       [
         correo || null,
@@ -687,7 +868,8 @@ app.put('/api/cuentas/:id', async (req, res) => {
         fecha_ingreso_socio || null,
         rol || null,
         forzar_clave,
-        foto_perfil_url || null,
+        logoPerfilUrl,
+        logoPerfilUrl,
         estado || null,
         autorizacion_imagen,
         dia_pago_acordado || null,
@@ -926,14 +1108,31 @@ app.get('/api/jugadores/:rut', async (req, res) => {
 
 // POST: Crear jugador
 app.post('/api/jugadores', async (req, res) => {
-  const { rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria, correo_apoderado } = req.body;
+  const {
+    rut_jugador,
+    nombres,
+    apellido_paterno,
+    apellido_materno,
+    rama,
+    categoria,
+    correo_apoderado,
+    foto_jugador,
+  } = req.body;
   try {
+    const columnasJugadores = await obtenerColumnasTabla('jugadores');
+    const columnas = ['rut_jugador', 'nombres', 'apellido_paterno', 'apellido_materno', 'rama', 'categoria', 'correo_apoderado', 'estado'];
+    const valores = [rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria, correo_apoderado, 'activo'];
+
+    if (foto_jugador !== undefined && columnasJugadores.has('foto_jugador')) {
+      columnas.push('foto_jugador');
+      valores.push(foto_jugador);
+    }
+
+    const placeholders = columnas.map((_columna, indice) => `$${indice + 1}`).join(', ');
+
     const result = await pool.query(
-      `INSERT INTO jugadores 
-       (rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria, correo_apoderado, estado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'activo')
-       RETURNING *`,
-      [rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria, correo_apoderado]
+      `INSERT INTO jugadores (${columnas.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+      valores
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -1579,13 +1778,40 @@ app.get('/api/jugadores-visita', async (req, res) => {
 
 // POST: Registrar jugador en visita
 app.post('/api/jugadores-visita', async (req, res) => {
-  const { rut_visita, nombres, apellido_paterno, apellido_materno, club_procedencia, rama, categoria, posicion, contacto_apoderado, telefono_contacto } = req.body;
+  const {
+    rut_visita,
+    nombres,
+    apellido_paterno,
+    apellido_materno,
+    club_procedencia,
+    rama,
+    categoria,
+    posicion,
+    contacto_apoderado,
+    telefono_contacto,
+    club_logo_url,
+    foto_jugador,
+  } = req.body;
   try {
+    const columnasVisita = await obtenerColumnasTabla('jugadores_visita');
+    const columnas = ['rut_visita', 'nombres', 'apellido_paterno', 'apellido_materno', 'club_procedencia', 'rama', 'categoria', 'posicion', 'contacto_apoderado', 'telefono_contacto', 'fecha_visita'];
+    const valores = [rut_visita, nombres, apellido_paterno, apellido_materno, club_procedencia, rama, categoria, posicion, contacto_apoderado, telefono_contacto];
+
+    if (club_logo_url !== undefined && columnasVisita.has('club_logo_url')) {
+      columnas.splice(columnas.length - 1, 0, 'club_logo_url');
+      valores.push(club_logo_url);
+    } else if (foto_jugador !== undefined && columnasVisita.has('foto_jugador')) {
+      columnas.splice(columnas.length - 1, 0, 'foto_jugador');
+      valores.push(foto_jugador);
+    }
+
+    const placeholders = columnas.slice(0, -1).map((_columna, indice) => `$${indice + 1}`).join(', ');
+
     const result = await pool.query(
-      `INSERT INTO jugadores_visita (rut_visita, nombres, apellido_paterno, apellido_materno, club_procedencia, rama, categoria, posicion, contacto_apoderado, telefono_contacto, fecha_visita)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_DATE)
+      `INSERT INTO jugadores_visita (${columnas.join(', ')})
+       VALUES (${placeholders}, CURRENT_DATE)
        RETURNING *`,
-      [rut_visita, nombres, apellido_paterno, apellido_materno, club_procedencia, rama, categoria, posicion, contacto_apoderado, telefono_contacto]
+      valores
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -1595,14 +1821,34 @@ app.post('/api/jugadores-visita', async (req, res) => {
 
 // PUT: Actualizar resultado de prueba
 app.put('/api/jugadores-visita/:id', async (req, res) => {
-  const { prueba_realizada, resultado_prueba, reclutado, observaciones } = req.body;
+  const { prueba_realizada, resultado_prueba, reclutado, observaciones, club_logo_url, foto_jugador } = req.body;
   try {
+    const columnasVisita = await obtenerColumnasTabla('jugadores_visita');
+    const sets = [
+      'prueba_realizada = $1',
+      'resultado_prueba = $2',
+      'reclutado = $3',
+      'observaciones = $4',
+    ];
+    const valores = [prueba_realizada, resultado_prueba, reclutado, observaciones];
+
+    if (club_logo_url !== undefined && columnasVisita.has('club_logo_url')) {
+      sets.push(`club_logo_url = $${valores.length + 1}`);
+      valores.push(club_logo_url);
+    } else if (foto_jugador !== undefined && columnasVisita.has('foto_jugador')) {
+      sets.push(`foto_jugador = $${valores.length + 1}`);
+      valores.push(foto_jugador);
+    }
+
+    sets.push(`updated_at = NOW()`);
+    valores.push(req.params.id);
+
     const result = await pool.query(
       `UPDATE jugadores_visita 
-       SET prueba_realizada = $1, resultado_prueba = $2, reclutado = $3, observaciones = $4, updated_at = NOW()
-       WHERE id_visita = $5
+       SET ${sets.join(', ')}
+       WHERE id_visita = $${valores.length}
        RETURNING *`,
-      [prueba_realizada, resultado_prueba, reclutado, observaciones, req.params.id]
+      valores
     );
     res.json(result.rows[0]);
   } catch (err) {

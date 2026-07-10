@@ -17,18 +17,19 @@ function ApiStatusBanner({
         background: 'rgba(255,149,0,0.14)',
         border: '1px solid rgba(255,149,0,0.45)',
         color: 'var(--texto-principal)',
-        borderRadius: '12px',
-        padding: '10px 12px',
+        borderRadius: '20px',
+        padding: '12px 14px',
         zIndex: 1200,
-        backdropFilter: 'blur(8px)',
+        backdropFilter: 'blur(18px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '12px',
+        boxShadow: '0 14px 34px rgba(15,23,42,0.12)',
       }}
     >
       <div style={{ fontSize: '12px', lineHeight: 1.35 }}>
-        <strong style={{ display: 'block' }}>Modo demo activo</strong>
+        <strong style={{ display: 'block' }}>Modo sin conexión</strong>
         <span>
           Backend no disponible. Se muestran datos locales.
           {message ? ` (${message})` : ''}
@@ -39,9 +40,9 @@ function ApiStatusBanner({
         disabled={retrying}
         style={{
           border: 'none',
-          borderRadius: '8px',
-          padding: '8px 10px',
-          background: retrying ? 'rgba(0,0,0,0.15)' : 'var(--azul-electrico)',
+          borderRadius: '999px',
+          padding: '9px 12px',
+          background: retrying ? 'rgba(0,0,0,0.15)' : 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)',
           color: 'white',
           fontSize: '12px',
           fontWeight: '700',

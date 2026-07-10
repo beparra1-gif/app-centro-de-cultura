@@ -1,13 +1,34 @@
 // src/api/client.js
 // Cliente HTTP para conectar con el backend
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const resolveApiBaseUrl = () => {
+  const envUrl = String(import.meta.env.VITE_API_URL || '').trim();
+  if (envUrl) return envUrl.replace(/\/$/, '');
+
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:3000/api';
+    }
+  }
+
+  return '/api';
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
+export const API_BASE_URL_CONFIG = API_BASE_URL;
 
 // Funciones auxiliares
 const handleResponse = async (response) => {
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Error en la solicitud');
+    let message = 'Error en la solicitud';
+    try {
+      const error = await response.json();
+      message = error.error || error.message || message;
+    } catch {
+      message = `Error ${response.status}: ${response.statusText || 'Respuesta no válida'}`;
+    }
+    throw new Error(message);
   }
   return response.json();
 };
@@ -313,6 +334,28 @@ export const healthCheck = async () => {
     return response.ok;
   } catch {
     return false;
+  }
+};
+
+export const adminAPI = {
+  getSyncStatus: async (token) => {
+    const response = await fetch(`${API_BASE_URL}/admin/sync-sheets/status`, {
+      headers: {
+        'x-sync-token': token,
+      },
+    });
+    return handleResponse(response);
+  },
+
+  syncSheets: async (token) => {
+    const response = await fetch(`${API_BASE_URL}/admin/sync-sheets`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-sync-token': token,
+      },
+    });
+    return handleResponse(response);
   }
 };
 
@@ -703,6 +746,18 @@ export const torneosAPI = {
     });
     return handleResponse(response);
   }
+};
+
+// ========== ACTIVOS VISUALES ==========
+
+export const assetsAPI = {
+  uploadLogo: async (formData) => {
+    const response = await fetch(`${API_BASE_URL}/assets/logos`, {
+      method: 'POST',
+      body: formData,
+    });
+    return handleResponse(response);
+  },
 };
 
 // ========== CAJA EVENTO (FASE 3) ==========

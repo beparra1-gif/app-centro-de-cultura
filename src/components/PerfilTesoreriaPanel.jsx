@@ -1,9 +1,13 @@
 import { AlertTriangle, Camera, Clock, LayoutGrid, List } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import { getUTMLastDayPreviousMonth } from '../utils/appHelpers';
-import { mockTesoreriaDB, mock12Meses } from '../data/mockData';
 
 function PerfilTesoreriaPanel({
+  pupiloActivo,
+  pupilosDisponibles,
+  cuentasAdmin,
+  pagosMensualidadesAdmin,
+  morososAdmin,
   mesesSeleccionados,
   setMesesSeleccionados,
   tipoPago,
@@ -16,16 +20,74 @@ function PerfilTesoreriaPanel({
   pagoViewMode,
   setPageViewMode,
 }) {
+  const mesesBase = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const cuentaActual = Array.isArray(cuentasAdmin)
+    ? cuentasAdmin.find((cuenta) => {
+      const correoCuenta = String(cuenta.correo || '').trim().toLowerCase();
+      const correoApoderado = String(pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
+      return correoCuenta && correoApoderado && correoCuenta === correoApoderado;
+    }) || cuentasAdmin[0] || null
+    : null;
+  const pupilosActivos = Array.isArray(pupilosDisponibles) && pupilosDisponibles.length > 0
+    ? pupilosDisponibles
+    : (pupiloActivo ? [pupiloActivo] : []);
+  const rutPupiloActivo = pupiloActivo?.rut || pupilosActivos[0]?.rut;
+  const titular = cuentaActual
+    ? `${cuentaActual.nombres || ''} ${cuentaActual.apellido_paterno || ''}`.trim()
+    : (pupiloActivo?.nombre || pupilosActivos[0]?.nombre || 'Cuenta principal');
+  const esSocio = Boolean(cuentaActual?.es_socio);
+
+  const morosoActivo = (morososAdmin || []).find((m) => m.rut === rutPupiloActivo) || null;
+  const mesesAtraso = Number(morosoActivo?.mesesDeuda || 0);
+  const estadoCuenta = mesesAtraso > 0 ? 'Moroso' : 'Al Día';
+
+  const monthFromPago = (pago) => {
+    if (Number.isFinite(Number(pago.mes_pago_numero))) return Number(pago.mes_pago_numero);
+    if (typeof pago.mes_pagado === 'string' && pago.mes_pagado.length >= 3) {
+      const normalized = pago.mes_pagado.slice(0, 3).toLowerCase();
+      const idx = mesesBase.findIndex((m) => m.toLowerCase() === normalized);
+      return idx >= 0 ? idx + 1 : null;
+    }
+    return null;
+  };
+
+  const pagosJugador = (pagosMensualidadesAdmin || []).filter((p) => {
+    if (!rutPupiloActivo) return true;
+    return p.rut_jugador === rutPupiloActivo;
+  });
+
+  const pagosPorMes = pagosJugador.reduce((acc, pago) => {
+    const mes = monthFromPago(pago);
+    if (!mes) return acc;
+    const estado = (pago.estado_pago || '').toLowerCase();
+    if (!acc[mes]) acc[mes] = [];
+    acc[mes].push(estado);
+    return acc;
+  }, {});
+
+  const mesActual = new Date().getMonth() + 1;
+  const mesesVisuales = mesesBase.map((mes, idx) => {
+    const mesNumero = idx + 1;
+    const estadosMes = pagosPorMes[mesNumero] || [];
+    const estado = estadosMes.includes('aprobado')
+      ? 'pagado'
+      : (estadosMes.includes('pendiente') || estadosMes.includes('rechazado'))
+        ? 'pendiente'
+        : (mesNumero < mesActual ? 'pendiente' : 'futuro');
+
+    return { id: mesNumero, mes, estado };
+  });
+
   let tarifaMensual = 0;
-  const utmActual = getUTMLastDayPreviousMonth(mockTesoreriaDB.utmValor);
+  const utmActual = getUTMLastDayPreviousMonth(Number(cuentaActual?.utm_valor || 71506));
   const cuotaSocio = utmActual * 0.003;
 
-  if (mockTesoreriaDB.esSocio) {
+  if (esSocio) {
     tarifaMensual += cuotaSocio;
-    if (mockTesoreriaDB.pupilos.length === 1) tarifaMensual += 15000;
-    else if (mockTesoreriaDB.pupilos.length >= 2) tarifaMensual += 24000;
+    if (pupilosActivos.length === 1) tarifaMensual += 15000;
+    else if (pupilosActivos.length >= 2) tarifaMensual += 24000;
   } else {
-    tarifaMensual += 30000 * mockTesoreriaDB.pupilos.length;
+    tarifaMensual += 30000 * pupilosActivos.length;
   }
 
   const tarifaRedondeada = Math.round(tarifaMensual);
@@ -43,33 +105,33 @@ function PerfilTesoreriaPanel({
 
   return (
     <div className="fade-in">
-      <div className="status-account-card payment-overview-card mt-15">
+      <div className="status-account-card payment-overview-card mt-15" style={{ borderRadius: '28px', boxShadow: '0 16px 34px rgba(15,23,42,0.10)' }}>
         <div className="status-header">
           <div>
             <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mensualidad / Perfil</span>
-            <h3 className="status-titular" style={{ color: 'white' }}>{mockTesoreriaDB.titular}</h3>
-            <span className="status-rol">{mockTesoreriaDB.esSocio ? 'Socio Activo Club Cultura Física' : 'Apoderado Base'}</span>
+            <h3 className="status-titular" style={{ color: 'white' }}>{titular}</h3>
+            <span className="status-rol">{esSocio ? 'Socio Activo Club Cultura Física' : 'Apoderado Base'}</span>
           </div>
-          <div className={`status-badge ${mockTesoreriaDB.estadoCuenta === 'Al Día' ? 'ok' : 'moroso'}`}>
-            {mockTesoreriaDB.estadoCuenta}
+          <div className={`status-badge ${estadoCuenta === 'Al Día' ? 'ok' : 'moroso'}`}>
+            {estadoCuenta}
           </div>
         </div>
-        {mockTesoreriaDB.estadoCuenta === 'Moroso' && (
-          <div className="status-alert"><AlertTriangle size={16} /> Presenta {mockTesoreriaDB.mesesAtraso} meses de atraso en cuotas.</div>
+        {estadoCuenta === 'Moroso' && (
+          <div className="status-alert"><AlertTriangle size={16} /> Presenta {mesesAtraso} meses de atraso en cuotas.</div>
         )}
       </div>
 
-      <div className="card ficha-socio-card mt-15 fade-in">
+      <div className="card ficha-socio-card mt-15 fade-in" style={{ borderRadius: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <div className="ficha-avatar">👤</div>
           <div style={{ flex: 1 }}>
-            <h4 style={{ margin: '0 0 3px 0', fontSize: '16px', fontWeight: '900', color: 'var(--texto-principal)' }}>{mockTesoreriaDB.titular}</h4>
+            <h4 style={{ margin: '0 0 3px 0', fontSize: '16px', fontWeight: '900', color: 'var(--texto-principal)' }}>{titular}</h4>
             <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--azul-electrico)', display: 'block' }}>
-              {mockTesoreriaDB.esSocio ? '🏅 Socio Activo · Club Centro de Cultura Física' : '👥 Apoderado'}
+              {esSocio ? '🏅 Socio Activo · Club Centro de Cultura Física' : '👥 Apoderado'}
             </span>
-            {mockTesoreriaDB.pupilos.length > 0 && (
+            {pupilosActivos.length > 0 && (
               <p style={{ margin: '6px 0 0 0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', lineHeight: '1.4' }}>
-                👨‍👧‍👦 Apoderado de: {mockTesoreriaDB.pupilos.map(p => p.nombre).join(' · ')}
+                👨‍👧‍👦 Apoderado de: {pupilosActivos.map(p => p.nombre).join(' · ')}
               </p>
             )}
           </div>
@@ -81,16 +143,16 @@ function PerfilTesoreriaPanel({
         </div>
       </div>
 
-      {mockTesoreriaDB.estadoCuenta === 'Moroso' && (
-        <div className="card fade-in mt-15 compact-debt-summary" style={{ borderLeft: '4px solid var(--rojo-alerta)', background: 'linear-gradient(135deg, rgba(255,59,48,0.08), rgba(255,59,48,0.02))' }}>
+      {estadoCuenta === 'Moroso' && (
+        <div className="card fade-in mt-15 compact-debt-summary" style={{ borderLeft: '4px solid var(--rojo-alerta)', background: 'linear-gradient(180deg, rgba(255,59,48,0.08), rgba(255,59,48,0.02))', borderRadius: '24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'center' }}>
             <div>
               <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', color: 'var(--rojo-alerta)', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={18} /> Deuda Pendiente</h4>
-              <p style={{ margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{mockTesoreriaDB.mesesAtraso} {mockTesoreriaDB.mesesAtraso === 1 ? 'mes' : 'meses'} adeudados</p>
+              <p style={{ margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{mesesAtraso} {mesesAtraso === 1 ? 'mes' : 'meses'} adeudados</p>
             </div>
             <div style={{ textAlign: 'right' }}>
               <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Total Estimado</span>
-              <strong style={{ fontSize: '20px', color: 'var(--rojo-alerta)', fontWeight: '900' }}>-${(tarifaRedondeada * mockTesoreriaDB.mesesAtraso).toLocaleString('es-CL')}</strong>
+              <strong style={{ fontSize: '20px', color: 'var(--rojo-alerta)', fontWeight: '900' }}>-${(tarifaRedondeada * mesesAtraso).toLocaleString('es-CL')}</strong>
             </div>
           </div>
           <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,59,48,0.15)', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
@@ -101,12 +163,12 @@ function PerfilTesoreriaPanel({
 
       <h3 className="section-title mt-20">Panel de Pagos 2026</h3>
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         <button
           className={`btn-toggle-view ${pagoViewMode === 'grid' ? 'activo' : ''}`}
           onClick={() => setPageViewMode('grid')}
           title="Vista Cuadrícula"
-          style={{ padding: '8px 14px', borderRadius: '10px', border: '1px solid var(--borde-suave)', background: pagoViewMode === 'grid' ? 'var(--azul-electrico)' : 'transparent', color: pagoViewMode === 'grid' ? 'white' : 'var(--texto-principal)', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s ease' }}
+          style={{ padding: '9px 14px', borderRadius: '999px', border: '1px solid var(--borde-suave)', background: pagoViewMode === 'grid' ? 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' : 'rgba(255,255,255,0.9)', color: pagoViewMode === 'grid' ? 'white' : 'var(--texto-principal)', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s ease' }}
         >
           <LayoutGrid size={16} /> Cuadrícula
         </button>
@@ -114,18 +176,18 @@ function PerfilTesoreriaPanel({
           className={`btn-toggle-view ${pagoViewMode === 'list' ? 'activo' : ''}`}
           onClick={() => setPageViewMode('list')}
           title="Vista Lista"
-          style={{ padding: '8px 14px', borderRadius: '10px', border: '1px solid var(--borde-suave)', background: pagoViewMode === 'list' ? 'var(--azul-electrico)' : 'transparent', color: pagoViewMode === 'list' ? 'white' : 'var(--texto-principal)', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s ease' }}
+          style={{ padding: '9px 14px', borderRadius: '999px', border: '1px solid var(--borde-suave)', background: pagoViewMode === 'list' ? 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' : 'rgba(255,255,255,0.9)', color: pagoViewMode === 'list' ? 'white' : 'var(--texto-principal)', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s ease' }}
         >
           <List size={16} /> Lista Compacta
         </button>
       </div>
 
-      <div className="card finanzas-card payment-card">
-        {mockTesoreriaDB.esSocio && (
+      <div className="card finanzas-card payment-card" style={{ borderRadius: '26px' }}>
+        {esSocio && (
           <div className="mb-20">
             <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: 'var(--texto-heading)', fontWeight: '800' }}>1. Cuotas de Socio: <span className="payment-chip">Socio activo</span></h4>
             <div className={pagoViewMode === 'grid' ? 'grid-12-meses' : 'lista-12-meses'}>
-              {mock12Meses.map((item) => (
+              {mesesVisuales.map((item) => (
                 <div key={item.id} onClick={() => toggleMes(item.id, item.estado)} className={`mes-box mes-${item.estado} ${mesesSeleccionados.includes(item.id) ? 'seleccionado' : ''}`}>
                   <span className="mes-box-nombre">{item.mes}</span>
                 </div>
@@ -134,15 +196,28 @@ function PerfilTesoreriaPanel({
           </div>
         )}
 
-        {mockTesoreriaDB.pupilos.map(pupilo => (
+        {pupilosActivos.map(pupilo => (
           <div key={pupilo.id} className="mb-20" style={{ borderTop: '1px dashed rgba(0,0,0,0.1)', paddingTop: '15px' }}>
             <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: 'var(--texto-heading)', fontWeight: '800' }}>2. Mensualidad Deportista: {pupilo.nombre.split(' ')[0]} <span className="payment-chip">Inscripción</span></h4>
             <div className={pagoViewMode === 'grid' ? 'grid-12-meses' : 'lista-12-meses'}>
-              {mock12Meses.map((item) => (
-                <div key={item.id + pupilo.id} className={`mes-box mes-${item.estado}`}>
-                  <span className="mes-box-nombre">{item.mes}</span>
+              {mesesBase.map((mes, idx) => {
+                const mesNumero = idx + 1;
+                const pagosDelPupilo = (pagosMensualidadesAdmin || []).filter((p) => p.rut_jugador === pupilo.rut);
+                const estadosMes = pagosDelPupilo
+                  .filter((pago) => monthFromPago(pago) === mesNumero)
+                  .map((pago) => (pago.estado_pago || '').toLowerCase());
+                const estadoMes = estadosMes.includes('aprobado')
+                  ? 'pagado'
+                  : (estadosMes.includes('pendiente') || estadosMes.includes('rechazado'))
+                    ? 'pendiente'
+                    : (mesNumero < mesActual ? 'pendiente' : 'futuro');
+
+                return (
+                <div key={mesNumero + pupilo.id} className={`mes-box mes-${estadoMes}`}>
+                  <span className="mes-box-nombre">{mes}</span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
@@ -178,7 +253,8 @@ function PerfilTesoreriaPanel({
               setComprobanteSubido(true);
               setPagosPendientesAdmin(prev => [...prev, {
                 id: nextId(),
-                familia: mockTesoreriaDB.titular,
+                familia: titular,
+                rut_jugador: rutPupiloActivo,
                 monto: totalFinalPagar,
                 detalle: `${tipoPago === 'completo' ? 'Pago total' : `Abono $${Number(montoAbono).toLocaleString('es-CL')}`} — ${mesesSeleccionados.length} mes(es) — Comprobante adjunto`,
               }]);

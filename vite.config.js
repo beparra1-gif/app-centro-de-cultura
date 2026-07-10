@@ -1,9 +1,34 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.svg', 'logos/club-logo.png'],
+      manifest: {
+        name: 'Centro de Cultura Física Viña del Mar',
+        short_name: 'CCF Viña',
+        description: 'Portal oficial del Club Centro de Cultura Física Viña del Mar.',
+        theme_color: '#0a4da2',
+        background_color: '#0a4da2',
+        display: 'standalone',
+        start_url: '/',
+        scope: '/',
+        icons: [
+          {
+            src: '/logos/club-logo.png',
+            sizes: '1024x1024',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
+        ],
+      },
+    }),
+  ],
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.js',

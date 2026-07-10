@@ -12,15 +12,15 @@ function NotificationHistoryPanel({
   });
 
   return (
-    <div style={{ position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '500px', maxHeight: '600px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '500px', maxHeight: '600px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', borderRadius: '24px', boxShadow: '0 18px 44px rgba(15,23,42,0.18)', zIndex: 999, padding: '20px', border: '1px solid rgba(255,255,255,0.72)', overflowY: 'auto', backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h4 style={{ margin: 0, color: 'var(--texto-heading)', fontSize: '16px', fontWeight: '700' }}>Historial de Notificaciones</h4>
-        <button onClick={() => setMostrarHistorialNotif(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>✕</button>
+        <button onClick={() => setMostrarHistorialNotif(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', fontSize: '20px', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px' }}>✕</button>
       </div>
 
       <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
         {['semana', 'mes', 'todos'].map(f => (
-          <button key={f} onClick={() => setFiltroReporteFecha(f)} style={{ padding: '6px 10px', borderRadius: '6px', border: filtroReporteFecha === f ? 'none' : '1px solid var(--borde-suave)', background: filtroReporteFecha === f ? 'var(--azul-electrico)' : 'var(--blanco-tarjeta)', color: filtroReporteFecha === f ? 'white' : 'var(--texto-principal)', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>
+          <button key={f} onClick={() => setFiltroReporteFecha(f)} style={{ padding: '8px 12px', borderRadius: '999px', border: filtroReporteFecha === f ? 'none' : '1px solid var(--borde-suave)', background: filtroReporteFecha === f ? 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' : 'rgba(255,255,255,0.9)', color: filtroReporteFecha === f ? 'white' : 'var(--texto-principal)', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>
             {f === 'semana' ? 'Semana' : f === 'mes' ? 'Mes' : 'Todo'}
           </button>
         ))}
@@ -31,7 +31,7 @@ function NotificationHistoryPanel({
           <p style={{ textAlign: 'center', color: 'var(--texto-secundario)', fontSize: '12px' }}>Sin notificaciones</p>
         ) : (
           notifFiltradas.map(notif => (
-            <div key={notif.id} style={{ background: 'rgba(0,0,0,0.02)', padding: '10px', borderRadius: '6px', borderLeft: '3px solid var(--azul-electrico)' }}>
+            <div key={notif.id} style={{ background: 'rgba(0,0,0,0.02)', padding: '12px', borderRadius: '16px', borderLeft: '4px solid var(--azul-electrico)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
                 <span style={{ fontWeight: '700', fontSize: '13px', color: 'var(--texto-principal)' }}>{notif.titulo}</span>
                 <span style={{ fontSize: '10px', color: 'var(--texto-secundario)' }}>{notif.timestamp.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>

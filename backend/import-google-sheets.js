@@ -3,17 +3,11 @@ const { parse } = require('csv-parse/sync');
 const { Pool } = require('pg');
 require('dotenv').config();
 
-const { DATABASE_URL, NODE_ENV, GOOGLE_SHEET_ID } = process.env;
-
-if (!DATABASE_URL) {
-  console.error('Falta DATABASE_URL en backend/.env');
-  process.exit(1);
-}
-
-if (!GOOGLE_SHEET_ID) {
-  console.error('Falta GOOGLE_SHEET_ID en backend/.env (puede ser ID o URL completa del Sheet)');
-  process.exit(1);
-}
+const DEFAULT_ENV = {
+  DATABASE_URL: process.env.DATABASE_URL,
+  NODE_ENV: process.env.NODE_ENV,
+  GOOGLE_SHEET_ID: process.env.GOOGLE_SHEET_ID,
+};
 
 const SHEET_TABLE_MAP = [
   { sheet: 'JUGADORES', table: 'jugadores' },
@@ -63,21 +57,23 @@ const HEADER_ALIASES = {
   reserva_bus_acomapañante: 'reserva_bus_acompanante',
 };
 
-const rawDatabaseUrl = String(DATABASE_URL || '');
-const safeDatabaseUrl = rawDatabaseUrl.includes('sslmode=require')
-  ? rawDatabaseUrl.replace('sslmode=require', 'sslmode=no-verify')
-  : rawDatabaseUrl;
+function createSheetsPool(databaseUrl, nodeEnv) {
+  const rawDatabaseUrl = String(databaseUrl || '');
+  const safeDatabaseUrl = rawDatabaseUrl.includes('sslmode=require')
+    ? rawDatabaseUrl.replace('sslmode=require', 'sslmode=no-verify')
+    : rawDatabaseUrl;
 
-const shouldUseSsl =
-  String(NODE_ENV || '').toLowerCase() === 'production' ||
-  rawDatabaseUrl.includes('ondigitalocean.com') ||
-  rawDatabaseUrl.includes('sslmode=require') ||
-  rawDatabaseUrl.includes('sslmode=no-verify');
+  const shouldUseSsl =
+    String(nodeEnv || '').toLowerCase() === 'production' ||
+    rawDatabaseUrl.includes('ondigitalocean.com') ||
+    rawDatabaseUrl.includes('sslmode=require') ||
+    rawDatabaseUrl.includes('sslmode=no-verify');
 
-const pool = new Pool({
-  connectionString: safeDatabaseUrl,
-  ssl: shouldUseSsl ? { rejectUnauthorized: false } : false,
-});
+  return new Pool({
+    connectionString: safeDatabaseUrl,
+    ssl: shouldUseSsl ? { rejectUnauthorized: false } : false,
+  });
+}
 
 function normalizeKey(value) {
   return String(value || '')
@@ -349,37 +345,67 @@ async function importSheetToTable(client, sheetId, mapping) {
   return { sheet, table, total: rows.length, imported, skipped, errors };
 }
 
-async function run() {
-  const sheetId = extractSheetId(GOOGLE_SHEET_ID);
+async function runImportFromSheets(options = {}) {
+  const logger = options.logger || console;
+  const databaseUrl = options.databaseUrl || DEFAULT_ENV.DATABASE_URL;
+  const nodeEnv = options.nodeEnv || DEFAULT_ENV.NODE_ENV;
+  const googleSheetId = options.googleSheetId || DEFAULT_ENV.GOOGLE_SHEET_ID;
+
+  if (!databaseUrl) {
+    throw new Error('Falta DATABASE_URL en backend/.env');
+  }
+
+  if (!googleSheetId) {
+    throw new Error('Falta GOOGLE_SHEET_ID en backend/.env (puede ser ID o URL completa del Sheet)');
+  }
+
+  const pool = createSheetsPool(databaseUrl, nodeEnv);
+  const sheetId = extractSheetId(googleSheetId);
   const client = await pool.connect();
   const summary = [];
 
   try {
-    console.log('Iniciando importacion completa desde Google Sheets a PostgreSQL...');
-    console.log(`Spreadsheet ID: ${sheetId}`);
+    logger.log('Iniciando importacion completa desde Google Sheets a PostgreSQL...');
+    logger.log(`Spreadsheet ID: ${sheetId}`);
 
     for (const mapping of SHEET_TABLE_MAP) {
-      console.log(`\nImportando hoja ${mapping.sheet} -> tabla ${mapping.table} ...`);
+      logger.log(`\nImportando hoja ${mapping.sheet} -> tabla ${mapping.table} ...`);
       const result = await importSheetToTable(client, sheetId, mapping);
       summary.push(result);
-      console.log(
+      logger.log(
         `OK ${mapping.sheet}: total=${result.total}, importadas=${result.imported}, omitidas=${result.skipped}, errores=${result.errors}`
       );
     }
 
-    console.log('\n===== RESUMEN FINAL =====');
+    logger.log('\n===== RESUMEN FINAL =====');
     for (const item of summary) {
-      console.log(
+      logger.log(
         `${item.sheet} -> ${item.table}: total=${item.total}, importadas=${item.imported}, omitidas=${item.skipped}, errores=${item.errors}`
       );
     }
+
+    return { sheetId, summary };
   } catch (err) {
-    console.error('Fallo general de importacion:', err.message);
-    process.exitCode = 1;
+    logger.error('Fallo general de importacion:', err.message);
+    throw err;
   } finally {
     client.release();
     await pool.end();
   }
 }
 
-run();
+if (require.main === module) {
+  runImportFromSheets()
+    .then(() => {
+      process.exitCode = 0;
+    })
+    .catch(() => {
+      process.exitCode = 1;
+    });
+}
+
+module.exports = {
+  runImportFromSheets,
+  SHEET_TABLE_MAP,
+  HEADER_ALIASES,
+};

@@ -29,8 +29,7 @@ function StaffEvaluacionPanel({
           <select className="form-input"><option>U15</option></select>
         </div>
         <select className="form-input" style={{ background: 'rgba(0,122,255,0.05)', borderColor: 'var(--azul-electrico)', color: 'var(--texto-heading)', fontWeight: '800' }}>
-          <option>Tomás Parra (#8) - Asist: 92% | Nvl: 12</option>
-          <option>Luis Soto (#10) - Asist: 85% | Nvl: 10</option>
+          <option>Selecciona un jugador desde el roster activo</option>
         </select>
       </div>
 

@@ -1,4 +1,5 @@
 import { Save } from 'lucide-react';
+import LogoAvatar from './LogoAvatar';
 
 function StaffAsistenciaPanel({
   vistaStaff,
@@ -28,15 +29,21 @@ function StaffAsistenciaPanel({
       </div>
 
       {vistaStaff === 'asistencia' && (
-        <div className="card">
-          <h4 className="form-subtitle">Configurar Entrenamiento</h4>
+        <div className="card" style={{ borderRadius: '24px' }}>
+          <h4 className="form-subtitle" style={{ fontWeight: '900' }}>Configurar Entrenamiento</h4>
           <div style={{ display: 'flex', gap: '10px' }} className="mb-15">
             <select className="form-input" value={filtroRamaStaff} onChange={(e) => setFiltroRamaStaff(e.target.value)}><option>Masculina</option><option>Femenina</option></select>
             <select className="form-input" value={filtroCatStaff} onChange={(e) => setFiltroCatStaff(e.target.value)}><option>U13</option><option>U15</option><option>U17</option></select>
           </div>
 
           <div className="staff-header-info mb-15" style={{ borderBottom: '1px solid rgba(0,0,0,0.05)', paddingBottom: '15px' }}>
-            <h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)' }}>Cargando Nómina: {filtroCatStaff} {filtroRamaStaff}</h4>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <LogoAvatar nombre={`${filtroCatStaff} ${filtroRamaStaff}`} size={38} borderRadius="12px" />
+              <div>
+                <h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)' }}>Cargando Nómina: {filtroCatStaff} {filtroRamaStaff}</h4>
+                <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>Logo por nombre o archivo en /public/logos</span>
+              </div>
+            </div>
           </div>
 
           <div className="roster-list">
@@ -50,15 +57,15 @@ function StaffAsistenciaPanel({
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-                  <button onClick={() => cambiarEstado(jugador.id, 'presente')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'presente' ? 'var(--verde-victoria)' : 'var(--fondo-app)', color: jugador.estadoAsistencia === 'presente' ? 'white' : 'var(--texto-secundario)', transition: '0.2s' }}>✓ PRESENTE</button>
-                  <button onClick={() => cambiarEstado(jugador.id, 'ausente')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'ausente' ? '#FF3B30' : 'var(--fondo-app)', color: jugador.estadoAsistencia === 'ausente' ? 'white' : 'var(--texto-secundario)', transition: '0.2s' }}>❌ AUSENTE</button>
-                  <button onClick={() => cambiarEstado(jugador.id, 'justificado')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'justificado' ? '#FF9500' : 'var(--fondo-app)', color: jugador.estadoAsistencia === 'justificado' ? 'white' : 'var(--texto-secundario)', transition: '0.2s' }}>🚑 JUSTIFIC.</button>
+                  <button onClick={() => cambiarEstado(jugador.id, 'presente')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '14px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: jugador.estadoAsistencia === 'presente' ? 'white' : 'var(--texto-secundario)', transition: '0.2s' }}>✓ PRESENTE</button>
+                  <button onClick={() => cambiarEstado(jugador.id, 'ausente')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '14px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'ausente' ? '#FF3B30' : 'rgba(255,59,48,0.10)', color: jugador.estadoAsistencia === 'ausente' ? 'white' : 'var(--texto-secundario)', transition: '0.2s' }}>❌ AUSENTE</button>
+                  <button onClick={() => cambiarEstado(jugador.id, 'justificado')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '14px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'justificado' ? '#FF9500' : 'rgba(255,149,0,0.10)', color: jugador.estadoAsistencia === 'justificado' ? 'white' : 'var(--texto-secundario)', transition: '0.2s' }}>🚑 JUSTIFIC.</button>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="mt-20" style={{ background: 'rgba(0,122,255,0.05)', borderRadius: '16px', padding: '20px' }}>
+          <div className="mt-20" style={{ background: 'rgba(0,122,255,0.05)', borderRadius: '22px', padding: '20px' }}>
             <h5 style={{ margin: '0 0 15px 0', fontSize: '15px', color: 'var(--texto-heading)' }}>Resumen a Guardar:</h5>
             <div className="desglose-row"><span>Asistencia Efectiva:</span><strong style={{ color: porcentaje > 70 ? 'var(--verde-victoria)' : '#FF3B30', fontSize: '16px' }}>{porcentaje}%</strong></div>
             <div className="desglose-row"><span>Presentes en Cancha:</span><strong>{presentes}</strong></div>
@@ -73,8 +80,8 @@ function StaffAsistenciaPanel({
       )}
 
       {vistaStaff === 'historial' && (
-        <div className="card fade-in">
-          <h4 className="form-subtitle">Registros Anteriores</h4>
+        <div className="card fade-in" style={{ borderRadius: '24px' }}>
+          <h4 className="form-subtitle" style={{ fontWeight: '900' }}>Registros Anteriores</h4>
           <input type="date" className="form-input mb-15" />
           <p className="text-center text-muted" style={{ fontStyle: 'italic', fontSize: '13px' }}>Seleccione una fecha para editar la asistencia pasada.</p>
         </div>

@@ -162,25 +162,45 @@ databases:
 
 ## 🔄 Sincronizar con Google Sheets
 
-Crear Apps Script en Google Sheets:
+El backend ya incluye importacion real de Google Sheets hacia PostgreSQL.
 
-```javascript
-function sincronizarDatos() {
-  const sheet = SpreadsheetApp.getActiveSheet();
-  const apiUrl = "https://tu-backend.ondigitalocean.app/api/comunicaciones";
-  
-  const response = UrlFetchApp.fetch(apiUrl);
-  const data = JSON.parse(response.getContentText());
-  
-  // Escribir en Sheets
-  data.forEach((row, idx) => {
-    sheet.getRange(idx + 2, 1, 1, 4).setValues([[
-      row.id, row.titulo, row.rama, row.urgencia
-    ]]);
-  });
+### Variables necesarias
+
+```env
+GOOGLE_SHEET_ID=tu-sheet-id-o-url
+ADMIN_SYNC_TOKEN=token-seguro-para-sync
+```
+
+### Sincronizacion manual por script
+
+```bash
+npm run import:sheets
+```
+
+### Sincronizacion por endpoint seguro (recomendado para panel admin)
+
+```http
+POST /api/admin/sync-sheets
+Header: x-sync-token: <ADMIN_SYNC_TOKEN>
+```
+
+Ejemplo con curl:
+
+```bash
+curl -X POST https://tu-backend.ondigitalocean.app/api/admin/sync-sheets \
+  -H "x-sync-token: tu-token-seguro"
+```
+
+Respuesta:
+
+```json
+{
+  "ok": true,
+  "sheetId": "...",
+  "totals": { "total": 543, "importadas": 543, "omitidas": 0, "errores": 0 },
+  "detail": [],
+  "syncedAt": "2026-07-10T05:00:00.000Z"
 }
-
-// Trigger cada 24h
 ```
 
 ---

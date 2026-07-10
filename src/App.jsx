@@ -21,19 +21,13 @@ import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
 } from './utils/appHelpers';
+import { productosKioscoBase } from './data/productosBase';
 import {
-  mockNotificaciones,
-  mockAuditoria,
-  mockComunicaciones,
-  mockFotos,
-  productosKioscoBase,
-  mockTesoreriaDB,
-  mock12Meses,
-  partidosPrueba,
-  mockJugador,
-  mockEvaluacion,
-  mockQuiz,
-} from './data/mockData';
+  MODULOS_ACCESO,
+  obtenerPermisosEfectivos,
+  puedeVerModulo,
+  normalizarRol,
+} from './security/accessControl';
 
 const ComunicacionesPanel = lazy(() => import('./components/ComunicacionesPanel'));
 const KioscoPanel = lazy(() => import('./components/KioscoPanel'));
@@ -74,7 +68,7 @@ function App() {
   const [passInput, setPassInput] = useState('');
 
   // --- ESTADOS: MULTI-PUPILO Y NOTIFICACIONES (PREMIUM) ---
-  const [pupiloActivo, setPupiloActivo] = useState(mockTesoreriaDB.pupilos[0]);
+  const [pupiloActivo, setPupiloActivo] = useState(null);
   
   // --- ESTADOS: ONBOARDING ---
   const [isOnboarding, setIsOnboarding] = useState(false);
@@ -83,7 +77,6 @@ function App() {
   const [rolUsuarioTemporal, setRolUsuarioTemporal] = useState(null);
 
   // --- ESTADOS: GAMIFICACIÓN Y PERFIL ---
-  const [showTarjetaHolo, setShowTarjetaHolo] = useState(false);
   const [quizCompletado, setQuizCompletado] = useState(false);
   const [opcionSeleccionada, setOpcionSeleccionada] = useState(null);
   const [animacionXP, setAnimacionXP] = useState(false); // Efecto Partículas
@@ -92,13 +85,16 @@ function App() {
   const [vistaMuro, setVistaMuro] = useState('noticias'); 
   const [vistaPublica, setVistaPublica] = useState('inicio');
   const [respuestaCitacion, setRespuestaCitacion] = useState(null); 
-  const [noticiasRRSS, setNoticiasRRSS] = useState(mockComunicaciones.map(n => ({...n, likes: 0, meGusta: false})));
   const [alertasPublicadas, setAlertasPublicadas] = useState([]);
 
   // --- ESTADOS: MESA FIBA AVANZADA (PREMIUM) ---
   const [liveScore, setLiveScore] = useState({ 
     ptsLocal: 0, ptsVisita: 0, faltasLocal: 0, faltasVisita: 0, 
-    periodo: 1, reloj: "10:00", timeoutsLocal: 3, timeoutsVisita: 3, flecha: 'LOCAL'
+    periodo: 1, reloj: "10:00", timeoutsLocal: 3, timeoutsVisita: 3, flecha: 'LOCAL',
+    equipoLocalNombre: 'Centro de Cultura Física',
+    equipoVisitaNombre: 'Visitante',
+    equipoLocalLogoUrl: '',
+    equipoVisitaLogoUrl: '',
   });
   const [jugadorSeleccionadoLive, setJugadorSeleccionadoLive] = useState(null);
   const [playByPlay, setPlayByPlay] = useState([]); 
@@ -134,7 +130,7 @@ function App() {
   const [mostrarHistorialPush, setMostrarHistorialPush] = useState(false);
   const [preferenciasSonido, setPreferenciasSonido] = useState({
     habilitado: true,
-    sonidoAlerta: 'campana',
+    sonidoAlerta: 'sistema',
     sonidoNotif: 'tono',
     vibración: true,
     volumen: 80
@@ -142,13 +138,8 @@ function App() {
   const [historialPushTotal, setHistorialPushTotal] = useState([]);
 
   // --- ESTADOS: FASE 9 - INTEGRACIÓN WHATSAPP + WEBHOOKS ---
-  const [contactosWhatsApp, setContactosWhatsApp] = useState([
-    { id: 1, nombre: 'Tomás Parra', numero: '+56987654321', activo: true },
-    { id: 2, nombre: 'Juan Silva', numero: '+56912345678', activo: true }
-  ]);
-  const [historialWhatsApp, setHistorialWhatsApp] = useState([
-    { id: 1, contacto: 'Tomás Parra', numero: '+56987654321', mensaje: '✅ Pago de $45.000 confirmado', timestamp: new Date(), tipo: 'salida', estado: 'entregado' }
-  ]);
+  const [contactosWhatsApp, setContactosWhatsApp] = useState([]);
+  const [historialWhatsApp, setHistorialWhatsApp] = useState([]);
   const [mostrarWhatsAppPanel, setMostrarWhatsAppPanel] = useState(false);
   const [nuevoContactoWA, setNuevoContactoWA] = useState({ nombre: '', numero: '' });
   const [templateMensaje, setTemplateMensaje] = useState('alerta'); // alerta, pago, confirmacion, general
@@ -162,11 +153,7 @@ function App() {
   const [filtroRamaStaff, setFiltroRamaStaff] = useState('Masculina');
   const [filtroCatStaff, setFiltroCatStaff] = useState('U15');
   
-  const [rosterEquipo, setRosterEquipo] = useState([
-    { id: 1, nombre: "Tomás Parra", dorsal: 8, año: 2011, estadoAsistencia: 'presente', pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, flt: 0, to: 0 }, 
-    { id: 2, nombre: "Luis Soto", dorsal: 10, año: 2011, estadoAsistencia: 'presente', pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, flt: 0, to: 0 },
-    { id: 3, nombre: "Martín Silva", dorsal: 5, año: 2012, estadoAsistencia: 'justificado', pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, flt: 0, to: 0 } // Lesionado/Justificado
-  ]);
+  const [rosterEquipo, setRosterEquipo] = useState([]);
   
   const [evalTiro, setEvalTiro] = useState(70);
   const [evalDefensa, setEvalDefensa] = useState(70);
@@ -180,6 +167,18 @@ function App() {
   const [montoAbono, setMontoAbono] = useState('');
   const [comprobanteSubido, setComprobanteSubido] = useState(false);
   const [pagosPendientesAdmin, setPagosPendientesAdmin] = useState([]);
+  const [pagosMensualidadesAdmin, setPagosMensualidadesAdmin] = useState([]);
+  const [partidosResumen, setPartidosResumen] = useState([]);
+  const [morososAdmin, setMorososAdmin] = useState([]);
+  const [materialesAcademia, setMaterialesAcademia] = useState([]);
+  const [pizarrasAcademia, setPizarrasAcademia] = useState([]);
+  const [quizActivo, setQuizActivo] = useState({
+    titulo: 'Sin desafío activo',
+    pregunta: 'No hay quiz táctico publicado en este momento.',
+    opciones: ['-', '-', '-'],
+    respuestaCorrecta: 'A',
+    explicacion: 'Cuando el staff publique un quiz, aparecerá aquí.',
+  });
 
   // --- ESTADOS: KIOSCO POS, INVENTARIO Y CAJA (PREMIUM) ---
   const [cajaAbierta, setCajaAbierta] = useState(false);
@@ -190,9 +189,7 @@ function App() {
   const [modalPagoPOS, setModalPagoPOS] = useState(null); 
   const [montoRecibidoEfectivo, setMontoRecibidoEfectivo] = useState('');
   
-  const [fiadosLista, setFiadosLista] = useState([
-    { id: 1, nombre: "Papá de Tomás Parra", detalle: "2x Completo Italiano, 1x Bebida", monto: 6500, fecha: "Hoy" }
-  ]);
+  const [fiadosLista, setFiadosLista] = useState([]);
   const [nombreFiado, setNombreFiado] = useState('');
   const [detalleFiado, setDetalleFiado] = useState('');
   
@@ -210,7 +207,9 @@ function App() {
   // --- ESTADOS: SUPER ADMIN (MODO DIOS) ---
   const [vistaAdmin, setVistaAdmin] = useState('dashboard');
   const [filtroMorosos, setFiltroMorosos] = useState('todos');
-  const [logAuditoria, setLogAuditoria] = useState(mockAuditoria);
+  const [logAuditoria, setLogAuditoria] = useState([]);
+  const [jugadoresVisitaAdmin, setJugadoresVisitaAdmin] = useState([]);
+  const [usuarioAutenticado, setUsuarioAutenticado] = useState(null);
 
   const [destinatarios, setDestinatarios] = useState({ admin: false, staff: false, socios: true, apoderados: true, deportistas: true });
   const [cuentaEditando, setCuentaEditando] = useState(null);
@@ -218,22 +217,32 @@ function App() {
   
   const [busquedaPermisos, setBusquedaPermisos] = useState('');
   const [filtroRolPermisos, setFiltroRolPermisos] = useState('Todos');
-  const [matrixPermisos, setMatrixPermisos] = useState([
-    { id: 101, nombre: "Juan Entrenador", rol: "Staff", permisos: { kiosco: false, inventario: false, citaciones: false, mesa: true, validacion_pagos: false, auditoria: false, resumen: false } },
-    { id: 102, nombre: "Maria Tesorera", rol: "Admin", permisos: { kiosco: true, inventario: true, citaciones: true, mesa: false, validacion_pagos: true, auditoria: true, resumen: true } },
-    { id: 103, nombre: "Pedro Apoderado", rol: "Socio", permisos: { kiosco: false, inventario: false, citaciones: false, mesa: true, validacion_pagos: false, auditoria: false, resumen: false } },
-    { id: 104, nombre: "Carlos Gerente", rol: "Admin", permisos: { kiosco: true, inventario: true, citaciones: true, mesa: true, validacion_pagos: true, auditoria: true, resumen: true } },
-    { id: 105, nombre: "Laura Deportista", rol: "Jugador", permisos: { kiosco: false, inventario: false, citaciones: true, mesa: false, validacion_pagos: false, auditoria: false, resumen: false } }
-  ]);
+  const [permisosPorUsuario, setPermisosPorUsuario] = useState({});
+
+  const perfilesPermisosFallback = [];
+
+  const matrixPermisosBase = (Array.isArray(cuentasAdmin) && cuentasAdmin.length > 0 ? cuentasAdmin : perfilesPermisosFallback).map((usuario) => {
+    const idUsuario = usuario.id ?? usuario.id_usuario ?? usuario.id_cuenta ?? usuario.rut ?? usuario.correo;
+    const rolUsuarioBase = normalizarRol(usuario.rol || usuario.rol_usuario || 'jugador');
+    const permisosEfectivos = obtenerPermisosEfectivos({
+      rol: rolUsuarioBase,
+      override: permisosPorUsuario[idUsuario] || {},
+    });
+
+    return {
+      id: idUsuario,
+      nombre: usuario.nombre || `${usuario.nombres || ''} ${usuario.apellido_paterno || ''}`.trim() || usuario.correo || 'Sin nombre',
+      rol: rolUsuarioBase,
+      permisos: permisosEfectivos,
+    };
+  });
   
   // --- ESTADOS: VISTAS Y CONFIGURACIÓN ---
   const [pagoViewMode, setPageViewMode] = useState('grid'); // grid | list
   const [showSettings, setShowSettings] = useState(false); // Panel de configuración
   const [mostrarFormComunicaciones, setMostrarFormComunicaciones] = useState(false);
-  const [comunicaciones, setComunicaciones] = useState(mockComunicaciones);
-  const [encuestas, setEncuestas] = useState([
-    { id: 1, titulo: 'Preferencia de hora de entrenamientos', opciones: ['7:00 AM', '6:00 PM', '7:00 PM'], votos: {'7:00 AM': 3, '6:00 PM': 12, '7:00 PM': 8}, respondio: false }
-  ]);
+  const [comunicaciones, setComunicaciones] = useState([]);
+  const [encuestas, setEncuestas] = useState([]);
   const [formCom, setFormCom] = useState({ titulo: '', mensaje: '', audiencia: ['deportistas'], rama: 'General', categoria: 'General', tipo: 'Aviso', urgencia: 'Media', solicita_asistencia: false });
   const [comentariosUI, setComentariosUI] = useState({}); // {comId: [{id, usuario, texto, timestamp, respuestas: [], likes}, ...]}
   const [formComentario, setFormComentario] = useState({}); // {comId: 'texto', comId_respuesta_parentId: 'texto'}
@@ -242,31 +251,80 @@ function App() {
   const [apiRetrying, setApiRetrying] = useState(false);
   const [apiStatusMessage, setApiStatusMessage] = useState('');
 
-  const [nominaCita, setNominaCita] = useState([
-    { id: 201, nombre: "Martina Parra", dorsal: 10, pos: "Base", activo: true, deuda: false, lesion: false, citado: false, catOriginal: 'U15' },
-    { id: 202, nombre: "Sofía Lagos", dorsal: 4, pos: "Alero", activo: true, deuda: true, lesion: false, citado: false, catOriginal: 'U15' },
-    { id: 203, nombre: "Camila Silva", dorsal: 15, pos: "Pívot", activo: true, deuda: false, lesion: true, citado: false, catOriginal: 'U15' }
-  ]);
+  const [nominaCita, setNominaCita] = useState([]);
 
   // ==========================================
   // 3. LÓGICA BASE Y EFECTOS
   // ==========================================
 
+  const construirMorososDesdePagos = (pagos = [], jugadores = []) => {
+    const jugadoresPorRut = new Map((jugadores || []).map((j) => [j.rut_jugador, j]));
+    const pendientes = (pagos || []).filter((p) => ['pendiente', 'rechazado'].includes((p.estado_pago || '').toLowerCase()));
+    const agrupados = new Map();
+
+    pendientes.forEach((pago) => {
+      const rut = pago.rut_jugador || pago.correo_apoderado || `pendiente-${pago.id}`;
+      const jugador = jugadoresPorRut.get(pago.rut_jugador);
+      const actual = agrupados.get(rut) || {
+        id: rut,
+        rut,
+        nombre: jugador
+          ? `${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim()
+          : `Pago pendiente #${pago.id}`,
+        tipo: jugador?.rama?.toLowerCase().includes('femen') ? 'apoderado' : 'socio-apoderado',
+        mesesDeuda: 0,
+        montoDeuda: 0,
+        contacto: pago.correo_apoderado || jugador?.correo_apoderado || 'Sin contacto',
+        pupilos: jugador ? [jugador.nombres || jugador.rut_jugador] : [],
+      };
+
+      actual.montoDeuda += Number(pago.monto_total_pagado || 0);
+      actual.mesesDeuda += Number(pago.cantidad_meses_pagados || 1);
+      agrupados.set(rut, actual);
+    });
+
+    return [...agrupados.values()].sort((a, b) => b.montoDeuda - a.montoDeuda);
+  };
+
   const cargarDatos = async ({ manual = false } = {}) => {
     if (manual) setApiRetrying(true);
 
     try {
-      const [comunicacionesRes, contactosRes, cuentasIncompletasRes, cuentasRes, jugadoresRes, pagosMensualidadesRes] = await Promise.all([
+      const resultados = await Promise.allSettled([
         api.comunicacionesAPI.getAll(),
         api.whatsappAPI.getContactos(),
         api.cuentasAPI.getIncompletas(),
         api.cuentasAPI.getAll(),
         api.jugadoresAPI.getAll(),
+        api.jugadoresVisitaAPI.getAll(),
         api.pagosMensualidadesAPI.getAll(),
+        api.partidosLiveAPI.getAll(),
+        api.auditoriaAPI.getAll(),
+        api.encuestasAPI.getAll(),
+        api.quizAPI.getAll(),
       ]);
 
-      if (Array.isArray(comunicacionesRes) && comunicacionesRes.length > 0) {
-        setComunicaciones(comunicacionesRes.map(c => ({
+      const getResult = (index, fallback = []) => (
+        resultados[index]?.status === 'fulfilled'
+          ? resultados[index].value
+          : fallback
+      );
+
+      const comunicacionesRes = getResult(0, []);
+      const contactosRes = getResult(1, []);
+      const cuentasIncompletasRes = getResult(2, []);
+      const cuentasRes = getResult(3, []);
+      const jugadoresRes = getResult(4, []);
+      const jugadoresVisitaRes = getResult(5, []);
+      const pagosMensualidadesRes = getResult(6, []);
+      const partidosLiveRes = getResult(7, []);
+      const auditoriaRes = getResult(8, []);
+      const encuestasRes = getResult(9, []);
+      const quizRes = getResult(10, []);
+      const totalErrores = resultados.filter((r) => r.status === 'rejected').length;
+
+      if (Array.isArray(comunicacionesRes)) {
+        const comunicacionesTransformadas = comunicacionesRes.map((c) => ({
           id: c.id,
           TITULO: c.titulo,
           CUERPO_TEXTO: c.cuerpo_texto,
@@ -278,10 +336,17 @@ function App() {
           solicita_asistencia: c.solicita_asistencia,
           reacciones: c.reacciones || {},
           asistencias: c.asistencias || []
-        })));
+        }));
+
+        setComunicaciones(comunicacionesTransformadas);
+
+        const materiales = comunicacionesTransformadas.filter((c) =>
+          ['academia-video', 'academia-imagen', 'academia-documento'].includes((c.TIPO_COMUNICADO || '').toLowerCase())
+        );
+        setMaterialesAcademia(materiales);
       }
 
-      if (Array.isArray(contactosRes) && contactosRes.length > 0) {
+      if (Array.isArray(contactosRes)) {
         setContactosWhatsApp(contactosRes);
       }
 
@@ -313,18 +378,141 @@ function App() {
 
       if (Array.isArray(jugadoresRes)) {
         setJugadoresAdmin(jugadoresRes);
+
+        const nuevoRoster = jugadoresRes.slice(0, 24).map((j, idx) => ({
+          id: idx + 1,
+          nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim(),
+          dorsal: j.numero_camiseta || idx + 1,
+          año: j.año_nacimiento || 0,
+          estadoAsistencia: 'pendiente',
+          pts: 0,
+          reb: 0,
+          ast: 0,
+          stl: 0,
+          blk: 0,
+          flt: 0,
+          to: 0,
+        }));
+
+        setRosterEquipo(nuevoRoster);
+
+        if (jugadoresRes.length > 0) {
+          const primerJugador = jugadoresRes[0];
+          setPupiloActivo((prev) => prev || {
+            id: 1,
+            rut: primerJugador.rut_jugador,
+            nombre: `${primerJugador.nombres || ''} ${primerJugador.apellido_paterno || ''}`.trim(),
+            correo_apoderado: primerJugador.correo_apoderado || '',
+            categoria: primerJugador.categoria || 'General',
+            nivel: Number(primerJugador.nivel_actual || 1),
+            xp: Number(primerJugador.xp_total || 0),
+            numeroCamiseta: primerJugador.numero_camiseta || 0,
+            posicion: primerJugador.posicion_juego || 'N/A',
+            estatura: primerJugador.estatura || 'N/A',
+            peso: primerJugador.peso || 'N/A',
+            manoHabil: primerJugador.mano_habil || 'N/A',
+            tallaCamiseta: primerJugador.talla_camiseta || 'N/A',
+            tallaShort: primerJugador.talla_short || 'N/A',
+            poleraEntregada: Boolean(primerJugador.polera_entregada),
+            asistencia: primerJugador.asistencia || 'N/A',
+            estadoDeportivo: primerJugador.estado_deportivo || 'Activo',
+            beca: primerJugador.beca || 'Sin beca',
+            foto_jugador: primerJugador.foto_jugador || primerJugador.club_logo_url || '',
+          });
+        } else {
+          setPupiloActivo(null);
+        }
+      }
+
+      if (Array.isArray(jugadoresVisitaRes)) {
+        setJugadoresVisitaAdmin(jugadoresVisitaRes);
       }
 
       if (Array.isArray(pagosMensualidadesRes)) {
+        setPagosMensualidadesAdmin(pagosMensualidadesRes);
         setPagosPendientesAdmin(pagosMensualidadesRes.filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente'));
+        setMorososAdmin(construirMorososDesdePagos(pagosMensualidadesRes, jugadoresRes));
       }
 
-      setApiOffline(false);
-      setApiStatusMessage('');
+      if (Array.isArray(partidosLiveRes)) {
+        const partidosTransformados = partidosLiveRes.map((p, idx) => ({
+          id: p.id_partido || idx + 1,
+          rama: (p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina',
+          categoria: p.categoria_rama || 'General',
+          torneo: p.estado_juego || 'Partido oficial',
+          torneoLogoUrl: p.torneo_logo_url || p.logo_torneo_url || '',
+          fechaISO: p.fecha_hora || null,
+          fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
+          miEquipo: Number(p.pts_local || 0),
+          rival: Number(p.pts_visitante || 0),
+          nombreRival: p.equipo_visitante || p.equipo_visitante_nombre || 'Rival',
+          equipoLocalNombre: p.equipo_local || p.equipo_local_nombre || 'Centro de Cultura Física',
+          equipoLocalLogoUrl: p.logo_local_url || p.equipo_local_logo_url || '',
+          equipoVisitaLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
+        }));
+        setPartidosResumen(partidosTransformados);
+      }
+
+      if (Array.isArray(auditoriaRes)) {
+        setLogAuditoria(auditoriaRes.map((a) => ({
+          id: a.id || nextId(),
+          accion: a.accion || 'Evento',
+          detalle: a.detalle || a.descripcion || 'Sin detalle',
+          usuario: a.usuario || 'Sistema',
+          hora: a.created_at ? new Date(a.created_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : '--:--',
+        })));
+      }
+
+      if (Array.isArray(encuestasRes)) {
+        setEncuestas(encuestasRes.map((e) => ({
+          id: e.id,
+          titulo: e.pregunta || 'Encuesta',
+          opciones: Array.isArray(e.opciones) ? e.opciones : Object.keys(e.votos || {}),
+          votos: e.votos || {},
+          respondio: false,
+        })));
+      }
+
+      if (Array.isArray(quizRes) && quizRes.length > 0) {
+        const primera = quizRes[0];
+        const opcionesQuiz = Array.isArray(primera.opciones_json)
+          ? primera.opciones_json
+          : (typeof primera.opciones_json === 'string'
+            ? JSON.parse(primera.opciones_json)
+            : []);
+
+        setQuizActivo({
+          titulo: primera.titulo || 'Desafío semanal',
+          pregunta: primera.pregunta || 'Pregunta no disponible',
+          opciones: opcionesQuiz,
+          respuestaCorrecta: primera.respuesta_correcta || 'A',
+          explicacion: primera.explicacion || 'Revisa la respuesta con tu entrenador.',
+        });
+      }
+
+      try {
+        const partidoRef = partidosLiveRes?.[0]?.id_partido;
+        if (partidoRef) {
+          const pizarrasRes = await api.pizarraAPI.getByPartido(partidoRef);
+          if (Array.isArray(pizarrasRes)) {
+            setPizarrasAcademia(pizarrasRes);
+          }
+        } else {
+          setPizarrasAcademia([]);
+        }
+      } catch {
+        setPizarrasAcademia([]);
+      }
+
+      setApiOffline(totalErrores > 0 && totalErrores === resultados.length);
+      setApiStatusMessage(
+        totalErrores > 0
+          ? `Algunos servicios no respondieron (${totalErrores}/${resultados.length}). Endpoint: ${api.API_BASE_URL_CONFIG}`
+          : ''
+      );
     } catch (error) {
-      // Fallback silencioso a datos mock para demo cuando el backend está caído.
       setApiOffline(true);
-      setApiStatusMessage(error?.message || 'Sin conexión con backend');
+      setApiStatusMessage(error?.message || `Sin conexión con backend (${api.API_BASE_URL_CONFIG})`);
     } finally {
       if (manual) setApiRetrying(false);
     }
@@ -336,14 +524,32 @@ function App() {
       void cargarDatos();
     }, 1000);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
   // Efecto Skeleton Loader al cambiar de pantalla
 
   const cambiarPantallaConLoader = (pantalla) => {
-    setIsAppLoading(true);
+    if (pantalla === pantallaActiva) return;
     setPantallaActiva(pantalla);
-    setTimeout(() => setIsAppLoading(false), 400); // Falso delay para Skeletons
+    setIsAppLoading(false);
+  };
+
+  const getUsuarioActivoPermisos = () => {
+    if (!usuarioAutenticado) return null;
+
+    return obtenerPermisosEfectivos({
+      rol: usuarioAutenticado.rol,
+      override: permisosPorUsuario[usuarioAutenticado.id] || {},
+    });
+  };
+
+  const puedeVerPantalla = (pantalla) => {
+    if (!rolUsuario) return false;
+    if (normalizarRol(rolUsuario) === 'super_admin') return true;
+
+    const usuarioPermisos = getUsuarioActivoPermisos();
+    return Boolean(usuarioPermisos?.[pantalla]);
   };
 
   const getHeaderTitle = () => {
@@ -370,18 +576,26 @@ function App() {
     if(!rutInput || !passInput) return alert("Ingresa tu RUT y contraseña.");
 
     if(tipoLoginSeleccionado === 'invitado' || rutInput.toLowerCase().includes('visita')) {
-      iniciarSesionFinal('visita');
+      iniciarSesionFinal('visita', {
+        id: `visita-${rutInput || 'anonimo'}`,
+        nombre: 'Visita',
+        correo: '',
+        rut: rutInput || '',
+        rol: 'visita',
+        access_profiles: ['visita'],
+      });
       return;
     }
 
     try {
       const loginRes = await api.authAPI.login(rutInput, passInput);
       const perfilDetectado = loginRes?.user?.rol || 'jugador';
+      const usuarioDetectado = loginRes?.user || null;
 
       if(passInput === '12345') {
         setRolUsuarioTemporal(perfilDetectado); setIsOnboarding(true); setOnboardingStep(1); setOnboardingProgress(15);
       } else {
-        iniciarSesionFinal(perfilDetectado);
+        iniciarSesionFinal(perfilDetectado, usuarioDetectado);
       }
     } catch (error) {
       alert(error.message || 'No se pudo iniciar sesión. Revisa RUT y contraseña.');
@@ -394,12 +608,27 @@ function App() {
     else { setIsOnboarding(false); iniciarSesionFinal(rolUsuarioTemporal); }
   };
 
-  const iniciarSesionFinal = (perfil) => {
-    setRolUsuario(perfil);
-    if(perfil === 'mesa') setPantallaActiva('scoreboard_live');
-    else if(perfil === 'admin' || perfil === 'super_admin') setPantallaActiva('admin_dashboard');
-    else if(perfil === 'staff') setPantallaActiva('asistencia_staff'); 
-    else if(perfil === 'jugador' || perfil === 'visita') setPantallaActiva('jugador');
+  const iniciarSesionFinal = (perfil, usuario = null) => {
+    const perfilNormalizado = normalizarRol(perfil);
+    const usuarioNormalizado = usuario ? {
+      ...usuario,
+      rol: normalizarRol(usuario.rol || perfilNormalizado),
+      access_profiles: usuario.access_profiles || [normalizarRol(usuario.rol || perfilNormalizado)],
+    } : {
+      id: `rol-${perfilNormalizado}`,
+      nombre: perfilNormalizado,
+      correo: '',
+      rut: '',
+      rol: perfilNormalizado,
+      access_profiles: [perfilNormalizado],
+    };
+
+    setRolUsuario(perfilNormalizado);
+    setUsuarioAutenticado(usuarioNormalizado);
+    if(perfilNormalizado === 'mesa') setPantallaActiva('scoreboard_live');
+    else if(perfilNormalizado === 'admin' || perfilNormalizado === 'super_admin') setPantallaActiva('admin_dashboard');
+    else if(perfilNormalizado === 'staff') setPantallaActiva('asistencia_staff'); 
+    else if(perfilNormalizado === 'jugador' || perfilNormalizado === 'visita') setPantallaActiva('jugador');
     else setPantallaActiva('comunicaciones');
     
     setRutInput(''); setPassInput(''); setMostrarFormularioLogin(false);
@@ -407,11 +636,16 @@ function App() {
 
   // Función para togglear un permiso específico
   const togglePermiso = (usuarioId, modulo) => {
-    setMatrixPermisos(matrixPermisos.map(u => 
-      u.id === usuarioId 
-        ? { ...u, permisos: { ...u.permisos, [modulo]: !u.permisos[modulo] } }
-        : u
-    ));
+    setPermisosPorUsuario((prev) => {
+      const permisosActuales = prev[usuarioId] || {};
+      return {
+        ...prev,
+        [usuarioId]: {
+          ...permisosActuales,
+          [modulo]: !permisosActuales[modulo],
+        },
+      };
+    });
   };
 
   const abrirEdicionCuenta = (cuenta) => {
@@ -442,22 +676,30 @@ function App() {
   };
 
   const recargarUsuariosAdmin = async () => {
-    const [cuentasRes, cuentasIncompletasRes, jugadoresRes] = await Promise.all([
+    const [cuentasRes, cuentasIncompletasRes, jugadoresRes, jugadoresVisitaRes] = await Promise.all([
       api.cuentasAPI.getAll(),
       api.cuentasAPI.getIncompletas(),
       api.jugadoresAPI.getAll(),
+      api.jugadoresVisitaAPI.getAll(),
     ]);
 
     setCuentasAdmin(Array.isArray(cuentasRes) ? cuentasRes : []);
     setCuentasIncompletas(Array.isArray(cuentasIncompletasRes) ? cuentasIncompletasRes : []);
     setJugadoresAdmin(Array.isArray(jugadoresRes) ? jugadoresRes : []);
+    setJugadoresVisitaAdmin(Array.isArray(jugadoresVisitaRes) ? jugadoresVisitaRes : []);
   };
 
   const recargarPagosMensualidades = async () => {
     const pagosRes = await api.pagosMensualidadesAPI.getAll();
+    setPagosMensualidadesAdmin(Array.isArray(pagosRes) ? pagosRes : []);
     setPagosPendientesAdmin(
       Array.isArray(pagosRes)
         ? pagosRes.filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente')
+        : []
+    );
+    setMorososAdmin(
+      Array.isArray(pagosRes)
+        ? construirMorososDesdePagos(pagosRes, jugadoresAdmin)
         : []
     );
   };
@@ -511,9 +753,85 @@ function App() {
     await recargarUsuariosAdmin();
   };
 
+  const guardarJugadorVisitaAdmin = async (payload, id = null) => {
+    if (id) {
+      await api.jugadoresVisitaAPI.update(id, payload);
+    } else {
+      await api.jugadoresVisitaAPI.create(payload);
+    }
+
+    const visitaRes = await api.jugadoresVisitaAPI.getAll();
+    setJugadoresVisitaAdmin(Array.isArray(visitaRes) ? visitaRes : []);
+  };
+
   const validarPagoMensualidad = async (id, estadoPago) => {
     await api.pagosMensualidadesAPI.validar(id, estadoPago);
     await recargarPagosMensualidades();
+  };
+
+  const sincronizarDatosDesdeSheets = async () => {
+    await cargarDatos({ manual: true });
+    generarAlertas();
+  };
+
+  const publicarMaterialAcademia = async ({ titulo, url, tipo }) => {
+    const tipoComunicado = tipo === 'video'
+      ? 'Academia-Video'
+      : tipo === 'imagen'
+        ? 'Academia-Imagen'
+        : 'Academia-Documento';
+
+    await api.comunicacionesAPI.create({
+      titulo,
+      cuerpo_texto: url,
+      tipo: tipoComunicado,
+      rama: 'General',
+      categoria: 'General',
+      urgencia: 'Baja',
+      solicita_asistencia: false,
+    });
+
+    await cargarDatos({ manual: true });
+  };
+
+  const crearQuizAcademia = async ({ titulo, pregunta, opciones, respuestaCorrecta }) => {
+    await api.quizAPI.create({
+      titulo,
+      tipo_quiz: 'academia',
+      rama: 'General',
+      pregunta,
+      opciones_json: opciones,
+      respuesta_correcta: respuestaCorrecta,
+      dificultad: 'media',
+    });
+
+    await cargarDatos({ manual: true });
+  };
+
+  const guardarPizarraAcademia = async ({ nombre_tactica, descripcion, formacion, zona_defensa, zona_ataque }) => {
+    const partidoOrdenado = [...(partidosResumen || [])].sort((a, b) => {
+      const fechaA = a.fechaISO ? new Date(a.fechaISO).getTime() : 0;
+      const fechaB = b.fechaISO ? new Date(b.fechaISO).getTime() : 0;
+      if (fechaA !== fechaB) return fechaB - fechaA;
+      return Number(b.id || 0) - Number(a.id || 0);
+    });
+    const partidoRef = partidoOrdenado[0]?.id || null;
+
+    if (!partidoRef) {
+      throw new Error('No hay un partido reciente disponible para asociar la pizarra.');
+    }
+
+    await api.pizarraAPI.create({
+      id_partido: partidoRef,
+      entrenador_rut: 'staff-ccf',
+      nombre_tactica,
+      descripcion,
+      formacion,
+      zona_defensa,
+      zona_ataque,
+    });
+
+    await cargarDatos({ manual: true });
   };
 
   // ==========================================
@@ -750,7 +1068,7 @@ function App() {
     score += Math.min(25, (totalReacciones + totalComentarios) * 2);
     
     // 3. Socios activos sin deuda (0-25 puntos)
-    const sociosActivos = 12; // Mock
+    const sociosActivos = (cuentasAdmin || []).filter((c) => Boolean(c.es_socio)).length;
     score += Math.min(25, sociosActivos * 2);
     
     // 4. Alertas críticas (0-25 puntos - penalización)
@@ -845,6 +1163,18 @@ function App() {
     
     // Incrementar badge
     setBadgeCount(prev => prev + 1);
+
+    // Mostrar notificación nativa del navegador si ya está autorizada
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(titulo, {
+          body: descripcion,
+          silent: true,
+        });
+      } catch (error) {
+        console.log('No se pudo mostrar la notificación nativa');
+      }
+    }
     
     // Reproducir sonido si está habilitado
     if (preferenciasSonido.habilitado) {
@@ -865,6 +1195,10 @@ function App() {
   const reproducirSonido = (tipo) => {
     // Crear oscilador de audio para reproducir sonidos (simulado)
     try {
+      if (tipo === 'sistema') {
+        return;
+      }
+
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const oscilador = audioContext.createOscillator();
       const ganancia = audioContext.createGain();
@@ -890,6 +1224,32 @@ function App() {
     } catch (e) {
       console.log('Audio no disponible');
     }
+  };
+
+  const solicitarPermisoNotificaciones = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return false;
+    }
+
+    if (Notification.permission === 'granted') {
+      return true;
+    }
+
+    if (Notification.permission === 'denied') {
+      return false;
+    }
+
+    const permiso = await Notification.requestPermission();
+    return permiso === 'granted';
+  };
+
+  const probarPushNotificacion = async () => {
+    const autorizado = await solicitarPermisoNotificaciones();
+    if (!autorizado) {
+      alert('Activa las notificaciones del navegador para ver el push nativo.');
+    }
+
+    crearPushNotificacion('alerta', '🔔 Notificación del sistema', 'Las notificaciones están activas y conectadas.', 'Baja');
   };
 
   // ========== FASE 9: INTEGRACIÓN WHATSAPP + WEBHOOKS BIDIRECCIONALES ==========
@@ -961,6 +1321,40 @@ function App() {
   // 5. MÓDULOS DE JUGADOR, ACADEMIA Y TESORERÍA
   // ==========================================
 
+  const pupilosDisponibles = (jugadoresAdmin || []).map((j, idx) => ({
+    id: idx + 1,
+    rut: j.rut_jugador,
+    nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim(),
+    correo_apoderado: j.correo_apoderado || '',
+    categoria: j.categoria || 'General',
+    nivel: Number(j.nivel_actual || 1),
+    xp: Number(j.xp_total || 0),
+    numeroCamiseta: j.numero_camiseta || 0,
+    posicion: j.posicion_juego || 'N/A',
+    estatura: j.estatura || 'N/A',
+    peso: j.peso || 'N/A',
+    manoHabil: j.mano_habil || 'N/A',
+    tallaCamiseta: j.talla_camiseta || 'N/A',
+    tallaShort: j.talla_short || 'N/A',
+    poleraEntregada: Boolean(j.polera_entregada),
+    asistencia: j.asistencia || 'N/A',
+    estadoDeportivo: j.estado_deportivo || 'Activo',
+    beca: j.beca || 'Sin beca',
+    foto_jugador: j.foto_jugador || j.club_logo_url || '',
+  }));
+
+  const comunicacionesPublicas = (comunicaciones || []).filter((c) => {
+    const audiencia = Array.isArray(c.audiencia) ? c.audiencia : [];
+    return audiencia.length === 0 || audiencia.includes('publico') || audiencia.includes('visita');
+  });
+
+  const galeriaPublica = comunicacionesPublicas.slice(0, 4).map((c) => ({
+    id: c.id,
+    emoji: '🏀',
+    titulo: c.TITULO,
+    fecha: c.FECHA,
+  }));
+
   // ==========================================
   // 10. ESTRUCTURA HTML FINAL (APP)
   // ==========================================
@@ -978,13 +1372,15 @@ function App() {
       {/* HEADER DINÁMICO E INTELIGENTE */}
       <header className="ios-header">
         <div className="header-btn-zone">
-          <div className="btn-icon-header" style={{ cursor: 'default' }}>
-            <ShieldAlert size={22} color="#FFD700" />
-          </div>
+          {rolUsuario && (
+            <div className="btn-icon-header" style={{ cursor: 'default' }}>
+              <ShieldAlert size={22} color="#FFD700" />
+            </div>
+          )}
         </div>
         <div className="logo-temporal" style={{ background: 'none', width: 'auto', flex: 1, minWidth: 0, padding: '0 10px' }}>
           {!rolUsuario
-            ? <span style={{fontSize:'24px', lineHeight:'1'}}>🛡️</span>
+            ? <h1 className="home-header-title">Centro de Cultura Física Viña del Mar</h1>
             : <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '900', letterSpacing: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getHeaderTitle()}</h2>
           }
         </div>
@@ -1030,8 +1426,6 @@ function App() {
         }}
       />
 
-      {/* Panel antiguo de notificaciones - REMOVIDO EN FAVOR DE RENDERNOTIFICACIONES */}
-
       {showSettings && (
         <div className="floating-panel settings-panel" style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
           <SettingsPanel
@@ -1040,11 +1434,13 @@ function App() {
             setBusquedaPermisos={setBusquedaPermisos}
             filtroRolPermisos={filtroRolPermisos}
             setFiltroRolPermisos={setFiltroRolPermisos}
-            matrixPermisos={matrixPermisos}
+            matrixPermisos={matrixPermisosBase}
             togglePermiso={togglePermiso}
             preferenciasSonido={preferenciasSonido}
             setPreferenciasSonido={setPreferenciasSonido}
             reproducirSonido={reproducirSonido}
+            onProbarPush={probarPushNotificacion}
+            onCerrarConfiguracion={() => setShowSettings(false)}
           />
         </div>
       )}
@@ -1056,6 +1452,7 @@ function App() {
         />
       )}
 
+      {/* Panel antiguo de notificaciones - REMOVIDO EN FAVOR DE RENDERNOTIFICACIONES */}
       {mostrarBusqueda && (
         <div className="floating-panel search-panel" style={{position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '500px', maxHeight: '600px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
           <SearchPanel
@@ -1158,12 +1555,12 @@ function App() {
                 passInput={passInput}
                 setPassInput={setPassInput}
                 volverInicioLogin={volverInicioLogin}
-                mockComunicaciones={mockComunicaciones}
-                mockFotos={mockFotos}
-                partidosPrueba={partidosPrueba}
+                comunicacionesPublicas={comunicacionesPublicas}
+                galeriaPublica={galeriaPublica}
+                partidos={partidosResumen}
               />
             )}
-            {rolUsuario && pantallaActiva === 'comunicaciones' && (
+            {puedeVerPantalla('comunicaciones') && pantallaActiva === 'comunicaciones' && (
               <ComunicacionesPanel
                 rolUsuario={rolUsuario}
                 mostrarFormComunicaciones={mostrarFormComunicaciones}
@@ -1193,13 +1590,14 @@ function App() {
                 setMostrarFormComentario={setMostrarFormComentario}
                 encuestas={encuestas}
                 setEncuestas={setEncuestas}
-                partidosPrueba={partidosPrueba}
+                partidos={partidosResumen}
               />
             )}
-            {rolUsuario === 'jugador' && pantallaActiva === 'academia' && (
+            {puedeVerPantalla('academia') && pantallaActiva === 'academia' && (
               <AcademiaPanel
                 pupiloActivo={pupiloActivo}
                 setPupiloActivo={setPupiloActivo}
+                pupilosDisponibles={pupilosDisponibles}
                 rolUsuario={rolUsuario}
                 animacionXP={animacionXP}
                 setAnimacionXP={setAnimacionXP}
@@ -1207,10 +1605,21 @@ function App() {
                 setQuizCompletado={setQuizCompletado}
                 opcionSeleccionada={opcionSeleccionada}
                 setOpcionSeleccionada={setOpcionSeleccionada}
+                quizActivo={quizActivo}
+                materialesAcademia={materialesAcademia}
+                pizarrasAcademia={pizarrasAcademia}
+                publicarMaterialAcademia={publicarMaterialAcademia}
+                crearQuizAcademia={crearQuizAcademia}
+                guardarPizarraAcademia={guardarPizarraAcademia}
               />
             )}
-            {(rolUsuario === 'jugador' || rolUsuario === 'admin' || rolUsuario === 'super_admin') && pantallaActiva === 'perfil' && (
+            {puedeVerPantalla('perfil') && pantallaActiva === 'perfil' && (
               <PerfilTesoreriaPanel
+                pupiloActivo={pupiloActivo}
+                pupilosDisponibles={pupilosDisponibles}
+                cuentasAdmin={cuentasAdmin}
+                pagosMensualidadesAdmin={pagosMensualidadesAdmin}
+                morososAdmin={morososAdmin}
                 mesesSeleccionados={mesesSeleccionados}
                 setMesesSeleccionados={setMesesSeleccionados}
                 tipoPago={tipoPago}
@@ -1224,14 +1633,15 @@ function App() {
                 setPageViewMode={setPageViewMode}
               />
             )}
-            {(rolUsuario === 'jugador' || rolUsuario === 'visita' || rolUsuario === 'super_admin') && pantallaActiva === 'jugador' && (
+            {puedeVerPantalla('jugador') && pantallaActiva === 'jugador' && (
               <TarjetaJugadorPanel
                 pupiloActivo={pupiloActivo}
                 setPupiloActivo={setPupiloActivo}
+                pupilosDisponibles={pupilosDisponibles}
                 rolUsuario={rolUsuario}
               />
             )}
-            {(rolUsuario === 'staff' || rolUsuario === 'super_admin') && pantallaActiva === 'asistencia_staff' && (
+            {puedeVerPantalla('asistencia_staff') && pantallaActiva === 'asistencia_staff' && (
               <StaffAsistenciaPanel
                 vistaStaff={vistaStaff}
                 setVistaStaff={setVistaStaff}
@@ -1243,7 +1653,7 @@ function App() {
                 setRosterEquipo={setRosterEquipo}
               />
             )}
-            {(rolUsuario === 'staff' || rolUsuario === 'super_admin') && pantallaActiva === 'evaluacion_staff' && (
+            {puedeVerPantalla('evaluacion_staff') && pantallaActiva === 'evaluacion_staff' && (
               <StaffEvaluacionPanel
                 evalTiro={evalTiro}
                 setEvalTiro={setEvalTiro}
@@ -1257,7 +1667,7 @@ function App() {
                 setNotasEvaluacion={setNotasEvaluacion}
               />
             )}
-            {(rolUsuario === 'mesa' || rolUsuario === 'super_admin') && pantallaActiva === 'scoreboard_live' && (
+            {puedeVerPantalla('scoreboard_live') && pantallaActiva === 'scoreboard_live' && (
               <MesaControlPanel
                 jugadorSeleccionadoLive={jugadorSeleccionadoLive}
                 setJugadorSeleccionadoLive={setJugadorSeleccionadoLive}
@@ -1273,7 +1683,7 @@ function App() {
                 setModoChromaKey={setModoChromaKey}
               />
             )}
-            {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && pantallaActiva === 'kiosco' && (
+            {puedeVerPantalla('kiosco') && pantallaActiva === 'kiosco' && (
               <KioscoPanel
                 cajaAbierta={cajaAbierta}
                 setCajaAbierta={setCajaAbierta}
@@ -1313,7 +1723,7 @@ function App() {
                 setNuevoProducto={setNuevoProducto}
               />
             )}
-            {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && pantallaActiva === 'admin_dashboard' && (
+            {puedeVerPantalla('admin_dashboard') && pantallaActiva === 'admin_dashboard' && (
               <SuperAdminPanel
                 vistaAdmin={vistaAdmin}
                 setVistaAdmin={setVistaAdmin}
@@ -1349,10 +1759,17 @@ function App() {
                 comunicacionesCount={comunicaciones.length}
                 calcularScoreDeCliente={calcularScoreDeCliente}
                 cuentasAdmin={cuentasAdmin}
+                matrixPermisos={matrixPermisosBase}
+                togglePermiso={togglePermiso}
                 jugadoresAdmin={jugadoresAdmin}
                 guardarCuentaAdmin={guardarCuentaAdmin}
                 guardarJugadorAdmin={guardarJugadorAdmin}
+                jugadoresVisitaAdmin={jugadoresVisitaAdmin}
+                guardarJugadorVisitaAdmin={guardarJugadorVisitaAdmin}
                 validarPagoMensualidad={validarPagoMensualidad}
+                morososAdmin={morososAdmin}
+                pagosMensualidadesAdmin={pagosMensualidadesAdmin}
+                onSheetsSyncComplete={sincronizarDatosDesdeSheets}
               />
             )}
           </>
@@ -1369,36 +1786,39 @@ function App() {
           </>
         ) : rolUsuario === 'visita' ? (
           <>
-            <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Trophy size={26} /><span className="mt-5">Torneo</span></div>
-            <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><QrCode size={26} /><span className="mt-5">Pase/Fixture</span></div>
+            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Trophy size={26} /><span className="mt-5">Torneo</span></div>}
+            {puedeVerPantalla('jugador') && <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><QrCode size={26} /><span className="mt-5">Pase/Fixture</span></div>}
           </>
         ) : rolUsuario === 'jugador' ? (
           <>
-            <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>
-            <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} /><span className="mt-5">Academia</span></div>
-            <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Mi Cuenta</span></div>
-            <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><User size={26} /><span className="mt-5">Jugador</span></div>
+            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>}
+            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} /><span className="mt-5">Academia</span></div>}
+            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Mi Cuenta</span></div>}
+            {puedeVerPantalla('jugador') && <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><User size={26} /><span className="mt-5">Jugador</span></div>}
           </>
         ) : rolUsuario === 'admin' ? (
           <>
-            <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><Activity size={26} /><span className="mt-5">Admin</span></div>
-            <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} /><span className="mt-5">Kiosco</span></div>
-            <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Tesorería</span></div>
-            <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>
+            {puedeVerPantalla('admin_dashboard') && <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><Activity size={26} /><span className="mt-5">Admin</span></div>}
+            {puedeVerPantalla('kiosco') && <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} /><span className="mt-5">Kiosco</span></div>}
+            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Tesorería</span></div>}
+            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>}
           </>
         ) : rolUsuario === 'super_admin' ? (
           <>
-            <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><ShieldAlert size={26} /><span className="mt-5">Panel</span></div>
-            <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>
-            <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} /><span className="mt-5">Staff</span></div>
-            <div className={`nav-item ${pantallaActiva === 'scoreboard_live' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('scoreboard_live')}><Monitor size={26} /><span className="mt-5">Mesa</span></div>
-            <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} /><span className="mt-5">Kiosco</span></div>
+            {puedeVerPantalla('admin_dashboard') && <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><ShieldAlert size={26} /><span className="mt-5">Panel</span></div>}
+            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>}
+            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} /><span className="mt-5">Academia</span></div>}
+            {puedeVerPantalla('asistencia_staff') && <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} /><span className="mt-5">Staff</span></div>}
+            {puedeVerPantalla('scoreboard_live') && <div className={`nav-item ${pantallaActiva === 'scoreboard_live' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('scoreboard_live')}><Monitor size={26} /><span className="mt-5">Mesa</span></div>}
+            {puedeVerPantalla('kiosco') && <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} /><span className="mt-5">Kiosco</span></div>}
+            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Tesorería</span></div>}
           </>
         ) : rolUsuario === 'staff' ? (
           <>
-            <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>
-            <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} /><span className="mt-5">Lista</span></div>
-            <div className={`nav-item ${pantallaActiva === 'evaluacion_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('evaluacion_staff')}><Sliders size={26} /><span className="mt-5">Evaluar</span></div>
+            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>}
+            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} /><span className="mt-5">Academia</span></div>}
+            {puedeVerPantalla('asistencia_staff') && <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} /><span className="mt-5">Lista</span></div>}
+            {puedeVerPantalla('evaluacion_staff') && <div className={`nav-item ${pantallaActiva === 'evaluacion_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('evaluacion_staff')}><Sliders size={26} /><span className="mt-5">Evaluar</span></div>}
           </>
         ) : rolUsuario === 'mesa' ? (
           <div className="nav-item active" style={{width: '100%'}}><Monitor size={26} /><span className="mt-5">Consola Transmisión</span></div>
@@ -1414,7 +1834,7 @@ function App() {
             <p style={{color: 'var(--texto-secundario)', marginBottom: '20px'}}>Se cerrará el módulo actual de trabajo.</p>
             <div className="modal-alert-buttons">
               <button className="btn-modal-cancelar" onClick={() => setShowModalSalir(false)}>Cancelar</button>
-              <button className="btn-modal-confirmar" onClick={() => { setShowModalSalir(false); setRolUsuario(null); setPantallaActiva('comunicaciones'); setMostrarFormularioLogin(false); }}>Salir Seguramente</button>
+              <button className="btn-modal-confirmar" onClick={() => { setShowModalSalir(false); setRolUsuario(null); setUsuarioAutenticado(null); setPantallaActiva('comunicaciones'); setMostrarFormularioLogin(false); setShowSettings(false); setVistaAdmin('dashboard'); setCuentaEditando(null); }}>Salir Seguramente</button>
             </div>
           </div>
         </div>
