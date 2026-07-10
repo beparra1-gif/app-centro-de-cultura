@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -159,6 +159,8 @@ function SuperAdminPanel({
   const [resolviendoConflictoRut, setResolviendoConflictoRut] = useState('');
   const [subiendoFotoJugadorNuevo, setSubiendoFotoJugadorNuevo] = useState(false);
   const [subiendoFotoJugadorEdit, setSubiendoFotoJugadorEdit] = useState(false);
+  const edicionCuentaRef = useRef(null);
+  const edicionJugadorRef = useRef(null);
 
   const [nuevoJugadorVisita, setNuevoJugadorVisita] = useState({
     rut_visita: '',
@@ -429,6 +431,22 @@ function SuperAdminPanel({
     setCuentaAdminEdit(null);
     setJugadorAdminEdit({ ...item.raw, rut_original: item.raw.rut_jugador });
   };
+
+  useEffect(() => {
+    const target = editandoTipo === 'cuenta'
+      ? edicionCuentaRef.current
+      : editandoTipo === 'jugador'
+        ? edicionJugadorRef.current
+        : null;
+
+    if (!target) return;
+
+    const timer = window.setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+
+    return () => window.clearTimeout(timer);
+  }, [editandoTipo]);
 
   const guardarEdicionActual = async () => {
     try {
@@ -1221,7 +1239,7 @@ function SuperAdminPanel({
           </div>
 
           {editandoTipo === 'cuenta' && cuentaAdminEdit && (
-            <div className="card" style={{ borderRadius: '24px' }}>
+            <div ref={edicionCuentaRef} className="card" style={{ borderRadius: '24px' }}>
               <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                 <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaAdminEdit.correo || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, correo: e.target.value }))} /></div>
@@ -1243,7 +1261,7 @@ function SuperAdminPanel({
           )}
 
           {editandoTipo === 'jugador' && jugadorAdminEdit && (
-            <div className="card">
+            <div ref={edicionJugadorRef} className="card">
               <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                 <div className="form-group"><label>RUT Jugador</label><input className="form-input" value={jugadorAdminEdit.rut_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
