@@ -17,7 +17,6 @@ import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
 import ResultadosCards from './components/ResultadosCards';
 import ComunicacionesPanel from './components/ComunicacionesPanel';
-import PupiloSelector from './components/PupiloSelector';
 import KioscoPanel from './components/KioscoPanel';
 import SuperAdminPanel from './components/SuperAdminPanel';
 import MesaControlPanel from './components/MesaControlPanel';
@@ -25,6 +24,7 @@ import PerfilTesoreriaPanel from './components/PerfilTesoreriaPanel';
 import StaffAsistenciaPanel from './components/StaffAsistenciaPanel';
 import StaffEvaluacionPanel from './components/StaffEvaluacionPanel';
 import AcademiaPanel from './components/AcademiaPanel';
+import TarjetaJugadorPanel from './components/TarjetaJugadorPanel';
 import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
@@ -110,9 +110,6 @@ function App() {
 
   // --- ESTADOS: FASE 7 - DASHBOARD SALUD + ALERTAS INTELIGENTES ---
   const [alertas, setAlertas] = useState([]);
-  const [mostrarAlertas, setMostrarAlertas] = useState(false);
-  const [scoreDeCliente, setScoreDeCliente] = useState(85);
-  const [timelineActividad, setTimelineActividad] = useState([]);
   const [saludDelSistema, setSaludDelSistema] = useState({});
   const [vistaSaludTab, setVistaSaludTab] = useState('dashboard'); // dashboard, alertas, timeline
 
@@ -1162,30 +1159,6 @@ function App() {
     });
   };
 
-  const renderTimelineActividad = () => {
-    const horas = Array.from({length: 24}, (_, i) => ({
-      hora: `${i.toString().padStart(2, '0')}:00`,
-      // Curva estable con pico vespertino para evitar datos aleatorios en cada render.
-      cantidad: Math.max(1, Math.round(6 + (Math.sin((i - 5) * 0.55) + 1) * 4 + (i >= 18 && i <= 22 ? 5 : 0)))
-    }));
-    const maxCantidad = Math.max(...horas.map(h => h.cantidad), 1);
-    
-    return (
-      <div style={{background: 'var(--blanco-tarjeta)', borderRadius: '12px', padding: '15px', marginTop: '15px'}}>
-        <h6 style={{margin: '0 0 12px 0', fontSize: '13px', fontWeight: '700', color: 'var(--texto-principal)'}}>📅 Últimas 24 Horas</h6>
-        <div style={{display: 'flex', alignItems: 'flex-end', gap: '4px', height: '150px'}}>
-          {horas.map((h, i) => (
-            <div key={i} style={{flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'}}>
-              <div style={{width: '100%', background: 'linear-gradient(180deg, var(--azul-electrico) 0%, rgba(0,122,255,0.3) 100%)', height: `${(h.cantidad / maxCantidad) * 130}px`, borderRadius: '4px', cursor: 'pointer', transition: 'all 0.2s'}} title={h.cantidad + ' acciones'}></div>
-              {i % 3 === 0 && <span style={{fontSize: '9px', color: 'var(--texto-secundario)', fontWeight: '500'}}>{h.hora}</span>}
-            </div>
-          ))}
-        </div>
-        <p style={{margin: '12px 0 0 0', fontSize: '11px', color: 'var(--texto-secundario)', textAlign: 'center'}}>📈 Pico de actividad: 20:00 - 22:30 hrs (Tarde)</p>
-      </div>
-    );
-  };
-
   // ========== FASE 8: SISTEMA DE NOTIFICACIONES PUSH EN TIEMPO REAL ==========
 
   const crearPushNotificacion = (tipo, titulo, descripcion, urgencia = 'Baja') => {
@@ -1763,187 +1736,9 @@ function App() {
     );
   };
 
-  const renderDashboardSalud = () => {
-    const scoreActual = calcularScoreDeCliente();
-    const reportes = calcularReportes();
-    
-    return (
-      <div>
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px'}}>
-          <div className="card" style={{textAlign: 'center', background: 'linear-gradient(135deg, rgba(0,122,255,0.15), rgba(52,199,89,0.15))', borderTop: '3px solid var(--azul-electrico)'}}>
-            <h6 style={{margin: '0 0 8px 0', fontSize: '11px', fontWeight: '600', color: 'var(--texto-secundario)'}}>🏥 SALUD DEL SISTEMA</h6>
-            <div style={{fontSize: '48px', fontWeight: '900', color: 'var(--azul-electrico)'}}>
-              {scoreActual}
-            </div>
-            <span style={{fontSize: '22px'}}>{saludDelSistema.emoji || '🟢'}</span>
-            <p style={{margin: '6px 0 0 0', fontSize: '11px', color: 'var(--texto-principal)', fontWeight: '600'}}>
-              {saludDelSistema.estado || 'Óptimo'}
-            </p>
-          </div>
-
-          <div style={{display: 'grid', gridTemplateRows: '1fr 1fr', gap: '12px'}}>
-            <div className="card" style={{padding: '10px', textAlign: 'center', background: 'rgba(0,122,255,0.05)', borderLeft: '3px solid var(--azul-electrico)'}}>
-              <p style={{margin: '0 0 4px 0', fontSize: '10px', fontWeight: '600', color: 'var(--texto-secundario)'}}>👥 Socios Activos</p>
-              <p style={{margin: 0, fontSize: '20px', fontWeight: '800', color: 'var(--azul-electrico)'}}>12/15</p>
-            </div>
-            <div className="card" style={{padding: '10px', textAlign: 'center', background: 'rgba(52,199,89,0.05)', borderLeft: '3px solid #34C759'}}>
-              <p style={{margin: '0 0 4px 0', fontSize: '10px', fontWeight: '600', color: 'var(--texto-secundario)'}}>💬 Comunicaciones</p>
-              <p style={{margin: 0, fontSize: '20px', fontWeight: '800', color: '#34C759'}}>{comunicaciones.length}</p>
-            </div>
-          </div>
-        </div>
-
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px'}}>
-          <div className="card" style={{padding: '10px', textAlign: 'center', background: 'rgba(255,159,64,0.05)', borderLeft: '3px solid #FF9500'}}>
-            <p style={{margin: '0 0 4px 0', fontSize: '10px', fontWeight: '600', color: 'var(--texto-secundario)'}}>📊 Engagement Total</p>
-            <p style={{margin: 0, fontSize: '20px', fontWeight: '800', color: '#FF9500'}}>
-              {reportes.totalComentarios + reportes.totalReacciones}
-            </p>
-          </div>
-          <div className="card" style={{padding: '10px', textAlign: 'center', background: 'rgba(255,59,48,0.05)', borderLeft: '3px solid #FF3B30'}}>
-            <p style={{margin: '0 0 4px 0', fontSize: '10px', fontWeight: '600', color: 'var(--texto-secundario)'}}>⚠️ Alertas Activas</p>
-            <p style={{margin: 0, fontSize: '20px', fontWeight: '800', color: '#FF3B30'}}>{alertas.length}</p>
-          </div>
-        </div>
-
-        {renderTimelineActividad()}
-      </div>
-    );
-  };
-
-  const renderAlertasPanel = () => {
-    return (
-      <div style={{background: 'var(--blanco-tarjeta)', borderRadius: '12px', padding: '15px', marginTop: '15px'}}>
-        <h6 style={{margin: '0 0 12px 0', fontSize: '13px', fontWeight: '700', color: 'var(--texto-principal)'}}>🚨 Alertas Inteligentes ({alertas.length})</h6>
-        
-        {alertas.length === 0 ? (
-          <div style={{textAlign: 'center', padding: '20px'}}>
-            <p style={{margin: 0, fontSize: '14px', color: 'var(--texto-secundario)'}}>✅ No hay alertas críticas</p>
-          </div>
-        ) : (
-          <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
-            {alertas.map(alerta => (
-              <div key={alerta.id} style={{
-                background: alerta.urgencia === 'Crítica' ? 'rgba(255,59,48,0.08)' : 
-                            alerta.urgencia === 'Alta' ? 'rgba(255,159,64,0.08)' : 
-                            'rgba(52,199,89,0.08)',
-                borderLeft: alerta.urgencia === 'Crítica' ? '4px solid #FF3B30' : 
-                           alerta.urgencia === 'Alta' ? '4px solid #FF9500' : 
-                           '4px solid #34C759',
-                padding: '12px',
-                borderRadius: '8px',
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '10px'
-              }}>
-                <span style={{fontSize: '18px', marginTop: '2px'}}>{
-                  alerta.urgencia === 'Crítica' ? '🔴' : 
-                  alerta.urgencia === 'Alta' ? '🟠' : '🟡'
-                }</span>
-                <div style={{flex: 1}}>
-                  <p style={{margin: '0 0 4px 0', fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)'}}>
-                    {alerta.titulo}
-                  </p>
-                  <p style={{margin: '0', fontSize: '11px', color: 'var(--texto-secundario)', lineHeight: '1.4'}}>
-                    {alerta.descripcion}
-                  </p>
-                  <span style={{fontSize: '9px', color: 'var(--texto-secundario)', marginTop: '6px', display: 'block'}}>
-                    {alerta.timestamp.toLocaleTimeString('es-CL', {hour: '2-digit', minute: '2-digit'})}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   // ==========================================
   // 5. MÓDULOS DE JUGADOR, ACADEMIA Y TESORERÍA
   // ==========================================
-
-  const renderTarjetaJugador = () => {
-    let claseRareza = "holo-bronce"; let textoRareza = "BRONCE";
-    const nivelActual = rolUsuario === 'visita' ? 'MAX' : pupiloActivo.nivel;
-    const nombreDisplay = rolUsuario === 'visita' ? 'Invitado' : pupiloActivo.nombre.split(' ')[0];
-    const apellidoDisplay = rolUsuario === 'visita' ? 'TORNEO' : pupiloActivo.nombre.split(' ')[1]?.toUpperCase() || '';
-    
-    if(nivelActual > 10 && nivelActual <= 20) { claseRareza = "holo-plata"; textoRareza = "PLATA"; } 
-    else if(nivelActual > 20) { claseRareza = "holo-oro"; textoRareza = "ORO"; }
-    if(rolUsuario === 'visita') { claseRareza = "holo-visita"; textoRareza = "VISITA"; }
-
-    return (
-      <div className="fade-in player-screen-shell">
-        <PupiloSelector
-          pupilos={mockTesoreriaDB.pupilos}
-          pupiloActivo={pupiloActivo}
-          rolUsuario={rolUsuario}
-          onChangePupilo={setPupiloActivo}
-        />
-        
-        <div className="holographic-wrapper horizontal-holo">
-          <div className={`holographic-card horizontal ${claseRareza}`}>
-            <div className="holo-glare"></div>
-            <div className="holo-header">
-              <div className="holo-club-logo">🏀</div>
-              <div className="holo-season">SEASON 2026</div>
-              <div className="holo-rarity-badge">{textoRareza}</div>
-            </div>
-            <div className="holo-center-content">
-              <div className="holo-foto-marco"><User size={50} color="white" /></div>
-              <div className="holo-jugador-info">
-                <h2>{nombreDisplay}</h2>
-                <h1>{apellidoDisplay}</h1>
-                <div className="holo-dorsal">#{rolUsuario === 'visita' ? '00' : mockJugador.NUMERO_CAMISETA}</div>
-              </div>
-            </div>
-            <div className="holo-bottom-bar">
-              <div className="holo-stats">
-                <div><span>POS</span><strong>{rolUsuario === 'visita' ? 'N/A' : mockJugador.POSICION_DE_JUEGO}</strong></div>
-                <div><span>CAT</span><strong>{rolUsuario === 'visita' ? 'Open' : pupiloActivo.categoria}</strong></div>
-                <div><span>LVL</span><strong>{nivelActual}</strong></div>
-              </div>
-              <div className="holo-qr-zone"><QrCode size={40} color="black"/></div>
-            </div>
-          </div>
-        </div>
-        <p className="text-center mt-5" style={{fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: 'bold'}}>Escanea este QR en portería para asistencia.</p>
-
-        {rolUsuario !== 'visita' && (
-          <>
-            <h3 className="section-title mt-20">Ficha Atlética e Indumentaria</h3>
-            <div className="caja-doble-grid mb-15">
-               <div className="card sub-caja-card metric-card" style={{padding: '15px'}}>
-                  <h5 className="sub-caja-title" style={{fontSize: '11px'}}><Target size={14}/> Biometría</h5>
-                  <div className="desglose-row"><span>Estatura:</span><strong>{mockJugador.ESTATURA}</strong></div>
-                  <div className="desglose-row"><span>Peso:</span><strong>{mockJugador.PESO}</strong></div>
-                  <div className="desglose-row"><span>Mano Hábil:</span><strong>{mockJugador.MANO_HABIL}</strong></div>
-               </div>
-               
-               <div className="card sub-caja-card metric-card" style={{padding: '15px'}}>
-                  <h5 className="sub-caja-title" style={{fontSize: '11px'}}><Shirt size={14}/> Tallas</h5>
-                  <div className="desglose-row"><span>Camiseta:</span><strong>{mockJugador.TALLA_CAMISETA}</strong></div>
-                  <div className="desglose-row"><span>Short:</span><strong>{mockJugador.TALLA_SHORT}</strong></div>
-                  <div className="desglose-row mt-10 text-center">
-                    <span className="badge-urgente" style={{background: mockJugador.POLERA_ENTREGADA ? 'var(--verde-victoria)' : '#FF3B30', width: '100%', display: 'block', padding: '8px 0'}}>
-                      {mockJugador.POLERA_ENTREGADA ? 'ROPA ENTREGADA ✓' : 'FALTA ENTREGA'}
-                    </span>
-                  </div>
-               </div>
-            </div>
-            
-            <div className="card history-card" style={{background: 'linear-gradient(135deg, #1A222D, #0B1017)', color: 'white', border: 'none'}}>
-               <h4 className="form-subtitle" style={{color: '#00C7BE', margin: '0 0 15px 0'}}>📊 Historial Deportivo</h4>
-               <div className="desglose-row"><span>Asistencia Entrenamientos:</span><strong style={{color: 'var(--verde-victoria)'}}>{mockJugador.ASISTENCIA}</strong></div>
-               <div className="desglose-row"><span>Estado del Jugador:</span><strong style={{color: '#00C7BE'}}>{mockJugador.ESTADO_DEPORTIVO}</strong></div>
-               <div className="desglose-row"><span>Beca Asignada:</span><strong>{mockJugador.BECA}</strong></div>
-            </div>
-          </>
-        )}
-      </div>
-    );
-  };
 
   // ==========================================
   // 10. ESTRUCTURA HTML FINAL (APP)
@@ -2106,7 +1901,13 @@ function App() {
                 setPageViewMode={setPageViewMode}
               />
             )}
-            {(rolUsuario === 'jugador' || rolUsuario === 'visita' || rolUsuario === 'super_admin') && pantallaActiva === 'jugador' && renderTarjetaJugador()}
+            {(rolUsuario === 'jugador' || rolUsuario === 'visita' || rolUsuario === 'super_admin') && pantallaActiva === 'jugador' && (
+              <TarjetaJugadorPanel
+                pupiloActivo={pupiloActivo}
+                setPupiloActivo={setPupiloActivo}
+                rolUsuario={rolUsuario}
+              />
+            )}
             {(rolUsuario === 'staff' || rolUsuario === 'super_admin') && pantallaActiva === 'asistencia_staff' && (
               <StaffAsistenciaPanel
                 vistaStaff={vistaStaff}
@@ -2220,9 +2021,10 @@ function App() {
                 setCuentaEditando={setCuentaEditando}
                 vistaSaludTab={vistaSaludTab}
                 setVistaSaludTab={setVistaSaludTab}
-                renderDashboardSalud={renderDashboardSalud}
-                renderAlertasPanel={renderAlertasPanel}
-                renderTimelineActividad={renderTimelineActividad}
+                alertas={alertas}
+                saludDelSistema={saludDelSistema}
+                comunicacionesCount={comunicaciones.length}
+                calcularScoreDeCliente={calcularScoreDeCliente}
               />
             )}
           </>

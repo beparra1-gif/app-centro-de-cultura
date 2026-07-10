@@ -3,6 +3,9 @@ import * as api from '../api/client';
 import { colorTipo } from '../utils/appHelpers';
 import { mockMorosos } from '../data/mockData';
 import ReportesPanel from './ReportesPanel';
+import SaludAlertasPanel from './SaludAlertasPanel';
+import SaludDashboardPanel from './SaludDashboardPanel';
+import SaludTimelinePanel from './SaludTimelinePanel';
 
 function SuperAdminPanel({
   vistaAdmin,
@@ -34,9 +37,10 @@ function SuperAdminPanel({
   setCuentaEditando,
   vistaSaludTab,
   setVistaSaludTab,
-  renderDashboardSalud,
-  renderAlertasPanel,
-  renderTimelineActividad,
+  alertas,
+  saludDelSistema,
+  comunicacionesCount,
+  calcularScoreDeCliente,
 }) {
   const enviarAlerta = () => { alert('Notificación enviada por App y Correo a los destinatarios.'); };
   const togglePermiso = (idUsuario, permiso) => { void idUsuario; void permiso; };
@@ -330,6 +334,13 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'salud' && (
         <div className="fade-in">
+          {(() => {
+            const reportes = calcularReportes();
+            const scoreActual = calcularScoreDeCliente();
+            const engagementTotal = reportes.totalComentarios + reportes.totalReacciones;
+
+            return (
+              <>
           <div className="scroll-horizontal-menu mb-15">
             <div className="segment-control" style={{ minWidth: '300px' }}>
               <div className={`segment-btn ${vistaSaludTab === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaSaludTab('dashboard')}>Dashboard</div>
@@ -338,9 +349,20 @@ function SuperAdminPanel({
             </div>
           </div>
 
-          {vistaSaludTab === 'dashboard' && renderDashboardSalud()}
-          {vistaSaludTab === 'alertas' && renderAlertasPanel()}
-          {vistaSaludTab === 'timeline' && renderTimelineActividad()}
+          {vistaSaludTab === 'dashboard' && (
+            <SaludDashboardPanel
+              scoreActual={scoreActual}
+              saludDelSistema={saludDelSistema}
+              comunicacionesCount={comunicacionesCount}
+              engagementTotal={engagementTotal}
+              alertasCount={alertas.length}
+            />
+          )}
+          {vistaSaludTab === 'alertas' && <SaludAlertasPanel alertas={alertas} />}
+          {vistaSaludTab === 'timeline' && <SaludTimelinePanel />}
+              </>
+            );
+          })()}
         </div>
       )}
 
