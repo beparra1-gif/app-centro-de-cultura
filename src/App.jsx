@@ -30,6 +30,14 @@ import PushPreferenciasPanel from './components/PushPreferenciasPanel';
 import PushHistorialModal from './components/PushHistorialModal';
 import WhatsAppPanel from './components/WhatsAppPanel';
 import WhatsAppHistorialModal from './components/WhatsAppHistorialModal';
+import SettingsPanel from './components/SettingsPanel';
+import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
+import OnboardingModal from './components/OnboardingModal';
+import PublicFacadePanel from './components/PublicFacadePanel';
+import ComunicacionFormPanel from './components/ComunicacionFormPanel';
+import NotificationsPanel from './components/NotificationsPanel';
+import SearchPanel from './components/SearchPanel';
+import NotificationHistoryPanel from './components/NotificationHistoryPanel';
 import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
@@ -432,299 +440,11 @@ function App() {
   // ==========================================
   // 4. COMPONENTES VISUALES (PÚBLICO Y ONBOARDING)
   // ==========================================
-  
-  // PANEL DE CONFIGURACIÓN Y PERFIL
-  const renderSettingsPanel = () => {
-    if (rolUsuario === 'admin' || rolUsuario === 'super_admin') {
-      const permisosDisponibles = ['kiosco', 'inventario', 'citaciones', 'mesa', 'validacion_pagos', 'auditoria', 'resumen'];
-      const usuariosFiltrados = matrixPermisos.filter(u => u.nombre.toLowerCase().includes(busquedaPermisos.toLowerCase()) && (filtroRolPermisos === 'Todos' || u.rol === filtroRolPermisos));
-      return <div style={{padding: '12px'}}><h4 style={{margin: '0 0 10px 0', fontSize: '14px', fontWeight: '900'}}>🔐 Control de Permisos</h4><input type="text" placeholder="Buscar..." value={busquedaPermisos} onChange={(e) => setBusquedaPermisos(e.target.value)} style={{width: '100%', padding: '8px', marginBottom: '10px', borderRadius: '8px', border: '1px solid var(--borde-suave)', fontSize: '12px'}} /><div style={{display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap'}}>{['Todos', 'Admin', 'Staff', 'Socio', 'Jugador'].map(r => <button key={r} onClick={() => setFiltroRolPermisos(r)} style={{padding: '6px 10px', borderRadius: '8px', background: filtroRolPermisos === r ? 'var(--azul-electrico)' : 'var(--fondo-input)', color: filtroRolPermisos === r ? 'white' : 'var(--texto-principal)', fontSize: '11px', fontWeight: '700', border: 'none', cursor: 'pointer'}}>{r}</button>)}</div><div style={{maxHeight: '300px', overflowY: 'auto'}}>{usuariosFiltrados.map(u => <div key={u.id} style={{marginBottom: '8px', padding: '8px', background: 'var(--fondo-card-sutil)', borderRadius: '8px', border: '1px solid var(--borde-suave)'}}><strong style={{fontSize: '11px', display: 'block'}}>{u.nombre}</strong><span style={{fontSize: '10px', color: 'var(--texto-secundario)'}}>{u.rol}</span><div style={{marginTop: '6px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '4px'}}>{permisosDisponibles.map(p => <button key={p} onClick={() => togglePermiso(u.id, p)} style={{padding: '4px 6px', fontSize: '9px', borderRadius: '6px', background: u.permisos[p] ? 'rgba(52,199,89,0.2)' : 'transparent', border: u.permisos[p] ? '1px solid var(--verde-victoria)' : '1px solid rgba(0,0,0,0.1)', color: u.permisos[p] ? 'var(--verde-victoria)' : 'var(--texto-secundario)', fontWeight: '700', cursor: 'pointer'}}>{u.permisos[p] ? '✓' : '○'} {p.split('_')[0]}</button>)}</div></div>)}</div></div>;
-    } else {
-      return (
-        <div style={{padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px'}}>
-          <h4 style={{margin: '0 0 10px 0', fontSize: '14px', fontWeight: '900'}}>⚙️ Mi Perfil</h4>
-          <div>
-            <label style={{fontSize: '11px', fontWeight: '700', display: 'block', marginBottom: '4px'}}>Tema</label>
-            <div style={{display: 'flex', gap: '6px'}}>
-              <button onClick={() => setTemaOscuro(false)} style={{flex: 1, padding: '6px', borderRadius: '6px', background: !temaOscuro ? 'var(--azul-electrico)' : 'var(--fondo-input)', color: !temaOscuro ? 'white' : 'var(--texto-principal)', fontSize: '11px', fontWeight: '700', border: 'none', cursor: 'pointer'}}>☀️ Claro</button>
-              <button onClick={() => setTemaOscuro(true)} style={{flex: 1, padding: '6px', borderRadius: '6px', background: temaOscuro ? 'var(--azul-electrico)' : 'var(--fondo-input)', color: temaOscuro ? 'white' : 'var(--texto-principal)', fontSize: '11px', fontWeight: '700', border: 'none', cursor: 'pointer'}}>🌙 Oscuro</button>
-            </div>
-          </div>
-          <button onClick={() => alert('Próximamente')} style={{padding: '6px', borderRadius: '6px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '700', border: '1px solid rgba(0,122,255,0.3)', cursor: 'pointer'}}>🔑 Contraseña</button>
-          <hr style={{margin: '10px 0', border: 'none', borderTop: '1px solid var(--borde-suave)'}}/>
-          <PushPreferenciasPanel
-            preferenciasSonido={preferenciasSonido}
-            setPreferenciasSonido={setPreferenciasSonido}
-            reproducirSonido={reproducirSonido}
-          />
-        </div>
-      );
-    }
-  };
-  
-  // PREMIUM UPGRADE: Skeleton Loaders (Transiciones ultra rápidas)
-  const renderSkeleton = () => (
-    <div className="skeleton-container fade-in" style={{padding: '15px'}}>
-      <div className="skeleton-header" style={{height: '30px', width: '50%', background: 'rgba(0,0,0,0.05)', borderRadius: '8px', marginBottom: '20px'}}></div>
-      <div className="skeleton-card" style={{height: '150px', background: 'rgba(0,0,0,0.05)', borderRadius: '20px', marginBottom: '15px'}}></div>
-      <div className="skeleton-card" style={{height: '100px', background: 'rgba(0,0,0,0.05)', borderRadius: '20px', marginBottom: '15px'}}></div>
-      <div className="skeleton-card" style={{height: '200px', background: 'rgba(0,0,0,0.05)', borderRadius: '20px'}}></div>
-    </div>
-  );
 
-  const renderOnboardingModal = () => (
-    <div className="onboarding-overlay">
-      <div className="onboarding-card">
-        <div className="progress-circle-container">
-          <div className="progress-circle" style={{background: `conic-gradient(var(--verde-victoria) ${onboardingProgress}%, #f0f0f0 ${onboardingProgress}%)`}}>
-            <div className="progress-inner">{onboardingProgress}%</div>
-          </div>
-        </div>
-        
-        {onboardingStep === 1 && (
-          <div className="step-content">
-            <h3><Lock size={20} color="var(--azul-marino)"/> Clave de Seguridad</h3>
-            <p>Debes cambiar tu contraseña inicial (12345) por una personal y segura para continuar.</p>
-            <input type="password" placeholder="Nueva Contraseña" className="form-input mt-10" />
-            <input type="password" placeholder="Repetir Contraseña" className="form-input mt-10" />
-          </div>
-        )}
-        
-        {onboardingStep === 2 && (
-          <div className="step-content">
-            <h3><Camera size={20} color="var(--azul-marino)"/> Foto Credencial</h3>
-            <p>Sube tu imagen clara y frontal para la Tarjeta Holográfica Oficial del Torneo.</p>
-            <div className="foto-upload-box mt-10">
-              <User size={40} color="var(--texto-secundario)"/>
-              <span>Tocar para subir desde la galería</span>
-            </div>
-          </div>
-        )}
-        
-        {onboardingStep === 3 && (
-          <div className="step-content">
-            <h3><HeartPulse size={20} color="var(--azul-marino)"/> Ficha Médica Base</h3>
-            <p>Completemos los datos mínimos vitales para alcanzar el 70% del perfil requerido.</p>
-            <input type="email" placeholder="Correo Electrónico" className="form-input mt-10" />
-            <input type="text" placeholder="Teléfono de Emergencia" className="form-input mt-10" />
-          </div>
-        )}
-        
-        <button className="btn-electric mt-20" onClick={avanzarOnboarding}>
-          {onboardingStep === 3 ? '¡Desbloquear Acceso!' : 'Siguiente Paso'} <ChevronRight size={18}/>
-        </button>
-      </div>
-    </div>
-  );
+  // ==========================================
+  // 5. LOGICA DE NOTIFICACIONES, BUSQUEDA Y REPORTES
+  // ==========================================
 
-  const renderFachadaPublica = () => (
-    <>
-      {vistaPublica === 'inicio' && (
-      <div className="text-center login-card-main hero-panel">
-        <span className="hero-badge">Portal Oficial</span>
-        <div className="escudo-club-login">🛡️</div>
-        <h2 className="hero-title">Centro de Cultura Física<br/><span style={{fontSize:'72%',fontWeight:'800',opacity:.85}}>Viña Del Mar</span></h2>
-        
-        {!mostrarFormularioLogin ? (
-          <div className="login-botones-iniciales">
-            <button className="btn-electric" onClick={() => abrirFormularioLogin('socios')}>
-              <User size={18} /> Acceso Socios y Staff
-            </button>
-            <button className="btn-secondary mt-15" onClick={() => abrirFormularioLogin('invitado')}>
-              <QrCode size={18} /> Entrar como Visitante
-            </button>
-            <button className="btn-whatsapp mt-15" onClick={() => window.open('https://wa.me/56953297869?text=Hola!%20Quiero%20conocer%20m%C3%A1s%20sobre%20el%20Club%20Centro%20de%20Cultura%20F%C3%ADsica%20de%20Vi%C3%B1a%20del%20Mar%20%F0%9F%8F%80', '_blank')}>
-              💬 ¿Quieres ser parte del Club?
-            </button>
-          </div>
-        ) : (
-          <form className="login-form-real fade-in" onSubmit={handleLoginSubmit}>
-            <h4 className="login-form-title">
-              {tipoLoginSeleccionado === 'invitado' ? 'Portal Invitados' : 'Acceso Oficial'}
-            </h4>
-            <div className="input-group-login">
-              <User size={18} color="var(--texto-secundario)"/>
-              <input type="text" placeholder="RUT" value={rutInput} onChange={(e)=>setRutInput(e.target.value)} required />
-            </div>
-            <div className="input-group-login mt-10">
-              <Lock size={18} color="var(--texto-secundario)"/>
-              <input type="password" placeholder="Contraseña" value={passInput} onChange={(e)=>setPassInput(e.target.value)} required />
-            </div>
-            <button type="submit" className="btn-electric mt-20">Ingresar al Sistema</button>
-            <button type="button" className="btn-volver-texto mt-15" onClick={volverInicioLogin}>
-              <ChevronLeft size={16}/> Volver a opciones
-            </button>
-          </form>
-        )}
-      </div>
-      )}
-
-      {vistaPublica === 'noticias' && (
-        <div className="fade-in">
-
-          {/* Anuncios públicos solamente */}
-          <h3 className="section-title mt-20">Anuncios del Club</h3>
-          {mockComunicaciones.filter(c => c.publico).map(c => (
-            <div key={c.id} className="ios-rrss-card fade-in">
-              <div className="ios-rrss-header">
-                <span className="badge-tipo">{c.TIPO_COMUNICADO}</span>
-                <span className="fecha-comunicado">{c.FECHA}</span>
-              </div>
-              <h4 className="titulo-comunicado">
-                <Bell size={16} style={{marginRight: '6px'}}/>
-                {c.TITULO}
-              </h4>
-              <p className="ios-rrss-body">{c.CUERPO_TEXTO}</p>
-            </div>
-          ))}
-
-          {/* Galería de fotos */}
-          <h3 className="section-title mt-20">📸 Galería</h3>
-          <div className="fotos-grid mb-20">
-            {mockFotos.map(foto => (
-              <div key={foto.id} className="foto-card">
-                <span className="foto-emoji">{foto.emoji}</span>
-                <span className="foto-titulo">{foto.titulo}</span>
-                <span className="foto-fecha">{foto.fecha}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* CTA Contacto */}
-          <div className="cta-contacto-card">
-            <h3 style={{margin: '0 0 6px 0', fontSize: '18px', fontWeight: '900'}}>Club Centro de Cultura Física</h3>
-            <p style={{margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.5'}}>
-              ¿Quieres ser parte de nuestra familia deportiva?<br/>Conoce nuestros programas y catálogo de servicios.
-            </p>
-            <button className="btn-contacto" onClick={() => alert('¡Gracias por tu interés! Un representante del Club Centro de Cultura Física se pondrá en contacto contigo pronto. 🏀')}>
-              📬 ¡Contáctanos, haz clic acá!
-            </button>
-          </div>
-        </div>
-      )}
-
-      {vistaPublica === 'resultados' && (
-        <div className="fade-in">
-          <h3 className="section-title mt-20">Últimos Resultados</h3>
-          <ResultadosCards partidos={partidosPrueba} />
-        </div>
-      )}
-    </>
-  );
-
-  const renderFormularioComunicaciones = () => {
-    const agregarComunicacion = async () => {
-      try {
-        const nuevaCom = await api.comunicacionesAPI.create({
-          titulo: formCom.titulo,
-          cuerpo_texto: formCom.mensaje,
-          tipo: formCom.tipo,
-          rama: formCom.rama,
-          categoria: formCom.categoria,
-          urgencia: formCom.urgencia,
-          solicita_asistencia: formCom.solicita_asistencia
-        });
-
-        // Agregar a estado local
-        setComunicaciones([{
-          id: nuevaCom.id,
-          TITULO: nuevaCom.titulo,
-          CUERPO_TEXTO: nuevaCom.cuerpo_texto,
-          FECHA: new Date(nuevaCom.created_at).toLocaleDateString('es-CL'),
-          TIPO_COMUNICADO: nuevaCom.tipo,
-          rama: nuevaCom.rama,
-          categoria: nuevaCom.categoria,
-          urgencia: nuevaCom.urgencia,
-          solicita_asistencia: nuevaCom.solicita_asistencia,
-          reacciones: nuevaCom.reacciones || {},
-          asistencias: nuevaCom.asistencias || []
-        }, ...comunicaciones]);
-
-        setFormCom({ titulo: '', mensaje: '', audiencia: ['deportistas'], rama: 'General', categoria: 'General', tipo: 'Aviso', urgencia: 'Media', solicita_asistencia: false });
-        setMostrarFormComunicaciones(false);
-        addNotificacionHistorial('comunicacion', '📢 Nueva Comunicación', `"${formCom.titulo}" publicada correctamente`);
-      } catch (error) {
-        console.error('Error agregando comunicación:', error);
-        alert('Error al crear la comunicación');
-      }
-    };
-
-    const toggleAudiencia = (aud) => {
-      const nuevaAudiencia = formCom.audiencia.includes(aud) 
-        ? formCom.audiencia.filter(a => a !== aud)
-        : [...formCom.audiencia, aud];
-      setFormCom({...formCom, audiencia: nuevaAudiencia});
-    };
-
-    return (
-      <div className="card mt-20 fade-in" style={{background: 'linear-gradient(135deg, rgba(0, 122, 255, 0.05), rgba(52, 199, 89, 0.05))', border: '1px solid var(--borde-suave)'}}>
-        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', gap: '8px', flexWrap: 'wrap'}}>
-          <h4 style={{margin: 0, color: 'var(--texto-heading)', fontSize: '18px', fontWeight: '800'}}>📢 Nueva Comunicación</h4>
-          <button onClick={() => setMostrarFormComunicaciones(false)} style={{background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer'}}>✕</button>
-        </div>
-
-        <input type="text" placeholder="Título de la comunicación" value={formCom.titulo} onChange={e => setFormCom({...formCom, titulo: e.target.value})} className="form-input mb-10" style={{width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--borde-suave)', fontSize: '14px'}} />
-
-        <textarea placeholder="Mensaje/Descripción" value={formCom.mensaje} onChange={e => setFormCom({...formCom, mensaje: e.target.value})} className="form-input mb-10" style={{width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--borde-suave)', minHeight: '80px', fontSize: '14px', resize: 'vertical'}} />
-
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px'}}>
-          <select value={formCom.tipo} onChange={e => setFormCom({...formCom, tipo: e.target.value})} className="form-input" style={{padding: '8px', borderRadius: '6px', border: '1px solid var(--borde-suave)', fontSize: '13px'}}>
-            <option>Aviso</option>
-            <option>Evento</option>
-            <option>Suspensión</option>
-            <option>Asamblea</option>
-            <option>Rendimiento</option>
-            <option>Tesorería</option>
-          </select>
-          <select value={formCom.urgencia} onChange={e => setFormCom({...formCom, urgencia: e.target.value})} className="form-input" style={{padding: '8px', borderRadius: '6px', border: '1px solid var(--borde-suave)', fontSize: '13px', borderLeft: `3px solid ${getColorUrgencia(formCom.urgencia)}`}}>
-            <option>Baja</option>
-            <option>Media</option>
-            <option>Alta</option>
-            <option>Crítica</option>
-          </select>
-        </div>
-
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px'}}>
-          <select value={formCom.rama} onChange={e => setFormCom({...formCom, rama: e.target.value})} className="form-input" style={{padding: '8px', borderRadius: '6px', border: '1px solid var(--borde-suave)', fontSize: '13px'}}>
-            <option>General</option>
-            <option>Femenina</option>
-            <option>Masculina</option>
-          </select>
-          <select value={formCom.categoria} onChange={e => setFormCom({...formCom, categoria: e.target.value})} className="form-input" style={{padding: '8px', borderRadius: '6px', border: '1px solid var(--borde-suave)', fontSize: '13px'}}>
-            <option>General</option>
-            <option>U13</option>
-            <option>U15</option>
-            <option>U17</option>
-            <option>Adultos</option>
-          </select>
-        </div>
-
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '15px'}}>
-          {['socios', 'apoderados', 'deportistas'].map(aud => (
-            <button key={aud} onClick={() => toggleAudiencia(aud)} style={{padding: '8px', borderRadius: '6px', background: formCom.audiencia.includes(aud) ? 'var(--azul-electrico)' : 'var(--blanco-tarjeta)', color: formCom.audiencia.includes(aud) ? 'white' : 'var(--texto-principal)', border: formCom.audiencia.includes(aud) ? 'none' : '1px solid var(--borde-suave)', cursor: 'pointer', fontSize: '13px', fontWeight: formCom.audiencia.includes(aud) ? '700' : '500', transition: '0.2s'}}>
-              {aud === 'socios' ? '👥 Socios' : aud === 'apoderados' ? '👨‍👩‍👧 Apoderados' : '🏃 Deportistas'}
-            </button>
-          ))}
-        </div>
-
-        <label style={{display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px', cursor: 'pointer', fontSize: '13px'}}>
-          <input type="checkbox" checked={formCom.solicita_asistencia} onChange={e => setFormCom({...formCom, solicita_asistencia: e.target.checked})} style={{cursor: 'pointer', width: '16px', height: '16px'}} />
-          <span>Solicitar asistencia / RSVP</span>
-        </label>
-
-        <div style={{display: 'flex', gap: '10px'}}>
-          <button onClick={agregarComunicacion} className="btn-electric" style={{flex: 1, padding: '12px', borderRadius: '8px', border: 'none', color: 'white', fontWeight: '700', cursor: 'pointer', fontSize: '14px'}}>
-            ✓ Publicar
-          </button>
-          <button onClick={() => setMostrarFormComunicaciones(false)} className="btn-secondary" style={{flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid var(--borde-suave)', background: 'var(--blanco-tarjeta)', color: 'var(--texto-principal)', fontWeight: '600', cursor: 'pointer', fontSize: '14px'}}>
-            Cancelar
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  // FASE 5: Funciones de Notificaciones, Búsqueda y Reportes
   const addNotificacion = (tipo, titulo, descripcion, comId = null) => {
     const nuevaNotif = {
       id: nextId(),
@@ -822,106 +542,6 @@ function App() {
       .slice(0, 5);
 
     return { totalComentarios, totalReacciones, totalRSVP, topComentaristas, comTop };
-  };
-
-  const renderNotificaciones = () => {
-    const notifAgrupadas = {
-      comentario: notificaciones.filter(n => n.tipo === 'comentario'),
-      rsvp: notificaciones.filter(n => n.tipo === 'rsvp'),
-      comunicacion: notificaciones.filter(n => n.tipo === 'comunicacion')
-    };
-
-    return (
-      <div style={{position: 'fixed', top: '90px', right: '15px', width: '320px', maxHeight: '400px', overflowY: 'auto', zIndex: 1000}}>
-        {notificaciones.length === 0 ? (
-          <div style={{padding: '20px', textAlign: 'center', color: 'var(--texto-secundario)', fontSize: '13px'}}>
-            ✓ Sin notificaciones
-          </div>
-        ) : (
-          notificaciones.map(notif => (
-            <div
-              key={notif.id}
-              style={{
-                background: 'var(--blanco-tarjeta)',
-                border: '1px solid var(--borde-suave)',
-                borderRadius: '8px',
-                padding: '12px',
-                marginBottom: '8px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                animation: 'slideIn 0.3s ease-out'
-              }}
-            >
-              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px'}}>
-                <span style={{fontWeight: '700', fontSize: '13px', color: 'var(--texto-principal)'}}>
-                  {notif.tipo === 'comentario' ? '💬' : notif.tipo === 'rsvp' ? '✓' : notif.tipo === 'comunicacion' ? '📢' : '🔔'} {notif.titulo}
-                </span>
-                <button onClick={() => setNotificaciones(notifs => notifs.filter(n => n.id !== notif.id))} style={{background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px'}}>✕</button>
-              </div>
-              <p style={{margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.3'}}>{notif.descripcion}</p>
-            </div>
-          ))
-        )}
-        <style>{`@keyframes slideIn { from { transform: translateX(350px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
-      </div>
-    );
-  };
-
-  const renderBusqueda = () => {
-    return (
-      <div className="card fade-in" style={{background: 'linear-gradient(135deg, rgba(0, 122, 255, 0.05), rgba(52, 199, 89, 0.05))', marginBottom: '20px'}}>
-        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
-          <h4 style={{margin: 0, color: 'var(--texto-heading)', fontSize: '16px', fontWeight: '700'}}>🔍 Búsqueda Global</h4>
-          <button onClick={() => setMostrarBusqueda(false)} style={{background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer'}}>✕</button>
-        </div>
-
-        <input
-          type="text"
-          placeholder="Buscar comunicaciones, comentarios, usuarios..."
-          value={busquedaGlobal}
-          onChange={e => {setBusquedaGlobal(e.target.value); buscarGlobal(e.target.value);}}
-          style={{width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--borde-suave)', marginBottom: '12px', fontSize: '13px'}}
-        />
-
-        {resultadosBusqueda.comunicaciones.length > 0 && (
-          <div style={{marginBottom: '12px'}}>
-            <h6 style={{margin: '0 0 8px 0', fontSize: '12px', fontWeight: '700', color: 'var(--azul-electrico)'}}>📢 Comunicaciones ({resultadosBusqueda.comunicaciones.length})</h6>
-            {resultadosBusqueda.comunicaciones.map(c => (
-              <div key={c.id} style={{background: 'rgba(0,0,0,0.02)', padding: '8px', borderRadius: '4px', marginBottom: '6px', fontSize: '12px', cursor: 'pointer'}} onClick={() => setMostrarBusqueda(false)}>
-                <strong>{c.TITULO}</strong>
-                <p style={{margin: '4px 0 0 0', fontSize: '11px', color: 'var(--texto-secundario)'}}>{c.CUERPO_TEXTO.substring(0, 60)}...</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {resultadosBusqueda.comentarios.length > 0 && (
-          <div style={{marginBottom: '12px'}}>
-            <h6 style={{margin: '0 0 8px 0', fontSize: '12px', fontWeight: '700', color: 'var(--azul-electrico)'}}>💬 Comentarios ({resultadosBusqueda.comentarios.length})</h6>
-            {resultadosBusqueda.comentarios.slice(0, 3).map((c, i) => (
-              <div key={i} style={{background: 'rgba(0,0,0,0.02)', padding: '8px', borderRadius: '4px', marginBottom: '6px', fontSize: '12px', cursor: 'pointer'}} onClick={() => setMostrarBusqueda(false)}>
-                <strong>{c.usuario}</strong> {c.esRespuesta && '(respuesta)'}
-                <p style={{margin: '4px 0 0 0', fontSize: '11px', color: 'var(--texto-secundario)'}}>{c.texto.substring(0, 60)}...</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {resultadosBusqueda.usuarios.length > 0 && (
-          <div>
-            <h6 style={{margin: '0 0 8px 0', fontSize: '12px', fontWeight: '700', color: 'var(--azul-electrico)'}}>👥 Usuarios ({resultadosBusqueda.usuarios.length})</h6>
-            <div style={{display: 'flex', gap: '6px', flexWrap: 'wrap'}}>
-              {resultadosBusqueda.usuarios.map(u => (
-                <span key={u} style={{background: 'var(--azul-electrico)', color: 'white', padding: '4px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: '600'}}>@{u}</span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {busquedaGlobal.trim() && resultadosBusqueda.comunicaciones.length === 0 && resultadosBusqueda.comentarios.length === 0 && resultadosBusqueda.usuarios.length === 0 && (
-          <p style={{textAlign: 'center', color: 'var(--texto-secundario)', fontSize: '12px', margin: 0}}>Sin resultados para "{busquedaGlobal}"</p>
-        )}
-      </div>
-    );
   };
 
   // FASE 6: Funciones de Gráficos, PDF y Historial
@@ -1034,50 +654,6 @@ function App() {
     }
 
     return null;
-  };
-
-  const renderHistorialNotificaciones = () => {
-    const notifFiltradas = historialNotificaciones.filter(n => {
-      const diasAtras = (new Date() - n.timestamp) / (1000 * 60 * 60 * 24);
-      if(filtroReporteFecha === 'semana') return diasAtras <= 7;
-      if(filtroReporteFecha === 'mes') return diasAtras <= 30;
-      return true;
-    });
-
-    return (
-      <div style={{position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '500px', maxHeight: '600px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
-        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px'}}>
-          <h4 style={{margin: 0, color: 'var(--texto-heading)', fontSize: '16px', fontWeight: '700'}}>📜 Historial de Notificaciones</h4>
-          <button onClick={() => setMostrarHistorialNotif(false)} style={{background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer'}}>✕</button>
-        </div>
-
-        <div style={{display: 'flex', gap: '6px', marginBottom: '12px'}}>
-          {['semana', 'mes', 'todos'].map(f => (
-            <button key={f} onClick={() => setFiltroReporteFecha(f)} style={{padding: '6px 10px', borderRadius: '6px', border: filtroReporteFecha === f ? 'none' : '1px solid var(--borde-suave)', background: filtroReporteFecha === f ? 'var(--azul-electrico)' : 'var(--blanco-tarjeta)', color: filtroReporteFecha === f ? 'white' : 'var(--texto-principal)', fontSize: '11px', fontWeight: '600', cursor: 'pointer'}}>
-              {f === 'semana' ? '📅 Semana' : f === 'mes' ? '📆 Mes' : '🕐 Todo'}
-            </button>
-          ))}
-        </div>
-
-        <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
-          {notifFiltradas.length === 0 ? (
-            <p style={{textAlign: 'center', color: 'var(--texto-secundario)', fontSize: '12px'}}>Sin notificaciones</p>
-          ) : (
-            notifFiltradas.map(notif => (
-              <div key={notif.id} style={{background: 'rgba(0,0,0,0.02)', padding: '10px', borderRadius: '6px', borderLeft: '3px solid var(--azul-electrico)'}}>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px'}}>
-                  <span style={{fontWeight: '700', fontSize: '13px', color: 'var(--texto-principal)'}}>{notif.titulo}</span>
-                  <span style={{fontSize: '10px', color: 'var(--texto-secundario)'}}>
-                    {notif.timestamp.toLocaleTimeString('es-CL', {hour: '2-digit', minute: '2-digit'})}
-                  </span>
-                </div>
-                <p style={{margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.3'}}>{notif.descripcion}</p>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    );
   };
 
   // ========== FASE 7: DASHBOARD DE SALUD + ALERTAS INTELIGENTES ==========
@@ -1311,7 +887,13 @@ function App() {
   // ==========================================
   return (
     <div className="ios-app-container" data-theme={temaOscuro ? 'dark' : 'light'}>
-      {isOnboarding && renderOnboardingModal()}
+      {isOnboarding && (
+        <OnboardingModal
+          onboardingProgress={onboardingProgress}
+          onboardingStep={onboardingStep}
+          avanzarOnboarding={avanzarOnboarding}
+        />
+      )}
       
       {/* HEADER DINÁMICO E INTELIGENTE */}
       <header className="ios-header">
@@ -1363,19 +945,50 @@ function App() {
 
       {showSettings && (
         <div className="floating-panel settings-panel" style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
-          {renderSettingsPanel()}
+          <SettingsPanel
+            rolUsuario={rolUsuario}
+            busquedaPermisos={busquedaPermisos}
+            setBusquedaPermisos={setBusquedaPermisos}
+            filtroRolPermisos={filtroRolPermisos}
+            setFiltroRolPermisos={setFiltroRolPermisos}
+            matrixPermisos={matrixPermisos}
+            togglePermiso={togglePermiso}
+            temaOscuro={temaOscuro}
+            setTemaOscuro={setTemaOscuro}
+            preferenciasSonido={preferenciasSonido}
+            setPreferenciasSonido={setPreferenciasSonido}
+            reproducirSonido={reproducirSonido}
+          />
         </div>
       )}
 
-      {mostrarNotificaciones && renderNotificaciones()}
+      {mostrarNotificaciones && (
+        <NotificationsPanel
+          notificaciones={notificaciones}
+          setNotificaciones={setNotificaciones}
+        />
+      )}
 
       {mostrarBusqueda && (
         <div className="floating-panel search-panel" style={{position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '500px', maxHeight: '600px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
-          {renderBusqueda()}
+          <SearchPanel
+            busquedaGlobal={busquedaGlobal}
+            setBusquedaGlobal={setBusquedaGlobal}
+            buscarGlobal={buscarGlobal}
+            resultadosBusqueda={resultadosBusqueda}
+            setMostrarBusqueda={setMostrarBusqueda}
+          />
         </div>
       )}
 
-      {mostrarHistorialNotif && renderHistorialNotificaciones()}
+      {mostrarHistorialNotif && (
+        <NotificationHistoryPanel
+          historialNotificaciones={historialNotificaciones}
+          filtroReporteFecha={filtroReporteFecha}
+          setFiltroReporteFecha={setFiltroReporteFecha}
+          setMostrarHistorialNotif={setMostrarHistorialNotif}
+        />
+      )}
 
       {/* PUSH NOTIFICATIONS FLOTANTES */}
       <PushToast
@@ -1444,15 +1057,40 @@ function App() {
 
       {/* RUTEADOR CENTRAL CON SKELETON LOADERS */}
       <main className="ios-main">
-        {isAppLoading ? renderSkeleton() : (
+        {isAppLoading ? <SkeletonLoaderPanel /> : (
           <>
-            {!rolUsuario && renderFachadaPublica()}
+            {!rolUsuario && (
+              <PublicFacadePanel
+                vistaPublica={vistaPublica}
+                mostrarFormularioLogin={mostrarFormularioLogin}
+                abrirFormularioLogin={abrirFormularioLogin}
+                tipoLoginSeleccionado={tipoLoginSeleccionado}
+                handleLoginSubmit={handleLoginSubmit}
+                rutInput={rutInput}
+                setRutInput={setRutInput}
+                passInput={passInput}
+                setPassInput={setPassInput}
+                volverInicioLogin={volverInicioLogin}
+                mockComunicaciones={mockComunicaciones}
+                mockFotos={mockFotos}
+                partidosPrueba={partidosPrueba}
+              />
+            )}
             {rolUsuario && pantallaActiva === 'comunicaciones' && (
               <ComunicacionesPanel
                 rolUsuario={rolUsuario}
                 mostrarFormComunicaciones={mostrarFormComunicaciones}
                 setMostrarFormComunicaciones={setMostrarFormComunicaciones}
-                renderFormularioComunicaciones={renderFormularioComunicaciones}
+                formularioComunicaciones={(
+                  <ComunicacionFormPanel
+                    formCom={formCom}
+                    setFormCom={setFormCom}
+                    comunicaciones={comunicaciones}
+                    setComunicaciones={setComunicaciones}
+                    setMostrarFormComunicaciones={setMostrarFormComunicaciones}
+                    addNotificacionHistorial={addNotificacionHistorial}
+                  />
+                )}
                 vistaMuro={vistaMuro}
                 setVistaMuro={setVistaMuro}
                 alertasPublicadas={alertasPublicadas}
@@ -1686,6 +1324,7 @@ function App() {
 }
 
 export default App;
+
 
 
 

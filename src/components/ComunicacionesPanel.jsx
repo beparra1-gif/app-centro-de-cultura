@@ -6,7 +6,7 @@ function ComunicacionesPanel({
   rolUsuario,
   mostrarFormComunicaciones,
   setMostrarFormComunicaciones,
-  renderFormularioComunicaciones,
+  formularioComunicaciones,
   vistaMuro,
   setVistaMuro,
   alertasPublicadas,
@@ -215,7 +215,7 @@ function ComunicacionesPanel({
         </button>
       )}
 
-      {mostrarFormComunicaciones && renderFormularioComunicaciones()}
+      {mostrarFormComunicaciones && formularioComunicaciones}
 
       {rolUsuario === 'visita' && (
         <div className="card mb-20 fade-in panel-surface" style={{ background: 'linear-gradient(135deg, var(--azul-marino), #1a2a42)', color: 'white', border: 'none' }}>
