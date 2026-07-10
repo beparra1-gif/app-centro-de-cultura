@@ -134,6 +134,8 @@ function SuperAdminPanel({
   const [syncSheetsRunning, setSyncSheetsRunning] = useState(false);
   const [syncSheetsResult, setSyncSheetsResult] = useState(null);
   const [loadingSyncStatus, setLoadingSyncStatus] = useState(false);
+  const [loadingQualityDetails, setLoadingQualityDetails] = useState(false);
+  const [qualityDetailResult, setQualityDetailResult] = useState(null);
 
   const [nuevoJugadorVisita, setNuevoJugadorVisita] = useState({
     rut_visita: '',
@@ -214,6 +216,29 @@ function SuperAdminPanel({
     () => (pagosPendientesAdmin || []).filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente'),
     [pagosPendientesAdmin]
   );
+
+  const jugadoresIncompletos = useMemo(() => {
+    return (jugadoresAdmin || []).filter((j) => {
+      const rut = String(j.rut_jugador || '').trim();
+      const rutValido = rut ? api.validarRutChileno(rut) : false;
+      return (
+        !String(j.nombres || '').trim()
+        || !rut
+        || !String(j.rama || '').trim()
+        || !String(j.categoria || '').trim()
+        || !rutValido
+      );
+    });
+  }, [jugadoresAdmin]);
+
+  const pagosConCorreccion = useMemo(() => {
+    return (pagosMensualidadesAdmin || []).filter((p) => {
+      const notas = String(p.notas_tesoreria || '').toLowerCase();
+      return notas.includes('correccion requerida')
+        || !String(p.rut_jugador || '').trim()
+        || !String(p.meses_correspondientes || '').trim();
+    });
+  }, [pagosMensualidadesAdmin]);
 
   const jugadorasCitacion = useMemo(() => {
     const base = (jugadoresAdmin || []).filter((j) => (j.estado || 'ACTIVO').toUpperCase() !== 'BAJA');
@@ -485,6 +510,24 @@ function SuperAdminPanel({
     }
   };
 
+  const cargarDetalleCalidad = async () => {
+    const token = syncToken.trim();
+    if (!token) {
+      alert('Ingresa el token para consultar el detalle de correcciones.');
+      return;
+    }
+
+    try {
+      setLoadingQualityDetails(true);
+      const resultado = await api.adminAPI.getDataQualityDetails(token);
+      setQualityDetailResult(resultado?.detail || null);
+    } catch (error) {
+      alert(`No se pudo obtener el detalle: ${error.message}`);
+    } finally {
+      setLoadingQualityDetails(false);
+    }
+  };
+
   return (
     <div className="admin-container fade-in">
       <div className="scroll-horizontal-menu mb-15">
@@ -534,6 +577,9 @@ function SuperAdminPanel({
                 <button className="btn-secondary" onClick={consultarEstadoSync} disabled={loadingSyncStatus || syncSheetsRunning}>
                   {loadingSyncStatus ? 'Consultando...' : 'Consultar estado'}
                 </button>
+                <button className="btn-secondary" onClick={cargarDetalleCalidad} disabled={loadingQualityDetails || syncSheetsRunning}>
+                  {loadingQualityDetails ? 'Cargando detalle...' : 'Ver detalle correcciones'}
+                </button>
                 <button className="btn-electric" onClick={ejecutarSyncSheets} disabled={syncSheetsRunning}>
                   <RefreshCcw size={15} /> {syncSheetsRunning ? 'Sincronizando...' : 'Sincronizar ahora'}
                 </button>
@@ -553,6 +599,86 @@ function SuperAdminPanel({
                 <span>Estado: {syncSheetsResult.status || 'desconocido'}</span>
                 {syncSheetsResult.syncedAt && <span>Última sincronización: {new Date(syncSheetsResult.syncedAt).toLocaleString('es-CL')}</span>}
                 {syncSheetsResult.error && <span style={{ color: 'var(--rojo-alerta)' }}>Error: {syncSheetsResult.error}</span>}
+              </div>
+            )}
+
+            {(cuentasIncompletas.length > 0 || jugadoresIncompletos.length > 0 || pagosConCorreccion.length > 0) && (
+              <div className="card" style={{ marginTop: '12px', borderLeft: '4px solid #FF9500', borderRadius: '20px', background: 'rgba(255,149,0,0.08)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <AlertTriangle size={16} color="#b36200" />
+                  <strong style={{ color: '#b36200', fontSize: '13px' }}>Alertas de corrección pendientes</strong>
+                </div>
+                <div style={{ fontSize: '12px', color: '#8a4f00', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span>Perfiles de cuentas incompletos: {cuentasIncompletas.length}</span>
+                  <span>Perfiles de jugadores incompletos: {jugadoresIncompletos.length}</span>
+                  <span>Pagos en revisión/corrección: {pagosConCorreccion.length}</span>
+                </div>
+                <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('cuentas')}>Completar cuentas</button>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar jugadores</button>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('pagos')}>Revisar pagos</button>
+                </div>
+              </div>
+            )}
+
+            {qualityDetailResult && (
+              <div className="card" style={{ marginTop: '12px', borderRadius: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <h4 className="form-subtitle" style={{ marginBottom: 0 }}><AlertTriangle size={16} /> Detalle de correcciones</h4>
+                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: '999px' }}>
+                    Cuentas {qualityDetailResult?.totals?.cuentasIncompletas ?? 0} · Jugadores {qualityDetailResult?.totals?.jugadoresIncompletos ?? 0} · Pagos {qualityDetailResult?.totals?.pagosConCorreccion ?? 0}
+                  </span>
+                </div>
+
+                <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
+                  <div style={{ border: '1px solid rgba(255,149,0,0.25)', borderRadius: '14px', padding: '10px' }}>
+                    <strong style={{ fontSize: '12px' }}>Cuentas incompletas</strong>
+                    <div style={{ marginTop: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                      {(qualityDetailResult.cuentasIncompletas || []).slice(0, 8).map((c) => (
+                        <div key={`qc-${c.id}`} style={{ marginBottom: '8px', fontSize: '12px' }}>
+                          <div style={{ fontWeight: '700' }}>{`${c.nombres || 'Sin nombre'} ${c.apellido_paterno || ''}`.trim()}</div>
+                          <div style={{ color: 'var(--texto-secundario)' }}>{c.correo || 'Sin correo'} · {c.rut || 'Sin RUT'}</div>
+                          <div style={{ color: '#b36200', fontWeight: '700' }}>{(c.campos_faltantes || []).join(', ')}</div>
+                        </div>
+                      ))}
+                      {(qualityDetailResult.cuentasIncompletas || []).length === 0 && <div style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin observaciones.</div>}
+                    </div>
+                  </div>
+
+                  <div style={{ border: '1px solid rgba(255,149,0,0.25)', borderRadius: '14px', padding: '10px' }}>
+                    <strong style={{ fontSize: '12px' }}>Jugadores incompletos</strong>
+                    <div style={{ marginTop: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                      {(qualityDetailResult.jugadoresIncompletos || []).slice(0, 8).map((j, idx) => (
+                        <div key={`qj-${j.rut_jugador || j.correo_apoderado || idx}`} style={{ marginBottom: '8px', fontSize: '12px' }}>
+                          <div style={{ fontWeight: '700' }}>{`${j.nombres || 'Sin nombre'} ${j.apellido_paterno || ''}`.trim()}</div>
+                          <div style={{ color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.rama || 'Sin rama'} · {j.categoria || 'Sin categoría'}</div>
+                          <div style={{ color: '#b36200', fontWeight: '700' }}>{(j.campos_faltantes || []).join(', ')}</div>
+                        </div>
+                      ))}
+                      {(qualityDetailResult.jugadoresIncompletos || []).length === 0 && <div style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin observaciones.</div>}
+                    </div>
+                  </div>
+
+                  <div style={{ border: '1px solid rgba(255,149,0,0.25)', borderRadius: '14px', padding: '10px' }}>
+                    <strong style={{ fontSize: '12px' }}>Pagos con corrección</strong>
+                    <div style={{ marginTop: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                      {(qualityDetailResult.pagosConCorreccion || []).slice(0, 8).map((p) => (
+                        <div key={`qp-${p.id}`} style={{ marginBottom: '8px', fontSize: '12px' }}>
+                          <div style={{ fontWeight: '700' }}>Pago #{p.id} · ${Number(p.monto_total_pagado || 0).toLocaleString('es-CL')}</div>
+                          <div style={{ color: 'var(--texto-secundario)' }}>{p.rut_jugador || 'Sin RUT'} · {p.meses_correspondientes || 'Sin meses'}</div>
+                          <div style={{ color: '#b36200', fontWeight: '700' }}>{p.notas_tesoreria || 'Sin nota'}</div>
+                        </div>
+                      ))}
+                      {(qualityDetailResult.pagosConCorreccion || []).length === 0 && <div style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin observaciones.</div>}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('cuentas')}>Ir a cuentas</button>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Ir a jugadores</button>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('pagos')}>Ir a pagos</button>
+                </div>
               </div>
             )}
           </div>

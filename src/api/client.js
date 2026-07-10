@@ -356,6 +356,15 @@ export const adminAPI = {
       },
     });
     return handleResponse(response);
+  },
+
+  getDataQualityDetails: async (token) => {
+    const response = await fetch(`${API_BASE_URL}/admin/data-quality/details`, {
+      headers: {
+        'x-sync-token': token,
+      },
+    });
+    return handleResponse(response);
   }
 };
 

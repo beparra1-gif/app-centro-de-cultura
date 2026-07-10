@@ -24,6 +24,17 @@ const getSyncTokenFromRequest = (req) => {
   return '';
 };
 
+const normalizarEstadoPagoMensualidad = (estado) => {
+  const raw = String(estado || '').trim().toLowerCase();
+  if (['aprobado', 'aprobada', 'pagado', 'pagada', 'ok', 'completado', 'completada'].includes(raw)) {
+    return 'aprobado';
+  }
+  if (['rechazado', 'rechazada', 'fallido', 'fallida', 'anulado', 'anulada'].includes(raw)) {
+    return 'rechazado';
+  }
+  return 'pendiente';
+};
+
 // ========== MIDDLEWARE ==========
 app.use(cors({
   origin: '*', // Permitir todos en desarrollo
@@ -191,6 +202,190 @@ const detectarCamposFaltantesCuenta = (cuenta) => {
   return faltantes;
 };
 
+const obtenerResumenCalidadDatos = async () => {
+  const jugadoresMissingRes = await pool.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM jugadores
+     WHERE COALESCE(TRIM(nombres), '') = ''
+        OR COALESCE(TRIM(rut_jugador), '') = ''
+        OR COALESCE(TRIM(rama), '') = ''
+        OR COALESCE(TRIM(categoria), '') = ''`
+  );
+
+  const jugadoresRutFormatoRes = await pool.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM jugadores
+     WHERE COALESCE(rut_jugador, '') <> ''
+       AND NOT (UPPER(REPLACE(REPLACE(rut_jugador, '.', ''), '-', '')) ~ '^[0-9]{7,8}[0-9K]$')`
+  );
+
+  const jugadoresSinCuentaRes = await pool.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM jugadores j
+     LEFT JOIN cuentas c ON LOWER(COALESCE(j.correo_apoderado, '')) = LOWER(COALESCE(c.correo, ''))
+     WHERE COALESCE(TRIM(j.correo_apoderado), '') <> ''
+       AND c.id IS NULL`
+  );
+
+  const pagosSinRutRes = await pool.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM pagos_mensualidades
+     WHERE COALESCE(TRIM(rut_jugador), '') = ''`
+  );
+
+  const pagosSinMesesRes = await pool.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM pagos_mensualidades
+     WHERE COALESCE(TRIM(meses_correspondientes), '') = ''`
+  );
+
+  return {
+    jugadores: {
+      faltantesClave: jugadoresMissingRes.rows[0]?.total || 0,
+      rutFormatoInvalido: jugadoresRutFormatoRes.rows[0]?.total || 0,
+      correoApoderadoSinCuenta: jugadoresSinCuentaRes.rows[0]?.total || 0,
+    },
+    pagosMensualidades: {
+      sinRutJugador: pagosSinRutRes.rows[0]?.total || 0,
+      sinMeses: pagosSinMesesRes.rows[0]?.total || 0,
+    },
+  };
+};
+
+const obtenerDetalleCalidadDatos = async () => {
+  const cuentasRes = await pool.query(
+    `SELECT *
+     FROM cuentas
+     ORDER BY updated_at DESC`
+  );
+
+  const cuentasIncompletas = cuentasRes.rows
+    .map((cuenta) => {
+      const camposFaltantes = detectarCamposFaltantesCuenta(cuenta);
+      return {
+        id: cuenta.id,
+        correo: cuenta.correo || '',
+        rut: cuenta.rut ? formatearRut(cuenta.rut) : '',
+        nombres: cuenta.nombres || '',
+        apellido_paterno: cuenta.apellido_paterno || '',
+        rol: cuenta.rol || '',
+        campos_faltantes: camposFaltantes,
+        updated_at: cuenta.updated_at,
+      };
+    })
+    .filter((cuenta) => cuenta.campos_faltantes.length > 0);
+
+  const jugadoresIncompletosCountRes = await pool.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM jugadores
+     WHERE COALESCE(TRIM(nombres), '') = ''
+        OR COALESCE(TRIM(rut_jugador), '') = ''
+        OR COALESCE(TRIM(rama), '') = ''
+        OR COALESCE(TRIM(categoria), '') = ''
+        OR NOT (UPPER(REPLACE(REPLACE(COALESCE(rut_jugador, ''), '.', ''), '-', '')) ~ '^[0-9]{7,8}[0-9K]$')`
+  );
+
+  const jugadoresIncompletosRes = await pool.query(
+    `SELECT
+       rut_jugador,
+       nombres,
+       apellido_paterno,
+       rama,
+       categoria,
+       correo_apoderado,
+       updated_at,
+       CASE
+         WHEN COALESCE(rut_jugador, '') = '' THEN TRUE
+         WHEN NOT (UPPER(REPLACE(REPLACE(rut_jugador, '.', ''), '-', '')) ~ '^[0-9]{7,8}[0-9K]$') THEN TRUE
+         ELSE FALSE
+       END AS rut_invalido
+     FROM jugadores
+     WHERE COALESCE(TRIM(nombres), '') = ''
+        OR COALESCE(TRIM(rut_jugador), '') = ''
+        OR COALESCE(TRIM(rama), '') = ''
+        OR COALESCE(TRIM(categoria), '') = ''
+        OR NOT (UPPER(REPLACE(REPLACE(COALESCE(rut_jugador, ''), '.', ''), '-', '')) ~ '^[0-9]{7,8}[0-9K]$')
+     ORDER BY updated_at DESC NULLS LAST
+     LIMIT 200`
+  );
+
+  const jugadoresIncompletos = jugadoresIncompletosRes.rows.map((jugador) => {
+    const campos = [];
+    if (!String(jugador.nombres || '').trim()) campos.push('nombres');
+    if (!String(jugador.rut_jugador || '').trim()) campos.push('rut_jugador');
+    if (Boolean(jugador.rut_invalido)) campos.push('rut_valido');
+    if (!String(jugador.rama || '').trim()) campos.push('rama');
+    if (!String(jugador.categoria || '').trim()) campos.push('categoria');
+
+    return {
+      rut_jugador: jugador.rut_jugador || '',
+      nombres: jugador.nombres || '',
+      apellido_paterno: jugador.apellido_paterno || '',
+      rama: jugador.rama || '',
+      categoria: jugador.categoria || '',
+      correo_apoderado: jugador.correo_apoderado || '',
+      campos_faltantes: campos,
+      updated_at: jugador.updated_at,
+    };
+  });
+
+  const pagosConCorreccionRes = await pool.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM pagos_mensualidades
+     WHERE LOWER(COALESCE(estado_pago, '')) = 'pendiente'
+       AND (
+         LOWER(COALESCE(notas_tesoreria, '')) LIKE '%correccion requerida%'
+         OR COALESCE(TRIM(rut_jugador), '') = ''
+         OR COALESCE(TRIM(meses_correspondientes), '') = ''
+       )`
+  );
+
+  const pagosConCorreccionListRes = await pool.query(
+    `SELECT
+       id,
+       rut_jugador,
+       correo_apoderado,
+       meses_correspondientes,
+       monto_total_pagado,
+       estado_pago,
+       notas_tesoreria,
+       fecha_registro,
+       updated_at
+     FROM pagos_mensualidades
+     WHERE LOWER(COALESCE(estado_pago, '')) = 'pendiente'
+       AND (
+         LOWER(COALESCE(notas_tesoreria, '')) LIKE '%correccion requerida%'
+         OR COALESCE(TRIM(rut_jugador), '') = ''
+         OR COALESCE(TRIM(meses_correspondientes), '') = ''
+       )
+     ORDER BY fecha_registro DESC NULLS LAST, id DESC
+     LIMIT 300`
+  );
+
+    const pagosConCorreccion = pagosConCorreccionListRes.rows.map((pago) => ({
+    id: pago.id,
+    rut_jugador: pago.rut_jugador || '',
+    correo_apoderado: pago.correo_apoderado || '',
+    meses_correspondientes: pago.meses_correspondientes || '',
+    monto_total_pagado: Number(pago.monto_total_pagado || 0),
+    estado_pago: pago.estado_pago || 'pendiente',
+    notas_tesoreria: pago.notas_tesoreria || '',
+    fecha_registro: pago.fecha_registro,
+    updated_at: pago.updated_at,
+  }));
+
+  return {
+    totals: {
+      cuentasIncompletas: cuentasIncompletas.length,
+      jugadoresIncompletos: jugadoresIncompletosCountRes.rows[0]?.total || 0,
+      pagosConCorreccion: pagosConCorreccionRes.rows[0]?.total || 0,
+    },
+    cuentasIncompletas: cuentasIncompletas.slice(0, 200),
+    jugadoresIncompletos,
+    pagosConCorreccion,
+  };
+};
+
 const ensureSuperAdminAccount = async () => {
   const enabled = String(process.env.AUTO_BOOTSTRAP_SUPER_ADMIN || '').toLowerCase() === 'true';
   if (!enabled) return;
@@ -257,6 +452,48 @@ app.get('/api/admin/sync-sheets/status', (req, res) => {
   });
 });
 
+app.get('/api/admin/data-quality', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Consulta de calidad deshabilitada: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para consultar calidad.' });
+  }
+
+  try {
+    const quality = await obtenerResumenCalidadDatos();
+    return res.json({ ok: true, quality, generatedAt: new Date().toISOString() });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo calcular calidad de datos.', detail: error.message });
+  }
+});
+
+app.get('/api/admin/data-quality/details', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Consulta de detalle deshabilitada: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para consultar detalle de calidad.' });
+  }
+
+  try {
+    const detail = await obtenerDetalleCalidadDatos();
+    return res.json({ ok: true, detail, generatedAt: new Date().toISOString() });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo calcular detalle de calidad.', detail: error.message });
+  }
+});
+
 app.post('/api/admin/sync-sheets', async (req, res) => {
   const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
   if (!configuredToken) {
@@ -309,6 +546,8 @@ app.post('/api/admin/sync-sheets', async (req, res) => {
       sheetId: result.sheetId,
       totals,
       detail: result.summary,
+      qualitySummary: result.qualitySummary || null,
+      legacyPaymentsConsolidation: result.legacyPaymentsConsolidation || null,
       syncedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -549,17 +788,80 @@ app.get('/api/pagos', async (req, res) => {
 // POST: Crear pago
 app.post('/api/pagos', async (req, res) => {
   const { usuario_id, monto, tipo, estado, comprobante } = req.body;
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    await client.query('BEGIN');
+
+    const result = await client.query(
       `INSERT INTO pagos 
        (usuario_id, monto, tipo, estado, comprobante)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [usuario_id, monto, tipo, estado || 'pendiente', comprobante]
     );
+
+    const usuarioRes = await client.query(
+      `SELECT email FROM usuarios WHERE id = $1 LIMIT 1`,
+      [usuario_id]
+    );
+
+    const rutJugadorMirror = null;
+    const correccionesPago = [];
+    if (!rutJugadorMirror) {
+      correccionesPago.push('rut_jugador pendiente de asignacion');
+    }
+    const estadoMensualidad = correccionesPago.length > 0
+      ? 'pendiente'
+      : normalizarEstadoPagoMensualidad(estado || 'pendiente');
+    const fechaMesActual = new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+
+    await client.query(
+      `INSERT INTO pagos_mensualidades (
+         rut_jugador,
+         correo_apoderado,
+         concepto_pago,
+         cantidad_meses_pagados,
+         meses_correspondientes,
+         monto_total_pagado,
+         comprobante_url,
+         estado_pago,
+         fecha_aprobacion,
+         notas_tesoreria,
+         updated_at
+       ) VALUES (
+         $1,
+         $2,
+         $3,
+         1,
+         $4,
+         $5,
+         $6,
+         $7,
+         CASE WHEN $7 = 'aprobado' THEN NOW() ELSE NULL END,
+         $8,
+         NOW()
+       )`,
+      [
+        rutJugadorMirror,
+        usuarioRes.rows[0]?.email || null,
+        tipo || 'Pago general',
+        fechaMesActual,
+        monto,
+        comprobante || null,
+        estadoMensualidad,
+        correccionesPago.length > 0
+          ? `Origen: /api/pagos (registro automático) | Correccion requerida: ${correccionesPago.join(', ')}`
+          : 'Origen: /api/pagos (registro automático)',
+      ]
+    );
+
+    await client.query('COMMIT');
     res.json(result.rows[0]);
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -1312,12 +1614,30 @@ app.get('/api/pagos-mensualidades', async (req, res) => {
 app.post('/api/pagos-mensualidades', async (req, res) => {
   const { rut_jugador, correo_apoderado, concepto_pago, cantidad_meses_pagados, meses_correspondientes, monto_total_pagado, comprobante_url } = req.body;
   try {
+    const correccionesPago = [];
+    if (!String(rut_jugador || '').trim()) correccionesPago.push('rut_jugador vacio');
+    if (!String(meses_correspondientes || '').trim()) correccionesPago.push('meses_correspondientes vacio');
+    if (!Number.isFinite(Number(monto_total_pagado)) || Number(monto_total_pagado) <= 0) {
+      correccionesPago.push('monto_total_pagado invalido');
+    }
+
     const result = await pool.query(
       `INSERT INTO pagos_mensualidades 
-       (rut_jugador, correo_apoderado, concepto_pago, cantidad_meses_pagados, meses_correspondientes, monto_total_pagado, comprobante_url, estado_pago)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendiente')
+       (rut_jugador, correo_apoderado, concepto_pago, cantidad_meses_pagados, meses_correspondientes, monto_total_pagado, comprobante_url, estado_pago, notas_tesoreria)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendiente', $8)
        RETURNING *`,
-      [rut_jugador, correo_apoderado, concepto_pago, cantidad_meses_pagados, meses_correspondientes, monto_total_pagado, comprobante_url]
+      [
+        rut_jugador,
+        correo_apoderado,
+        concepto_pago,
+        cantidad_meses_pagados,
+        meses_correspondientes,
+        monto_total_pagado,
+        comprobante_url,
+        correccionesPago.length > 0
+          ? `Correccion requerida: ${correccionesPago.join(', ')}`
+          : null,
+      ]
     );
     res.json(result.rows[0]);
   } catch (err) {

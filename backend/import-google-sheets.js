@@ -89,6 +89,21 @@ function quoteIdent(ident) {
   return `"${String(ident).replace(/"/g, '""')}"`;
 }
 
+function normalizeLegacyEstadoPago(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'pendiente';
+
+  if (['aprobado', 'aprobada', 'pagado', 'pagada', 'ok', 'completado', 'completada'].includes(raw)) {
+    return 'aprobado';
+  }
+
+  if (['rechazado', 'rechazada', 'anulado', 'anulada', 'fallido', 'fallida'].includes(raw)) {
+    return 'rechazado';
+  }
+
+  return 'pendiente';
+}
+
 function extractSheetId(input) {
   if (!input) return '';
   const trimmed = input.trim();
@@ -345,6 +360,148 @@ async function importSheetToTable(client, sheetId, mapping) {
   return { sheet, table, total: rows.length, imported, skipped, errors };
 }
 
+async function consolidateMigracionPagosToMensualidades(client) {
+  const rowsRes = await client.query(
+    `SELECT
+       mp.id_migracion,
+       NULLIF(TRIM(mp.rut_jugador), '') AS rut_jugador,
+       CASE
+         WHEN NULLIF(TRIM(mp.rut_jugador), '') IS NOT NULL AND j.rut_jugador IS NULL THEN TRUE
+         ELSE FALSE
+       END AS rut_sin_jugador,
+       COALESCE(j.correo_apoderado, '') AS correo_jugador,
+       COALESCE(TRIM(mp.mes_pago), 'SinMes') AS mes_pago,
+       COALESCE(mp.año_pago, EXTRACT(YEAR FROM NOW())::INT) AS ano_pago,
+       COALESCE(mp.monto_pago, 0) AS monto_pago,
+       COALESCE(mp.estado_pago, 'pendiente') AS estado_pago,
+       COALESCE(mp.metodo_pago, '') AS metodo_pago,
+       mp.fecha_registro_original,
+       mp.fecha_migracion,
+       COALESCE(mp.observaciones, '') AS observaciones,
+       COALESCE(mp.migrado_desde, 'legacy') AS migrado_desde,
+       COALESCE(mp.nombre_jugador, '') AS nombre_jugador,
+       COALESCE(mp.comprobante_antiguo, '') AS comprobante_antiguo
+     FROM migracion_pagos mp
+     LEFT JOIN jugadores j ON j.rut_jugador = mp.rut_jugador
+     ORDER BY mp.id_migracion ASC`
+  );
+
+  let inserted = 0;
+
+  for (const row of rowsRes.rows) {
+    const mesesCorrespondientes = `${row.mes_pago} ${row.ano_pago}`.trim();
+    const correcciones = [];
+    const rutJugadorPago = row.rut_sin_jugador ? null : row.rut_jugador;
+
+    if (!row.rut_jugador) correcciones.push('rut_jugador vacio');
+    if (row.rut_sin_jugador) correcciones.push('rut_jugador sin perfil en jugadores');
+    if (!row.mes_pago || row.mes_pago === 'SinMes') correcciones.push('mes_pago sin valor');
+    if (Number(row.monto_pago || 0) <= 0) correcciones.push('monto_pago invalido');
+
+    const estadoPago = correcciones.length > 0 ? 'pendiente' : normalizeLegacyEstadoPago(row.estado_pago);
+    const notas = [
+      `Migrado desde ${row.migrado_desde}`,
+      row.metodo_pago ? `Metodo: ${row.metodo_pago}` : '',
+      row.nombre_jugador ? `Nombre legacy: ${row.nombre_jugador}` : '',
+      row.rut_jugador ? `RUT legacy: ${row.rut_jugador}` : '',
+      correcciones.length > 0 ? `Correccion requerida: ${correcciones.join(', ')}` : '',
+      row.observaciones || '',
+      `Legacy ID: ${row.id_migracion}`,
+    ].filter(Boolean).join(' | ');
+
+    const existsRes = await client.query(
+      `SELECT 1
+       FROM pagos_mensualidades
+       WHERE COALESCE(concepto_pago, '') = 'Mensualidad'
+         AND COALESCE(notas_tesoreria, '') ILIKE $1
+       LIMIT 1`,
+      [`%Legacy ID: ${row.id_migracion}%`]
+    );
+
+    if (existsRes.rows.length > 0) continue;
+
+    await client.query(
+      `INSERT INTO pagos_mensualidades (
+         fecha_registro,
+         correo_apoderado,
+         concepto_pago,
+         cantidad_meses_pagados,
+         meses_correspondientes,
+         monto_total_pagado,
+         comprobante_url,
+         estado_pago,
+         fecha_aprobacion,
+         notas_tesoreria,
+         rut_jugador,
+         updated_at
+       ) VALUES (
+         COALESCE($1::timestamp, $2::timestamp, NOW()),
+         NULLIF($3, ''),
+         'Mensualidad',
+         1,
+         $4,
+         $5::numeric,
+         NULLIF($6, ''),
+         $7::varchar,
+         CASE WHEN $7::varchar = 'aprobado' THEN NOW() ELSE NULL::timestamp END,
+         $8,
+         $9,
+         NOW()
+       )`,
+      [row.fecha_registro_original, row.fecha_migracion, row.correo_jugador, mesesCorrespondientes, row.monto_pago, row.comprobante_antiguo, estadoPago, notas, rutJugadorPago]
+    );
+
+    inserted += 1;
+  }
+
+  return {
+    sourceRows: rowsRes.rows.length,
+    inserted,
+    skipped: rowsRes.rows.length - inserted,
+  };
+}
+
+async function buildDataQualitySummary(client) {
+  const jugadoresMissingRes = await client.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM jugadores
+     WHERE COALESCE(TRIM(nombres), '') = ''
+        OR COALESCE(TRIM(rut_jugador), '') = ''
+        OR COALESCE(TRIM(rama), '') = ''
+        OR COALESCE(TRIM(categoria), '') = ''`
+  );
+
+  const jugadoresRutFormatoRes = await client.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM jugadores
+     WHERE COALESCE(rut_jugador, '') <> ''
+       AND NOT (UPPER(REPLACE(REPLACE(rut_jugador, '.', ''), '-', '')) ~ '^[0-9]{7,8}[0-9K]$')`
+  );
+
+  const pagosSinRutRes = await client.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM pagos_mensualidades
+     WHERE COALESCE(TRIM(rut_jugador), '') = ''`
+  );
+
+  const pagosSinMesesRes = await client.query(
+    `SELECT COUNT(*)::INT AS total
+     FROM pagos_mensualidades
+     WHERE COALESCE(TRIM(meses_correspondientes), '') = ''`
+  );
+
+  return {
+    jugadores: {
+      faltantesClave: jugadoresMissingRes.rows[0]?.total || 0,
+      rutFormatoInvalido: jugadoresRutFormatoRes.rows[0]?.total || 0,
+    },
+    pagosMensualidades: {
+      sinRutJugador: pagosSinRutRes.rows[0]?.total || 0,
+      sinMeses: pagosSinMesesRes.rows[0]?.total || 0,
+    },
+  };
+}
+
 async function runImportFromSheets(options = {}) {
   const logger = options.logger || console;
   const databaseUrl = options.databaseUrl || DEFAULT_ENV.DATABASE_URL;
@@ -363,6 +520,8 @@ async function runImportFromSheets(options = {}) {
   const sheetId = extractSheetId(googleSheetId);
   const client = await pool.connect();
   const summary = [];
+  let legacyPaymentsConsolidation = null;
+  let qualitySummary = null;
 
   try {
     logger.log('Iniciando importacion completa desde Google Sheets a PostgreSQL...');
@@ -384,7 +543,20 @@ async function runImportFromSheets(options = {}) {
       );
     }
 
-    return { sheetId, summary };
+    legacyPaymentsConsolidation = await consolidateMigracionPagosToMensualidades(client);
+    logger.log(
+      `\nMIGRACION_PAGOS -> PAGOS_MENSUALIDADES: fuente=${legacyPaymentsConsolidation.sourceRows}, insertadas=${legacyPaymentsConsolidation.inserted}, omitidas=${legacyPaymentsConsolidation.skipped}`
+    );
+
+    qualitySummary = await buildDataQualitySummary(client);
+    logger.log(
+      `Calidad jugadores: faltantes=${qualitySummary.jugadores.faltantesClave}, rutFormatoInvalido=${qualitySummary.jugadores.rutFormatoInvalido}`
+    );
+    logger.log(
+      `Calidad pagos_mensualidades: sinRut=${qualitySummary.pagosMensualidades.sinRutJugador}, sinMeses=${qualitySummary.pagosMensualidades.sinMeses}`
+    );
+
+    return { sheetId, summary, legacyPaymentsConsolidation, qualitySummary };
   } catch (err) {
     logger.error('Fallo general de importacion:', err.message);
     throw err;
