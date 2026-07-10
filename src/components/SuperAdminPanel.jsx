@@ -690,6 +690,9 @@ function SuperAdminPanel({
         correo_apoderado: j.correo_apoderado || '',
         respuesta: 'pendiente',
         justificacion: '',
+        requiere_excepcion_morosidad: (morososAdmin || []).some((m) => String(m.rut || '').trim() === String(j.rut_jugador || '').trim()),
+        excepcion_solicitada: false,
+        estado_excepcion: 'no_requiere',
         actualizado_en: null,
       }));
 
@@ -730,6 +733,9 @@ function SuperAdminPanel({
       reacciones: {},
       citacion_id: citacion.id,
       convocatoria_ruts: convocados.map((x) => x.rut_jugador),
+      convocatoria_alertas_morosidad: convocados
+        .filter((x) => Boolean(x.requiere_excepcion_morosidad))
+        .map((x) => x.rut_jugador),
     };
 
     setNominaCita((prev) => [citacion, ...(prev || [])]);
@@ -1621,6 +1627,11 @@ function SuperAdminPanel({
                           <div key={`conv-${cita.id}-${conv.rut_jugador}`} style={{ background: 'var(--fondo-app)', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '10px', padding: '8px' }}>
                             <div style={{ fontSize: '12px', fontWeight: '800' }}>{conv.nombre} · {conv.rama} · {conv.categoria}</div>
                             <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{conv.correo_apoderado || 'Sin correo apoderado'}</div>
+                            {conv.requiere_excepcion_morosidad && (
+                              <div style={{ marginTop: '5px', fontSize: '11px', color: '#b36200', fontWeight: '800' }}>
+                                Moroso: requiere excepción · Estado: {conv.estado_excepcion === 'solicitada' ? 'solicitada' : conv.estado_excepcion === 'aprobada' ? 'aprobada' : 'pendiente'}
+                              </div>
+                            )}
                             <div style={{ marginTop: '6px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                               <button className="btn-secondary" style={{ width: 'auto', padding: '7px 10px', background: conv.respuesta === 'si' ? 'rgba(52,199,89,0.2)' : undefined }} onClick={() => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { respuesta: 'si', justificacion: '' })}>Asiste</button>
                               <button className="btn-secondary" style={{ width: 'auto', padding: '7px 10px', background: conv.respuesta === 'no' ? 'rgba(255,59,48,0.2)' : undefined }} onClick={() => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { respuesta: 'no' })}>No asiste</button>

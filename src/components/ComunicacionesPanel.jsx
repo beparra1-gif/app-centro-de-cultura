@@ -28,6 +28,8 @@ function ComunicacionesPanel({
   setNominaCita,
 }) {
   const emojisReacciones = ['👍', '❤️', '😂', '😮', '😢', '😡'];
+  const rolNormalizado = String(rolUsuario || '').toLowerCase();
+  const esApoderadoRol = rolNormalizado === 'apoderado' || rolNormalizado === 'socio-apoderado';
 
   const addReaccion = (comId, emoji) => {
     setComunicaciones(comunicaciones.map(c => {
@@ -44,15 +46,46 @@ function ComunicacionesPanel({
     const rutUsuario = String(usuarioAutenticado?.rut || pupiloActivo?.rut || '').trim();
     const correoUsuario = String(usuarioAutenticado?.correo || pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
     const actorId = rutUsuario || correoUsuario || `anon-${Date.now()}`;
+    const esApoderado = esApoderadoRol;
     const justificacion = (respuesta === 'no' || respuesta === 'justificado')
       ? (window.prompt('Agrega una justificación breve (opcional):', '') || '').trim()
       : '';
 
     setComunicaciones(comunicaciones.map(c => {
       if (c.id === comId) {
+        const citacionVinculada = (nominaCita || []).find((cita) => cita.id === c.citacion_id);
+        const convocados = Array.isArray(citacionVinculada?.convocados) ? citacionVinculada.convocados : [];
+        const convocadosActor = convocados.filter((conv) => {
+          const correoConv = String(conv.correo_apoderado || '').trim().toLowerCase();
+          const rutConv = String(conv.rut_jugador || '').trim();
+          return (rutUsuario && rutConv && rutConv === rutUsuario) || (correoUsuario && correoConv && correoConv === correoUsuario);
+        });
+
+        if (c.citacion_id && convocadosActor.length === 0) {
+          alert('No estás en la nómina de esta citación.');
+          return c;
+        }
+
+        const convocadoPrincipal = convocadosActor[0] || null;
+        const requiereExcepcion = Boolean(convocadoPrincipal?.requiere_excepcion_morosidad);
+        if (requiereExcepcion && !esApoderado) {
+          alert('Tu apoderado debe gestionar la excepción de citación por tesorería.');
+          return c;
+        }
+
+        const solicitaExcepcion = requiereExcepcion
+          ? window.confirm('Este deportista presenta morosidad. ¿Solicitar excepción de citación para revisión administrativa?')
+          : false;
+
         const asistencias = Array.isArray(c.asistencias) ? [...c.asistencias] : [];
         const idx = asistencias.findIndex((a) => String(a.actorId || '').trim() === actorId);
-        const payload = { respuesta, justificacion, timestamp: new Date(), actorId };
+        const payload = {
+          respuesta,
+          justificacion,
+          timestamp: new Date(),
+          actorId,
+          excepcion_solicitada: solicitaExcepcion,
+        };
         if (idx >= 0) asistencias[idx] = { ...asistencias[idx], ...payload };
         else asistencias.push(payload);
 
@@ -60,32 +93,20 @@ function ComunicacionesPanel({
           setNominaCita((prev) => (prev || []).map((cita) => {
             if (cita.id !== c.citacion_id) return cita;
 
-            let actualizado = false;
             const convocados = (cita.convocados || []).map((conv) => {
               const correoConv = String(conv.correo_apoderado || '').trim().toLowerCase();
               const rutConv = String(conv.rut_jugador || '').trim();
               const match = (rutUsuario && rutConv && rutConv === rutUsuario) || (correoUsuario && correoConv && correoConv === correoUsuario);
               if (!match) return conv;
-              actualizado = true;
               return {
                 ...conv,
                 respuesta,
                 justificacion,
+                excepcion_solicitada: solicitaExcepcion || Boolean(conv.excepcion_solicitada),
+                estado_excepcion: solicitaExcepcion ? 'solicitada' : conv.estado_excepcion,
                 actualizado_en: new Date().toISOString(),
               };
             });
-
-            if (!actualizado && convocados.length > 0) {
-              const idxPendiente = convocados.findIndex((conv) => (conv.respuesta || 'pendiente') === 'pendiente');
-              if (idxPendiente >= 0) {
-                convocados[idxPendiente] = {
-                  ...convocados[idxPendiente],
-                  respuesta,
-                  justificacion,
-                  actualizado_en: new Date().toISOString(),
-                };
-              }
-            }
 
             return { ...cita, convocados };
           }));
@@ -323,6 +344,23 @@ function ComunicacionesPanel({
 
               {c.solicita_asistencia && (
                 <div style={{ background: 'rgba(0, 122, 255, 0.08)', padding: '12px', borderRadius: '18px', marginBottom: '12px', marginTop: '10px' }}>
+                  {(() => {
+                    const cita = (nominaCita || []).find((x) => x.id === c.citacion_id);
+                    const rutUsuario = String(usuarioAutenticado?.rut || pupiloActivo?.rut || '').trim();
+                    const correoUsuario = String(usuarioAutenticado?.correo || pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
+                    const convocado = (cita?.convocados || []).find((conv) => {
+                      const correoConv = String(conv.correo_apoderado || '').trim().toLowerCase();
+                      const rutConv = String(conv.rut_jugador || '').trim();
+                      return (rutUsuario && rutConv && rutConv === rutUsuario) || (correoUsuario && correoConv && correoConv === correoUsuario);
+                    });
+
+                    if (!esApoderadoRol || !convocado?.requiere_excepcion_morosidad) return null;
+                    return (
+                      <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.14)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '10px', padding: '8px 10px' }}>
+                        Alerta tesorería: deportista moroso. Debes solicitar excepción de citación para confirmar asistencia.
+                      </p>
+                    );
+                  })()}
                   <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '600', color: 'var(--texto-principal)' }}>¿Vas a asistir?</p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button onClick={() => addRSVP(c.id, 'si')} className="btn-confirmar" style={{ flex: 1, padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#34C759', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✓ Sí</button>
