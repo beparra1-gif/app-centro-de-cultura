@@ -1858,7 +1858,7 @@ function App() {
             <p style={{color: 'var(--texto-secundario)', marginBottom: '20px'}}>Se cerrará el módulo actual de trabajo.</p>
             <div className="modal-alert-buttons">
               <button className="btn-modal-cancelar" onClick={() => setShowModalSalir(false)}>Cancelar</button>
-              <button className="btn-modal-confirmar" onClick={() => { setShowModalSalir(false); setRolUsuario(null); setUsuarioAutenticado(null); setPantallaActiva('comunicaciones'); setMostrarFormularioLogin(false); setShowSettings(false); setVistaAdmin('dashboard'); setCuentaEditando(null); }}>Salir Seguramente</button>
+              <button className="btn-modal-confirmar" onClick={() => { setShowModalSalir(false); setRolUsuario(null); setUsuarioAutenticado(null); setPantallaActiva('comunicaciones'); setMostrarFormularioLogin(false); setShowSettings(false); setVistaAdmin('dashboard'); setCuentaEditando(null); }}>SALIR</button>
             </div>
           </div>
         </div>

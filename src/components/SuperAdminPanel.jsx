@@ -124,6 +124,7 @@ function SuperAdminPanel({
   const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState('todas');
   const [filtroPupiloManual, setFiltroPupiloManual] = useState('');
   const [procesandoPupiloRut, setProcesandoPupiloRut] = useState('');
+  const [destinoApoderadoPorRut, setDestinoApoderadoPorRut] = useState({});
   const [editandoTipo, setEditandoTipo] = useState(null);
   const [cuentaAdminEdit, setCuentaAdminEdit] = useState(null);
   const [jugadorAdminEdit, setJugadorAdminEdit] = useState(null);
@@ -353,6 +354,20 @@ function SuperAdminPanel({
     });
   }, [cuentaEditando, jugadoresAdmin, filtroPupiloManual]);
 
+  const cuentasApoderadoDisponibles = useMemo(() => {
+    return (cuentasAdmin || [])
+      .filter((c) => {
+        const correo = String(c.correo || '').trim();
+        if (!correo) return false;
+        const rol = String(c.rol || '').toLowerCase();
+        return rol.includes('apoderado') || rol === 'super_admin' || rol === 'admin';
+      })
+      .map((c) => ({
+        correo: String(c.correo || '').trim(),
+        nombre: `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || String(c.correo || '').trim(),
+      }));
+  }, [cuentasAdmin]);
+
   const asignarPupiloACuenta = async (jugador) => {
     const correoCuenta = String(cuentaEditando?.correo || '').trim();
     if (!correoCuenta) {
@@ -378,6 +393,25 @@ function SuperAdminPanel({
       alert('Pupilo desasignado correctamente.');
     } catch (error) {
       alert(`No se pudo quitar el pupilo: ${error.message}`);
+    } finally {
+      setProcesandoPupiloRut('');
+    }
+  };
+
+  const moverPupiloAOtroApoderado = async (jugador, correoDestino) => {
+    const destino = String(correoDestino || '').trim();
+    if (!destino) {
+      alert('Selecciona un apoderado destino para mover el pupilo.');
+      return;
+    }
+
+    try {
+      setProcesandoPupiloRut(jugador.rut_jugador || '');
+      await guardarJugadorAdmin({ ...jugador, correo_apoderado: destino }, jugador.rut_jugador);
+      setDestinoApoderadoPorRut((prev) => ({ ...prev, [jugador.rut_jugador]: '' }));
+      alert(`Pupilo movido a ${destino}.`);
+    } catch (error) {
+      alert(`No se pudo mover el pupilo: ${error.message}`);
     } finally {
       setProcesandoPupiloRut('');
     }
@@ -1891,14 +1925,38 @@ function SuperAdminPanel({
                           <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
                           <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.categoria || 'Sin categoría'}</div>
                         </div>
-                        <button
-                          className="btn-secondary"
-                          style={{ width: 'auto', padding: '7px 10px' }}
-                          onClick={() => quitarPupiloDeCuenta(j)}
-                          disabled={procesandoPupiloRut === String(j.rut_jugador || '')}
-                        >
-                          {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Quitando...' : 'Quitar'}
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          <select
+                            className="form-input"
+                            style={{ width: '220px', padding: '7px 9px' }}
+                            value={destinoApoderadoPorRut[j.rut_jugador] || ''}
+                            onChange={(e) => setDestinoApoderadoPorRut((prev) => ({ ...prev, [j.rut_jugador]: e.target.value }))}
+                            disabled={procesandoPupiloRut === String(j.rut_jugador || '')}
+                          >
+                            <option value="">Mover a apoderado...</option>
+                            {cuentasApoderadoDisponibles
+                              .filter((c) => String(c.correo || '').trim().toLowerCase() !== String(cuentaEditando?.correo || '').trim().toLowerCase())
+                              .map((c) => (
+                                <option key={`dest-${j.rut_jugador}-${c.correo}`} value={c.correo}>{c.nombre} · {c.correo}</option>
+                              ))}
+                          </select>
+                          <button
+                            className="btn-pill"
+                            style={{ width: 'auto', padding: '7px 10px' }}
+                            onClick={() => moverPupiloAOtroApoderado(j, destinoApoderadoPorRut[j.rut_jugador])}
+                            disabled={procesandoPupiloRut === String(j.rut_jugador || '') || !String(destinoApoderadoPorRut[j.rut_jugador] || '').trim()}
+                          >
+                            {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Moviendo...' : 'Mover'}
+                          </button>
+                          <button
+                            className="btn-secondary"
+                            style={{ width: 'auto', padding: '7px 10px' }}
+                            onClick={() => quitarPupiloDeCuenta(j)}
+                            disabled={procesandoPupiloRut === String(j.rut_jugador || '')}
+                          >
+                            {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Quitando...' : 'Quitar'}
+                          </button>
+                        </div>
                       </div>
                     ))}
                     {pupilosAsignadosCuenta.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin pupilos asociados.</span>}
