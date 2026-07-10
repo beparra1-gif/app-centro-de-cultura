@@ -64,6 +64,8 @@ function SuperAdminPanel({
   saludDelSistema,
   comunicacionesCount,
   calcularScoreDeCliente,
+  comunicaciones,
+  setComunicaciones,
   cuentasAdmin,
   matrixPermisos,
   togglePermiso,
@@ -713,7 +715,25 @@ function SuperAdminPanel({
       creado_en: new Date().toISOString(),
     };
 
+    const nuevaComunicacionCitacion = {
+      id: nextId(),
+      TITULO: `Citación ${citaForm.tipo_competencia}: ${citaForm.competencia_nombre}`,
+      CUERPO_TEXTO: `Convocatoria oficial vs ${citaForm.rival_nombre}. Día ${citaForm.dia_citacion}, citación ${citaForm.hora_citacion}, presentación ${citaForm.hora_presentacion}.`,
+      FECHA: new Date().toLocaleDateString('es-CL'),
+      TIPO_COMUNICADO: 'Citación',
+      rama: citaRama === 'todas' ? 'General' : citaRama,
+      categoria: citaCategoria === 'todas' ? 'General' : citaCategoria,
+      urgencia: 'Alta',
+      solicita_asistencia: true,
+      audiencia: ['apoderados', 'deportistas'],
+      asistencias: [],
+      reacciones: {},
+      citacion_id: citacion.id,
+      convocatoria_ruts: convocados.map((x) => x.rut_jugador),
+    };
+
     setNominaCita((prev) => [citacion, ...(prev || [])]);
+    setComunicaciones([nuevaComunicacionCitacion, ...(comunicaciones || [])]);
     setCitacionActivaId(citacion.id);
     setSeleccionCitacion({});
     alert(`Citación creada y enviada para ${convocados.length} convocados. Puedes monitorear respuestas en la barra de estado.`);

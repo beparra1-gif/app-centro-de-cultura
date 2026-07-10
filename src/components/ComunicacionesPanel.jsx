@@ -5,6 +5,8 @@ import ResultadosCards from './ResultadosCards';
 
 function ComunicacionesPanel({
   rolUsuario,
+  usuarioAutenticado,
+  pupiloActivo,
   mostrarFormComunicaciones,
   setMostrarFormComunicaciones,
   formularioComunicaciones,
@@ -22,6 +24,8 @@ function ComunicacionesPanel({
   encuestas,
   setEncuestas,
   partidos,
+  nominaCita,
+  setNominaCita,
 }) {
   const emojisReacciones = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
@@ -37,9 +41,57 @@ function ComunicacionesPanel({
   };
 
   const addRSVP = (comId, respuesta) => {
+    const rutUsuario = String(usuarioAutenticado?.rut || pupiloActivo?.rut || '').trim();
+    const correoUsuario = String(usuarioAutenticado?.correo || pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
+    const actorId = rutUsuario || correoUsuario || `anon-${Date.now()}`;
+    const justificacion = (respuesta === 'no' || respuesta === 'justificado')
+      ? (window.prompt('Agrega una justificación breve (opcional):', '') || '').trim()
+      : '';
+
     setComunicaciones(comunicaciones.map(c => {
       if (c.id === comId) {
-        return { ...c, asistencias: [...c.asistencias, { respuesta, timestamp: new Date() }] };
+        const asistencias = Array.isArray(c.asistencias) ? [...c.asistencias] : [];
+        const idx = asistencias.findIndex((a) => String(a.actorId || '').trim() === actorId);
+        const payload = { respuesta, justificacion, timestamp: new Date(), actorId };
+        if (idx >= 0) asistencias[idx] = { ...asistencias[idx], ...payload };
+        else asistencias.push(payload);
+
+        if (c.citacion_id && typeof setNominaCita === 'function') {
+          setNominaCita((prev) => (prev || []).map((cita) => {
+            if (cita.id !== c.citacion_id) return cita;
+
+            let actualizado = false;
+            const convocados = (cita.convocados || []).map((conv) => {
+              const correoConv = String(conv.correo_apoderado || '').trim().toLowerCase();
+              const rutConv = String(conv.rut_jugador || '').trim();
+              const match = (rutUsuario && rutConv && rutConv === rutUsuario) || (correoUsuario && correoConv && correoConv === correoUsuario);
+              if (!match) return conv;
+              actualizado = true;
+              return {
+                ...conv,
+                respuesta,
+                justificacion,
+                actualizado_en: new Date().toISOString(),
+              };
+            });
+
+            if (!actualizado && convocados.length > 0) {
+              const idxPendiente = convocados.findIndex((conv) => (conv.respuesta || 'pendiente') === 'pendiente');
+              if (idxPendiente >= 0) {
+                convocados[idxPendiente] = {
+                  ...convocados[idxPendiente],
+                  respuesta,
+                  justificacion,
+                  actualizado_en: new Date().toISOString(),
+                };
+              }
+            }
+
+            return { ...cita, convocados };
+          }));
+        }
+
+        return { ...c, asistencias };
       }
       return c;
     }));
@@ -272,10 +324,10 @@ function ComunicacionesPanel({
               {c.solicita_asistencia && (
                 <div style={{ background: 'rgba(0, 122, 255, 0.08)', padding: '12px', borderRadius: '18px', marginBottom: '12px', marginTop: '10px' }}>
                   <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '600', color: 'var(--texto-principal)' }}>¿Vas a asistir?</p>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button onClick={() => addRSVP(c.id, 'si')} className="btn-confirmar" style={{ flex: 1, padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#34C759', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✓ Sí</button>
                     <button onClick={() => addRSVP(c.id, 'no')} className="btn-ausente" style={{ flex: 1, padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#FF3B30', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✕ No</button>
-                    <button onClick={() => addRSVP(c.id, 'quizas')} style={{ flex: 1, padding: '10px', fontSize: '13px', borderRadius: '14px', border: '1px solid var(--borde-suave)', background: 'rgba(255,255,255,0.92)', color: 'var(--texto-principal)', cursor: 'pointer', fontWeight: '700' }}>❓ Quiz</button>
+                    <button onClick={() => addRSVP(c.id, 'justificado')} style={{ flex: 1, padding: '10px', fontSize: '13px', borderRadius: '14px', border: '1px solid var(--borde-suave)', background: 'rgba(255,255,255,0.92)', color: 'var(--texto-principal)', cursor: 'pointer', fontWeight: '700' }}>📝 Justificar</button>
                   </div>
                 </div>
               )}
@@ -291,7 +343,8 @@ function ComunicacionesPanel({
               {c.asistencias && c.asistencias.length > 0 && (
                 <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '8px', padding: '10px 12px', background: 'rgba(0,0,0,0.02)', borderRadius: '14px' }}>
                   ✓ <strong>{c.asistencias.filter(a => a.respuesta === 'si').length}</strong> confirmados •
-                  <strong>{c.asistencias.filter(a => a.respuesta === 'no').length}</strong> rechazaron
+                  <strong>{c.asistencias.filter(a => a.respuesta === 'no').length}</strong> rechazaron •
+                  <strong>{c.asistencias.filter(a => a.respuesta === 'justificado').length}</strong> justificados
                 </div>
               )}
 

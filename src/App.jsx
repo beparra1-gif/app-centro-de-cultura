@@ -1581,6 +1581,8 @@ function App() {
             {puedeVerPantalla('comunicaciones') && pantallaActiva === 'comunicaciones' && (
               <ComunicacionesPanel
                 rolUsuario={rolUsuario}
+                usuarioAutenticado={usuarioAutenticado}
+                pupiloActivo={pupiloActivo}
                 mostrarFormComunicaciones={mostrarFormComunicaciones}
                 setMostrarFormComunicaciones={setMostrarFormComunicaciones}
                 formularioComunicaciones={(
@@ -1609,6 +1611,8 @@ function App() {
                 encuestas={encuestas}
                 setEncuestas={setEncuestas}
                 partidos={partidosResumen}
+                nominaCita={nominaCita}
+                setNominaCita={setNominaCita}
               />
             )}
             {puedeVerPantalla('academia') && pantallaActiva === 'academia' && (
@@ -1776,6 +1780,8 @@ function App() {
                 saludDelSistema={saludDelSistema}
                 comunicacionesCount={comunicaciones.length}
                 calcularScoreDeCliente={calcularScoreDeCliente}
+                comunicaciones={comunicaciones}
+                setComunicaciones={setComunicaciones}
                 cuentasAdmin={cuentasAdmin}
                 matrixPermisos={matrixPermisosBase}
                 togglePermiso={togglePermiso}
