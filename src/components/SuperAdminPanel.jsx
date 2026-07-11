@@ -8,12 +8,14 @@ import {
   Filter,
   History,
   Image,
+  Megaphone,
   Plus,
   Search,
   Shield,
   ShieldCheck,
   Stethoscope,
   RefreshCcw,
+  Trophy,
   User,
   UserPlus,
   Users,
@@ -126,6 +128,32 @@ function SuperAdminPanel({
   const [filtroPupiloManual, setFiltroPupiloManual] = useState('');
   // Snapshot of override state captured when an edit opens; used to revert on cancel.
   const [permisosSnapshotAntesEdicion, setPermisosSnapshotAntesEdicion] = useState(null);
+
+  // --- PUBLICAR ANUNCIOS ---
+  const [formPublicacion, setFormPublicacion] = useState({
+    titulo: '',
+    mensaje: '',
+    tipo: 'Aviso',
+    rama: 'General',
+    categoria: 'General',
+    urgencia: 'Media',
+    solicita_asistencia: false,
+  });
+  const [publicandoForm, setPublicandoForm] = useState(false);
+
+  // --- RESULTADOS DE PARTIDOS ---
+  const [formResultado, setFormResultado] = useState({
+    equipo_local: 'Centro de Cultura Física',
+    equipo_visitante: '',
+    pts_local: '',
+    pts_visitante: '',
+    categoria_rama: 'General',
+    cancha_sede: '',
+    fecha_hora: new Date().toISOString().slice(0, 16),
+  });
+  const [partidosAdmin, setPartidosAdmin] = useState([]);
+  const [guardandoResultado, setGuardandoResultado] = useState(false);
+  const [cargandoPartidos, setCargandoPartidos] = useState(false);
   const [procesandoPupiloRut, setProcesandoPupiloRut] = useState('');
   const [destinoApoderadoPorRut, setDestinoApoderadoPorRut] = useState({});
   const [editandoTipo, setEditandoTipo] = useState(null);
@@ -675,6 +703,77 @@ function SuperAdminPanel({
     if (typeof onCancelEdit === 'function') onCancelEdit(permisosSnapshotAntesEdicion);
   };
 
+  const publicarAnuncio = async () => {
+    if (!formPublicacion.titulo.trim() || !formPublicacion.mensaje.trim()) {
+      alert('Completa el título y el mensaje antes de publicar.');
+      return;
+    }
+    try {
+      setPublicandoForm(true);
+      await api.comunicacionesAPI.create({
+        titulo: formPublicacion.titulo,
+        cuerpo_texto: formPublicacion.mensaje,
+        tipo: formPublicacion.tipo,
+        rama: formPublicacion.rama,
+        categoria: formPublicacion.categoria,
+        urgencia: formPublicacion.urgencia,
+        solicita_asistencia: formPublicacion.solicita_asistencia,
+      });
+      setFormPublicacion({ titulo: '', mensaje: '', tipo: 'Aviso', rama: 'General', categoria: 'General', urgencia: 'Media', solicita_asistencia: false });
+      alert('Publicación creada correctamente. Aparecerá en el Muro.');
+    } catch (error) {
+      alert(`No se pudo publicar: ${error.message}`);
+    } finally {
+      setPublicandoForm(false);
+    }
+  };
+
+  const cargarPartidosAdmin = async () => {
+    try {
+      setCargandoPartidos(true);
+      const res = await api.partidosLiveAPI.getAll();
+      setPartidosAdmin(Array.isArray(res) ? res : []);
+    } catch {
+      setPartidosAdmin([]);
+    } finally {
+      setCargandoPartidos(false);
+    }
+  };
+
+  const guardarResultado = async () => {
+    const { equipo_local, equipo_visitante, pts_local, pts_visitante, categoria_rama, cancha_sede, fecha_hora } = formResultado;
+    if (!equipo_visitante.trim()) { alert('Ingresa el nombre del equipo visitante.'); return; }
+    if (pts_local === '' || pts_visitante === '') { alert('Ingresa los puntos de ambos equipos.'); return; }
+    try {
+      setGuardandoResultado(true);
+      await api.partidosLiveAPI.create({
+        equipo_local,
+        equipo_visitante,
+        pts_local: Number(pts_local),
+        pts_visitante: Number(pts_visitante),
+        categoria_rama,
+        cancha_sede,
+        fecha_hora,
+        estado_juego: 'finalizado',
+      });
+      setFormResultado({
+        equipo_local: 'Centro de Cultura Física',
+        equipo_visitante: '',
+        pts_local: '',
+        pts_visitante: '',
+        categoria_rama: 'General',
+        cancha_sede: '',
+        fecha_hora: new Date().toISOString().slice(0, 16),
+      });
+      await cargarPartidosAdmin();
+      alert('Resultado registrado correctamente.');
+    } catch (error) {
+      alert(`No se pudo guardar el resultado: ${error.message}`);
+    } finally {
+      setGuardandoResultado(false);
+    }
+  };
+
   useEffect(() => {
     const target = editandoTipo === 'cuenta'
       ? edicionCuentaRef.current
@@ -1124,6 +1223,8 @@ function SuperAdminPanel({
         <div className="segment-control" style={{ minWidth: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
           <div className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}><Activity size={14} /> Resumen</div>
           <div className={`segment-btn ${vistaAdmin === 'usuarios' ? 'active' : ''}`} onClick={() => setVistaAdmin('usuarios')}><Users size={14} /> Usuarios y Cuentas</div>
+          <div className={`segment-btn ${vistaAdmin === 'publicar' ? 'active' : ''}`} onClick={() => setVistaAdmin('publicar')}><Megaphone size={14} /> Publicar</div>
+          <div className={`segment-btn ${vistaAdmin === 'resultados' ? 'active' : ''}`} onClick={() => { setVistaAdmin('resultados'); cargarPartidosAdmin(); }}><Trophy size={14} /> Resultados</div>
           <div className={`segment-btn ${vistaAdmin === 'activos' ? 'active' : ''}`} onClick={() => setVistaAdmin('activos')}><Image size={14} /> Activos</div>
           <div className={`segment-btn ${vistaAdmin === 'demo' ? 'active' : ''}`} onClick={() => setVistaAdmin('demo')}><ShieldCheck size={14} /> Demo</div>
           <div className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Validar Pago</div>
@@ -2291,6 +2392,168 @@ function SuperAdminPanel({
           exportarReportePDF={exportarReportePDF}
           renderGraficoSVG={renderGraficoSVG}
         />
+      )}
+
+      {vistaAdmin === 'publicar' && (
+        <div className="fade-in">
+          <h3 className="section-title"><Megaphone size={18} style={{ marginRight: '8px', verticalAlign: 'middle' }} />Publicar Anuncio / Noticia</h3>
+          <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '16px' }}>
+            Crea comunicaciones visibles en el Muro del club. Elige el tipo, urgencia, rama y audiencia antes de publicar.
+          </p>
+          <div className="card" style={{ borderRadius: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+              <div className="form-group">
+                <label>Título *</label>
+                <input
+                  className="form-input"
+                  value={formPublicacion.titulo}
+                  onChange={(e) => setFormPublicacion((p) => ({ ...p, titulo: e.target.value }))}
+                  placeholder="Ej: Suspensión de entrenamiento viernes"
+                />
+              </div>
+              <div className="form-group">
+                <label>Tipo</label>
+                <select className="form-input" value={formPublicacion.tipo} onChange={(e) => setFormPublicacion((p) => ({ ...p, tipo: e.target.value }))}>
+                  <option>Aviso</option>
+                  <option>Noticia</option>
+                  <option>Evento</option>
+                  <option>Suspension</option>
+                  <option>Asamblea</option>
+                  <option>Tesoreria</option>
+                  <option>Rendimiento</option>
+                  <option>Citación</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Urgencia</label>
+                <select className="form-input" value={formPublicacion.urgencia} onChange={(e) => setFormPublicacion((p) => ({ ...p, urgencia: e.target.value }))}>
+                  <option>Baja</option>
+                  <option>Media</option>
+                  <option>Alta</option>
+                  <option>Critica</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Rama</label>
+                <select className="form-input" value={formPublicacion.rama} onChange={(e) => setFormPublicacion((p) => ({ ...p, rama: e.target.value }))}>
+                  <option>General</option>
+                  <option>Femenina</option>
+                  <option>Masculina</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Categoría</label>
+                <select className="form-input" value={formPublicacion.categoria} onChange={(e) => setFormPublicacion((p) => ({ ...p, categoria: e.target.value }))}>
+                  <option>General</option>
+                  <option>U13</option>
+                  <option>U15</option>
+                  <option>U17</option>
+                  <option>Adultos</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-group" style={{ marginBottom: '12px' }}>
+              <label>Mensaje / Descripción *</label>
+              <textarea
+                className="form-input"
+                rows={4}
+                value={formPublicacion.mensaje}
+                onChange={(e) => setFormPublicacion((p) => ({ ...p, mensaje: e.target.value }))}
+                placeholder="Escribe el cuerpo del anuncio o noticia..."
+              />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', marginBottom: '16px' }}>
+              <input
+                type="checkbox"
+                checked={formPublicacion.solicita_asistencia}
+                onChange={(e) => setFormPublicacion((p) => ({ ...p, solicita_asistencia: e.target.checked }))}
+              />
+              Solicitar confirmación de asistencia (RSVP)
+            </label>
+            <button className="btn-electric" onClick={publicarAnuncio} disabled={publicandoForm}>
+              <Megaphone size={15} /> {publicandoForm ? 'Publicando...' : 'Publicar en el Muro'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {vistaAdmin === 'resultados' && (
+        <div className="fade-in">
+          <h3 className="section-title"><Trophy size={18} style={{ marginRight: '8px', verticalAlign: 'middle' }} />Registrar Resultado de Partido</h3>
+          <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '16px' }}>
+            Ingresa el marcador final y el partido quedará publicado en el fixture del club.
+          </p>
+          <div className="card" style={{ borderRadius: '24px', marginBottom: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+              <div className="form-group">
+                <label>Equipo local</label>
+                <input className="form-input" value={formResultado.equipo_local} onChange={(e) => setFormResultado((p) => ({ ...p, equipo_local: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label>Equipo visitante *</label>
+                <input className="form-input" value={formResultado.equipo_visitante} onChange={(e) => setFormResultado((p) => ({ ...p, equipo_visitante: e.target.value }))} placeholder="Ej: Club Deportivo Rival" />
+              </div>
+              <div className="form-group">
+                <label>Puntos local *</label>
+                <input type="number" min="0" className="form-input" value={formResultado.pts_local} onChange={(e) => setFormResultado((p) => ({ ...p, pts_local: e.target.value }))} placeholder="0" />
+              </div>
+              <div className="form-group">
+                <label>Puntos visitante *</label>
+                <input type="number" min="0" className="form-input" value={formResultado.pts_visitante} onChange={(e) => setFormResultado((p) => ({ ...p, pts_visitante: e.target.value }))} placeholder="0" />
+              </div>
+              <div className="form-group">
+                <label>Categoría / Rama</label>
+                <select className="form-input" value={formResultado.categoria_rama} onChange={(e) => setFormResultado((p) => ({ ...p, categoria_rama: e.target.value }))}>
+                  <option>General</option>
+                  <option>U13</option>
+                  <option>U15</option>
+                  <option>U17</option>
+                  <option>U19</option>
+                  <option>Adultos</option>
+                  <option>Femenina</option>
+                  <option>Masculina</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Cancha / Sede</label>
+                <input className="form-input" value={formResultado.cancha_sede} onChange={(e) => setFormResultado((p) => ({ ...p, cancha_sede: e.target.value }))} placeholder="Ej: Gimnasio CCF" />
+              </div>
+              <div className="form-group">
+                <label>Fecha y hora</label>
+                <input type="datetime-local" className="form-input" value={formResultado.fecha_hora} onChange={(e) => setFormResultado((p) => ({ ...p, fecha_hora: e.target.value }))} />
+              </div>
+            </div>
+            <button className="btn-electric" onClick={guardarResultado} disabled={guardandoResultado}>
+              <Trophy size={15} /> {guardandoResultado ? 'Guardando...' : 'Registrar resultado'}
+            </button>
+          </div>
+
+          <h4 className="section-title" style={{ marginTop: '20px' }}>Últimos partidos registrados</h4>
+          {cargandoPartidos && <p style={{ fontSize: '13px', color: 'var(--texto-secundario)' }}>Cargando...</p>}
+          {!cargandoPartidos && partidosAdmin.length === 0 && (
+            <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', fontStyle: 'italic' }}>No hay partidos registrados todavía.</p>
+          )}
+          {partidosAdmin.slice(0, 15).map((p) => (
+            <div key={p.id_partido} className="card" style={{ marginBottom: '10px', borderLeft: `4px solid ${Number(p.pts_local || 0) > Number(p.pts_visitante || 0) ? 'var(--verde-victoria)' : Number(p.pts_local || 0) < Number(p.pts_visitante || 0) ? 'var(--rojo-alerta)' : 'var(--azul-electrico)'}`, borderRadius: '22px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div>
+                  <strong style={{ fontSize: '14px' }}>{p.equipo_local || 'CCF'} vs {p.equipo_visitante || 'Rival'}</strong>
+                  <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '3px' }}>
+                    {p.categoria_rama || ''}{p.cancha_sede ? ` · ${p.cancha_sede}` : ''}{p.fecha_hora ? ` · ${new Date(p.fecha_hora).toLocaleDateString('es-CL')}` : ''}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <strong style={{ fontSize: '22px', letterSpacing: '2px' }}>
+                    {p.pts_local ?? '-'} – {p.pts_visitante ?? '-'}
+                  </strong>
+                  <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800', textTransform: 'uppercase' }}>
+                    {p.estado_juego || 'pendiente'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {vistaAdmin === 'cuentas_legacy' && (
