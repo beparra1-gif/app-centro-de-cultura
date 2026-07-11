@@ -21,6 +21,13 @@ let lastBackupRunStatus = null;
 let backupCronTask = null;
 const execFileAsync = promisify(execFile);
 
+const normalizeEnvValue = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const unquoted = raw.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1').trim();
+  return unquoted;
+};
+
 const serializeError = (error) => {
   const e = error || {};
   const meta = e.$metadata || {};
@@ -68,16 +75,25 @@ const getBackupConfig = () => {
 const getBackupStorageConfig = () => {
   const uploadEnabled = String(process.env.BACKUP_UPLOAD_ENABLED || 'false').toLowerCase() === 'true';
   const uploadRequired = String(process.env.BACKUP_UPLOAD_REQUIRED || 'false').toLowerCase() === 'true';
-  const endpoint = String(process.env.BACKUP_S3_ENDPOINT || '').trim();
-  const region = String(process.env.BACKUP_S3_REGION || 'us-east-1').trim();
-  const bucket = String(process.env.BACKUP_S3_BUCKET || '').trim();
-  const accessKeyId = String(process.env.BACKUP_S3_ACCESS_KEY_ID || '').trim();
-  const secretAccessKey = String(process.env.BACKUP_S3_SECRET_ACCESS_KEY || '').trim();
-  const prefixRaw = String(process.env.BACKUP_S3_PREFIX || 'ccf-db-backups').trim();
+  const endpoint = normalizeEnvValue(process.env.BACKUP_S3_ENDPOINT || '');
+  const region = normalizeEnvValue(process.env.BACKUP_S3_REGION || 'us-east-1');
+  const bucket = normalizeEnvValue(process.env.BACKUP_S3_BUCKET || '');
+  const accessKeyId = normalizeEnvValue(process.env.BACKUP_S3_ACCESS_KEY_ID || '');
+  const secretAccessKey = normalizeEnvValue(process.env.BACKUP_S3_SECRET_ACCESS_KEY || '');
+  const prefixRaw = normalizeEnvValue(process.env.BACKUP_S3_PREFIX || 'ccf-db-backups');
   const prefix = prefixRaw.replace(/^\/+/, '').replace(/\/+$/, '');
 
   const hasCredentials = Boolean(accessKeyId && secretAccessKey);
   const hasCoreConfig = Boolean(endpoint && bucket && hasCredentials);
+  const missingFields = [];
+  if (!endpoint) missingFields.push('BACKUP_S3_ENDPOINT');
+  if (!bucket) missingFields.push('BACKUP_S3_BUCKET');
+  if (!accessKeyId) missingFields.push('BACKUP_S3_ACCESS_KEY_ID');
+  if (!secretAccessKey) missingFields.push('BACKUP_S3_SECRET_ACCESS_KEY');
+
+  const accessKeyFingerprint = accessKeyId
+    ? `${accessKeyId.slice(0, 4)}...${accessKeyId.slice(-4)}`
+    : null;
 
   return {
     uploadEnabled,
@@ -89,6 +105,8 @@ const getBackupStorageConfig = () => {
     secretAccessKey,
     prefix,
     hasCoreConfig,
+    missingFields,
+    accessKeyFingerprint,
   };
 };
 
@@ -99,7 +117,7 @@ const uploadBackupToObjectStorage = async ({ localFilePath, trigger, strategy })
   }
 
   if (!storage.hasCoreConfig) {
-    const reason = 'Configuración S3 incompleta (endpoint/bucket/credenciales).';
+    const reason = `Configuración S3 incompleta (${storage.missingFields.join(', ') || 'endpoint/bucket/credenciales'}).`;
     if (storage.uploadRequired) {
       throw new Error(reason);
     }
@@ -314,12 +332,21 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
     return { ok: true, ...manifestPayload };
   } catch (error) {
     const errorDetail = serializeError(error);
+    const storageCfg = getBackupStorageConfig();
     const failurePayload = {
       status: 'error',
       failedAt: new Date().toISOString(),
       trigger,
       message: errorDetail.message,
       detail: errorDetail,
+      storage: {
+        uploadEnabled: storageCfg.uploadEnabled,
+        endpoint: storageCfg.endpoint || null,
+        bucket: storageCfg.bucket || null,
+        region: storageCfg.region || null,
+        accessKeyFingerprint: storageCfg.accessKeyFingerprint,
+        missingFields: storageCfg.missingFields,
+      },
     };
     try {
       writeBackupManifest({ manifestPath: cfg.manifestPath, payload: failurePayload });
