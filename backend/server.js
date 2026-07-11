@@ -2881,17 +2881,36 @@ app.put('/api/partidos-live/:id', async (req, res) => {
 
 // DELETE: Eliminar un partido
 app.delete('/api/partidos-live/:id', async (req, res) => {
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    await client.query('BEGIN');
+
+    // Limpiar registros relacionados para evitar errores de llave foranea.
+    await client.query(`DELETE FROM resultados WHERE id_partido = $1`, [req.params.id]);
+    await client.query(`DELETE FROM estadisticas WHERE id_partido = $1`, [req.params.id]);
+    await client.query(`DELETE FROM marcas_tiempo WHERE id_partido = $1`, [req.params.id]);
+    await client.query(`DELETE FROM pizarra_tactica WHERE id_partido = $1`, [req.params.id]);
+
+    const result = await client.query(
       `DELETE FROM partidos_live WHERE id_partido = $1 RETURNING id_partido`,
       [req.params.id]
     );
     if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Partido no encontrado' });
     }
+
+    await client.query('COMMIT');
     res.json({ success: true, message: 'Partido eliminado correctamente' });
   } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // Ignore rollback errors and return original error.
+    }
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
