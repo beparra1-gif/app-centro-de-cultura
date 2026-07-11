@@ -84,6 +84,7 @@ function SuperAdminPanel({
   pagosMensualidadesAdmin,
   onSheetsSyncComplete,
   onCancelEdit,
+  onPartidosChanged,
 }) {
   const enviarAlerta = () => { alert('Notificación enviada por App y Correo a los destinatarios.'); };
   void enviarAlerta;
@@ -841,6 +842,9 @@ function SuperAdminPanel({
 
       resetFormResultado();
       await cargarPartidosAdmin();
+      if (typeof onPartidosChanged === 'function') {
+        await onPartidosChanged();
+      }
       alert(partidoEditandoId ? 'Resultado actualizado correctamente.' : 'Resultado registrado correctamente.');
     } catch (error) {
       alert(`No se pudo guardar el resultado: ${error.message}`);
@@ -867,6 +871,9 @@ function SuperAdminPanel({
         }
       }
       await cargarPartidosAdmin();
+      if (typeof onPartidosChanged === 'function') {
+        await onPartidosChanged();
+      }
       alert(`${partidosDePrueba.length} partidos de prueba eliminados.`);
     } catch (error) {
       alert(`No se pudieron eliminar todos los partidos de prueba: ${error.message}`);
@@ -2900,6 +2907,9 @@ function SuperAdminPanel({
                   try {
                     await api.partidosLiveAPI.delete(partidoId);
                     await cargarPartidosAdmin();
+                    if (typeof onPartidosChanged === 'function') {
+                      await onPartidosChanged();
+                    }
                     alert('Partido borrado correctamente.');
                   } catch (err) {
                     alert(`No se pudo borrar: ${err.message}`);

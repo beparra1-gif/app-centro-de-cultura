@@ -1970,6 +1970,7 @@ function App() {
                 pagosMensualidadesAdmin={pagosMensualidadesAdmin}
                 onSheetsSyncComplete={sincronizarDatosDesdeSheets}
                 onCancelEdit={restaurarPermisosAntesCancelacion}
+                onPartidosChanged={() => cargarDatos({ manual: true })}
               />
             )}
           </>
