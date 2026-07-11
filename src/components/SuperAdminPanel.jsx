@@ -85,6 +85,7 @@ function SuperAdminPanel({
   onSheetsSyncComplete,
   onCancelEdit,
   onPartidosChanged,
+  onComunicacionesChanged,
 }) {
   const enviarAlerta = () => { alert('Notificación enviada por App y Correo a los destinatarios.'); };
   void enviarAlerta;
@@ -144,6 +145,7 @@ function SuperAdminPanel({
     solicita_asistencia: false,
   });
   const [publicandoForm, setPublicandoForm] = useState(false);
+  const [publicacionEditandoId, setPublicacionEditandoId] = useState(null);
 
   // --- RESULTADOS DE PARTIDOS ---
   const [formResultado, setFormResultado] = useState({
@@ -750,7 +752,7 @@ function SuperAdminPanel({
     }
     try {
       setPublicandoForm(true);
-      await api.comunicacionesAPI.create({
+      const payload = {
         titulo: formPublicacion.titulo,
         cuerpo_texto: formPublicacion.mensaje,
         tipo: formPublicacion.tipo,
@@ -758,13 +760,59 @@ function SuperAdminPanel({
         categoria: formPublicacion.categoria,
         urgencia: formPublicacion.urgencia,
         solicita_asistencia: formPublicacion.solicita_asistencia,
-      });
+      };
+
+      if (publicacionEditandoId) {
+        await api.comunicacionesAPI.update(publicacionEditandoId, payload);
+      } else {
+        await api.comunicacionesAPI.create(payload);
+      }
+
       setFormPublicacion({ titulo: '', mensaje: '', tipo: 'Aviso', rama: 'General', categoria: 'General', urgencia: 'Media', solicita_asistencia: false });
-      alert('Publicación creada correctamente. Aparecerá en el Muro.');
+      setPublicacionEditandoId(null);
+      if (typeof onComunicacionesChanged === 'function') {
+        await onComunicacionesChanged();
+      }
+      alert(publicacionEditandoId ? 'Publicación actualizada correctamente.' : 'Publicación creada correctamente. Aparecerá en el Muro.');
     } catch (error) {
       alert(`No se pudo publicar: ${error.message}`);
     } finally {
       setPublicandoForm(false);
+    }
+  };
+
+  const editarPublicacion = (com) => {
+    setPublicacionEditandoId(com.id);
+    setFormPublicacion({
+      titulo: com.TITULO || '',
+      mensaje: com.CUERPO_TEXTO || '',
+      tipo: com.TIPO_COMUNICADO || 'Aviso',
+      rama: com.rama || 'General',
+      categoria: com.categoria || 'General',
+      urgencia: com.urgencia || 'Media',
+      solicita_asistencia: Boolean(com.solicita_asistencia),
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelarEdicionPublicacion = () => {
+    setPublicacionEditandoId(null);
+    setFormPublicacion({ titulo: '', mensaje: '', tipo: 'Aviso', rama: 'General', categoria: 'General', urgencia: 'Media', solicita_asistencia: false });
+  };
+
+  const borrarPublicacion = async (com) => {
+    if (!window.confirm(`¿Confirmas borrar la publicación "${com.TITULO}"?`)) return;
+    try {
+      await api.comunicacionesAPI.delete(com.id);
+      if (publicacionEditandoId === com.id) {
+        cancelarEdicionPublicacion();
+      }
+      if (typeof onComunicacionesChanged === 'function') {
+        await onComunicacionesChanged();
+      }
+      alert('Publicación borrada correctamente.');
+    } catch (error) {
+      alert(`No se pudo borrar la publicación: ${error.message}`);
     }
   };
 
@@ -2725,8 +2773,44 @@ function SuperAdminPanel({
               Solicitar confirmación de asistencia (RSVP)
             </label>
             <button className="btn-electric" onClick={publicarAnuncio} disabled={publicandoForm}>
-              <Megaphone size={15} /> {publicandoForm ? 'Publicando...' : 'Publicar en el Muro'}
+              <Megaphone size={15} /> {publicandoForm ? 'Guardando...' : (publicacionEditandoId ? 'Actualizar publicación' : 'Publicar en el Muro')}
             </button>
+            {publicacionEditandoId && (
+              <button className="btn-secondary" onClick={cancelarEdicionPublicacion} style={{ marginLeft: '8px' }}>
+                Cancelar edición
+              </button>
+            )}
+          </div>
+
+          <div className="card" style={{ borderRadius: '24px', marginTop: '14px' }}>
+            <h4 className="form-subtitle" style={{ marginBottom: '10px' }}>Avisos y comunicados registrados</h4>
+            {(comunicaciones || []).length === 0 && (
+              <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', margin: 0 }}>No hay publicaciones registradas todavía.</p>
+            )}
+            {(comunicaciones || []).length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {(comunicaciones || []).slice(0, 20).map((com) => (
+                  <div key={`com-admin-${com.id}`} style={{ border: '1px solid rgba(0,0,0,0.08)', borderRadius: '14px', padding: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '13px' }}>{com.TITULO || 'Sin título'}</strong>
+                      <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{com.FECHA || 'Sin fecha'}</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>
+                      Tipo: {com.TIPO_COMUNICADO || 'Aviso'} · Rama: {com.rama || 'General'} · Categoría: {com.categoria || 'General'} · Urgencia: {com.urgencia || 'Media'}
+                    </div>
+                    <p style={{ margin: '8px 0', fontSize: '12px', color: 'var(--texto-principal)' }}>{String(com.CUERPO_TEXTO || '').slice(0, 200)}</p>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button className="btn-secondary" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => editarPublicacion(com)}>
+                        Editar
+                      </button>
+                      <button className="btn-secondary" style={{ width: 'auto', padding: '8px 12px', borderColor: 'rgba(255,59,48,0.35)', color: '#b91c1c' }} onClick={() => borrarPublicacion(com)}>
+                        Borrar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -374,22 +374,8 @@ function App() {
       const totalErrores = resultados.filter((r) => r.status === 'rejected').length;
 
       if (Array.isArray(comunicacionesRes)) {
-        const comunicacionesTransformadas = comunicacionesRes.map((c) => ({
-          id: c.id,
-          TITULO: c.titulo,
-          CUERPO_TEXTO: c.cuerpo_texto,
-          FECHA: new Date(c.created_at).toLocaleDateString('es-CL'),
-          TIPO_COMUNICADO: c.tipo,
-          rama: c.rama,
-          categoria: c.categoria,
-          urgencia: c.urgencia,
-          solicita_asistencia: c.solicita_asistencia,
-          reacciones: c.reacciones || {},
-          asistencias: c.asistencias || []
-        }));
-
+        const comunicacionesTransformadas = mapComunicacionesResumen(comunicacionesRes);
         setComunicaciones(comunicacionesTransformadas);
-
         const materiales = comunicacionesTransformadas.filter((c) =>
           ['academia-video', 'academia-imagen', 'academia-documento'].includes((c.TIPO_COMUNICADO || '').toLowerCase())
         );
@@ -1019,6 +1005,37 @@ function App() {
       equipoVisitaLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
       rivalLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
     }));
+  };
+
+  const mapComunicacionesResumen = (comunicacionesRes = []) => {
+    return (Array.isArray(comunicacionesRes) ? comunicacionesRes : []).map((c) => ({
+      id: c.id,
+      TITULO: c.titulo,
+      CUERPO_TEXTO: c.cuerpo_texto,
+      FECHA: c.created_at ? new Date(c.created_at).toLocaleDateString('es-CL') : new Date().toLocaleDateString('es-CL'),
+      TIPO_COMUNICADO: c.tipo,
+      rama: c.rama,
+      categoria: c.categoria,
+      urgencia: c.urgencia,
+      solicita_asistencia: c.solicita_asistencia,
+      reacciones: c.reacciones || {},
+      asistencias: c.asistencias || [],
+    }));
+  };
+
+  const recargarComunicacionesResumen = async () => {
+    try {
+      const comunicacionesRes = await api.comunicacionesAPI.getAll();
+      const comunicacionesTransformadas = mapComunicacionesResumen(comunicacionesRes);
+      setComunicaciones(comunicacionesTransformadas);
+      const materiales = comunicacionesTransformadas.filter((c) =>
+        ['academia-video', 'academia-imagen', 'academia-documento'].includes((c.TIPO_COMUNICADO || '').toLowerCase())
+      );
+      setMaterialesAcademia(materiales);
+    } catch {
+      setComunicaciones([]);
+      setMaterialesAcademia([]);
+    }
   };
 
   const recargarPartidosResumen = async () => {
@@ -1983,6 +2000,7 @@ function App() {
                 onSheetsSyncComplete={sincronizarDatosDesdeSheets}
                 onCancelEdit={restaurarPermisosAntesCancelacion}
                 onPartidosChanged={recargarPartidosResumen}
+                onComunicacionesChanged={recargarComunicacionesResumen}
               />
             )}
           </>
