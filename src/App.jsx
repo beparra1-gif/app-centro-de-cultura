@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import './App.css';
 import { 
   Home, User, Trophy, CreditCard, Shirt, CheckCircle, Bell, LogOut, 
@@ -6,9 +6,9 @@ import {
   Brain, PlayCircle, BookOpen, Video, Users, Sliders, HeartPulse, 
   Save, Monitor, Activity, ArrowRight, ArrowLeft, AlertTriangle, 
   FileText, Flag, QrCode, Lock, Camera, ChevronRight, ChevronLeft, 
-  ShieldAlert, Zap, MessageCircle, Clock, FileDown, 
+  ShieldAlert, Zap, Clock, FileDown, 
   History, CheckSquare, 
-  XSquare, Search
+  XSquare
 } from 'lucide-react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
@@ -270,6 +270,10 @@ function App() {
   const [apiOffline, setApiOffline] = useState(false);
   const [apiRetrying, setApiRetrying] = useState(false);
   const [apiStatusMessage, setApiStatusMessage] = useState('');
+  const settingsButtonRef = useRef(null);
+  const notificationsButtonRef = useRef(null);
+  const settingsPanelRef = useRef(null);
+  const notificationsPanelRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -456,8 +460,11 @@ function App() {
             nombre: `${primerJugador.nombres || ''} ${primerJugador.apellido_paterno || ''}`.trim(),
             correo_apoderado: primerJugador.correo_apoderado || '',
             categoria: primerJugador.categoria || 'General',
+            rama: primerJugador.rama || primerJugador.categoria_rama || 'General',
+            genero: primerJugador.genero || primerJugador.sexo || '',
             nivel: Number(primerJugador.nivel_actual || 1),
             xp: Number(primerJugador.xp_total || 0),
+            anioNacimiento: primerJugador.anio_nacimiento || primerJugador.ano_nacimiento || primerJugador['año_nacimiento'] || '',
             numeroCamiseta: primerJugador.numero_camiseta || 0,
             posicion: primerJugador.posicion_juego || 'N/A',
             estatura: primerJugador.estatura || 'N/A',
@@ -469,7 +476,7 @@ function App() {
             asistencia: primerJugador.asistencia || 'N/A',
             estadoDeportivo: primerJugador.estado_deportivo || 'Activo',
             beca: primerJugador.beca || 'Sin beca',
-            foto_jugador: primerJugador.foto_jugador || primerJugador.club_logo_url || '',
+            foto_jugador: primerJugador.foto_jugador || primerJugador.foto_perfil_url || primerJugador.club_logo_url || '',
           });
         } else {
           setPupiloActivo(null);
@@ -610,7 +617,6 @@ function App() {
 
   const getCamposPendientesOnboarding = (cuenta = {}) => {
     const rolBase = normalizarRol(cuenta.perfil_principal || cuenta.rol || rolUsuarioTemporal || 'apoderado');
-    const requiereFoto = Boolean(cuenta.requiere_foto_perfil) || ['jugador', 'staff'].includes(rolBase);
 
     const camposTextoPorRol = {
       jugador: ['nombres', 'apellido_paterno', 'telefono'],
@@ -626,10 +632,6 @@ function App() {
 
     const base = camposTextoPorRol[rolBase] || ['nombres', 'apellido_paterno', 'telefono'];
     const faltantes = base.filter((campo) => !String(cuenta[campo] || '').trim());
-
-    if (requiereFoto && !String(cuenta.foto_perfil_url || cuenta.logo_url || '').trim()) {
-      faltantes.push('foto_perfil_url');
-    }
 
     return [...new Set(faltantes)];
   };
@@ -786,20 +788,14 @@ function App() {
         return;
       }
 
-      if (onboardingCamposPendientes.includes('foto_perfil_url') && !String(onboardingPerfilDraft.foto_perfil_url || '').trim()) {
-        alert('Debes subir tu foto de perfil para continuar.');
-        return;
-      }
-
       try {
         const payload = {};
         onboardingCamposPendientes.forEach((campo) => {
-          if (campo === 'foto_perfil_url') {
-            payload.foto_perfil_url = onboardingPerfilDraft.foto_perfil_url;
-          } else {
-            payload[campo] = String(onboardingPerfilDraft[campo] || '').trim();
-          }
+          payload[campo] = String(onboardingPerfilDraft[campo] || '').trim();
         });
+        if (String(onboardingPerfilDraft.foto_perfil_url || '').trim()) {
+          payload.foto_perfil_url = onboardingPerfilDraft.foto_perfil_url;
+        }
         await api.cuentasAPI.update(onboardingCuenta.id, payload);
       } catch (error) {
         alert(error.message || 'No se pudieron guardar los datos pendientes.');
@@ -884,6 +880,49 @@ function App() {
     });
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
   };
+
+  const toggleSettingsPanel = () => {
+    setShowSettings((prev) => {
+      const next = !prev;
+      if (next) {
+        setMostrarNotificaciones(false);
+      }
+      return next;
+    });
+  };
+
+  const toggleNotificationsPanel = () => {
+    setMostrarNotificaciones((prev) => {
+      const next = !prev;
+      if (next) {
+        setShowSettings(false);
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!showSettings && !mostrarNotificaciones) return;
+
+    const onPointerDown = (event) => {
+      const target = event.target;
+      const clicEnSettings = settingsPanelRef.current?.contains(target) || settingsButtonRef.current?.contains(target);
+      const clicEnNotificaciones = notificationsPanelRef.current?.contains(target) || notificationsButtonRef.current?.contains(target);
+
+      if (clicEnSettings || clicEnNotificaciones) return;
+
+      setShowSettings(false);
+      setMostrarNotificaciones(false);
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('touchstart', onPointerDown);
+
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('touchstart', onPointerDown);
+    };
+  }, [showSettings, mostrarNotificaciones]);
 
   const restaurarPermisosAntesCancelacion = (snapshot) => {
     if (!snapshot || typeof snapshot !== 'object') return;
@@ -1680,16 +1719,22 @@ function App() {
     }
   };
 
+  const normalizarRutComparacion = (rut = '') => (
+    String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase()
+  );
+
   // ==========================================
   // 5. MÓDULOS DE JUGADOR, ACADEMIA Y TESORERÍA
   // ==========================================
 
-  const pupilosDisponibles = (jugadoresAdmin || []).map((j, idx) => ({
+  const pupilosDisponiblesBase = (jugadoresAdmin || []).map((j, idx) => ({
     id: idx + 1,
     rut: j.rut_jugador,
     nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim(),
     correo_apoderado: j.correo_apoderado || '',
     categoria: j.categoria || 'General',
+    rama: j.rama || j.categoria_rama || 'General',
+    genero: j.genero || j.sexo || '',
     nivel: Number(j.nivel_actual || 1),
     xp: Number(j.xp_total || 0),
     numeroCamiseta: j.numero_camiseta || 0,
@@ -1703,8 +1748,35 @@ function App() {
     asistencia: j.asistencia || 'N/A',
     estadoDeportivo: j.estado_deportivo || 'Activo',
     beca: j.beca || 'Sin beca',
-    foto_jugador: j.foto_jugador || j.club_logo_url || '',
+    anioNacimiento: j.anio_nacimiento || j.ano_nacimiento || j['año_nacimiento'] || '',
+    foto_jugador: j.foto_jugador || j.foto_perfil_url || j.club_logo_url || '',
   }));
+
+  const esJugadorAutenticado = normalizarRol(rolUsuario || usuarioAutenticado?.rol || '') === 'jugador';
+  const rutUsuarioAutenticado = normalizarRutComparacion(usuarioAutenticado?.rut || '');
+
+  const pupilosDisponibles = esJugadorAutenticado
+    ? pupilosDisponiblesBase.filter((j) => normalizarRutComparacion(j.rut) === rutUsuarioAutenticado)
+    : pupilosDisponiblesBase;
+
+  useEffect(() => {
+    if (!esJugadorAutenticado) return;
+
+    if (pupilosDisponibles.length === 0) {
+      setPupiloActivo(null);
+      return;
+    }
+
+    const pupiloPropio = pupilosDisponibles[0];
+    const rutActivo = normalizarRutComparacion(pupiloActivo?.rut || '');
+    const rutPropio = normalizarRutComparacion(pupiloPropio.rut || '');
+    const anioActivo = pupiloActivo?.anioNacimiento || pupiloActivo?.anio_nacimiento || pupiloActivo?.ano_nacimiento || pupiloActivo?.['año_nacimiento'] || '';
+    const anioPropio = pupiloPropio?.anioNacimiento || pupiloPropio?.anio_nacimiento || pupiloPropio?.ano_nacimiento || pupiloPropio?.['año_nacimiento'] || '';
+
+    if (rutActivo !== rutPropio || (!anioActivo && anioPropio)) {
+      setPupiloActivo(pupiloPropio);
+    }
+  }, [esJugadorAutenticado, pupilosDisponibles, pupiloActivo?.rut]);
 
   const comunicacionesPublicas = (comunicaciones || []).filter((c) => {
     const audiencia = Array.isArray(c.audiencia) ? c.audiencia : [];
@@ -1764,13 +1836,14 @@ function App() {
         <div className="header-btn-zone right">
           {rolUsuario && (
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'flex-end', width: '100%', flexWrap: 'nowrap' }}>
-              <button className="btn-icon-header" onClick={() => setMostrarBusqueda(!mostrarBusqueda)} title="Búsqueda Global">
-                <Search size={24} color="#6B7280" strokeWidth={1.5} />
-              </button>
-              <button className="btn-icon-header" onClick={() => setShowSettings(!showSettings)} title="Configuración y Perfil">
+              <button ref={settingsButtonRef} className="btn-icon-header" onClick={toggleSettingsPanel} title="Configuración y Perfil">
                 <Settings size={24} color="#6B7280" strokeWidth={1.5} />
               </button>
-              <div style={{position: 'relative', cursor: 'pointer'}} onClick={() => setMostrarNotificaciones(!mostrarNotificaciones)}>
+              <div
+                ref={notificationsButtonRef}
+                style={{position: 'relative', cursor: 'pointer'}}
+                onClick={toggleNotificationsPanel}
+              >
                 <Bell size={24} color="#6B7280" strokeWidth={1.5} />
                 {notificaciones.filter(n=>!n.leida).length > 0 && (
                   <span style={{position: 'absolute', top: '-5px', right: '-5px', background: '#FF3B30', color: 'white', fontSize: '10px', fontWeight: '900', padding: '3px 6px', borderRadius: '10px', border: '2px solid var(--azul-marino)'}}>
@@ -1778,14 +1851,6 @@ function App() {
                   </span>
                 )}
               </div>
-              <button className="btn-icon-header" onClick={() => setMostrarWhatsAppPanel(mostrarWhatsAppPanel ? false : 'enviar')} title="WhatsApp" style={{position: 'relative'}}>
-                <MessageCircle size={22} color="#6B7280" strokeWidth={1.5} />
-                {contactosWhatsApp.filter(c => c.activo).length > 0 && (
-                  <span style={{position: 'absolute', top: '-5px', right: '-5px', background: '#34C759', color: 'white', fontSize: '10px', fontWeight: '900', padding: '3px 6px', borderRadius: '10px', border: '2px solid var(--azul-marino)'}}>
-                    {contactosWhatsApp.filter(c => c.activo).length}
-                  </span>
-                )}
-              </button>
               <button className="btn-icon-header" onClick={() => setShowModalSalir(true)}>
                 <LogOut size={24} color="#6B7280" strokeWidth={1.5} />
               </button>
@@ -1804,7 +1869,7 @@ function App() {
       />
 
       {showSettings && (
-        <div className="floating-panel settings-panel" style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
+        <div ref={settingsPanelRef} className="floating-panel settings-panel" style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
           <SettingsPanel
             rolUsuario={rolUsuario}
             busquedaPermisos={busquedaPermisos}
@@ -1823,10 +1888,12 @@ function App() {
       )}
 
       {mostrarNotificaciones && (
-        <NotificationsPanel
-          notificaciones={notificaciones}
-          setNotificaciones={setNotificaciones}
-        />
+        <div ref={notificationsPanelRef}>
+          <NotificationsPanel
+            notificaciones={notificaciones}
+            setNotificaciones={setNotificaciones}
+          />
+        </div>
       )}
 
       {/* Panel antiguo de notificaciones - REMOVIDO EN FAVOR DE RENDERNOTIFICACIONES */}

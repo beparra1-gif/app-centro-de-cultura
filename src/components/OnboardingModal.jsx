@@ -73,22 +73,20 @@ function OnboardingModal({
               ) : null
             ))}
 
-            {muestraCampo('foto_perfil_url') && (
-              <div className="foto-upload-box mt-10" style={{ borderRadius: '22px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <User size={40} color="var(--texto-secundario)" />
-                <span>Sube foto de perfil desde la galeria</span>
-                <input
-                  type="file"
-                  className="form-input"
-                  accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
-                  onChange={(e) => subirFotoOnboarding(e.target.files?.[0] || null)}
-                />
-                {onboardingSubiendoFoto && <span style={{ fontSize: '12px' }}>Subiendo foto...</span>}
-                {!onboardingSubiendoFoto && onboardingPerfilDraft?.foto_perfil_url && (
-                  <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Foto cargada correctamente.</span>
-                )}
-              </div>
-            )}
+            <div className="foto-upload-box mt-10" style={{ borderRadius: '22px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <User size={40} color="var(--texto-secundario)" />
+              <span>Foto de perfil (opcional). Puedes subirla ahora o despues.</span>
+              <input
+                type="file"
+                className="form-input"
+                accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                onChange={(e) => subirFotoOnboarding(e.target.files?.[0] || null)}
+              />
+              {onboardingSubiendoFoto && <span style={{ fontSize: '12px' }}>Subiendo foto...</span>}
+              {!onboardingSubiendoFoto && onboardingPerfilDraft?.foto_perfil_url && (
+                <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Foto cargada correctamente.</span>
+              )}
+            </div>
           </div>
         )}
 

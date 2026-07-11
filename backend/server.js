@@ -574,6 +574,63 @@ const formatearRut = (rut = '') => {
   return `${cuerpo}-${dv}`;
 };
 
+const construirCorreoPlaceholderDesdeRut = (rutNormalizado = '') => {
+  const limpio = String(rutNormalizado || '').trim().toLowerCase();
+  return `${limpio || 'sin-rut'}@actualizar.local`;
+};
+
+const provisionarCuentaJugadorSiCorresponde = async ({ rutNormalizado, password }) => {
+  if (String(password || '') !== '12345') return null;
+
+  const jugadorRes = await pool.query(
+    `SELECT rut_jugador, nombres, apellido_paterno, estado
+     FROM jugadores
+     WHERE UPPER(REPLACE(REPLACE(COALESCE(rut_jugador, ''), '.', ''), '-', '')) = $1
+     LIMIT 1`,
+    [rutNormalizado]
+  );
+
+  if (jugadorRes.rows.length === 0) return null;
+
+  const jugador = jugadorRes.rows[0];
+  const estadoJugador = String(jugador.estado || 'ACTIVO').toUpperCase();
+  if (estadoJugador === 'BAJA') return null;
+
+  const rutFormateado = formatearRut(jugador.rut_jugador || rutNormalizado);
+  const correoPlaceholder = construirCorreoPlaceholderDesdeRut(rutNormalizado);
+
+  const cuentaRes = await pool.query(
+    `INSERT INTO cuentas (
+      correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, requiere_foto_perfil
+    ) VALUES (
+      $1, $2, $3, $4, $5, 'jugador', 'jugador', 'activo', true, false
+    )
+    ON CONFLICT (rut)
+    DO UPDATE SET
+      nombres = COALESCE(NULLIF(cuentas.nombres, ''), EXCLUDED.nombres),
+      apellido_paterno = COALESCE(NULLIF(cuentas.apellido_paterno, ''), EXCLUDED.apellido_paterno),
+      rol = 'jugador',
+      perfil_principal = 'jugador',
+      estado = 'activo',
+      password = COALESCE(NULLIF(cuentas.password, ''), EXCLUDED.password),
+      forzar_clave = CASE
+        WHEN COALESCE(NULLIF(cuentas.password, ''), '') = '' THEN true
+        ELSE cuentas.forzar_clave
+      END,
+      updated_at = NOW()
+    RETURNING id, correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, foto_perfil_url, requiere_foto_perfil`,
+    [
+      correoPlaceholder,
+      rutFormateado,
+      '12345',
+      jugador.nombres || null,
+      jugador.apellido_paterno || null,
+    ]
+  );
+
+  return cuentaRes.rows[0] || null;
+};
+
 const columnasTablaCache = new Map();
 
 const obtenerColumnasTabla = async (tabla) => {
@@ -1425,7 +1482,7 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const rutNormalizado = normalizarRut(rut);
-    const result = await pool.query(
+    let result = await pool.query(
       `SELECT id, correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, foto_perfil_url, requiere_foto_perfil
        FROM cuentas
        WHERE UPPER(REPLACE(REPLACE(rut, '.', ''), '-', '')) = $1
@@ -1434,7 +1491,11 @@ app.post('/api/auth/login', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
+      const cuentaProvisionada = await provisionarCuentaJugadorSiCorresponde({ rutNormalizado, password });
+      if (!cuentaProvisionada) {
+        return res.status(401).json({ error: 'Credenciales inválidas' });
+      }
+      result = { rows: [cuentaProvisionada] };
     }
 
     const cuenta = result.rows[0];
@@ -1442,25 +1503,43 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(403).json({ error: 'Cuenta inactiva' });
     }
 
-    if (!cuenta.password || String(cuenta.password) !== String(password)) {
+    const rolDb = String(cuenta.rol || '').toLowerCase();
+    const esJugador = rolDb === 'jugador';
+
+    if (!String(cuenta.password || '').trim() && esJugador && String(password || '') === '12345') {
+      const syncPasswordRes = await pool.query(
+        `UPDATE cuentas
+         SET password = '12345',
+             forzar_clave = true,
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, foto_perfil_url, requiere_foto_perfil`,
+        [cuenta.id]
+      );
+      if (syncPasswordRes.rows.length > 0) {
+        result = { rows: [syncPasswordRes.rows[0]] };
+      }
+    }
+
+    const cuentaFinal = result.rows[0];
+    if (!cuentaFinal.password || String(cuentaFinal.password) !== String(password)) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    const rolDb = String(cuenta.rol || '').toLowerCase();
     const rolSistema = rolDb === 'super_admin' || rolDb === 'superadmin' ? 'super_admin' : rolDb || 'jugador';
 
     res.json({
       ok: true,
       user: {
-        id: cuenta.id,
-        nombre: `${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim() || cuenta.correo,
-        correo: cuenta.correo,
-        rut: formatearRut(cuenta.rut),
+        id: cuentaFinal.id,
+        nombre: `${cuentaFinal.nombres || ''} ${cuentaFinal.apellido_paterno || ''}`.trim() || cuentaFinal.correo,
+        correo: cuentaFinal.correo,
+        rut: formatearRut(cuentaFinal.rut),
         rol: rolSistema,
-        perfil_principal: cuenta.perfil_principal || rolSistema,
-        forzar_clave: Boolean(cuenta.forzar_clave),
-        foto_perfil_url: cuenta.foto_perfil_url || null,
-        requiere_foto_perfil: Boolean(cuenta.requiere_foto_perfil),
+        perfil_principal: cuentaFinal.perfil_principal || rolSistema,
+        forzar_clave: Boolean(cuentaFinal.forzar_clave),
+        foto_perfil_url: cuentaFinal.foto_perfil_url || null,
+        requiere_foto_perfil: Boolean(cuentaFinal.requiere_foto_perfil),
         access_profiles: rolSistema === 'super_admin'
           ? ['super_admin', 'admin', 'staff', 'mesa', 'jugador', 'visita']
           : [rolSistema]

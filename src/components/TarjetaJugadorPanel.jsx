@@ -1,6 +1,11 @@
-import { BadgeCheck, ShieldCheck, Shirt, Target, Trophy, User } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { BadgeCheck, Download, Mars, QrCode, ShieldCheck, Shirt, Target, Trophy, User, Venus, X } from 'lucide-react';
+import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
 import PupiloSelector from './PupiloSelector';
+
+const EXPORT_WIDTH = 750;
+const EXPORT_HEIGHT = 1050;
 
 function TarjetaJugadorPanel({
   pupiloActivo,
@@ -11,6 +16,13 @@ function TarjetaJugadorPanel({
   if (!pupiloActivo) {
     return <div className="player-screen-shell">Cargando tarjeta del jugador...</div>;
   }
+
+  const cardRef = useRef(null);
+  const cardFrontExportRef = useRef(null);
+  const cardBackRef = useRef(null);
+  const [mostrarCredencialAsistencia, setMostrarCredencialAsistencia] = useState(false);
+  const [estiloColeccion, setEstiloColeccion] = useState('coleccionista');
+  const [vistaColeccion, setVistaColeccion] = useState('frente');
 
   const xpActual = Number(pupiloActivo.xp ?? pupiloActivo.xp_total ?? 0);
   const nivelBase = Number(pupiloActivo.nivel ?? pupiloActivo.nivel_actual ?? 1) || 1;
@@ -37,8 +49,17 @@ function TarjetaJugadorPanel({
     border: 'rgba(255,255,255,0.18)',
   };
   const nivelActual = rolUsuario === 'visita' ? 'MAX' : nivelBase;
+  const nivelActualNumero = Number(nivelActual) || 0;
+  const rolNormalizado = String(rolUsuario || '').toLowerCase().replace('-', '_');
+  const mostrarIndumentaria = ['admin', 'super_admin'].includes(rolNormalizado);
   const nombreDisplay = rolUsuario === 'visita' ? 'Invitado' : pupiloActivo.nombre.split(' ')[0];
   const apellidoDisplay = rolUsuario === 'visita' ? 'TORNEO' : pupiloActivo.nombre.split(' ')[1]?.toUpperCase() || '';
+  const nombreCompletoDisplay = rolUsuario === 'visita'
+    ? 'INVITADO TORNEO'
+    : String(pupiloActivo.nombre || `${nombreDisplay} ${apellidoDisplay}`).trim();
+  const anioNacimiento = pupiloActivo.anioNacimiento || pupiloActivo.anio_nacimiento || pupiloActivo.ano_nacimiento || pupiloActivo['año_nacimiento'] || '';
+  const categoriaDisplay = rolUsuario === 'visita' ? 'Open' : (pupiloActivo.categoria || 'General');
+  const categoriaConAnio = anioNacimiento ? `${categoriaDisplay} · ${anioNacimiento}` : categoriaDisplay;
 
   if (nivelActual > 10 && nivelActual <= 20) {
     textoRareza = 'PLATA';
@@ -76,7 +97,10 @@ function TarjetaJugadorPanel({
 
   const rutValidacion = rolUsuario === 'visita' ? 'VISITA' : (pupiloActivo.rut || 'SIN-RUT');
   const clubNombre = pupiloActivo.club_nombre || pupiloActivo.club_procedencia || (rolUsuario === 'visita' ? 'Club invitado' : 'Centro de Cultura Física');
-  const clubLogoUrl = pupiloActivo.club_logo_url || pupiloActivo.foto_jugador || '';
+  const clubLogoUrl = pupiloActivo.club_logo_url || '/logos/club-logo.png';
+  const fotoPrincipal = pupiloActivo.foto_jugador || pupiloActivo.foto_perfil_url || '';
+  const descriptorGenero = `${pupiloActivo.genero || ''} ${pupiloActivo.sexo || ''} ${pupiloActivo.rama || ''}`.toLowerCase();
+  const esFemenino = descriptorGenero.includes('femen') || descriptorGenero.includes('mujer');
   const clubIniciales = clubNombre
     .split(' ')
     .filter(Boolean)
@@ -84,12 +108,48 @@ function TarjetaJugadorPanel({
     .map((parte) => parte[0])
     .join('')
     .toUpperCase() || 'CCF';
+  const etiquetaClub = rolUsuario === 'visita' ? 'INVITADO' : 'LOCAL';
+  const hashSerial = (String(pupiloActivo.rut || pupiloActivo.nombre || 'ccf')
+    .split('')
+    .reduce((acc, char) => ((acc * 31) + char.charCodeAt(0)) % 9973, 0) % 500) + 1;
+  const serialTexto = `${String(hashSerial).padStart(3, '0')}/500`;
   const qrPayload = JSON.stringify({
     tipo: 'asistencia_ccf',
     rut: rutValidacion,
     nombre: pupiloActivo.nombre,
     categoria: pupiloActivo.categoria || 'General',
   });
+
+  const descargarDataUrl = (dataUrl, nombreArchivo) => {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = nombreArchivo;
+    link.click();
+  };
+
+  const capturarRefExport = async (targetRef) => {
+    if (!targetRef.current) throw new Error('No se pudo preparar la tarjeta para exportar.');
+    return html2canvas(targetRef.current, {
+      backgroundColor: null,
+      scale: 1,
+      useCORS: true,
+      width: EXPORT_WIDTH,
+      height: EXPORT_HEIGHT,
+    });
+  };
+
+  const descargarTarjetaColeccionActual = async () => {
+    const refObjetivo = vistaColeccion === 'reverso' ? cardBackRef : cardFrontExportRef;
+    const sufijo = vistaColeccion === 'reverso' ? 'reverso' : 'frente';
+    if (!refObjetivo.current) return;
+    try {
+      const canvas = await capturarRefExport(refObjetivo);
+      const image = canvas.toDataURL('image/png');
+      descargarDataUrl(image, `tarjeta-coleccion-${sufijo}-${String(nombreDisplay || 'jugador').toLowerCase()}.png`);
+    } catch (error) {
+      alert('No se pudo descargar la tarjeta en este momento.');
+    }
+  };
 
   return (
     <div className="player-screen-shell">
@@ -100,24 +160,72 @@ function TarjetaJugadorPanel({
         onChangePupilo={setPupiloActivo}
       />
 
-      <div className="card" style={{
-        borderRadius: '24px',
-        padding: '22px',
-        background: estiloRareza.background,
-        color: 'white',
-        border: `1px solid ${estiloRareza.border}`,
-        boxShadow: '0 20px 45px rgba(9, 20, 38, 0.32)'
-      }}>
+      {rolUsuario !== 'visita' && (
+        <div className="card history-assist-card" style={{ marginTop: '4px', borderRadius: '18px', background: 'linear-gradient(135deg, #101C2E 0%, #142E45 100%)', color: 'white', border: '1px solid rgba(255,255,255,0.12)' }}>
+          <div className="history-assist-layout">
+            <div className="history-summary-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                <div>
+                  <div style={{ fontSize: '10px', fontWeight: '800', letterSpacing: '0.8px', textTransform: 'uppercase', opacity: 0.85 }}>Historial Deportivo</div>
+                  <strong style={{ fontSize: '16px', fontWeight: '900' }}>Resumen del jugador</strong>
+                </div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '900', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>
+                  <Trophy size={14} /> Nivel {nivelActualNumero}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '8px' }}>
+                <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
+                  <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Asistencia</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px', color: 'var(--verde-victoria)' }}>{pupiloActivo.asistencia || 'N/A'}</strong>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
+                  <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Estado</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px', color: '#00C7BE' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
+                  <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Validacion</span>
+                  <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '4px', fontSize: '13px', color: 'var(--verde-victoria)' }}><ShieldCheck size={14} /> Ficha habilitada</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="assist-cta-card">
+              <button className="assist-cta-btn" onClick={() => setMostrarCredencialAsistencia(true)}>
+                <QrCode size={16} />
+                <span>Valida tu asistencia</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div
+        ref={cardRef}
+        className="card player-id-card official-player-card"
+        style={{
+          borderRadius: '24px',
+          padding: '22px',
+          background: `${estiloRareza.background}, radial-gradient(circle at 20% -10%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 45%)`,
+          color: 'white',
+          border: `1px solid ${estiloRareza.border}`,
+          boxShadow: '0 20px 45px rgba(9, 20, 38, 0.32)'
+        }}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <span style={{ fontSize: '11px', fontWeight: '800', letterSpacing: '0.9px', textTransform: 'uppercase', opacity: 0.85 }}>Tarjeta Oficial 2026</span>
-          <span style={{
-            fontSize: '11px',
-            fontWeight: '900',
-            padding: '6px 10px',
-            borderRadius: '999px',
-            background: 'rgba(255,255,255,0.16)',
-            border: `1px solid ${estiloRareza.border}`
-          }}>{textoRareza}</span>
+          <span style={{ fontSize: '11px', fontWeight: '800', letterSpacing: '0.9px', textTransform: 'uppercase', opacity: 0.85 }}>Tarjeta Oficial CCF 2026</span>
+          <span
+            style={{
+              fontSize: '11px',
+              fontWeight: '900',
+              padding: '6px 10px',
+              borderRadius: '999px',
+              background: 'rgba(255,255,255,0.16)',
+              border: `1px solid ${estiloRareza.border}`
+            }}
+          >
+            {textoRareza}
+          </span>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '14px', alignItems: 'center' }}>
@@ -125,16 +233,15 @@ function TarjetaJugadorPanel({
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '10px', fontSize: '12px', fontWeight: '700', color: 'rgba(255,255,255,0.85)' }}>
               <User size={14} /> Perfil jugador
             </div>
-            <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '900', lineHeight: 1.1 }}>{nombreDisplay}</h2>
-            <h1 style={{ margin: '2px 0 8px 0', fontSize: '28px', fontWeight: '900', lineHeight: 1.1 }}>{apellidoDisplay}</h1>
+            <h1 className="player-lastname-focus" style={{ margin: '2px 0 8px 0' }}>{nombreCompletoDisplay}</h1>
             <div style={{ fontSize: '13px', opacity: 0.9, fontWeight: '700' }}>
-              N° {rolUsuario === 'visita' ? '00' : pupiloActivo.numeroCamiseta} · {rolUsuario === 'visita' ? 'Open' : pupiloActivo.categoria}
+              N° {rolUsuario === 'visita' ? '00' : pupiloActivo.numeroCamiseta} · {categoriaConAnio}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', padding: '10px 12px', borderRadius: '16px', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', maxWidth: '280px' }}>
-              <div style={{ width: '52px', height: '52px', borderRadius: '16px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', padding: '10px 12px', borderRadius: '16px', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', maxWidth: '320px' }}>
+              <div style={{ width: '54px', height: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
                 {clubLogoUrl ? (
-                  <img src={clubLogoUrl} alt={`Logo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={clubLogoUrl} alt={`Logo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                 ) : (
                   <span style={{ fontSize: '16px', fontWeight: '900', color: 'white' }}>{clubIniciales}</span>
                 )}
@@ -144,19 +251,35 @@ function TarjetaJugadorPanel({
                 <strong style={{ display: 'block', fontSize: '13px', fontWeight: '900', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clubNombre}</strong>
               </div>
             </div>
+
+            <div style={{ marginTop: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase' }}>
+              {esFemenino ? <Venus size={14} /> : <Mars size={14} />}
+              Rama {pupiloActivo.rama || 'General'}
+            </div>
           </div>
 
-          <div style={{
-            width: '170px',
-            height: '170px',
-            borderRadius: '18px',
-            background: 'white',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: `0 10px 24px rgba(0,0,0,0.25), inset 0 0 0 2px ${estiloRareza.accent}`
-          }}>
-            <QRCodeSVG value={qrPayload} size={142} bgColor="#FFFFFF" fgColor="#000000" level="M" includeMargin />
+          <div style={{ display: 'grid', gap: '10px', justifyItems: 'center' }}>
+            <div style={{
+              width: '180px',
+              height: '214px',
+              borderRadius: '20px',
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.12) 100%)',
+              border: '1px solid rgba(255,255,255,0.3)',
+              padding: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: `0 10px 24px rgba(0,0,0,0.25), inset 0 0 0 2px ${estiloRareza.accent}`
+            }}>
+              {fotoPrincipal ? (
+                <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '14px' }} />
+              ) : (
+                <div style={{ width: '100%', height: '100%', borderRadius: '14px', background: 'rgba(255,255,255,0.18)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  {esFemenino ? <Venus size={30} /> : <Mars size={30} />}
+                  <span style={{ fontSize: '10px', fontWeight: '800', opacity: 0.9 }}>SIN FOTO</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -172,101 +295,426 @@ function TarjetaJugadorPanel({
           </div>
           <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
             <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Nivel</span>
-            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rolUsuario === 'visita' ? 'MAX' : nivelActual}</strong>
+            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</strong>
           </div>
           <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
             <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Estado</span>
             <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
           </div>
+          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
+            <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Estatura</span>
+            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{pupiloActivo.estatura || 'N/A'}</strong>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
+            <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Peso</span>
+            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{pupiloActivo.peso || 'N/A'}</strong>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
+            <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Mano habil</span>
+            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{pupiloActivo.manoHabil || 'N/A'}</strong>
+          </div>
         </div>
 
-        {rolUsuario !== 'visita' && (
-          <div style={{ marginTop: '12px', padding: '14px', borderRadius: '16px', background: 'rgba(255,255,255,0.11)', border: '1px solid rgba(255,255,255,0.16)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-              <div>
-                <div style={{ fontSize: '10px', fontWeight: '800', letterSpacing: '0.8px', textTransform: 'uppercase', opacity: 0.85 }}>Gamificación</div>
-                <strong style={{ fontSize: '16px', fontWeight: '900' }}>Progreso deportivo</strong>
+      </div>
+
+      <div className="collection-style-switch" role="radiogroup" aria-label="Estilo de descarga">
+        <button
+          type="button"
+          className={estiloColeccion === 'coleccionista' ? 'active' : ''}
+          onClick={() => setEstiloColeccion('coleccionista')}
+        >
+          Estilo Coleccionista
+        </button>
+        <button
+          type="button"
+          className={estiloColeccion === 'tecnica' ? 'active' : ''}
+          onClick={() => setEstiloColeccion('tecnica')}
+        >
+          Estilo Tecnica
+        </button>
+      </div>
+      <div className="card collection-panel" style={{ marginTop: '8px', borderRadius: '18px', border: '1px solid var(--borde-suave)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <h4 className="collection-title" style={{ margin: 0, fontSize: '15px', fontWeight: '900', color: 'var(--azul-marino)' }}>Ver mi tarjeta de coleccion</h4>
+          <button className="player-action-btn alt" onClick={descargarTarjetaColeccionActual} style={{ padding: '8px 12px' }}>
+            <Download size={14} /> Descargar
+          </button>
+        </div>
+
+        <div className="collection-style-switch mt-10" role="radiogroup" aria-label="Vista tarjeta de coleccion">
+          <button
+            type="button"
+            className={vistaColeccion === 'frente' ? 'active' : ''}
+            onClick={() => setVistaColeccion('frente')}
+          >
+            Frente
+          </button>
+          <button
+            type="button"
+            className={vistaColeccion === 'reverso' ? 'active' : ''}
+            onClick={() => setVistaColeccion('reverso')}
+          >
+            Reverso
+          </button>
+        </div>
+
+        <div className="collection-preview-wrap" style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
+          {vistaColeccion === 'frente' ? (
+            <div className="player-collection-preview preview-front" style={{
+              width: '220px',
+              aspectRatio: '5 / 7',
+              borderRadius: '16px',
+              padding: '12px',
+              background: estiloRareza.background,
+              color: 'white',
+              boxShadow: '0 12px 24px rgba(15,23,42,0.25)',
+              display: 'grid',
+              gridTemplateRows: 'auto auto 1fr auto'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', fontWeight: '900', textTransform: 'uppercase' }}>
+                <span>CCF 2026</span>
+                <span>#{serialTexto}</span>
               </div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '900', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>
-                <Trophy size={14} /> Nivel {nivelActual}
+              <div style={{ marginTop: '6px', fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: '14px', fontWeight: '900', textTransform: 'uppercase' }}>
+                {nombreDisplay} {apellidoDisplay}
+              </div>
+              <div style={{ marginTop: '8px', borderRadius: '12px', overflow: 'hidden', background: 'rgba(255,255,255,0.2)' }}>
+                {fotoPrincipal ? (
+                  <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ height: '100%', minHeight: '130px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {esFemenino ? <Venus size={24} /> : <Mars size={24} />}
+                  </div>
+                )}
+              </div>
+              <div style={{ marginTop: '8px', fontSize: '10px', fontWeight: '800' }}>
+                Nivel {nivelActualNumero} · {pupiloActivo.categoria || 'General'}
               </div>
             </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-                <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>XP</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{xpActual} XP</strong>
+          ) : (
+            <div className="player-collection-preview preview-back" style={{
+              width: '220px',
+              aspectRatio: '5 / 7',
+              borderRadius: '16px',
+              padding: '12px',
+              background: 'linear-gradient(160deg, #0b1d3a 0%, #133a66 46%, #0e2b4d 100%)',
+              color: 'white',
+              boxShadow: '0 12px 24px rgba(15,23,42,0.25)',
+              display: 'grid',
+              gridTemplateRows: 'auto auto 1fr auto'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', fontWeight: '900', textTransform: 'uppercase' }}>
+                <span>Reverso CCF</span>
+                <span>#{serialTexto}</span>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-                <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Puntos</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{puntosGamificacion}</strong>
+              <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '900' }}>{pupiloActivo.nombre || 'Jugador'}</div>
+              <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '10px', fontWeight: '800' }}>
+                <span>Nivel {nivelActualNumero}</span>
+                <span>XP {xpActual}</span>
+                <span>Racha {rachaActual} dias</span>
+                <span>Puntos {puntosGamificacion}</span>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-                <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Racha</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rachaActual} días</strong>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-                <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Siguiente nivel</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{xpParaSiguienteNivel} XP</strong>
-              </div>
-            </div>
-
-            <div style={{ marginTop: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', opacity: 0.85 }}>
-                <span>Progreso al próximo nivel</span>
-                <span>{progresoNivel}%</span>
-              </div>
-              <div style={{ height: '10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
-                <div style={{ width: `${progresoNivel}%`, height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg, #00C7BE 0%, #FFE066 100%)' }} />
+              <div style={{ marginTop: '8px', fontSize: '9px', opacity: 0.9 }}>
+                Formato 2.5 x 3.5 in vertical
               </div>
             </div>
+          )}
+        </div>
+      </div>
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-              {insignias.map((insignia) => (
-                <span key={insignia} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '900' }}>
-                  <BadgeCheck size={13} /> {insignia}
-                </span>
-              ))}
+      {rolUsuario !== 'visita' && (
+        <div className="card" style={{ marginTop: '14px', borderRadius: '18px', background: 'linear-gradient(135deg, #101C2E 0%, #142E45 100%)', color: 'white', border: '1px solid rgba(255,255,255,0.12)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: '800', letterSpacing: '0.8px', textTransform: 'uppercase', opacity: 0.85 }}>Gamificación</div>
+              <strong style={{ fontSize: '16px', fontWeight: '900' }}>Progreso deportivo</strong>
+            </div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '900', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>
+              <Trophy size={14} /> Nivel {nivelActualNumero}
             </div>
           </div>
-        )}
-      </div>
-      <p className="text-center mt-5" style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '800' }}>
-        Escanea este QR en portería para validar asistencia. RUT asociado: <strong>{rutValidacion}</strong>
-      </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
+            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
+              <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>XP</span>
+              <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{xpActual} XP</strong>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
+              <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Puntos</span>
+              <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{puntosGamificacion}</strong>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
+              <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Racha</span>
+              <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rachaActual} dias</strong>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
+              <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Siguiente nivel</span>
+              <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{xpParaSiguienteNivel} XP</strong>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', opacity: 0.85 }}>
+              <span>Progreso al proximo nivel</span>
+              <span>{progresoNivel}%</span>
+            </div>
+            <div style={{ height: '10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
+              <div style={{ width: `${progresoNivel}%`, height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg, #00C7BE 0%, #FFE066 100%)' }} />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+            {insignias.map((insignia) => (
+              <span key={insignia} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '900' }}>
+                <BadgeCheck size={13} /> {insignia}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {rolUsuario !== 'visita' && (
         <>
-          <h3 className="section-title mt-20">Ficha Atlética e Indumentaria</h3>
-          <div className="caja-doble-grid mb-15">
-            <div className="card sub-caja-card metric-card" style={{ padding: '15px' }}>
-              <h5 className="sub-caja-title" style={{ fontSize: '11px' }}><Target size={14} /> Biometría</h5>
-              <div className="desglose-row"><span>Estatura:</span><strong>{pupiloActivo.estatura}</strong></div>
-              <div className="desglose-row"><span>Peso:</span><strong>{pupiloActivo.peso}</strong></div>
-              <div className="desglose-row"><span>Mano hábil:</span><strong>{pupiloActivo.manoHabil}</strong></div>
-            </div>
-
-            <div className="card sub-caja-card metric-card" style={{ padding: '15px' }}>
-              <h5 className="sub-caja-title" style={{ fontSize: '11px' }}><Shirt size={14} /> Tallas</h5>
-              <div className="desglose-row"><span>Camiseta:</span><strong>{pupiloActivo.tallaCamiseta}</strong></div>
-              <div className="desglose-row"><span>Short:</span><strong>{pupiloActivo.tallaShort}</strong></div>
-              <div className="desglose-row mt-10 text-center">
-                <span className="badge-urgente" style={{ background: pupiloActivo.poleraEntregada ? 'var(--verde-victoria)' : '#FF3B30', width: '100%', display: 'block', padding: '8px 0' }}>
-                  {pupiloActivo.poleraEntregada ? 'ROPA ENTREGADA ✓' : 'FALTA ENTREGA'}
-                </span>
+          {mostrarIndumentaria && (
+            <>
+              <h3 className="section-title mt-20">Gestion de Indumentaria</h3>
+              <div className="caja-doble-grid mb-15">
+              <div className="card sub-caja-card metric-card" style={{ padding: '15px' }}>
+                <h5 className="sub-caja-title" style={{ fontSize: '11px' }}><Shirt size={14} /> Indumentaria (solo administración)</h5>
+                <div className="desglose-row"><span>Camiseta:</span><strong>{pupiloActivo.tallaCamiseta}</strong></div>
+                <div className="desglose-row"><span>Short:</span><strong>{pupiloActivo.tallaShort}</strong></div>
+                <div className="desglose-row mt-10 text-center">
+                  <span className="badge-urgente" style={{ background: pupiloActivo.poleraEntregada ? 'var(--verde-victoria)' : '#FF3B30', width: '100%', display: 'block', padding: '8px 0' }}>
+                    {pupiloActivo.poleraEntregada ? 'ROPA ENTREGADA ✓' : 'FALTA ENTREGA'}
+                  </span>
+                </div>
               </div>
-            </div>
-          </div>
+              </div>
+            </>
+          )}
 
-          <div className="card history-card" style={{ background: 'linear-gradient(135deg, #1A222D, #0B1017)', color: 'white', border: 'none' }}>
-            <h4 className="form-subtitle" style={{ color: '#00C7BE', margin: '0 0 15px 0' }}>📊 Historial Deportivo</h4>
-            <div className="desglose-row"><span>Asistencia a entrenamientos:</span><strong style={{ color: 'var(--verde-victoria)' }}>{pupiloActivo.asistencia}</strong></div>
-            <div className="desglose-row"><span>Estado del Jugador:</span><strong style={{ color: '#00C7BE' }}>{pupiloActivo.estadoDeportivo}</strong></div>
-            <div className="desglose-row"><span>Beca Asignada:</span><strong>{pupiloActivo.beca}</strong></div>
-            <div className="desglose-row mt-10"><span>Validación:</span><strong style={{ color: 'var(--verde-victoria)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><ShieldCheck size={14} /> Ficha habilitada</strong></div>
-          </div>
         </>
       )}
+
+      {mostrarCredencialAsistencia && (
+        <div className="attendance-overlay" role="dialog" aria-modal="true">
+          <div className="attendance-card">
+            <button className="attendance-close" onClick={() => setMostrarCredencialAsistencia(false)}>
+              <X size={18} />
+            </button>
+            <div className="attendance-eyebrow">Credencial de asistencia</div>
+            <h3>{pupiloActivo.nombre || 'Jugador'}</h3>
+            <div className="attendance-meta">
+              <span>{pupiloActivo.categoria || 'General'}</span>
+              <span>{clubNombre}</span>
+              <span>{etiquetaClub}</span>
+            </div>
+            <div className="attendance-qr-wrap">
+              <QRCodeSVG value={qrPayload} size={178} bgColor="#FFFFFF" fgColor="#0D2244" level="M" includeMargin />
+            </div>
+            <p>Presenta este QR al staff para registrar tu asistencia.</p>
+          </div>
+        </div>
+      )}
+
+      <div aria-hidden="true" style={{ position: 'fixed', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>
+        <div
+          ref={cardFrontExportRef}
+          className="card"
+          style={{
+            width: `${EXPORT_WIDTH}px`,
+            height: `${EXPORT_HEIGHT}px`,
+            borderRadius: '26px',
+            padding: '30px',
+            display: 'flex',
+            flexDirection: 'column',
+            background: `${estiloRareza.background}, radial-gradient(circle at 18% -5%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 40%)`,
+            color: 'white',
+            border: `1px solid ${estiloRareza.border}`,
+            boxShadow: '0 20px 45px rgba(9, 20, 38, 0.32)'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+            <span style={{ fontSize: '13px', fontWeight: '900', letterSpacing: '0.9px', textTransform: 'uppercase', opacity: 0.9 }}>Tarjeta Oficial CCF 2026</span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={{ fontSize: '12px', fontWeight: '900', padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>{textoRareza}</span>
+              <span style={{ fontSize: '11px', fontWeight: '900', padding: '7px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)' }}>#{serialTexto}</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '20px', alignItems: 'center' }}>
+            <div>
+              <h1 style={{ margin: '8px 0 10px', fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: '52px', lineHeight: 1, letterSpacing: '1.2px', textTransform: 'uppercase' }}>{nombreCompletoDisplay}</h1>
+              <div style={{ fontSize: '20px', fontWeight: '800', opacity: 0.95 }}>
+                N° {rolUsuario === 'visita' ? '00' : pupiloActivo.numeroCamiseta} · {categoriaConAnio}
+              </div>
+
+              <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '14px', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.16)', maxWidth: '360px' }}>
+                <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                  {clubLogoUrl ? (
+                    <img src={clubLogoUrl} alt={`Logo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  ) : (
+                    <span style={{ fontSize: '20px', fontWeight: '900' }}>{clubIniciales}</span>
+                  )}
+                </div>
+                <div>
+                  <span style={{ display: 'block', fontSize: '11px', fontWeight: '800', letterSpacing: '0.7px', textTransform: 'uppercase', opacity: 0.85 }}>Club</span>
+                  <strong style={{ fontSize: '16px', fontWeight: '900' }}>{clubNombre}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ width: '280px', height: '364px', borderRadius: '22px', background: 'linear-gradient(180deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.12) 100%)', border: '1px solid rgba(255,255,255,0.3)', padding: '10px', boxShadow: `0 10px 24px rgba(0,0,0,0.25), inset 0 0 0 2px ${estiloRareza.accent}` }}>
+              {fotoPrincipal ? (
+                <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '16px' }} />
+              ) : (
+                <div style={{ width: '100%', height: '100%', borderRadius: '16px', background: 'rgba(255,255,255,0.18)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  {esFemenino ? <Venus size={46} /> : <Mars size={46} />}
+                  <span style={{ fontSize: '12px', fontWeight: '800' }}>SIN FOTO</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 'auto' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+              <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
+                <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Posicion</span>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{rolUsuario === 'visita' ? 'N/A' : pupiloActivo.posicion}</strong>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
+                <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Nivel</span>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</strong>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
+                <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Estado</span>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
+              </div>
+            </div>
+            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', opacity: 0.92 }}>
+              <span>Formato 2.5 x 3.5 in (vertical)</span>
+              <span>Temporada 2026</span>
+            </div>
+          </div>
+        </div>
+
+        <div
+          ref={cardBackRef}
+          className="card"
+          style={{
+            width: `${EXPORT_WIDTH}px`,
+            height: `${EXPORT_HEIGHT}px`,
+            borderRadius: '24px',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            background: 'linear-gradient(160deg, #0b1d3a 0%, #133a66 46%, #0e2b4d 100%)',
+            color: 'white',
+            border: '1px solid rgba(255,255,255,0.14)',
+            boxShadow: '0 20px 45px rgba(9, 20, 38, 0.32)'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <span style={{ fontSize: '12px', fontWeight: '900', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Reverso Coleccionable CCF</span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: '900', padding: '5px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>{textoRareza}</span>
+              <span style={{ fontSize: '11px', fontWeight: '900', padding: '5px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)' }}>#{serialTexto}</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '16px', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '28px', fontWeight: '900', lineHeight: 1.1 }}>{pupiloActivo.nombre || 'Jugador'}</h3>
+              <p style={{ margin: '8px 0 0', fontSize: '13px', opacity: 0.9, fontWeight: '700' }}>
+                Categoria: {pupiloActivo.categoria || 'General'} · Club: {clubNombre}
+              </p>
+            </div>
+            <div style={{ width: '78px', height: '78px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              {clubLogoUrl ? (
+                <img src={clubLogoUrl} alt={`Logo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              ) : (
+                <span style={{ fontSize: '20px', fontWeight: '900' }}>{clubIniciales}</span>
+              )}
+            </div>
+          </div>
+
+          {estiloColeccion === 'coleccionista' ? (
+            <>
+              <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>Nivel</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '16px' }}>{nivelActualNumero}</strong>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>XP</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '16px' }}>{xpActual}</strong>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>Racha</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '16px' }}>{rachaActual} dias</strong>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase' }}>
+                  <span>Progreso</span>
+                  <span>{progresoNivel}%</span>
+                </div>
+                <div style={{ height: '10px', borderRadius: '999px', background: 'rgba(255,255,255,0.18)', overflow: 'hidden' }}>
+                  <div style={{ width: `${progresoNivel}%`, height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg, #00C7BE 0%, #FFE066 100%)' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '14px' }}>
+                {insignias.map((insignia) => (
+                  <span key={`back-${insignia}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '900' }}>
+                    <BadgeCheck size={13} /> {insignia}
+                  </span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>POS</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{pupiloActivo.posicion || 'N/A'}</strong>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>PTS</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{puntosGamificacion}</strong>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>EST</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{pupiloActivo.estatura || 'N/A'}</strong>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
+                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>PESO</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{pupiloActivo.peso || 'N/A'}</strong>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.18)', padding: '10px 12px', background: 'rgba(255,255,255,0.08)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', fontWeight: '800' }}>
+                  <span>Estado: {pupiloActivo.estadoDeportivo || 'Activo'}</span>
+                  <span>Beca: {pupiloActivo.beca || 'Sin beca'}</span>
+                  <span>XP total: {xpActual}</span>
+                  <span>Nivel: {nivelActualNumero}</span>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '14px', fontSize: '11px', opacity: 0.9, fontWeight: '700' }}>
+                Perfil tecnico del jugador para seguimiento deportivo y evaluacion interna del club.
+              </div>
+            </>
+          )}
+
+          <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', opacity: 0.9 }}>
+            <span>Formato 2.5 x 3.5 in</span>
+            <span>Temporada 2026</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -17,6 +17,11 @@ function PublicFacadePanel({
   galeriaPublica,
   partidos,
 }) {
+  const abrirContactoWhatsApp = () => {
+    const mensaje = encodeURIComponent('Hola! Quiero ser parte de la familia deportiva del Club Centro de Cultura Física.');
+    window.open(`https://wa.me/56953297869?text=${mensaje}`, '_blank');
+  };
+
   return (
     <>
       {vistaPublica === 'inicio' && (
@@ -37,9 +42,15 @@ function PublicFacadePanel({
               <button className="btn-secondary access-visits-btn mt-15" onClick={() => abrirFormularioLogin('invitado')}>
                 <QrCode size={18} /> Acceso Visitas
               </button>
-              <button className="btn-whatsapp want-club-btn mt-15" onClick={() => window.open('https://wa.me/56953297869?text=Hola!%20Quiero%20conocer%20más%20sobre%20el%20Club%20Centro%20de%20Cultura%20Física%20de%20Viña%20del%20Mar', '_blank')}>
-                Quiero ser parte del Club
-              </button>
+              <div className="cta-contacto-card" style={{ borderRadius: '26px', boxShadow: '0 14px 34px rgba(15,23,42,0.14)', marginTop: '22px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: '900' }}>Club Centro de Cultura Física</h3>
+                <p style={{ margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.5' }}>
+                  ¿Quieres ser parte de nuestra familia deportiva?
+                </p>
+                <button className="btn-contacto" onClick={abrirContactoWhatsApp}>
+                  Contáctanos, haz clic acá
+                </button>
+              </div>
             </div>
           ) : (
             <form className="login-form-real fade-in" onSubmit={handleLoginSubmit} style={{ borderRadius: '24px' }}>
@@ -107,16 +118,6 @@ function PublicFacadePanel({
               ))}
             </div>
           )}
-
-          <div className="cta-contacto-card" style={{ borderRadius: '26px', boxShadow: '0 14px 34px rgba(15,23,42,0.14)' }}>
-            <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: '900' }}>Club Centro de Cultura Física</h3>
-            <p style={{ margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.5' }}>
-              ¿Quieres ser parte de nuestra familia deportiva?<br />Conoce nuestros programas y catálogo de servicios.
-            </p>
-            <button className="btn-contacto" onClick={() => alert('Gracias por tu interés. Un representante del Club Centro de Cultura Física se pondrá en contacto contigo pronto.')}>
-              Contáctanos, haz clic acá
-            </button>
-          </div>
         </div>
       )}
 
