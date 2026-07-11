@@ -1777,8 +1777,28 @@ function App() {
   const esJugadorAutenticado = normalizarRol(rolUsuario || usuarioAutenticado?.rol || '') === 'jugador';
   const rutUsuarioAutenticado = normalizarRutComparacion(usuarioAutenticado?.rut || '');
 
+  const puntajeCalidadPupilo = (jugador = {}) => {
+    const anio = obtenerAnioNacimientoJugador(jugador);
+    const numero = obtenerNumeroCamisetaJugador(jugador, 0);
+    const rutRaw = String(jugador.rut || '').trim();
+    const rutFmt = String(usuarioAutenticado?.rut || '').trim();
+
+    let score = 0;
+    if (rutRaw && rutFmt && rutRaw === rutFmt) score += 5;
+    if (anio) score += 3;
+    if (numero > 0) score += 3;
+    if (String(jugador.fecha_nacimiento || '').trim()) score += 2;
+    return score;
+  };
+
   const pupilosDisponibles = esJugadorAutenticado
-    ? pupilosDisponiblesBase.filter((j) => normalizarRutComparacion(j.rut) === rutUsuarioAutenticado)
+    ? (() => {
+        const propios = pupilosDisponiblesBase.filter((j) => normalizarRutComparacion(j.rut) === rutUsuarioAutenticado);
+        if (propios.length <= 1) return propios;
+
+        const mejor = [...propios].sort((a, b) => puntajeCalidadPupilo(b) - puntajeCalidadPupilo(a))[0];
+        return mejor ? [mejor] : propios;
+      })()
     : pupilosDisponiblesBase;
 
   useEffect(() => {
