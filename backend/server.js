@@ -21,6 +21,19 @@ let lastBackupRunStatus = null;
 let backupCronTask = null;
 const execFileAsync = promisify(execFile);
 
+const serializeError = (error) => {
+  const e = error || {};
+  const meta = e.$metadata || {};
+  return {
+    name: e.name || null,
+    message: e.message || String(e),
+    code: e.code || e.Code || null,
+    statusCode: e.statusCode || meta.httpStatusCode || null,
+    requestId: e.requestId || meta.requestId || null,
+    extendedRequestId: meta.extendedRequestId || null,
+  };
+};
+
 const resolveRuntimePath = (rawPath = '') => {
   const cleaned = String(rawPath || '').trim();
   if (!cleaned) return '';
@@ -300,11 +313,13 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
 
     return { ok: true, ...manifestPayload };
   } catch (error) {
+    const errorDetail = serializeError(error);
     const failurePayload = {
       status: 'error',
       failedAt: new Date().toISOString(),
       trigger,
-      message: error.message,
+      message: errorDetail.message,
+      detail: errorDetail,
     };
     try {
       writeBackupManifest({ manifestPath: cfg.manifestPath, payload: failurePayload });
@@ -316,10 +331,11 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
       status: 'error',
       startedAt,
       finishedAt: new Date().toISOString(),
-      error: error.message,
+      error: errorDetail.message,
+      detail: errorDetail,
     };
 
-    return { ok: false, error: error.message };
+    return { ok: false, error: errorDetail.message, detail: errorDetail };
   } finally {
     isBackupRunning = false;
   }
