@@ -940,6 +940,7 @@ const ensureCuentasExtendedColumns = async () => {
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS monto_mensual_override DECIMAL(12,2)`,
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS condiciones_pago TEXT`,
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fecha_corte_utm DATE`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS permisos_override JSONB DEFAULT '{}'::jsonb`,
   ];
 
   for (const statement of ddl) {
@@ -1879,6 +1880,7 @@ app.post('/api/cuentas', async (req, res) => {
     monto_mensual_override,
     condiciones_pago,
     fecha_corte_utm,
+    permisos_override,
     forzar_clave,
     foto_perfil_url,
     logo_url,
@@ -1906,10 +1908,10 @@ app.post('/api/cuentas', async (req, res) => {
         num_segundo_contacto, es_socio, fecha_ingreso_socio, rol, perfil_principal,
         cargo_directiva, socio_admin, aprobado_superadmin, acceso_nivel,
         utm_valor_referencia, monto_mensual_base, monto_mensual_override,
-        condiciones_pago, fecha_corte_utm, forzar_clave, foto_perfil_url,
+        condiciones_pago, fecha_corte_utm, permisos_override, forzar_clave, foto_perfil_url,
         estado, autorizacion_imagen, dia_pago_acordado
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35
       ) RETURNING *`,
       [
         correo,
@@ -1941,6 +1943,7 @@ app.post('/api/cuentas', async (req, res) => {
         monto_mensual_override || null,
         condiciones_pago || null,
         fecha_corte_utm || null,
+        permisos_override && typeof permisos_override === 'object' ? JSON.stringify(permisos_override) : JSON.stringify({}),
         forzar_clave ?? false,
         logoPerfilUrl,
         estado || 'activo',
@@ -1994,6 +1997,7 @@ app.put('/api/cuentas/:id', async (req, res) => {
     monto_mensual_override,
     condiciones_pago,
     fecha_corte_utm,
+    permisos_override,
     forzar_clave,
     foto_perfil_url,
     estado,
@@ -2040,13 +2044,14 @@ app.put('/api/cuentas/:id', async (req, res) => {
         monto_mensual_override = COALESCE($27, monto_mensual_override),
         condiciones_pago = COALESCE($28, condiciones_pago),
         fecha_corte_utm = COALESCE($29, fecha_corte_utm),
-        forzar_clave = COALESCE($30, forzar_clave),
-        foto_perfil_url = COALESCE($31, foto_perfil_url),
-        estado = COALESCE($32, estado),
-        autorizacion_imagen = COALESCE($33, autorizacion_imagen),
-        dia_pago_acordado = COALESCE($34, dia_pago_acordado),
+        permisos_override = COALESCE($30::jsonb, permisos_override),
+        forzar_clave = COALESCE($31, forzar_clave),
+        foto_perfil_url = COALESCE($32, foto_perfil_url),
+        estado = COALESCE($33, estado),
+        autorizacion_imagen = COALESCE($34, autorizacion_imagen),
+        dia_pago_acordado = COALESCE($35, dia_pago_acordado),
         updated_at = NOW()
-      WHERE id = $35
+      WHERE id = $36
       RETURNING *`,
       [
         correo || null,
@@ -2078,6 +2083,7 @@ app.put('/api/cuentas/:id', async (req, res) => {
         monto_mensual_override || null,
         condiciones_pago || null,
         fecha_corte_utm || null,
+        permisos_override && typeof permisos_override === 'object' ? JSON.stringify(permisos_override) : null,
         forzar_clave,
         logoPerfilUrl,
         estado || null,

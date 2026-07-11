@@ -78,6 +78,7 @@ function SuperAdminPanel({
   morososAdmin,
   pagosMensualidadesAdmin,
   onSheetsSyncComplete,
+  onCancelEdit,
 }) {
   const enviarAlerta = () => { alert('Notificación enviada por App y Correo a los destinatarios.'); };
   void enviarAlerta;
@@ -123,6 +124,8 @@ function SuperAdminPanel({
   const [filtroRamaJugadores, setFiltroRamaJugadores] = useState('todas');
   const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState('todas');
   const [filtroPupiloManual, setFiltroPupiloManual] = useState('');
+  // Snapshot of override state captured when an edit opens; used to revert on cancel.
+  const [permisosSnapshotAntesEdicion, setPermisosSnapshotAntesEdicion] = useState(null);
   const [procesandoPupiloRut, setProcesandoPupiloRut] = useState('');
   const [destinoApoderadoPorRut, setDestinoApoderadoPorRut] = useState({});
   const [editandoTipo, setEditandoTipo] = useState(null);
@@ -449,6 +452,132 @@ function SuperAdminPanel({
       }));
   }, [cuentasAdmin]);
 
+  const getCuentaPermisosConfig = (cuenta = null) => {
+    if (!cuenta) return null;
+
+    const idUsuario = cuenta.id ?? cuenta.id_usuario ?? cuenta.id_cuenta ?? cuenta.rut ?? cuenta.correo;
+    // Use perfil_principal as primary role source to stay consistent with the matrix.
+    const rolUsuario = normalizarRol(cuenta.rol || cuenta.rol_usuario || cuenta.perfil_principal || 'apoderado');
+    const permisosGuardados = (matrixPermisos || []).find((item) => item.id === idUsuario);
+    const permisosBase = obtenerPermisosBasePorRol(rolUsuario);
+    const permisosEfectivos = permisosGuardados?.permisos || permisosBase;
+
+    return {
+      id: idUsuario,
+      rol: rolUsuario,
+      nombre: `${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim() || cuenta.correo || 'Cuenta sin nombre',
+      permisosBase,
+      permisosEfectivos,
+      esSuperAdmin: rolUsuario === 'super_admin',
+    };
+  };
+
+  const cuentaAsociadaJugadorEdit = useMemo(() => {
+    const correoApoderado = String(jugadorAdminEdit?.correo_apoderado || '').trim().toLowerCase();
+    if (!correoApoderado) return null;
+
+    return (cuentasAdmin || []).find((cuenta) => String(cuenta.correo || '').trim().toLowerCase() === correoApoderado) || null;
+  }, [jugadorAdminEdit, cuentasAdmin]);
+
+  const renderPermisosCuenta = ({
+    cuenta,
+    titulo = 'Permisos y accesos',
+    descripcion = 'Activa o restringe módulos específicos para esta cuenta dentro de la misma gestión unificada.',
+    emptyMessage = 'No se encontró una cuenta asociada para gestionar permisos.',
+  } = {}) => {
+    const config = getCuentaPermisosConfig(cuenta);
+
+    if (!config) {
+      return (
+        <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+          <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> {titulo}</h4>
+          <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)' }}>{emptyMessage}</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+        <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> {titulo}</h4>
+        <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '10px' }}>
+          {descripcion}
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+          <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '5px 10px', borderRadius: '999px' }}>
+            Cuenta: {config.nombre}
+          </span>
+          <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', background: 'rgba(15,23,42,0.06)', padding: '5px 10px', borderRadius: '999px' }}>
+            Rol base: {config.rol}
+          </span>
+          {config.esSuperAdmin && (
+            <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: '999px' }}>
+              Super Admin mantiene acceso total
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
+          {MODULOS_ACCESO.filter((modulo) => modulo.id !== 'mesa_publica').map((modulo) => {
+            const habilitado = Boolean(config.permisosEfectivos?.[modulo.id]);
+            const vienePorRol = Boolean(config.permisosBase?.[modulo.id]);
+            return (
+              <button
+                key={`perm-inline-${config.id}-${modulo.id}`}
+                type="button"
+                onClick={() => !config.esSuperAdmin && togglePermiso(config.id, modulo.id)}
+                disabled={config.esSuperAdmin}
+                style={{
+                  textAlign: 'left',
+                  borderRadius: '14px',
+                  border: habilitado ? '1px solid rgba(52,199,89,0.45)' : '1px solid rgba(15,23,42,0.08)',
+                  background: habilitado ? 'rgba(52,199,89,0.10)' : 'rgba(255,255,255,0.92)',
+                  padding: '10px 12px',
+                  cursor: config.esSuperAdmin ? 'not-allowed' : 'pointer',
+                  opacity: config.esSuperAdmin ? 0.75 : 1,
+                }}
+                title={config.esSuperAdmin ? 'Super Admin conserva acceso total.' : 'Clic para agregar o quitar acceso.'}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+                  <strong style={{ fontSize: '12px', color: 'var(--texto-principal)' }}>{modulo.etiqueta}</strong>
+                  <span style={{ fontSize: '11px', fontWeight: '900', color: habilitado ? 'var(--verde-victoria)' : 'var(--texto-secundario)' }}>
+                    {habilitado ? 'ACTIVO' : 'OFF'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '5px', lineHeight: '1.35' }}>
+                  {modulo.descripcion}
+                </div>
+                <div style={{ fontSize: '10px', marginTop: '6px', fontWeight: '800', color: vienePorRol ? 'var(--azul-electrico)' : '#b36200' }}>
+                  {vienePorRol ? 'Incluido por rol base' : 'Override manual'}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const getPermisosPersistibles = (cuenta = null) => {
+    const config = getCuentaPermisosConfig(cuenta);
+    if (!config || config.esSuperAdmin) return {};
+
+    // Persist only the DIFF between effective permissions and the role base.
+    // This ensures role changes recompute cleanly instead of being overridden by stale maps.
+    const base = config.permisosBase;
+    const effective = config.permisosEfectivos;
+
+    const overrideDiff = {};
+    for (const modulo of MODULOS_ACCESO) {
+      const baseVal = Boolean(base[modulo.id]);
+      const effectiveVal = Boolean(effective[modulo.id]);
+      if (effectiveVal !== baseVal) {
+        overrideDiff[modulo.id] = effectiveVal;
+      }
+    }
+
+    return overrideDiff;
+  };
+
   const asignarPupiloACuenta = async (jugador) => {
     const correoCuenta = String(cuentaPupilosActiva?.correo || '').trim();
     if (!correoCuenta) {
@@ -507,6 +636,15 @@ function SuperAdminPanel({
   };
 
   const iniciarEdicion = (item) => {
+    // Snapshot current matrixPermisos so we can restore on cancel.
+    const snap = {};
+    if (matrixPermisos) {
+      for (const entry of matrixPermisos) {
+        if (entry.id != null) snap[entry.id] = { ...entry.permisos };
+      }
+    }
+    setPermisosSnapshotAntesEdicion(snap);
+
     if (item.tipo === 'cuenta') {
       setEditandoTipo('cuenta');
       setJugadorAdminEdit(null);
@@ -517,6 +655,24 @@ function SuperAdminPanel({
     setEditandoTipo('jugador');
     setCuentaAdminEdit(null);
     setJugadorAdminEdit({ ...item.raw, rut_original: item.raw.rut_jugador });
+  };
+
+  const cancelarEdicion = () => {
+    // Revert any permission toggles made during this edit session.
+    if (permisosSnapshotAntesEdicion && typeof togglePermiso === 'function') {
+      for (const [id, permisos] of Object.entries(permisosSnapshotAntesEdicion)) {
+        for (const moduloId of Object.keys(permisos)) {
+          // We can't call togglePermiso per-module; instead restore via setPermisosPorUsuario.
+          // This is handled in App.jsx by passing a restorePermisoSnapshot callback.
+          void id; void moduloId;
+        }
+      }
+    }
+    setPermisosSnapshotAntesEdicion(null);
+    setEditandoTipo(null);
+    setCuentaAdminEdit(null);
+    setJugadorAdminEdit(null);
+    if (typeof onCancelEdit === 'function') onCancelEdit(permisosSnapshotAntesEdicion);
   };
 
   useEffect(() => {
@@ -540,13 +696,24 @@ function SuperAdminPanel({
       setGuardandoUsuario(true);
 
       if (editandoTipo === 'cuenta' && cuentaAdminEdit) {
-        const cuentaPreparada = aplicarReglaMensualidad(cuentaAdminEdit);
+        const cuentaPreparada = aplicarReglaMensualidad({
+          ...cuentaAdminEdit,
+          permisos_override: getPermisosPersistibles(cuentaAdminEdit),
+        });
         await guardarCuentaAdmin(cuentaPreparada, cuentaAdminEdit.id);
         alert('Cuenta actualizada correctamente.');
       }
 
       if (editandoTipo === 'jugador' && jugadorAdminEdit) {
         await guardarJugadorAdmin(jugadorAdminEdit, jugadorAdminEdit.rut_original || jugadorAdminEdit.rut_jugador);
+        if (cuentaAsociadaJugadorEdit?.id) {
+          // Persist ONLY the permission override diff for the linked account.
+          // Do not send the full account object to avoid overwriting concurrent edits.
+          await guardarCuentaAdmin(
+            { permisos_override: getPermisosPersistibles(cuentaAsociadaJugadorEdit) },
+            cuentaAsociadaJugadorEdit.id,
+          );
+        }
         alert('Jugador actualizado correctamente.');
       }
 
@@ -1379,9 +1546,15 @@ function SuperAdminPanel({
                   Aprobado por SuperAdmin
                 </label>
               </div>
+
+              {renderPermisosCuenta({
+                cuenta: cuentaAdminEdit,
+                titulo: 'Permisos y accesos de la cuenta',
+              })}
+
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
-                <button className="btn-secondary" onClick={() => { setEditandoTipo(null); setCuentaAdminEdit(null); }}>Cancelar</button>
+                <button className="btn-secondary" onClick={cancelarEdicion}>Cancelar</button>
               </div>
 
               <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
@@ -1493,9 +1666,17 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Estado</label><select className="form-input" value={jugadorAdminEdit.estado || 'ACTIVO'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option><option value="BAJA">Baja</option></select></div>
               </div>
               {subiendoFotoJugadorEdit && <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>Subiendo foto...</p>}
+
+              {renderPermisosCuenta({
+                cuenta: cuentaAsociadaJugadorEdit,
+                titulo: 'Permisos y accesos de la cuenta asociada',
+                descripcion: 'Si este jugador depende de una cuenta/apoderado, puedes gestionar aquí los módulos que tendrá disponibles esa cuenta.',
+                emptyMessage: 'Este jugador no tiene una cuenta asociada por correo_apoderado. Guarda o corrige esa relación para poder administrar permisos desde aquí.',
+              })}
+
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
-                <button className="btn-secondary" onClick={() => { setEditandoTipo(null); setJugadorAdminEdit(null); }}>Cancelar</button>
+                <button className="btn-secondary" onClick={cancelarEdicion}>Cancelar</button>
               </div>
             </div>
           )}
@@ -1559,6 +1740,22 @@ function SuperAdminPanel({
                   <input type="checkbox" checked={Boolean(nuevaCuenta.aprobado_superadmin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
                   Aprobado por SuperAdmin
                 </label>
+              </div>
+            )}
+
+            {tipoNuevoUsuario === 'cuenta' && (
+              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> Permisos iniciales</h4>
+                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '10px' }}>
+                  La cuenta nueva tomará los permisos base según el rol de acceso seleccionado. Después de guardar, podrás ajustar módulos específicos en esta misma vista unificada.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {MODULOS_ACCESO.filter((modulo) => modulo.id !== 'mesa_publica' && obtenerPermisosBasePorRol(nuevaCuenta.rol || 'apoderado')[modulo.id]).map((modulo) => (
+                    <span key={`nuevo-perm-${modulo.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 8px', borderRadius: '999px', background: 'rgba(0,122,255,0.08)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800' }}>
+                      <ShieldCheck size={11} /> {modulo.etiqueta}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
 

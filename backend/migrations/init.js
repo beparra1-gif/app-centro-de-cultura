@@ -229,6 +229,19 @@ const createSchema = async () => {
     await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS logo_url VARCHAR(255)`);
     console.log('✅ Columna logo_url verificada en cuentas');
 
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS perfil_principal VARCHAR(50) DEFAULT 'apoderado'`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS cargo_directiva VARCHAR(50)`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS socio_admin BOOLEAN DEFAULT false`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS aprobado_superadmin BOOLEAN DEFAULT false`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS acceso_nivel VARCHAR(30) DEFAULT 'estandar'`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS utm_valor_referencia DECIMAL(12,2)`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS monto_mensual_base DECIMAL(12,2)`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS monto_mensual_override DECIMAL(12,2)`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS condiciones_pago TEXT`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fecha_corte_utm DATE`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS permisos_override JSONB DEFAULT '{}'::jsonb`);
+    console.log('✅ Columnas extendidas de perfiles y mensualidad verificadas en cuentas');
+
     // Tabla: pagos_mensualidades (Mejorada)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS pagos_mensualidades (

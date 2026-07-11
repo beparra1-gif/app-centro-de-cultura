@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Backend local backups (generated at runtime, not versioned)
+backend/backups/*.json
+backend/backups/*.sql
+backend/backups/*.dump
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -35,7 +35,9 @@ function PerfilTesoreriaPanel({
   const titular = cuentaActual
     ? `${cuentaActual.nombres || ''} ${cuentaActual.apellido_paterno || ''}`.trim()
     : (pupiloActivo?.nombre || pupilosActivos[0]?.nombre || 'Cuenta principal');
-  const esSocio = Boolean(cuentaActual?.es_socio);
+  const perfilPrincipal = String(cuentaActual?.perfil_principal || cuentaActual?.rol || '').toLowerCase();
+  const esSocio = Boolean(cuentaActual?.es_socio) || ['socio', 'socio_apoderado', 'directiva'].includes(perfilPrincipal);
+  const esSocioApoderado = perfilPrincipal === 'socio_apoderado';
 
   const morosoActivo = (morososAdmin || []).find((m) => m.rut === rutPupiloActivo) || null;
   const mesesAtraso = Number(morosoActivo?.mesesDeuda || 0);
@@ -43,6 +45,13 @@ function PerfilTesoreriaPanel({
 
   const monthFromPago = (pago) => {
     if (Number.isFinite(Number(pago.mes_pago_numero))) return Number(pago.mes_pago_numero);
+
+    if (typeof pago.meses_correspondientes === 'string' && pago.meses_correspondientes.trim()) {
+      const token = pago.meses_correspondientes.trim().split(/\s+/)[0].toLowerCase().slice(0, 3);
+      const idx = mesesBase.findIndex((m) => m.toLowerCase() === token);
+      if (idx >= 0) return idx + 1;
+    }
+
     if (typeof pago.mes_pagado === 'string' && pago.mes_pagado.length >= 3) {
       const normalized = pago.mes_pagado.slice(0, 3).toLowerCase();
       const idx = mesesBase.findIndex((m) => m.toLowerCase() === normalized);
@@ -78,17 +87,34 @@ function PerfilTesoreriaPanel({
     return { id: mesNumero, mes, estado };
   });
 
-  let tarifaMensual = 0;
-  const utmActual = getUTMLastDayPreviousMonth(Number(cuentaActual?.utm_valor || 71506));
-  const cuotaSocio = utmActual * 0.003;
+  const cantidadPupilos = pupilosActivos.length;
+  const now = new Date();
+  const fechaCorte = new Date(now.getFullYear(), now.getMonth(), 0);
+  const fechaCorteTexto = fechaCorte.toLocaleDateString('es-CL');
 
-  if (esSocio) {
-    tarifaMensual += cuotaSocio;
-    if (pupilosActivos.length === 1) tarifaMensual += 15000;
-    else if (pupilosActivos.length >= 2) tarifaMensual += 24000;
-  } else {
-    tarifaMensual += 30000 * pupilosActivos.length;
-  }
+  const utmActual = Number(cuentaActual?.utm_valor_referencia || getUTMLastDayPreviousMonth(71506));
+  const cuotaSocio = Math.round(utmActual * 0.3);
+
+  const calcularCuotaDeportistas = () => {
+    if (cantidadPupilos <= 0) return 0;
+
+    // Excepción acordada/beca: aplica solo a la parte deportistas, nunca a la cuota socio.
+    const cuotaAcordada = Number(cuentaActual?.monto_mensual_override || 0);
+    if (Number.isFinite(cuotaAcordada) && cuotaAcordada > 0) return cuotaAcordada;
+
+    if (esSocioApoderado) {
+      if (cantidadPupilos === 1) return 15000;
+      // Desde 2 pupilos: 12.000 c/u y el 3ro gratis (tope 24.000).
+      return 24000;
+    }
+
+    // Apoderado sin membresía socio: 30.000 (1 pupilo), 25.000 c/u desde 2.
+    if (cantidadPupilos === 1) return 30000;
+    return 25000 * cantidadPupilos;
+  };
+
+  const cuotaDeportistas = calcularCuotaDeportistas();
+  const tarifaMensual = (esSocio ? cuotaSocio : 0) + cuotaDeportistas;
 
   const tarifaRedondeada = Math.round(tarifaMensual);
   const totalSeleccionado = tarifaRedondeada * mesesSeleccionados.length;
@@ -111,6 +137,11 @@ function PerfilTesoreriaPanel({
             <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mensualidad / Perfil</span>
             <h3 className="status-titular" style={{ color: 'white' }}>{titular}</h3>
             <span className="status-rol">{esSocio ? 'Socio Activo Club Cultura Física' : 'Apoderado Base'}</span>
+            {esSocio && (
+              <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'block', marginTop: '5px' }}>
+                UTM referencia ({fechaCorteTexto}): ${utmActual.toLocaleString('es-CL')} · Cuota socio automática: ${cuotaSocio.toLocaleString('es-CL')}
+              </span>
+            )}
           </div>
           <div className={`status-badge ${estadoCuenta === 'Al Día' ? 'ok' : 'moroso'}`}>
             {estadoCuenta}
@@ -140,6 +171,13 @@ function PerfilTesoreriaPanel({
             <strong style={{ fontSize: '18px', color: 'var(--texto-principal)', fontWeight: '900' }}>${tarifaRedondeada.toLocaleString('es-CL')}</strong>
             <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', display: 'block', fontWeight: '700' }}>/mes</span>
           </div>
+        </div>
+        <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed rgba(0,0,0,0.1)', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+          <span>Cuota socio: ${esSocio ? cuotaSocio.toLocaleString('es-CL') : '0'}</span>
+          <span>Mensualidad deportistas: ${cuotaDeportistas.toLocaleString('es-CL')}</span>
+          {Number(cuentaActual?.monto_mensual_override || 0) > 0 && (
+            <span style={{ color: '#b36200' }}>Incluye excepción/beca acordada</span>
+          )}
         </div>
       </div>
 
@@ -231,6 +269,8 @@ function PerfilTesoreriaPanel({
             </div>
 
             <div className="desglose-row"><span>Valor Unificado (Socio + Deportista):</span><strong>${tarifaRedondeada.toLocaleString('es-CL')} / mes</strong></div>
+            <div className="desglose-row"><span>Detalle socio:</span><strong>${esSocio ? cuotaSocio.toLocaleString('es-CL') : '0'}</strong></div>
+            <div className="desglose-row"><span>Detalle deportistas:</span><strong>${cuotaDeportistas.toLocaleString('es-CL')}</strong></div>
             <div className="desglose-row total-calc"><span>Total a Pagar ({mesesSeleccionados.length} meses):</span><strong>${totalSeleccionado.toLocaleString('es-CL')}</strong></div>
 
             <div className="tipo-pago-grid mb-15 mt-15" style={{ display: 'flex', gap: '10px' }}>

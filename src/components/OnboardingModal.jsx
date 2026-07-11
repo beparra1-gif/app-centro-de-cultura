@@ -4,6 +4,10 @@ function OnboardingModal({
   onboardingProgress,
   onboardingStep,
   avanzarOnboarding,
+  onboardingPassword,
+  onboardingPasswordConfirm,
+  setOnboardingPassword,
+  setOnboardingPasswordConfirm,
 }) {
   return (
     <div className="onboarding-overlay">
@@ -18,8 +22,20 @@ function OnboardingModal({
           <div className="step-content">
             <h3 style={{ fontWeight: '900' }}><Lock size={20} color="var(--azul-marino)" /> Clave de Seguridad</h3>
             <p>Debes cambiar tu contraseña inicial (12345) por una personal y segura para continuar.</p>
-            <input type="password" placeholder="Nueva contraseña" className="form-input mt-10" />
-            <input type="password" placeholder="Repetir contraseña" className="form-input mt-10" />
+            <input
+              type="password"
+              placeholder="Nueva contraseña"
+              className="form-input mt-10"
+              value={onboardingPassword}
+              onChange={(e) => setOnboardingPassword(e.target.value)}
+            />
+            <input
+              type="password"
+              placeholder="Repetir contraseña"
+              className="form-input mt-10"
+              value={onboardingPasswordConfirm}
+              onChange={(e) => setOnboardingPasswordConfirm(e.target.value)}
+            />
           </div>
         )}
 

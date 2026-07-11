@@ -54,6 +54,8 @@ const NotificationHistoryPanel = lazy(() => import('./components/NotificationHis
 // 2. COMPONENTE PRINCIPAL (APP)
 // ==========================================
 function App() {
+  const SESSION_STORAGE_KEY = 'ccf.auth.session.v1';
+
   // --- ESTADOS: GLOBAL Y TEMA ---
   const temaOscuro = false;
   const [isAppLoading, setIsAppLoading] = useState(false); // Skeleton Loaders
@@ -75,6 +77,11 @@ function App() {
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [onboardingProgress, setOnboardingProgress] = useState(0);
   const [rolUsuarioTemporal, setRolUsuarioTemporal] = useState(null);
+  const [onboardingPassword, setOnboardingPassword] = useState('');
+  const [onboardingPasswordConfirm, setOnboardingPasswordConfirm] = useState('');
+  const [onboardingCuenta, setOnboardingCuenta] = useState(null);
+  const [onboardingPasswordActual, setOnboardingPasswordActual] = useState('');
+  const [sesionHidratada, setSesionHidratada] = useState(false);
 
   // --- ESTADOS: GAMIFICACIÓN Y PERFIL ---
   const [quizCompletado, setQuizCompletado] = useState(false);
@@ -223,9 +230,10 @@ function App() {
 
   const matrixPermisosBase = (Array.isArray(cuentasAdmin) && cuentasAdmin.length > 0 ? cuentasAdmin : perfilesPermisosFallback).map((usuario) => {
     const idUsuario = usuario.id ?? usuario.id_usuario ?? usuario.id_cuenta ?? usuario.rut ?? usuario.correo;
-    const rolUsuarioBase = normalizarRol(usuario.rol || usuario.rol_usuario || 'jugador');
+    const rolUsuarioBase = normalizarRol(usuario.perfil_principal || usuario.rol || usuario.rol_usuario || 'jugador');
     const permisosEfectivos = obtenerPermisosEfectivos({
       rol: rolUsuarioBase,
+      // permisosPorUsuario stores only overrides; effective perms are computed here.
       override: permisosPorUsuario[idUsuario] || {},
     });
 
@@ -250,6 +258,47 @@ function App() {
   const [apiOffline, setApiOffline] = useState(false);
   const [apiRetrying, setApiRetrying] = useState(false);
   const [apiStatusMessage, setApiStatusMessage] = useState('');
+
+  useEffect(() => {
+    try {
+      const sesionRaw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+      if (sesionRaw) {
+        const sesion = JSON.parse(sesionRaw);
+        if (sesion?.rol && sesion?.usuario) {
+          const rolNormalizado = normalizarRol(sesion.rol);
+          setRolUsuario(rolNormalizado);
+          setUsuarioAutenticado({
+            ...sesion.usuario,
+            rol: normalizarRol(sesion.usuario?.rol || rolNormalizado),
+          });
+          setPantallaActiva(sesion.pantallaActiva || 'comunicaciones');
+        }
+      }
+    } catch {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    } finally {
+      setSesionHidratada(true);
+    }
+  }, [SESSION_STORAGE_KEY]);
+
+  useEffect(() => {
+    if (!sesionHidratada) return;
+
+    if (rolUsuario && usuarioAutenticado) {
+      window.localStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify({
+          rol: rolUsuario,
+          usuario: usuarioAutenticado,
+          pantallaActiva,
+          updatedAt: new Date().toISOString(),
+        })
+      );
+      return;
+    }
+
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  }, [rolUsuario, usuarioAutenticado, pantallaActiva, sesionHidratada, SESSION_STORAGE_KEY]);
 
   const [nominaCita, setNominaCita] = useState([]);
 
@@ -596,9 +645,17 @@ function App() {
       const loginRes = await api.authAPI.login(rutInput, passInput);
       const perfilDetectado = loginRes?.user?.rol || 'jugador';
       const usuarioDetectado = loginRes?.user || null;
+      const requiereCambioClave = passInput === '12345' || Boolean(loginRes?.user?.forzar_clave);
 
-      if(passInput === '12345') {
-        setRolUsuarioTemporal(perfilDetectado); setIsOnboarding(true); setOnboardingStep(1); setOnboardingProgress(15);
+      if(requiereCambioClave) {
+        setRolUsuarioTemporal(perfilDetectado);
+        setOnboardingCuenta(usuarioDetectado);
+        setOnboardingPasswordActual(passInput);
+        setOnboardingPassword('');
+        setOnboardingPasswordConfirm('');
+        setIsOnboarding(true);
+        setOnboardingStep(1);
+        setOnboardingProgress(15);
       } else {
         iniciarSesionFinal(perfilDetectado, usuarioDetectado);
       }
@@ -607,10 +664,50 @@ function App() {
     }
   };
 
-  const avanzarOnboarding = () => {
-    if(onboardingStep === 1) { setOnboardingStep(2); setOnboardingProgress(45); } 
-    else if (onboardingStep === 2) { setOnboardingStep(3); setOnboardingProgress(70); } 
-    else { setIsOnboarding(false); iniciarSesionFinal(rolUsuarioTemporal); }
+  const avanzarOnboarding = async () => {
+    if (onboardingStep === 1) {
+      const nuevaClave = String(onboardingPassword || '').trim();
+      const confirmacion = String(onboardingPasswordConfirm || '').trim();
+      if (nuevaClave.length < 5) {
+        alert('La nueva contraseña debe tener al menos 5 caracteres.');
+        return;
+      }
+      if (nuevaClave !== confirmacion) {
+        alert('La confirmación de contraseña no coincide.');
+        return;
+      }
+      if (!onboardingCuenta?.rut) {
+        alert('No se pudo identificar la cuenta para actualizar contraseña.');
+        return;
+      }
+
+      try {
+        await api.authAPI.changePassword({
+          rut: onboardingCuenta.rut,
+          currentPassword: onboardingPasswordActual,
+          newPassword: nuevaClave,
+        });
+      } catch (error) {
+        alert(error.message || 'No se pudo actualizar la contraseña.');
+        return;
+      }
+
+      setOnboardingStep(2);
+      setOnboardingProgress(45);
+      return;
+    }
+
+    if (onboardingStep === 2) {
+      setOnboardingStep(3);
+      setOnboardingProgress(70);
+      return;
+    }
+
+    setIsOnboarding(false);
+    setOnboardingPassword('');
+    setOnboardingPasswordConfirm('');
+    setOnboardingPasswordActual('');
+    iniciarSesionFinal(rolUsuarioTemporal, onboardingCuenta);
   };
 
   const iniciarSesionFinal = (perfil, usuario = null) => {
@@ -637,6 +734,47 @@ function App() {
     else setPantallaActiva('comunicaciones');
     
     setRutInput(''); setPassInput(''); setMostrarFormularioLogin(false);
+  };
+
+  const cerrarSesion = () => {
+    setShowModalSalir(false);
+    setRolUsuario(null);
+    setUsuarioAutenticado(null);
+    setPantallaActiva('comunicaciones');
+    setMostrarFormularioLogin(false);
+    setShowSettings(false);
+    setVistaAdmin('dashboard');
+    setCuentaEditando(null);
+    setIsOnboarding(false);
+    setOnboardingPassword('');
+    setOnboardingPasswordConfirm('');
+    setOnboardingPasswordActual('');
+    setOnboardingCuenta(null);
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+  };
+
+  const restaurarPermisosAntesCancelacion = (snapshot) => {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    // Restore override state from snapshot taken when the edit was opened.
+    // snapshot shape: { [usuarioId]: { [moduloId]: boolean, ... }, ... }
+    setPermisosPorUsuario((prev) => {
+      const restored = { ...prev };
+      for (const [id, permisos] of Object.entries(snapshot)) {
+        // Derive only the overrides from the snapshot (diff vs role base).
+        // We store the snapshot as matrixPermisos entries (effective), so we must
+        // restore permisosPorUsuario (overrides only) from the cuentasAdmin original.
+        const cuentaOriginal = cuentasAdmin.find(
+          (c) => String(c.id ?? c.rut ?? c.correo) === String(id)
+        );
+        const override = cuentaOriginal?.permisos_override &&
+          typeof cuentaOriginal.permisos_override === 'object'
+            ? cuentaOriginal.permisos_override
+            : {};
+        restored[id] = override;
+        void permisos;
+      }
+      return restored;
+    });
   };
 
   // Función para togglear un permiso específico
@@ -673,7 +811,7 @@ function App() {
       es_socio: Boolean(cuenta.es_socio),
       dia_pago_acordado: cuenta.dia_pago_acordado || '',
     });
-    setVistaAdmin('cuentas');
+    setVistaAdmin('usuarios');
   };
 
   const actualizarCampoCuenta = (campo, valor) => {
@@ -688,10 +826,27 @@ function App() {
       api.jugadoresVisitaAPI.getAll(),
     ]);
 
+    // Store only the persisted OVERRIDES — not fully resolved permission maps.
+    // Effective permissions are always computed on-demand via obtenerPermisosEfectivos().
+    const overridesPorUsuario = Array.isArray(cuentasRes)
+      ? cuentasRes.reduce((acc, cuenta) => {
+          const idUsuario = cuenta.id ?? cuenta.id_usuario ?? cuenta.id_cuenta ?? cuenta.rut ?? cuenta.correo;
+          if (idUsuario == null) return acc;
+
+          const override = cuenta.permisos_override && typeof cuenta.permisos_override === 'object'
+            ? cuenta.permisos_override
+            : {};
+
+          acc[idUsuario] = override;
+          return acc;
+        }, {})
+      : {};
+
     setCuentasAdmin(Array.isArray(cuentasRes) ? cuentasRes : []);
     setCuentasIncompletas(Array.isArray(cuentasIncompletasRes) ? cuentasIncompletasRes : []);
     setJugadoresAdmin(Array.isArray(jugadoresRes) ? jugadoresRes : []);
     setJugadoresVisitaAdmin(Array.isArray(jugadoresVisitaRes) ? jugadoresVisitaRes : []);
+    setPermisosPorUsuario(overridesPorUsuario);
   };
 
   const recargarPagosMensualidades = async () => {
@@ -1379,6 +1534,10 @@ function App() {
           onboardingProgress={onboardingProgress}
           onboardingStep={onboardingStep}
           avanzarOnboarding={avanzarOnboarding}
+          onboardingPassword={onboardingPassword}
+          onboardingPasswordConfirm={onboardingPasswordConfirm}
+          setOnboardingPassword={setOnboardingPassword}
+          setOnboardingPasswordConfirm={setOnboardingPasswordConfirm}
         />
       )}
       
@@ -1794,6 +1953,7 @@ function App() {
                 morososAdmin={morososAdmin}
                 pagosMensualidadesAdmin={pagosMensualidadesAdmin}
                 onSheetsSyncComplete={sincronizarDatosDesdeSheets}
+                onCancelEdit={restaurarPermisosAntesCancelacion}
               />
             )}
           </>
@@ -1858,7 +2018,7 @@ function App() {
             <p style={{color: 'var(--texto-secundario)', marginBottom: '20px'}}>Se cerrará el módulo actual de trabajo.</p>
             <div className="modal-alert-buttons">
               <button className="btn-modal-cancelar" onClick={() => setShowModalSalir(false)}>Cancelar</button>
-              <button className="btn-modal-confirmar" onClick={() => { setShowModalSalir(false); setRolUsuario(null); setUsuarioAutenticado(null); setPantallaActiva('comunicaciones'); setMostrarFormularioLogin(false); setShowSettings(false); setVistaAdmin('dashboard'); setCuentaEditando(null); }}>SALIR</button>
+              <button className="btn-modal-confirmar" onClick={cerrarSesion}>SALIR</button>
             </div>
           </div>
         </div>

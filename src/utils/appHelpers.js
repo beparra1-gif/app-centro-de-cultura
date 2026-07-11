@@ -14,7 +14,7 @@ export function getUTMLastDayPreviousMonth(fallbackUtm = 71506) {
     diciembre: 74000,
   };
 
-  const today = new Date(2026, 6, 9);
+  const today = new Date();
   const ultimoDiaMesAnterior = new Date(today.getFullYear(), today.getMonth(), 0);
   const mesAnterior = ultimoDiaMesAnterior
     .toLocaleString('es-ES', { month: 'long' })
