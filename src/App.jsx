@@ -489,23 +489,7 @@ function App() {
       }
 
       if (Array.isArray(partidosLiveRes)) {
-        const partidosTransformados = partidosLiveRes.map((p, idx) => ({
-          id: p.id_partido || idx + 1,
-          rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
-          categoria: p.categoria || p.categoria_rama || 'General',
-          torneo: p.estado_juego || 'Partido oficial',
-          torneoLogoUrl: p.torneo_logo_url || p.logo_torneo_url || '',
-          fechaISO: p.fecha_hora || null,
-          fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
-          miEquipo: Number(p.pts_local || 0),
-          rival: Number(p.pts_visitante || 0),
-          nombreRival: p.equipo_visitante || p.equipo_visitante_nombre || 'Rival',
-          equipoLocalNombre: p.equipo_local || p.equipo_local_nombre || 'Centro de Cultura Física',
-          equipoLocalLogoUrl: p.logo_local_url || p.equipo_local_logo_url || '/logos/club-logo.png',
-          equipoVisitaLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
-          rivalLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
-        }));
-        setPartidosResumen(partidosTransformados);
+        setPartidosResumen(mapPartidosResumen(partidosLiveRes));
       }
 
       if (Array.isArray(auditoriaRes)) {
@@ -1016,6 +1000,34 @@ function App() {
     });
 
     await cargarDatos({ manual: true });
+  };
+
+  const mapPartidosResumen = (partidosLiveRes = []) => {
+    return (Array.isArray(partidosLiveRes) ? partidosLiveRes : []).map((p, idx) => ({
+      id: p.id_partido || idx + 1,
+      rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
+      categoria: p.categoria || p.categoria_rama || 'General',
+      torneo: p.estado_juego || 'Partido oficial',
+      torneoLogoUrl: p.torneo_logo_url || p.logo_torneo_url || '',
+      fechaISO: p.fecha_hora || null,
+      fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
+      miEquipo: Number(p.pts_local || 0),
+      rival: Number(p.pts_visitante || 0),
+      nombreRival: p.equipo_visitante || p.equipo_visitante_nombre || 'Rival',
+      equipoLocalNombre: p.equipo_local || p.equipo_local_nombre || 'Centro de Cultura Física',
+      equipoLocalLogoUrl: p.logo_local_url || p.equipo_local_logo_url || '/logos/club-logo.png',
+      equipoVisitaLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
+      rivalLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
+    }));
+  };
+
+  const recargarPartidosResumen = async () => {
+    try {
+      const partidosLiveRes = await api.partidosLiveAPI.getAll();
+      setPartidosResumen(mapPartidosResumen(partidosLiveRes));
+    } catch {
+      setPartidosResumen([]);
+    }
   };
 
   // ==========================================
@@ -1970,7 +1982,7 @@ function App() {
                 pagosMensualidadesAdmin={pagosMensualidadesAdmin}
                 onSheetsSyncComplete={sincronizarDatosDesdeSheets}
                 onCancelEdit={restaurarPermisosAntesCancelacion}
-                onPartidosChanged={() => cargarDatos({ manual: true })}
+                onPartidosChanged={recargarPartidosResumen}
               />
             )}
           </>
