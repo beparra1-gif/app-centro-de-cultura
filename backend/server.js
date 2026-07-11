@@ -242,8 +242,10 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
     try {
       await runPgDumpBackup({ databaseUrl, outputFile: sqlOutput });
     } catch (error) {
-      const isCommandMissing = String(error.code || '').toUpperCase() === 'ENOENT' || String(error.message || '').toLowerCase().includes('not recognized');
-      if (!cfg.allowJsonFallback || !isCommandMissing) {
+      const msg = String(error.message || '').toLowerCase();
+      const isCommandMissing = String(error.code || '').toUpperCase() === 'ENOENT' || msg.includes('not recognized');
+      const isVersionMismatch = msg.includes('server version mismatch') || msg.includes('pg_dump version');
+      if (!cfg.allowJsonFallback || (!isCommandMissing && !isVersionMismatch)) {
         throw error;
       }
 
@@ -905,10 +907,9 @@ const getBackupStatus = () => {
     ? maxAgeHours * 60 * 60 * 1000
     : 36 * 60 * 60 * 1000;
 
-  const backupDirRaw = String(process.env.BACKUP_DIR || '').trim();
-  const manifestPathRaw = String(process.env.BACKUP_MANIFEST_PATH || '').trim();
-  const backupDir = resolveRuntimePath(backupDirRaw);
-  const manifestPath = resolveRuntimePath(manifestPathRaw);
+  const cfg = getBackupConfig();
+  const backupDir = cfg.backupDir;
+  const manifestPath = cfg.manifestPath;
 
   const response = {
     configured: Boolean(backupDir || manifestPath),
