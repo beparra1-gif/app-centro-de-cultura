@@ -362,7 +362,12 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
       detail: errorDetail,
     };
 
-    return { ok: false, error: errorDetail.message, detail: errorDetail };
+    return {
+      ok: false,
+      error: errorDetail.message,
+      detail: errorDetail,
+      storage: failurePayload.storage,
+    };
   } finally {
     isBackupRunning = false;
   }
