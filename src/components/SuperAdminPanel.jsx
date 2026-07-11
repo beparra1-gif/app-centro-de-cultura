@@ -145,6 +145,10 @@ function SuperAdminPanel({
   const [formResultado, setFormResultado] = useState({
     equipo_local: 'Centro de Cultura Física',
     equipo_visitante: '',
+    logo_local_url: '/logos/club-logo.png',
+    logo_visitante_url: '',
+    torneo_nombre: '',
+    torneo_logo_url: '',
     pts_local: '',
     pts_visitante: '',
     categoria_rama: 'General',
@@ -741,7 +745,11 @@ function SuperAdminPanel({
   };
 
   const guardarResultado = async () => {
-    const { equipo_local, equipo_visitante, pts_local, pts_visitante, categoria_rama, cancha_sede, fecha_hora } = formResultado;
+    const {
+      equipo_local, equipo_visitante,
+      logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url,
+      pts_local, pts_visitante, categoria_rama, cancha_sede, fecha_hora,
+    } = formResultado;
     if (!equipo_visitante.trim()) { alert('Ingresa el nombre del equipo visitante.'); return; }
     if (pts_local === '' || pts_visitante === '') { alert('Ingresa los puntos de ambos equipos.'); return; }
     try {
@@ -749,6 +757,10 @@ function SuperAdminPanel({
       await api.partidosLiveAPI.create({
         equipo_local,
         equipo_visitante,
+        logo_local_url: logo_local_url || null,
+        logo_visitante_url: logo_visitante_url || null,
+        torneo_nombre: torneo_nombre || null,
+        torneo_logo_url: torneo_logo_url || null,
         pts_local: Number(pts_local),
         pts_visitante: Number(pts_visitante),
         categoria_rama,
@@ -759,6 +771,10 @@ function SuperAdminPanel({
       setFormResultado({
         equipo_local: 'Centro de Cultura Física',
         equipo_visitante: '',
+        logo_local_url: '/logos/club-logo.png',
+        logo_visitante_url: '',
+        torneo_nombre: '',
+        torneo_logo_url: '',
         pts_local: '',
         pts_visitante: '',
         categoria_rama: 'General',
@@ -2483,15 +2499,60 @@ function SuperAdminPanel({
           <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '16px' }}>
             Ingresa el marcador final y el partido quedará publicado en el fixture del club.
           </p>
+
+          {/* Preview visual del marcador */}
+          <div className="card" style={{ borderRadius: '24px', marginBottom: '16px', background: 'linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(28,44,76,0.92) 100%)', color: 'white' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', padding: '12px 0' }}>
+              {/* Torneo */}
+              {formResultado.torneo_nombre && (
+                <div style={{ position: 'absolute', top: '12px', left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <LogoAvatar nombre={formResultado.torneo_nombre} logoUrl={formResultado.torneo_logo_url} size={18} borderRadius="999px" />
+                  <span style={{ fontSize: '11px', fontWeight: '800', opacity: 0.8 }}>{formResultado.torneo_nombre}</span>
+                </div>
+              )}
+              {/* Local */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flex: 1, textAlign: 'center' }}>
+                <LogoAvatar nombre={formResultado.equipo_local || 'Local'} logoUrl={formResultado.logo_local_url} size={52} borderRadius="14px" />
+                <span style={{ fontSize: '12px', fontWeight: '800', opacity: 0.9 }}>{formResultado.equipo_local || 'Equipo Local'}</span>
+              </div>
+              {/* Marcador */}
+              <div style={{ textAlign: 'center', minWidth: '80px' }}>
+                <div style={{ fontSize: '32px', fontWeight: '900', letterSpacing: '4px' }}>
+                  {formResultado.pts_local !== '' ? formResultado.pts_local : '–'}
+                  &nbsp;:&nbsp;
+                  {formResultado.pts_visitante !== '' ? formResultado.pts_visitante : '–'}
+                </div>
+                <div style={{ fontSize: '11px', opacity: 0.7, fontWeight: '700', textTransform: 'uppercase', marginTop: '4px' }}>
+                  {formResultado.categoria_rama}
+                </div>
+              </div>
+              {/* Visitante */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flex: 1, textAlign: 'center' }}>
+                <LogoAvatar nombre={formResultado.equipo_visitante || 'Visitante'} logoUrl={formResultado.logo_visitante_url} size={52} borderRadius="14px" />
+                <span style={{ fontSize: '12px', fontWeight: '800', opacity: 0.9 }}>{formResultado.equipo_visitante || 'Equipo Visitante'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Formulario */}
           <div className="card" style={{ borderRadius: '24px', marginBottom: '16px' }}>
+            <h4 className="form-subtitle" style={{ marginBottom: '12px' }}>Datos del partido</h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '12px' }}>
               <div className="form-group">
                 <label>Equipo local</label>
                 <input className="form-input" value={formResultado.equipo_local} onChange={(e) => setFormResultado((p) => ({ ...p, equipo_local: e.target.value }))} />
               </div>
               <div className="form-group">
+                <label>Logo equipo local (URL)</label>
+                <input className="form-input" value={formResultado.logo_local_url} onChange={(e) => setFormResultado((p) => ({ ...p, logo_local_url: e.target.value }))} placeholder="/logos/club-logo.png" />
+              </div>
+              <div className="form-group">
                 <label>Equipo visitante *</label>
                 <input className="form-input" value={formResultado.equipo_visitante} onChange={(e) => setFormResultado((p) => ({ ...p, equipo_visitante: e.target.value }))} placeholder="Ej: Club Deportivo Rival" />
+              </div>
+              <div className="form-group">
+                <label>Logo equipo visitante (URL)</label>
+                <input className="form-input" value={formResultado.logo_visitante_url} onChange={(e) => setFormResultado((p) => ({ ...p, logo_visitante_url: e.target.value }))} placeholder="URL o dejar vacío" />
               </div>
               <div className="form-group">
                 <label>Puntos local *</label>
@@ -2500,6 +2561,14 @@ function SuperAdminPanel({
               <div className="form-group">
                 <label>Puntos visitante *</label>
                 <input type="number" min="0" className="form-input" value={formResultado.pts_visitante} onChange={(e) => setFormResultado((p) => ({ ...p, pts_visitante: e.target.value }))} placeholder="0" />
+              </div>
+              <div className="form-group">
+                <label>Nombre competencia / torneo</label>
+                <input className="form-input" value={formResultado.torneo_nombre} onChange={(e) => setFormResultado((p) => ({ ...p, torneo_nombre: e.target.value }))} placeholder="Ej: Liga ARBAM U15" />
+              </div>
+              <div className="form-group">
+                <label>Logo competencia (URL)</label>
+                <input className="form-input" value={formResultado.torneo_logo_url} onChange={(e) => setFormResultado((p) => ({ ...p, torneo_logo_url: e.target.value }))} placeholder="URL o dejar vacío" />
               </div>
               <div className="form-group">
                 <label>Categoría / Rama</label>
@@ -2533,26 +2602,49 @@ function SuperAdminPanel({
           {!cargandoPartidos && partidosAdmin.length === 0 && (
             <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', fontStyle: 'italic' }}>No hay partidos registrados todavía.</p>
           )}
-          {partidosAdmin.slice(0, 15).map((p) => (
-            <div key={p.id_partido} className="card" style={{ marginBottom: '10px', borderLeft: `4px solid ${Number(p.pts_local || 0) > Number(p.pts_visitante || 0) ? 'var(--verde-victoria)' : Number(p.pts_local || 0) < Number(p.pts_visitante || 0) ? 'var(--rojo-alerta)' : 'var(--azul-electrico)'}`, borderRadius: '22px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <div>
-                  <strong style={{ fontSize: '14px' }}>{p.equipo_local || 'CCF'} vs {p.equipo_visitante || 'Rival'}</strong>
-                  <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '3px' }}>
-                    {p.categoria_rama || ''}{p.cancha_sede ? ` · ${p.cancha_sede}` : ''}{p.fecha_hora ? ` · ${new Date(p.fecha_hora).toLocaleDateString('es-CL')}` : ''}
+          {partidosAdmin.slice(0, 15).map((p) => {
+            const ganó = Number(p.pts_local || 0) > Number(p.pts_visitante || 0);
+            const perdió = Number(p.pts_local || 0) < Number(p.pts_visitante || 0);
+            const color = ganó ? 'var(--verde-victoria)' : perdió ? 'var(--rojo-alerta)' : 'var(--azul-electrico)';
+            return (
+              <div key={p.id_partido} className="card" style={{ marginBottom: '10px', borderLeft: `4px solid ${color}`, borderRadius: '22px' }}>
+                {/* Cabecera: torneo */}
+                {(p.torneo_nombre || p.torneo_logo_url) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <LogoAvatar nombre={p.torneo_nombre || 'Torneo'} logoUrl={p.torneo_logo_url} size={20} borderRadius="999px" />
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)' }}>{p.torneo_nombre || 'Competencia'}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>· {p.categoria_rama || ''}</span>
+                  </div>
+                )}
+                {/* Marcador con logos */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                  {/* Local */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                    <LogoAvatar nombre={p.equipo_local || 'CCF'} logoUrl={p.logo_local_url} size={36} borderRadius="10px" />
+                    <span style={{ fontSize: '13px', fontWeight: '800', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.equipo_local || 'CCF'}</span>
+                  </div>
+                  {/* Score */}
+                  <div style={{ textAlign: 'center', flexShrink: 0, minWidth: '70px' }}>
+                    <strong style={{ fontSize: '22px', letterSpacing: '3px', color }}>{p.pts_local ?? '–'} – {p.pts_visitante ?? '–'}</strong>
+                    <div style={{ fontSize: '10px', color: 'var(--texto-secundario)', fontWeight: '800', textTransform: 'uppercase', marginTop: '2px' }}>
+                      {p.estado_juego || 'pendiente'}
+                    </div>
+                  </div>
+                  {/* Visitante */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end', minWidth: 0 }}>
+                    <span style={{ fontSize: '13px', fontWeight: '800', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>{p.equipo_visitante || 'Rival'}</span>
+                    <LogoAvatar nombre={p.equipo_visitante || 'Rival'} logoUrl={p.logo_visitante_url} size={36} borderRadius="10px" />
                   </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <strong style={{ fontSize: '22px', letterSpacing: '2px' }}>
-                    {p.pts_local ?? '-'} – {p.pts_visitante ?? '-'}
-                  </strong>
-                  <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800', textTransform: 'uppercase' }}>
-                    {p.estado_juego || 'pendiente'}
+                {/* Meta info */}
+                {(p.cancha_sede || p.fecha_hora) && (
+                  <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '6px', fontWeight: '700' }}>
+                    {p.cancha_sede && `📍 ${p.cancha_sede}`}{p.cancha_sede && p.fecha_hora ? ' · ' : ''}{p.fecha_hora ? `📅 ${new Date(p.fecha_hora).toLocaleDateString('es-CL')}` : ''}
                   </div>
-                </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

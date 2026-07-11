@@ -949,6 +949,19 @@ const ensureCuentasExtendedColumns = async () => {
   console.log('🧩 Columnas extendidas de cuentas verificadas');
 };
 
+const ensurePartidosLiveLogos = async () => {
+  const ddl = [
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS logo_local_url VARCHAR(255)`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS logo_visitante_url VARCHAR(255)`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS torneo_nombre VARCHAR(255)`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS torneo_logo_url VARCHAR(255)`,
+  ];
+  for (const statement of ddl) {
+    await pool.query(statement);
+  }
+  console.log('🏆 Columnas de logos en partidos_live verificadas');
+};
+
 const getBackupStatus = () => {
   const maxAgeHours = Number(process.env.BACKUP_MAX_AGE_HOURS || 36);
   const nowMs = Date.now();
@@ -2695,14 +2708,28 @@ app.get('/api/partidos-live', async (req, res) => {
 
 // POST: Crear partido
 app.post('/api/partidos-live', async (req, res) => {
-  const { fecha_hora, cancha_sede, categoria_rama, equipo_local, equipo_visitante, rut_planillero } = req.body;
+  const {
+    fecha_hora, cancha_sede, categoria_rama, equipo_local, equipo_visitante,
+    rut_planillero, estado_juego,
+    logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url,
+    pts_local, pts_visitante,
+  } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO partidos_live 
-       (fecha_hora, cancha_sede, categoria_rama, equipo_local, equipo_visitante, rut_planillero, estado_juego)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pendiente')
+      `INSERT INTO partidos_live
+       (fecha_hora, cancha_sede, categoria_rama, equipo_local, equipo_visitante, rut_planillero,
+        estado_juego, logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url,
+        pts_local, pts_visitante)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7,'pendiente'), $8, $9, $10, $11,
+        COALESCE($12, 0), COALESCE($13, 0))
        RETURNING *`,
-      [fecha_hora, cancha_sede, categoria_rama, equipo_local, equipo_visitante, rut_planillero]
+      [
+        fecha_hora, cancha_sede, categoria_rama, equipo_local, equipo_visitante, rut_planillero || null,
+        estado_juego || 'pendiente',
+        logo_local_url || null, logo_visitante_url || null,
+        torneo_nombre || null, torneo_logo_url || null,
+        pts_local ?? 0, pts_visitante ?? 0,
+      ]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -3453,6 +3480,10 @@ app.listen(PORT, () => {
 
   ensureCuentasExtendedColumns().catch((error) => {
     console.error('❌ Error verificando columnas extendidas de cuentas:', error.message);
+  });
+
+  ensurePartidosLiveLogos().catch((error) => {
+    console.error('❌ Error verificando columnas de logos partidos_live:', error.message);
   });
 
   ensureSuperAdminAccount().catch((error) => {

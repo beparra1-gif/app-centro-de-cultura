@@ -242,6 +242,12 @@ const createSchema = async () => {
     await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS permisos_override JSONB DEFAULT '{}'::jsonb`);
     console.log('✅ Columnas extendidas de perfiles y mensualidad verificadas en cuentas');
 
+    await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS logo_local_url VARCHAR(255)`);
+    await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS logo_visitante_url VARCHAR(255)`);
+    await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS torneo_nombre VARCHAR(255)`);
+    await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS torneo_logo_url VARCHAR(255)`);
+    console.log('✅ Columnas de logos en partidos_live verificadas');
+
     // Tabla: pagos_mensualidades (Mejorada)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS pagos_mensualidades (
