@@ -464,8 +464,8 @@ function App() {
             genero: primerJugador.genero || primerJugador.sexo || '',
             nivel: Number(primerJugador.nivel_actual || 1),
             xp: Number(primerJugador.xp_total || 0),
-            anioNacimiento: primerJugador.anio_nacimiento || primerJugador.ano_nacimiento || primerJugador['año_nacimiento'] || '',
-            numeroCamiseta: primerJugador.numero_camiseta || 0,
+            anioNacimiento: obtenerAnioNacimientoJugador(primerJugador),
+            numeroCamiseta: obtenerNumeroCamisetaJugador(primerJugador, 0),
             posicion: primerJugador.posicion_juego || 'N/A',
             estatura: primerJugador.estatura || 'N/A',
             peso: primerJugador.peso || 'N/A',
@@ -1723,6 +1723,28 @@ function App() {
     String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase()
   );
 
+  const obtenerAnioNacimientoJugador = (jugador = {}) => (
+    jugador.anioNacimiento
+    ?? jugador.anio_nacimiento
+    ?? jugador.ano_nacimiento
+    ?? jugador['año_nacimiento']
+    ?? jugador['a├▒o_nacimiento']
+    ?? ''
+  );
+
+  const obtenerNumeroCamisetaJugador = (jugador = {}, fallback = 0) => {
+    const raw = (
+      jugador.numeroCamiseta
+      ?? jugador.numero_camiseta
+      ?? jugador.numero
+      ?? jugador.dorsal
+      ?? fallback
+    );
+
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  };
+
   // ==========================================
   // 5. MÓDULOS DE JUGADOR, ACADEMIA Y TESORERÍA
   // ==========================================
@@ -1737,7 +1759,7 @@ function App() {
     genero: j.genero || j.sexo || '',
     nivel: Number(j.nivel_actual || 1),
     xp: Number(j.xp_total || 0),
-    numeroCamiseta: j.numero_camiseta || 0,
+    numeroCamiseta: obtenerNumeroCamisetaJugador(j, 0),
     posicion: j.posicion_juego || 'N/A',
     estatura: j.estatura || 'N/A',
     peso: j.peso || 'N/A',
@@ -1748,7 +1770,7 @@ function App() {
     asistencia: j.asistencia || 'N/A',
     estadoDeportivo: j.estado_deportivo || 'Activo',
     beca: j.beca || 'Sin beca',
-    anioNacimiento: j.anio_nacimiento || j.ano_nacimiento || j['año_nacimiento'] || '',
+    anioNacimiento: obtenerAnioNacimientoJugador(j),
     foto_jugador: j.foto_jugador || j.foto_perfil_url || j.club_logo_url || '',
   }));
 
@@ -1770,13 +1792,15 @@ function App() {
     const pupiloPropio = pupilosDisponibles[0];
     const rutActivo = normalizarRutComparacion(pupiloActivo?.rut || '');
     const rutPropio = normalizarRutComparacion(pupiloPropio.rut || '');
-    const anioActivo = pupiloActivo?.anioNacimiento || pupiloActivo?.anio_nacimiento || pupiloActivo?.ano_nacimiento || pupiloActivo?.['año_nacimiento'] || '';
-    const anioPropio = pupiloPropio?.anioNacimiento || pupiloPropio?.anio_nacimiento || pupiloPropio?.ano_nacimiento || pupiloPropio?.['año_nacimiento'] || '';
+    const anioActivo = obtenerAnioNacimientoJugador(pupiloActivo);
+    const anioPropio = obtenerAnioNacimientoJugador(pupiloPropio);
+    const numeroActivo = obtenerNumeroCamisetaJugador(pupiloActivo, 0);
+    const numeroPropio = obtenerNumeroCamisetaJugador(pupiloPropio, 0);
 
-    if (rutActivo !== rutPropio || (!anioActivo && anioPropio)) {
+    if (rutActivo !== rutPropio || anioActivo !== anioPropio || numeroActivo !== numeroPropio) {
       setPupiloActivo(pupiloPropio);
     }
-  }, [esJugadorAutenticado, pupilosDisponibles, pupiloActivo?.rut]);
+  }, [esJugadorAutenticado, pupilosDisponibles, pupiloActivo]);
 
   const comunicacionesPublicas = (comunicaciones || []).filter((c) => {
     const audiencia = Array.isArray(c.audiencia) ? c.audiencia : [];

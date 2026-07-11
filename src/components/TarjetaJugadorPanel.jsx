@@ -57,7 +57,25 @@ function TarjetaJugadorPanel({
   const nombreCompletoDisplay = rolUsuario === 'visita'
     ? 'INVITADO TORNEO'
     : String(pupiloActivo.nombre || `${nombreDisplay} ${apellidoDisplay}`).trim();
-  const anioNacimiento = pupiloActivo.anioNacimiento || pupiloActivo.anio_nacimiento || pupiloActivo.ano_nacimiento || pupiloActivo['año_nacimiento'] || '';
+  const anioNacimiento = (
+    pupiloActivo.anioNacimiento
+    || pupiloActivo.anio_nacimiento
+    || pupiloActivo.ano_nacimiento
+    || pupiloActivo['año_nacimiento']
+    || pupiloActivo['a├▒o_nacimiento']
+    || ''
+  );
+  const numeroCamiseta = (() => {
+    const raw = (
+      pupiloActivo.numeroCamiseta
+      ?? pupiloActivo.numero_camiseta
+      ?? pupiloActivo.numero
+      ?? pupiloActivo.dorsal
+      ?? 0
+    );
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  })();
   const categoriaDisplay = rolUsuario === 'visita' ? 'Open' : (pupiloActivo.categoria || 'General');
   const categoriaConAnio = anioNacimiento ? `${categoriaDisplay} · ${anioNacimiento}` : categoriaDisplay;
 
@@ -235,7 +253,7 @@ function TarjetaJugadorPanel({
             </div>
             <h1 className="player-lastname-focus" style={{ margin: '2px 0 8px 0' }}>{nombreCompletoDisplay}</h1>
             <div style={{ fontSize: '13px', opacity: 0.9, fontWeight: '700' }}>
-              N° {rolUsuario === 'visita' ? '00' : pupiloActivo.numeroCamiseta} · {categoriaConAnio}
+              N° {rolUsuario === 'visita' ? '00' : numeroCamiseta} · {categoriaConAnio}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', padding: '10px 12px', borderRadius: '16px', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', maxWidth: '320px' }}>
@@ -546,7 +564,7 @@ function TarjetaJugadorPanel({
             <div>
               <h1 style={{ margin: '8px 0 10px', fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: '52px', lineHeight: 1, letterSpacing: '1.2px', textTransform: 'uppercase' }}>{nombreCompletoDisplay}</h1>
               <div style={{ fontSize: '20px', fontWeight: '800', opacity: 0.95 }}>
-                N° {rolUsuario === 'visita' ? '00' : pupiloActivo.numeroCamiseta} · {categoriaConAnio}
+                N° {rolUsuario === 'visita' ? '00' : numeroCamiseta} · {categoriaConAnio}
               </div>
 
               <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '14px', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.16)', maxWidth: '360px' }}>
@@ -626,7 +644,7 @@ function TarjetaJugadorPanel({
             <div>
               <h3 style={{ margin: 0, fontSize: '28px', fontWeight: '900', lineHeight: 1.1 }}>{pupiloActivo.nombre || 'Jugador'}</h3>
               <p style={{ margin: '8px 0 0', fontSize: '13px', opacity: 0.9, fontWeight: '700' }}>
-                Categoria: {pupiloActivo.categoria || 'General'} · Club: {clubNombre}
+                Categoria: {categoriaConAnio} · Club: {clubNombre}
               </p>
             </div>
             <div style={{ width: '78px', height: '78px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
