@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
+import LogoPicker from './LogoPicker';
 import { colorTipo } from '../utils/appHelpers';
 import { nextId } from '../utils/runtimeId';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
@@ -2537,23 +2538,26 @@ function SuperAdminPanel({
           {/* Formulario */}
           <div className="card" style={{ borderRadius: '24px', marginBottom: '16px' }}>
             <h4 className="form-subtitle" style={{ marginBottom: '12px' }}>Datos del partido</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '12px' }}>
-              <div className="form-group">
-                <label>Equipo local</label>
-                <input className="form-input" value={formResultado.equipo_local} onChange={(e) => setFormResultado((p) => ({ ...p, equipo_local: e.target.value }))} />
-              </div>
-              <div className="form-group">
-                <label>Logo equipo local (URL)</label>
-                <input className="form-input" value={formResultado.logo_local_url} onChange={(e) => setFormResultado((p) => ({ ...p, logo_local_url: e.target.value }))} placeholder="/logos/club-logo.png" />
-              </div>
-              <div className="form-group">
-                <label>Equipo visitante *</label>
-                <input className="form-input" value={formResultado.equipo_visitante} onChange={(e) => setFormResultado((p) => ({ ...p, equipo_visitante: e.target.value }))} placeholder="Ej: Club Deportivo Rival" />
-              </div>
-              <div className="form-group">
-                <label>Logo equipo visitante (URL)</label>
-                <input className="form-input" value={formResultado.logo_visitante_url} onChange={(e) => setFormResultado((p) => ({ ...p, logo_visitante_url: e.target.value }))} placeholder="URL o dejar vacío" />
-              </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+              <LogoPicker
+                label="Equipo local"
+                nombre={formResultado.equipo_local}
+                onNombre={(v) => setFormResultado((p) => ({ ...p, equipo_local: v }))}
+                logoUrl={formResultado.logo_local_url}
+                onLogoUrl={(v) => setFormResultado((p) => ({ ...p, logo_local_url: v }))}
+                tipo="club"
+                placeholder="Nombre equipo local"
+                extraOptions={[{ nombre: 'Centro de Cultura Física', logoUrl: '/logos/club-logo.png' }]}
+              />
+              <LogoPicker
+                label="Equipo visitante *"
+                nombre={formResultado.equipo_visitante}
+                onNombre={(v) => setFormResultado((p) => ({ ...p, equipo_visitante: v }))}
+                logoUrl={formResultado.logo_visitante_url}
+                onLogoUrl={(v) => setFormResultado((p) => ({ ...p, logo_visitante_url: v }))}
+                tipo="club"
+                placeholder="Nombre equipo visitante"
+              />
               <div className="form-group">
                 <label>Puntos local *</label>
                 <input type="number" min="0" className="form-input" value={formResultado.pts_local} onChange={(e) => setFormResultado((p) => ({ ...p, pts_local: e.target.value }))} placeholder="0" />
@@ -2562,14 +2566,15 @@ function SuperAdminPanel({
                 <label>Puntos visitante *</label>
                 <input type="number" min="0" className="form-input" value={formResultado.pts_visitante} onChange={(e) => setFormResultado((p) => ({ ...p, pts_visitante: e.target.value }))} placeholder="0" />
               </div>
-              <div className="form-group">
-                <label>Nombre competencia / torneo</label>
-                <input className="form-input" value={formResultado.torneo_nombre} onChange={(e) => setFormResultado((p) => ({ ...p, torneo_nombre: e.target.value }))} placeholder="Ej: Liga ARBAM U15" />
-              </div>
-              <div className="form-group">
-                <label>Logo competencia (URL)</label>
-                <input className="form-input" value={formResultado.torneo_logo_url} onChange={(e) => setFormResultado((p) => ({ ...p, torneo_logo_url: e.target.value }))} placeholder="URL o dejar vacío" />
-              </div>
+              <LogoPicker
+                label="Competencia / Torneo"
+                nombre={formResultado.torneo_nombre}
+                onNombre={(v) => setFormResultado((p) => ({ ...p, torneo_nombre: v }))}
+                logoUrl={formResultado.torneo_logo_url}
+                onLogoUrl={(v) => setFormResultado((p) => ({ ...p, torneo_logo_url: v }))}
+                tipo="torneo"
+                placeholder="Nombre competencia o torneo"
+              />
               <div className="form-group">
                 <label>Categoría / Rama</label>
                 <select className="form-input" value={formResultado.categoria_rama} onChange={(e) => setFormResultado((p) => ({ ...p, categoria_rama: e.target.value }))}>

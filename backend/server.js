@@ -502,6 +502,24 @@ app.post('/api/assets/logos', uploadLogo.single('archivo'), (req, res) => {
   });
 });
 
+app.get('/api/assets/logos/list', (req, res) => {
+  try {
+    if (!fs.existsSync(logosPublicDir)) {
+      return res.json({ logos: [] });
+    }
+    const files = fs.readdirSync(logosPublicDir)
+      .filter((name) => /\.(png|jpg|jpeg|webp|svg)$/i.test(name))
+      .map((name) => ({
+        filename: name,
+        url: `/logos/${name}`,
+        nombre: name.replace(/\.[^.]+$/, '').replace(/-/g, ' '),
+      }));
+    return res.json({ logos: files });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ========== DATABASE POOL ==========
 const rawDatabaseUrl = String(process.env.DATABASE_URL || '');
 const safeDatabaseUrl = rawDatabaseUrl.includes('sslmode=require')

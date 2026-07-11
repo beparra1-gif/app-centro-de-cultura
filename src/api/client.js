@@ -834,6 +834,11 @@ export const assetsAPI = {
     });
     return handleResponse(response);
   },
+
+  listLogos: async () => {
+    const response = await fetch(`${API_BASE_URL}/assets/logos/list`);
+    return handleResponse(response);
+  },
 };
 
 // ========== CAJA EVENTO (FASE 3) ==========
