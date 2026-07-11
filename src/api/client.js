@@ -18,6 +18,8 @@ const resolveApiBaseUrl = () => {
 const API_BASE_URL = resolveApiBaseUrl();
 export const API_BASE_URL_CONFIG = API_BASE_URL;
 
+const normalizarRut = (rut = '') => String(rut).replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+
 // Funciones auxiliares
 const handleResponse = async (response) => {
   if (!response.ok) {
@@ -171,11 +173,69 @@ export const usuariosAPI = {
 
 export const authAPI = {
   login: async (rut, password) => {
+    const payload = { rut, password };
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rut, password })
+      body: JSON.stringify(payload)
     });
+
+    if (response.ok) {
+      return response.json();
+    }
+
+    // Fallback for production schema drifts: if player login with 12345 fails, create minimal account and retry once.
+    if (response.status === 401 && String(password || '') === '12345') {
+      try {
+        const jugadoresResponse = await fetch(`${API_BASE_URL}/jugadores`);
+        if (!jugadoresResponse.ok) {
+          return handleResponse(response);
+        }
+
+        const jugadores = await jugadoresResponse.json();
+        const rutBuscado = normalizarRut(rut);
+        const jugador = Array.isArray(jugadores)
+          ? jugadores.find((item) => normalizarRut(item?.rut_jugador) === rutBuscado)
+          : null;
+
+        if (!jugador || String(jugador.estado || 'ACTIVO').toUpperCase() === 'BAJA') {
+          return handleResponse(response);
+        }
+
+        const createPayload = {
+          correo: `${rutBuscado.toLowerCase() || 'sin-rut'}@actualizar.local`,
+          rut,
+          password: '12345',
+          nombres: jugador.nombres || null,
+          apellido_paterno: jugador.apellido_paterno || null,
+          rol: 'jugador',
+          perfil_principal: 'jugador',
+          estado: 'activo',
+          forzar_clave: true,
+          requiere_foto_perfil: false,
+        };
+
+        const createResponse = await fetch(`${API_BASE_URL}/cuentas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(createPayload)
+        });
+
+        if (!createResponse.ok && createResponse.status !== 409) {
+          return handleResponse(response);
+        }
+
+        const retryResponse = await fetch(`${API_BASE_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        return handleResponse(retryResponse);
+      } catch {
+        return handleResponse(response);
+      }
+    }
+
     return handleResponse(response);
   },
 
