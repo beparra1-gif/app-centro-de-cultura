@@ -579,6 +579,37 @@ const construirCorreoPlaceholderDesdeRut = (rutNormalizado = '') => {
   return `${limpio || 'sin-rut'}@actualizar.local`;
 };
 
+const obtenerCuentaPorRutNormalizado = async (rutNormalizado) => {
+  const columnasCuentas = await obtenerColumnasTabla('cuentas');
+  const col = (nombre, castSql = 'text') => (
+    columnasCuentas.has(nombre)
+      ? nombre
+      : `NULL::${castSql} AS ${nombre}`
+  );
+
+  const result = await pool.query(
+    `SELECT
+      ${col('id', 'int')},
+      ${col('correo')},
+      ${col('rut')},
+      ${col('password')},
+      ${col('nombres')},
+      ${col('apellido_paterno')},
+      ${col('rol')},
+      ${col('perfil_principal')},
+      ${col('estado')},
+      ${col('forzar_clave', 'boolean')},
+      ${col('foto_perfil_url')},
+      ${col('requiere_foto_perfil', 'boolean')}
+     FROM cuentas
+     WHERE UPPER(REPLACE(REPLACE(COALESCE(rut, ''), '.', ''), '-', '')) = $1
+     LIMIT 1`,
+    [rutNormalizado]
+  );
+
+  return result.rows[0] || null;
+};
+
 const provisionarCuentaJugadorSiCorresponde = async ({ rutNormalizado, password }) => {
   if (String(password || '') !== '12345') return null;
 
@@ -599,36 +630,48 @@ const provisionarCuentaJugadorSiCorresponde = async ({ rutNormalizado, password 
   const rutFormateado = formatearRut(jugador.rut_jugador || rutNormalizado);
   const correoPlaceholder = construirCorreoPlaceholderDesdeRut(rutNormalizado);
 
-  const cuentaRes = await pool.query(
-    `INSERT INTO cuentas (
-      correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, requiere_foto_perfil
-    ) VALUES (
-      $1, $2, $3, $4, $5, 'jugador', 'jugador', 'activo', true, false
-    )
-    ON CONFLICT (rut)
-    DO UPDATE SET
-      nombres = COALESCE(NULLIF(cuentas.nombres, ''), EXCLUDED.nombres),
-      apellido_paterno = COALESCE(NULLIF(cuentas.apellido_paterno, ''), EXCLUDED.apellido_paterno),
-      rol = 'jugador',
-      perfil_principal = 'jugador',
-      estado = 'activo',
-      password = COALESCE(NULLIF(cuentas.password, ''), EXCLUDED.password),
-      forzar_clave = CASE
-        WHEN COALESCE(NULLIF(cuentas.password, ''), '') = '' THEN true
-        ELSE cuentas.forzar_clave
-      END,
-      updated_at = NOW()
-    RETURNING id, correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, foto_perfil_url, requiere_foto_perfil`,
-    [
-      correoPlaceholder,
-      rutFormateado,
-      '12345',
-      jugador.nombres || null,
-      jugador.apellido_paterno || null,
-    ]
-  );
+  const columnasCuentas = await obtenerColumnasTabla('cuentas');
+  const requiereFotoExiste = columnasCuentas.has('requiere_foto_perfil');
 
-  return cuentaRes.rows[0] || null;
+  const existente = await obtenerCuentaPorRutNormalizado(rutNormalizado);
+  if (existente?.id) {
+    await pool.query(
+      `UPDATE cuentas
+       SET nombres = COALESCE(NULLIF(nombres, ''), $1),
+           apellido_paterno = COALESCE(NULLIF(apellido_paterno, ''), $2),
+           rol = COALESCE(rol, 'jugador'),
+           perfil_principal = COALESCE(perfil_principal, 'jugador'),
+           estado = COALESCE(estado, 'activo'),
+           password = CASE WHEN COALESCE(NULLIF(password, ''), '') = '' THEN '12345' ELSE password END,
+           forzar_clave = CASE WHEN COALESCE(NULLIF(password, ''), '') = '' THEN true ELSE COALESCE(forzar_clave, false) END,
+           updated_at = NOW()
+       WHERE id = $3`,
+      [jugador.nombres || null, jugador.apellido_paterno || null, existente.id]
+    );
+    return await obtenerCuentaPorRutNormalizado(rutNormalizado);
+  }
+
+  if (requiereFotoExiste) {
+    await pool.query(
+      `INSERT INTO cuentas (
+        correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, requiere_foto_perfil
+      ) VALUES (
+        $1, $2, $3, $4, $5, 'jugador', 'jugador', 'activo', true, false
+      )`,
+      [correoPlaceholder, rutFormateado, '12345', jugador.nombres || null, jugador.apellido_paterno || null]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO cuentas (
+        correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave
+      ) VALUES (
+        $1, $2, $3, $4, $5, 'jugador', 'jugador', 'activo', true
+      )`,
+      [correoPlaceholder, rutFormateado, '12345', jugador.nombres || null, jugador.apellido_paterno || null]
+    );
+  }
+
+  return await obtenerCuentaPorRutNormalizado(rutNormalizado);
 };
 
 const columnasTablaCache = new Map();
@@ -1482,23 +1525,17 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const rutNormalizado = normalizarRut(rut);
-    let result = await pool.query(
-      `SELECT id, correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, foto_perfil_url, requiere_foto_perfil
-       FROM cuentas
-       WHERE UPPER(REPLACE(REPLACE(rut, '.', ''), '-', '')) = $1
-       LIMIT 1`,
-      [rutNormalizado]
-    );
+    let cuentaFinal = await obtenerCuentaPorRutNormalizado(rutNormalizado);
 
-    if (result.rows.length === 0) {
+    if (!cuentaFinal) {
       const cuentaProvisionada = await provisionarCuentaJugadorSiCorresponde({ rutNormalizado, password });
       if (!cuentaProvisionada) {
         return res.status(401).json({ error: 'Credenciales inválidas' });
       }
-      result = { rows: [cuentaProvisionada] };
+      cuentaFinal = cuentaProvisionada;
     }
 
-    const cuenta = result.rows[0];
+    const cuenta = cuentaFinal;
     if (cuenta.estado && String(cuenta.estado).toLowerCase() !== 'activo') {
       return res.status(403).json({ error: 'Cuenta inactiva' });
     }
@@ -1507,21 +1544,17 @@ app.post('/api/auth/login', async (req, res) => {
     const esJugador = rolDb === 'jugador';
 
     if (!String(cuenta.password || '').trim() && esJugador && String(password || '') === '12345') {
-      const syncPasswordRes = await pool.query(
+      await pool.query(
         `UPDATE cuentas
          SET password = '12345',
              forzar_clave = true,
              updated_at = NOW()
-         WHERE id = $1
-         RETURNING id, correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, foto_perfil_url, requiere_foto_perfil`,
+         WHERE id = $1`,
         [cuenta.id]
       );
-      if (syncPasswordRes.rows.length > 0) {
-        result = { rows: [syncPasswordRes.rows[0]] };
-      }
+      cuentaFinal = await obtenerCuentaPorRutNormalizado(rutNormalizado);
     }
 
-    const cuentaFinal = result.rows[0];
     if (!cuentaFinal.password || String(cuentaFinal.password) !== String(password)) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
