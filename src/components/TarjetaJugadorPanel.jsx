@@ -299,7 +299,7 @@ function TarjetaJugadorPanel({
           </span>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '14px', alignItems: 'center' }}>
+        <div className="official-player-main-grid" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '14px', alignItems: 'center' }}>
           <div>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '10px', fontSize: '12px', fontWeight: '700', color: 'rgba(255,255,255,0.85)' }}>
               <User size={14} /> Perfil jugador
@@ -329,8 +329,8 @@ function TarjetaJugadorPanel({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gap: '10px', justifyItems: 'center' }}>
-            <div style={{
+          <div className="official-player-photo-wrap" style={{ display: 'grid', gap: '10px', justifyItems: 'center' }}>
+            <div className="official-player-photo-frame" style={{
               width: '180px',
               height: '214px',
               borderRadius: '20px',

@@ -1581,6 +1581,24 @@ button,
   }
 }
 
+@media (max-width: 520px) {
+  .official-player-card .official-player-main-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .official-player-card .official-player-photo-wrap {
+    justify-items: stretch !important;
+  }
+
+  .official-player-card .official-player-photo-frame {
+    width: min(100%, 220px) !important;
+    height: auto !important;
+    aspect-ratio: 180 / 214;
+    margin: 0 auto;
+  }
+}
+
 .player-pill-card { padding: 15px; background: linear-gradient(135deg, var(--azul-marino), #162b4a); display:flex; justify-content:space-between; align-items:center; border-radius:16px; }
 .player-pill-card .dark-select { width:auto; background: rgba(255,255,255,0.16); color:white; border:1px solid rgba(255,255,255,0.2); padding:8px 12px; font-size:13px; }
 .metric-card { border: 1px solid rgba(0,122,255,0.12); background: linear-gradient(145deg, var(--fondo-card-sutil), var(--fondo-card-tintado)); }
