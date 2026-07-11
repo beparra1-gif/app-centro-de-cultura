@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BadgeCheck, Download, Mars, QrCode, ShieldCheck, Shirt, Target, Trophy, User, Venus, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
 import PupiloSelector from './PupiloSelector';
+import * as api from '../api/client';
 
 const EXPORT_WIDTH = 750;
 const EXPORT_HEIGHT = 1050;
@@ -23,6 +24,35 @@ function TarjetaJugadorPanel({
   const [mostrarCredencialAsistencia, setMostrarCredencialAsistencia] = useState(false);
   const [estiloColeccion, setEstiloColeccion] = useState('coleccionista');
   const [vistaColeccion, setVistaColeccion] = useState('frente');
+  const [detalleJugador, setDetalleJugador] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const cargarDetalleJugador = async () => {
+      const rut = String(pupiloActivo?.rut || '').trim();
+      if (!rut || rolUsuario === 'visita') {
+        setDetalleJugador(null);
+        return;
+      }
+
+      try {
+        const detalle = await api.jugadoresAPI.getByRut(rut);
+        if (!cancelled) {
+          setDetalleJugador(detalle || null);
+        }
+      } catch {
+        if (!cancelled) {
+          setDetalleJugador(null);
+        }
+      }
+    };
+
+    void cargarDetalleJugador();
+    return () => {
+      cancelled = true;
+    };
+  }, [pupiloActivo?.rut, rolUsuario]);
 
   const xpActual = Number(pupiloActivo.xp ?? pupiloActivo.xp_total ?? 0);
   const nivelBase = Number(pupiloActivo.nivel ?? pupiloActivo.nivel_actual ?? 1) || 1;
@@ -72,6 +102,12 @@ function TarjetaJugadorPanel({
     || pupiloDesdeListado?.ano_nacimiento
     || pupiloDesdeListado?.['año_nacimiento']
     || pupiloDesdeListado?.['a├▒o_nacimiento']
+    || detalleJugador?.anioNacimiento
+    || detalleJugador?.anio_nacimiento
+    || detalleJugador?.ano_nacimiento
+    || detalleJugador?.['año_nacimiento']
+    || detalleJugador?.['a├▒o_nacimiento']
+    || (detalleJugador?.fecha_nacimiento ? new Date(detalleJugador.fecha_nacimiento).getUTCFullYear() : '')
     || ''
   );
   const numeroCamiseta = (() => {
@@ -84,6 +120,10 @@ function TarjetaJugadorPanel({
       ?? pupiloDesdeListado?.numero_camiseta
       ?? pupiloDesdeListado?.numero
       ?? pupiloDesdeListado?.dorsal
+      ?? detalleJugador?.numeroCamiseta
+      ?? detalleJugador?.numero_camiseta
+      ?? detalleJugador?.numero
+      ?? detalleJugador?.dorsal
       ?? 0
     );
     const parsed = Number(raw);
