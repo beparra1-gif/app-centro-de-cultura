@@ -54,6 +54,8 @@ const NotificationHistoryPanel = lazy(() => import('./components/NotificationHis
 // 2. COMPONENTE PRINCIPAL (APP)
 // ==========================================
 function App() {
+  const UI_RELEASE_TAG = '2026-07-11-rut-selection-fix';
+  void UI_RELEASE_TAG;
   const SESSION_STORAGE_KEY = 'ccf.auth.session.v1';
 
   // --- ESTADOS: GLOBAL Y TEMA ---
