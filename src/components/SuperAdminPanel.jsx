@@ -24,6 +24,8 @@ import {
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
+import PagoForm from './PagoForm';
+import ResultadosCards from './ResultadosCards';
 import { colorTipo } from '../utils/appHelpers';
 import { nextId } from '../utils/runtimeId';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
@@ -152,12 +154,22 @@ function SuperAdminPanel({
     torneo_logo_url: '',
     pts_local: '',
     pts_visitante: '',
-    categoria_rama: 'General',
+    rama: 'Mixta',
+    categoria: 'SUB-13',
     cancha_sede: '',
-    fecha_hora: new Date().toISOString().slice(0, 16),
+    fecha_hora: new Date().toISOString().slice(0, 10),
   });
+
+  // Definir categorías disponibles según rama
+  const categoriasDisponibles = {
+    'Mixta': ['SUB-13', 'SUB-15', 'SUB-17', 'SUB-19'],
+    'Femenina': ['SUB-13', 'SUB-15', 'SUB-17', 'SUB-19'],
+    'Masculina': ['SUB-13', 'SUB-15', 'SUB-17', 'SUB-19'],
+    'Adulto': ['General'],
+  };
   const [partidosAdmin, setPartidosAdmin] = useState([]);
   const [guardandoResultado, setGuardandoResultado] = useState(false);
+  const [partidoEditandoId, setPartidoEditandoId] = useState(null);
   const [cargandoPartidos, setCargandoPartidos] = useState(false);
   const [procesandoPupiloRut, setProcesandoPupiloRut] = useState('');
   const [destinoApoderadoPorRut, setDestinoApoderadoPorRut] = useState({});
@@ -259,6 +271,12 @@ function SuperAdminPanel({
   });
   const [subiendoLogoAsset, setSubiendoLogoAsset] = useState(false);
   const [logoAssetUrl, setLogoAssetUrl] = useState('');
+
+  // --- PAGOS: FORMULARIO Y PAGINACIÓN ---
+  const [mostrarFormularioPago, setMostrarFormularioPago] = useState(false);
+  const [pagoEditandoId, setPagoEditandoId] = useState(null);
+  const [paginaPagosMigrados, setPaginaPagosMigrados] = useState(1);
+  const [itemsPorPaginaPagos] = useState(15);
 
   useEffect(() => {
     if (vistaAdmin === 'cuentas' || vistaAdmin === 'cuentas_legacy') {
@@ -761,17 +779,45 @@ function SuperAdminPanel({
     }
   };
 
+  const resetFormResultado = () => {
+    setFormResultado({
+      equipo_local: 'Centro de Cultura Física',
+      equipo_visitante: '',
+      logo_local_url: '/logos/club-logo.png',
+      logo_visitante_url: '',
+      torneo_nombre: '',
+      torneo_logo_url: '',
+      pts_local: '',
+      pts_visitante: '',
+      rama: 'Mixta',
+      categoria: 'SUB-13',
+      cancha_sede: '',
+      fecha_hora: new Date().toISOString().slice(0, 10),
+    });
+    setPartidoEditandoId(null);
+  };
+
+  const esPartidoPrueba = (partido) => {
+    const texto = [
+      partido?.equipo_local,
+      partido?.equipo_visitante,
+      partido?.torneo_nombre,
+      partido?.cancha_sede,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return /prueba|test|demo|ejemplo/.test(texto);
+  };
+
   const guardarResultado = async () => {
     const {
       equipo_local, equipo_visitante,
       logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url,
-      pts_local, pts_visitante, categoria_rama, cancha_sede, fecha_hora,
+      pts_local, pts_visitante, cancha_sede, fecha_hora,
     } = formResultado;
     if (!equipo_visitante.trim()) { alert('Ingresa el nombre del equipo visitante.'); return; }
     if (pts_local === '' || pts_visitante === '') { alert('Ingresa los puntos de ambos equipos.'); return; }
     try {
       setGuardandoResultado(true);
-      await api.partidosLiveAPI.create({
+      const payload = {
         equipo_local,
         equipo_visitante,
         logo_local_url: logo_local_url || null,
@@ -780,30 +826,50 @@ function SuperAdminPanel({
         torneo_logo_url: torneo_logo_url || null,
         pts_local: Number(pts_local),
         pts_visitante: Number(pts_visitante),
-        categoria_rama,
+        rama: formResultado.rama,
+        categoria: formResultado.categoria,
         cancha_sede,
         fecha_hora,
         estado_juego: 'finalizado',
-      });
-      setFormResultado({
-        equipo_local: 'Centro de Cultura Física',
-        equipo_visitante: '',
-        logo_local_url: '/logos/club-logo.png',
-        logo_visitante_url: '',
-        torneo_nombre: '',
-        torneo_logo_url: '',
-        pts_local: '',
-        pts_visitante: '',
-        categoria_rama: 'General',
-        cancha_sede: '',
-        fecha_hora: new Date().toISOString().slice(0, 16),
-      });
+      };
+
+      if (partidoEditandoId) {
+        await api.partidosLiveAPI.update(partidoEditandoId, payload);
+      } else {
+        await api.partidosLiveAPI.create(payload);
+      }
+
+      resetFormResultado();
       await cargarPartidosAdmin();
-      alert('Resultado registrado correctamente.');
+      alert(partidoEditandoId ? 'Resultado actualizado correctamente.' : 'Resultado registrado correctamente.');
     } catch (error) {
       alert(`No se pudo guardar el resultado: ${error.message}`);
     } finally {
       setGuardandoResultado(false);
+    }
+  };
+
+  const borrarPartidosPrueba = async () => {
+    const partidosDePrueba = partidosAdmin.filter(esPartidoPrueba);
+    if (partidosDePrueba.length === 0) {
+      alert('No se encontraron partidos de prueba para borrar.');
+      return;
+    }
+
+    if (!window.confirm(`Se borrarán ${partidosDePrueba.length} partidos de prueba. ¿Continuar?`)) return;
+
+    try {
+      for (const partido of partidosDePrueba) {
+        const id = partido.id_partido || partido.id;
+        if (id) {
+          // Borrado secuencial para evitar saturar la API.
+          await api.partidosLiveAPI.delete(id);
+        }
+      }
+      await cargarPartidosAdmin();
+      alert(`${partidosDePrueba.length} partidos de prueba eliminados.`);
+    } catch (error) {
+      alert(`No se pudieron eliminar todos los partidos de prueba: ${error.message}`);
     }
   };
 
@@ -2083,62 +2149,150 @@ function SuperAdminPanel({
 
           {/* Pagos migrados pendientes de revisión */}
           <div style={{ borderTop: '1px dashed rgba(0,0,0,0.12)', paddingTop: '16px', marginTop: '8px' }}>
-            <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>
-              <AlertTriangle size={14} style={{ marginRight: '6px', color: '#b36200', verticalAlign: 'middle' }} />
-              Pagos migrados pendientes de revisión ({pagosMigradosPendientes.length})
-            </h4>
-            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
-              Estos registros vienen de la hoja de migración de pagos y aún no han sido validados. Puedes aprobarlos o rechazarlos de forma individual.
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div>
+                <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>
+                  <AlertTriangle size={14} style={{ marginRight: '6px', color: '#b36200', verticalAlign: 'middle' }} />
+                  Pagos migrados pendientes de revisión ({pagosMigradosPendientes.length})
+                </h4>
+                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
+                  Estos registros vienen de la hoja de migración. Puedes editarlos, aprobarlos o rechazarlos.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setMostrarFormularioPago(true);
+                  setPagoEditandoId(null);
+                }}
+                style={{
+                  padding: '10px 16px',
+                  background: 'var(--azul-electrico)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontWeight: '600',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <Plus size={14} /> Nuevo Pago
+              </button>
+            </div>
+
             {pagosMigradosPendientes.length === 0 && (
               <p className="text-muted italic">No hay pagos migrados pendientes.</p>
             )}
-            {pagosMigradosPendientes.slice(0, 200).map((pago) => {
-              const notasVisibles = String(pago.notas_tesoreria || '')
-                .replace(/Migrado desde \w+\s*\|?\s*/gi, '')
-                .replace(/Legacy ID:\s*\d+\s*\|?\s*/gi, '')
-                .replace(/^\s*\|\s*|\s*\|\s*$/g, '')
-                .trim();
 
-              return (
-                <div key={pago.id} className="card" style={{ marginBottom: '8px', borderLeft: '4px solid #FF9500', borderRadius: '18px', background: 'rgba(255,149,0,0.04)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <strong style={{ fontSize: '13px' }}>{`${pago.nombres || ''} ${pago.apellido_paterno || ''}`.trim() || '—'}</strong>
-                        <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{pago.rut_jugador || 'Sin RUT'}</span>
-                      </div>
-                      <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '3px' }}>
-                        {pago.meses_correspondientes || 'Sin mes'} · ${Number(pago.monto_total_pagado || 0).toLocaleString('es-CL')}
-                      </div>
-                      {notasVisibles && (
-                        <div style={{ fontSize: '11px', color: '#b36200', marginTop: '4px', fontStyle: 'italic' }}>{notasVisibles}</div>
+            {pagosMigradosPendientes.length > 0 && (
+              <>
+                {(() => {
+                  const inicio = (paginaPagosMigrados - 1) * itemsPorPaginaPagos;
+                  const fin = inicio + itemsPorPaginaPagos;
+                  const pagosPaginados = pagosMigradosPendientes.slice(inicio, fin);
+                  const totalPaginas = Math.ceil(pagosMigradosPendientes.length / itemsPorPaginaPagos);
+
+                  return (
+                    <>
+                      {pagosPaginados.map((pago) => {
+                        const notasVisibles = String(pago.notas_tesoreria || '')
+                          .replace(/Migrado desde \w+\s*\|?\s*/gi, '')
+                          .replace(/Legacy ID:\s*\d+\s*\|?\s*/gi, '')
+                          .replace(/^\s*\|\s*|\s*\|\s*$/g, '')
+                          .trim();
+
+                        return (
+                          <div key={pago.id} className="card" style={{ marginBottom: '8px', borderLeft: '4px solid #FF9500', borderRadius: '18px', background: 'rgba(255,149,0,0.04)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <strong style={{ fontSize: '13px' }}>{`${pago.nombres || ''} ${pago.apellido_paterno || ''}`.trim() || '—'}</strong>
+                                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{pago.rut_jugador || 'Sin RUT'}</span>
+                                </div>
+                                <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '3px' }}>
+                                  {pago.meses_correspondientes || 'Sin mes'} · ${Number(pago.monto_total_pagado || 0).toLocaleString('es-CL')}
+                                </div>
+                                {notasVisibles && (
+                                  <div style={{ fontSize: '11px', color: '#b36200', marginTop: '4px', fontStyle: 'italic' }}>{notasVisibles}</div>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                <button
+                                  style={{ padding: '7px 10px', background: '#007AFF', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
+                                  onClick={() => {
+                                    setPagoEditandoId(pago.id);
+                                    setMostrarFormularioPago(true);
+                                  }}
+                                  title="Editar"
+                                >
+                                  ✎
+                                </button>
+                                <button
+                                  style={{ padding: '7px 10px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
+                                  onClick={async () => { await validarPagoMensualidad(pago.id, 'aprobado'); }}
+                                  title="Aprobar"
+                                >
+                                  <CheckSquare size={13} />
+                                </button>
+                                <button
+                                  style={{ padding: '7px 10px', background: '#FF3B30', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
+                                  onClick={async () => { await validarPagoMensualidad(pago.id, 'rechazado'); }}
+                                  title="Rechazar"
+                                >
+                                  <XSquare size={13} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {totalPaginas > 1 && (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '16px', padding: '12px', background: 'var(--gris-fondo)', borderRadius: '8px' }}>
+                          <button
+                            onClick={() => setPaginaPagosMigrados(Math.max(1, paginaPagosMigrados - 1))}
+                            disabled={paginaPagosMigrados === 1}
+                            style={{
+                              padding: '6px 10px',
+                              background: paginaPagosMigrados === 1 ? 'var(--gris-deshabilitado)' : 'var(--azul-electrico)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: paginaPagosMigrados === 1 ? 'not-allowed' : 'pointer',
+                              fontSize: '12px',
+                              fontWeight: '600'
+                            }}
+                          >
+                            ← Anterior
+                          </button>
+                          <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--texto-principal)' }}>
+                            Página {paginaPagosMigrados} de {totalPaginas}
+                          </span>
+                          <button
+                            onClick={() => setPaginaPagosMigrados(Math.min(totalPaginas, paginaPagosMigrados + 1))}
+                            disabled={paginaPagosMigrados === totalPaginas}
+                            style={{
+                              padding: '6px 10px',
+                              background: paginaPagosMigrados === totalPaginas ? 'var(--gris-deshabilitado)' : 'var(--azul-electrico)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: paginaPagosMigrados === totalPaginas ? 'not-allowed' : 'pointer',
+                              fontSize: '12px',
+                              fontWeight: '600'
+                            }}
+                          >
+                            Siguiente →
+                          </button>
+                        </div>
                       )}
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                      <button
-                        style={{ padding: '7px 10px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
-                        onClick={async () => { await validarPagoMensualidad(pago.id, 'aprobado'); }}
-                        title="Aprobar"
-                      >
-                        <CheckSquare size={13} />
-                      </button>
-                      <button
-                        style={{ padding: '7px 10px', background: '#FF3B30', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
-                        onClick={async () => { await validarPagoMensualidad(pago.id, 'rechazado'); }}
-                        title="Rechazar"
-                      >
-                        <XSquare size={13} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            {pagosMigradosPendientes.length > 200 && (
-              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', textAlign: 'center', marginTop: '8px' }}>
-                Mostrando 200 de {pagosMigradosPendientes.length}. Usa sincronización para consolidar masivamente.
-              </p>
+                    </>
+                  );
+                })()}
+              </>
             )}
           </div>
         </div>
@@ -2600,7 +2754,7 @@ function SuperAdminPanel({
                   {formResultado.pts_visitante !== '' ? formResultado.pts_visitante : '–'}
                 </div>
                 <div style={{ fontSize: '11px', opacity: 0.7, fontWeight: '700', textTransform: 'uppercase', marginTop: '4px' }}>
-                  {formResultado.categoria_rama}
+                  {`${formResultado.rama} · ${formResultado.categoria}`}
                 </div>
               </div>
               {/* Visitante */}
@@ -2652,16 +2806,24 @@ function SuperAdminPanel({
                 placeholder="Nombre competencia o torneo"
               />
               <div className="form-group">
-                <label>Categoría / Rama</label>
-                <select className="form-input" value={formResultado.categoria_rama} onChange={(e) => setFormResultado((p) => ({ ...p, categoria_rama: e.target.value }))}>
-                  <option>General</option>
-                  <option>U13</option>
-                  <option>U15</option>
-                  <option>U17</option>
-                  <option>U19</option>
-                  <option>Adultos</option>
+                <label>Rama</label>
+                <select className="form-input" value={formResultado.rama} onChange={(e) => {
+                  const nuevaRama = e.target.value;
+                  const nuevaCategoria = categoriasDisponibles[nuevaRama]?.[0] || 'SUB-13';
+                  setFormResultado((p) => ({ ...p, rama: nuevaRama, categoria: nuevaCategoria }));
+                }}>
+                  <option>Mixta</option>
                   <option>Femenina</option>
                   <option>Masculina</option>
+                  <option>Adulto</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Sub (Categoría)</label>
+                <select className="form-input" value={formResultado.categoria} onChange={(e) => setFormResultado((p) => ({ ...p, categoria: e.target.value }))}>
+                  {categoriasDisponibles[formResultado.rama]?.map((cat) => (
+                    <option key={cat}>{cat}</option>
+                  ))}
                 </select>
               </div>
               <div className="form-group">
@@ -2669,63 +2831,83 @@ function SuperAdminPanel({
                 <input className="form-input" value={formResultado.cancha_sede} onChange={(e) => setFormResultado((p) => ({ ...p, cancha_sede: e.target.value }))} placeholder="Ej: Gimnasio CCF" />
               </div>
               <div className="form-group">
-                <label>Fecha y hora</label>
-                <input type="datetime-local" className="form-input" value={formResultado.fecha_hora} onChange={(e) => setFormResultado((p) => ({ ...p, fecha_hora: e.target.value }))} />
+                <label>Fecha</label>
+                <input type="date" className="form-input" value={formResultado.fecha_hora} onChange={(e) => setFormResultado((p) => ({ ...p, fecha_hora: e.target.value }))} />
               </div>
             </div>
             <button className="btn-electric" onClick={guardarResultado} disabled={guardandoResultado}>
-              <Trophy size={15} /> {guardandoResultado ? 'Guardando...' : 'Registrar resultado'}
+              <Trophy size={15} /> {guardandoResultado ? 'Guardando...' : (partidoEditandoId ? 'Actualizar resultado' : 'Registrar resultado')}
             </button>
+            {partidoEditandoId && (
+              <button className="btn-secondary" onClick={resetFormResultado} style={{ marginLeft: '8px' }}>
+                Cancelar edición
+              </button>
+            )}
           </div>
 
-          <h4 className="section-title" style={{ marginTop: '20px' }}>Últimos partidos registrados</h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '20px' }}>
+            <h4 className="section-title" style={{ margin: 0 }}>Últimos partidos registrados</h4>
+            <button className="btn-secondary" onClick={borrarPartidosPrueba}>
+              Borrar partidos de prueba
+            </button>
+          </div>
           {cargandoPartidos && <p style={{ fontSize: '13px', color: 'var(--texto-secundario)' }}>Cargando...</p>}
           {!cargandoPartidos && partidosAdmin.length === 0 && (
             <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', fontStyle: 'italic' }}>No hay partidos registrados todavía.</p>
           )}
-          {partidosAdmin.slice(0, 15).map((p) => {
-            const ganó = Number(p.pts_local || 0) > Number(p.pts_visitante || 0);
-            const perdió = Number(p.pts_local || 0) < Number(p.pts_visitante || 0);
-            const color = ganó ? 'var(--verde-victoria)' : perdió ? 'var(--rojo-alerta)' : 'var(--azul-electrico)';
-            return (
-              <div key={p.id_partido} className="card" style={{ marginBottom: '10px', borderLeft: `4px solid ${color}`, borderRadius: '22px' }}>
-                {/* Cabecera: torneo */}
-                {(p.torneo_nombre || p.torneo_logo_url) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                    <LogoAvatar nombre={p.torneo_nombre || 'Torneo'} logoUrl={p.torneo_logo_url} size={20} borderRadius="999px" />
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)' }}>{p.torneo_nombre || 'Competencia'}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>· {p.categoria_rama || ''}</span>
-                  </div>
-                )}
-                {/* Marcador con logos */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                  {/* Local */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                    <LogoAvatar nombre={p.equipo_local || 'CCF'} logoUrl={p.logo_local_url} size={36} borderRadius="10px" />
-                    <span style={{ fontSize: '13px', fontWeight: '800', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.equipo_local || 'CCF'}</span>
-                  </div>
-                  {/* Score */}
-                  <div style={{ textAlign: 'center', flexShrink: 0, minWidth: '70px' }}>
-                    <strong style={{ fontSize: '22px', letterSpacing: '3px', color }}>{p.pts_local ?? '–'} – {p.pts_visitante ?? '–'}</strong>
-                    <div style={{ fontSize: '10px', color: 'var(--texto-secundario)', fontWeight: '800', textTransform: 'uppercase', marginTop: '2px' }}>
-                      {p.estado_juego || 'pendiente'}
-                    </div>
-                  </div>
-                  {/* Visitante */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end', minWidth: 0 }}>
-                    <span style={{ fontSize: '13px', fontWeight: '800', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>{p.equipo_visitante || 'Rival'}</span>
-                    <LogoAvatar nombre={p.equipo_visitante || 'Rival'} logoUrl={p.logo_visitante_url} size={36} borderRadius="10px" />
-                  </div>
-                </div>
-                {/* Meta info */}
-                {(p.cancha_sede || p.fecha_hora) && (
-                  <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '6px', fontWeight: '700' }}>
-                    {p.cancha_sede && `📍 ${p.cancha_sede}`}{p.cancha_sede && p.fecha_hora ? ' · ' : ''}{p.fecha_hora ? `📅 ${new Date(p.fecha_hora).toLocaleDateString('es-CL')}` : ''}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {!cargandoPartidos && partidosAdmin.length > 0 && (
+            <ResultadosCards 
+              partidos={partidosAdmin.slice(0, 15).map(p => ({
+                id: p.id_partido || p.id,
+                rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
+                categoria: p.categoria || p.categoria_rama || 'General',
+                torneo: p.torneo_nombre || 'Torneo',
+                torneoLogoUrl: p.torneo_logo_url || '',
+                fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
+                ubicacion: p.cancha_sede || 'Cancha CCF',
+                miEquipo: Number(p.pts_local || 0),
+                rival: Number(p.pts_visitante || 0),
+                equipoLocalNombre: p.equipo_local || 'Centro de Cultura Física',
+                equipoLocalLogoUrl: p.logo_local_url || '/logos/club-logo.png',
+                nombreRival: p.equipo_visitante || 'Rival',
+                rivalLogoUrl: p.logo_visitante_url || '',
+              }))}
+              puedeEditar={true}
+              onEditar={(partido) => {
+                const p = partidosAdmin.find(x => (x.id_partido || x.id) === partido.id);
+                if (p) {
+                  setPartidoEditandoId(p.id_partido || p.id);
+                  setFormResultado({
+                    equipo_local: p.equipo_local,
+                    equipo_visitante: p.equipo_visitante,
+                    logo_local_url: p.logo_local_url,
+                    logo_visitante_url: p.logo_visitante_url,
+                    torneo_nombre: p.torneo_nombre,
+                    torneo_logo_url: p.torneo_logo_url,
+                    pts_local: String(p.pts_local || ''),
+                    pts_visitante: String(p.pts_visitante || ''),
+                    rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
+                    categoria: p.categoria || p.categoria_rama || 'General',
+                    cancha_sede: p.cancha_sede || '',
+                    fecha_hora: p.fecha_hora ? new Date(p.fecha_hora).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+                  });
+                  setVistaAdmin('resultados');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+              onBorrar={async (partidoId) => {
+                if (window.confirm('¿Confirmas que quieres borrar este partido?')) {
+                  try {
+                    await api.partidosLiveAPI.delete(partidoId);
+                    await cargarPartidosAdmin();
+                    alert('Partido borrado correctamente.');
+                  } catch (err) {
+                    alert(`No se pudo borrar: ${err.message}`);
+                  }
+                }
+              }}
+            />
+          )}
         </div>
       )}
 
@@ -2965,6 +3147,24 @@ function SuperAdminPanel({
           <h4 className="form-subtitle">Permisos de Sistema</h4>
           <p>Gestión de permisos activa. Configura accesos por rol y módulo según políticas del club.</p>
         </div>
+      )}
+
+      {mostrarFormularioPago && (
+        <PagoForm
+          pago={pagoEditandoId ? pagosPendientesAdmin?.find(p => p.id === Number(pagoEditandoId)) : null}
+          jugadores={jugadoresAdmin || []}
+          cuentas={cuentasAdmin || []}
+          onClose={() => {
+            setMostrarFormularioPago(false);
+            setPagoEditandoId(null);
+          }}
+          onSave={() => {
+            setMostrarFormularioPago(false);
+            setPagoEditandoId(null);
+            // Recargar pagos
+            window.location.reload();
+          }}
+        />
       )}
     </div>
   );

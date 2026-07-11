@@ -188,7 +188,7 @@ function KioscoPanel({
         <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: '24px' }}><h3 style={{ fontWeight: '900' }}>Cobro Efectivo</h3><p>Total: <strong style={{ fontSize: '22px' }}>${totalCarrito.toLocaleString('es-CL')}</strong></p><div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }} className="mb-15"><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibidoEfectivo(totalCarrito)}>Exacto</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibidoEfectivo(10000)}>$10k</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibidoEfectivo(20000)}>$20k</button></div><input type="number" className="form-input" placeholder="¿Con cuánto paga?" value={montoRecibidoEfectivo} onChange={(e) => setMontoRecibidoEfectivo(e.target.value)} />{Number(montoRecibidoEfectivo) >= totalCarrito && (<div className="vuelto-display">VUELTO: ${(Number(montoRecibidoEfectivo) - totalCarrito).toLocaleString('es-CL')}</div>)}<div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPagoPOS(null)}>Atrás</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #34C759 0%, #28A745 100%)' }} onClick={() => { if (Number(montoRecibidoEfectivo) < totalCarrito) return alert('Falta dinero.'); finalizarDespachoPOS('efectivo'); }}>Cobrar</button></div></div></div>
       )}
       {modalPagoPOS === 'transferencia' && (
-        <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: '24px' }}><ShieldAlert size={40} color="var(--azul-electrico)" style={{ margin: '0 auto 10px auto' }} /><h3 style={{ fontWeight: '900' }}>Validar Transferencia</h3><div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPagoPOS(null)}>Cancelar</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' }} onClick={() => finalizarDespachoPOS('transferencia')}>Verificado</button></div></div></div>
+        <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: '24px' }}><ShieldAlert size={40} color="#6B7280" strokeWidth={1.5} style={{ margin: '0 auto 10px auto' }} /><h3 style={{ fontWeight: '900' }}>Validar Transferencia</h3><div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPagoPOS(null)}>Cancelar</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' }} onClick={() => finalizarDespachoPOS('transferencia')}>Verificado</button></div></div></div>
       )}
       {modalPagoPOS === 'fiado' && (
         <div className="modal-overlay-alert"><div className="modal-alert-card"><h3 className="text-center">Dejar Pendiente</h3><form onSubmit={registrarCuentaPendiente}><input type="text" className="form-input mb-10" required placeholder="Nombre del responsable" value={nombreFiado} onChange={(e) => setNombreFiado(e.target.value)} /><input type="text" className="form-input mb-15" placeholder="Descripción adicional" value={detalleFiado} onChange={(e) => setDetalleFiado(e.target.value)} /><div className="modal-alert-buttons"><button type="button" className="btn-modal-cancelar" onClick={() => setModalPagoPOS(null)}>Cancelar</button><button type="submit" className="btn-modal-confirmar" style={{ background: '#FF9500' }}>Anotar Deuda</button></div></form></div></div>
@@ -276,11 +276,11 @@ function KioscoPanel({
             <div className="card sub-caja-card"><h5 className="sub-caja-title" style={{ color: 'var(--azul-electrico)' }}>🎟️ Entradas</h5><div className="desglose-row"><span>Efec:</span><strong style={{ color: 'var(--verde-victoria)' }}>+${cajaEfectivoEntradas.toLocaleString('es-CL')}</strong></div><div className="desglose-row"><span>Trans:</span><strong>+${cajaTransferEntradas.toLocaleString('es-CL')}</strong></div></div>
           </div>
           <div className="card mt-15">
-            <h4 className="form-subtitle" style={{ color: '#FF3B30' }}><Wallet size={16} /> Registrar Egreso (Salida)</h4>
+            <h4 className="form-subtitle" style={{ color: '#FF3B30' }}><Wallet size={16} color="#6B7280" strokeWidth={1.5} /> Registrar Egreso (Salida)</h4>
             <div style={{ display: 'flex', gap: '10px' }} className="mt-10"><input type="text" className="form-input" style={{ flex: 2 }} placeholder="Glosa (Ej: Árbitros)" value={gastoRegistro.desc} onChange={(e) => setGastoRegistro({ ...gastoRegistro, desc: e.target.value })} /><input type="number" className="form-input" style={{ flex: 1 }} placeholder="Monto" value={gastoRegistro.monto} onChange={(e) => setGastoRegistro({ ...gastoRegistro, monto: e.target.value })} /><button className="btn-electric" style={{ background: '#FF3B30', width: 'auto', padding: '0 15px' }} onClick={() => { if (!gastoRegistro.desc || !gastoRegistro.monto) return; setEgresosLista([...egresosLista, { id: nextId(), desc: gastoRegistro.desc, monto: Number(gastoRegistro.monto) }]); setGastoRegistro({ desc: '', monto: '' }); }}>Restar</button></div>
             {egresosLista.length > 0 && (<div className="egresos-list mt-15"><span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>Egresos de Hoy</span>{egresosLista.map(eg => (<div key={eg.id} className="egreso-row mt-5"><span className="egreso-desc">❌ {eg.desc}</span><span className="egreso-monto">-${eg.monto.toLocaleString('es-CL')}</span></div>))}</div>)}
           </div>
-          <button className="btn-secondary mt-15" style={{ background: 'rgba(0,122,255,0.1)' }} onClick={exportarCajaPdf}><FileDown size={18} /> Exportar Reporte del Día (PDF)</button>
+          <button className="btn-secondary mt-15" style={{ background: 'rgba(0,122,255,0.1)' }} onClick={exportarCajaPdf}><FileDown size={18} color="#6B7280" strokeWidth={1.5} /> Exportar Reporte del Día (PDF)</button>
         </div>
       )}
 
@@ -331,13 +331,13 @@ function KioscoPanel({
         <div className="fade-in">
           <h3 className="section-title">Inteligencia de Negocio</h3>
           <div className="card" style={{ borderLeft: '4px solid var(--verde-victoria)' }}>
-            <h4 className="form-subtitle"><TrendingUp size={16} color="var(--verde-victoria)" /> Top 3 Más Vendidos</h4>
+            <h4 className="form-subtitle"><TrendingUp size={16} color="#10b981" strokeWidth={1.5} /> Top 3 Más Vendidos</h4>
             {[...inventarioProductos].sort((a, b) => b.ventas - a.ventas).slice(0, 3).map((p, i) => (
               <div key={p.id} className="desglose-row mt-10" style={{ fontSize: '15px' }}><span>{i + 1}. {p.emoji} {p.nombre}</span><strong style={{ color: 'var(--verde-victoria)' }}>{p.ventas} ud.</strong></div>
             ))}
           </div>
           <div className="card mt-15" style={{ borderLeft: '4px solid #FF3B30' }}>
-            <h4 className="form-subtitle"><TrendingDown size={16} color="#FF3B30" /> Menos Movimiento</h4>
+            <h4 className="form-subtitle"><TrendingDown size={16} color="#FF3B30" strokeWidth={1.5} /> Menos Movimiento</h4>
             {[...inventarioProductos].sort((a, b) => a.ventas - b.ventas).slice(0, 2).map((p) => (
               <div key={p.id} className="desglose-row mt-10" style={{ fontSize: '15px' }}><span>{p.emoji} {p.nombre}</span><strong style={{ color: '#FF3B30' }}>{p.ventas} ud.</strong></div>
             ))}

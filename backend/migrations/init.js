@@ -370,6 +370,15 @@ const createSchema = async () => {
     `);
     console.log('✅ Tabla partidos_live creada');
 
+    // Agregar columnas rama y categoria a partidos_live si no existen
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS rama VARCHAR(50) DEFAULT 'Mixta'
+    `);
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS categoria VARCHAR(50) DEFAULT 'SUB-13'
+    `);
+    console.log('✅ Columnas rama y categoria agregadas a partidos_live');
+
     // Tabla: alertas
     await pool.query(`
       CREATE TABLE IF NOT EXISTS alertas (

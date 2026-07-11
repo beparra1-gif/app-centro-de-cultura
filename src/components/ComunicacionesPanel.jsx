@@ -1,4 +1,4 @@
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, MessageCircle, Trophy, BarChart3, Heart, ThumbsUp, Frown } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
@@ -27,15 +27,19 @@ function ComunicacionesPanel({
   nominaCita,
   setNominaCita,
 }) {
-  const emojisReacciones = ['👍', '❤️', '😂', '😮', '😢', '😡'];
+  const reaccionesDisponibles = [
+    { id: 'love', nombre: 'Me encanta', color: '#ec4899', icon: Heart },
+    { id: 'great', nombre: 'Genial', color: '#10b981', icon: ThumbsUp },
+    { id: 'sad', nombre: 'No me gusta', color: '#f59315', icon: Frown }
+  ];
   const rolNormalizado = String(rolUsuario || '').toLowerCase();
   const esApoderadoRol = rolNormalizado === 'apoderado' || rolNormalizado === 'socio-apoderado';
 
-  const addReaccion = (comId, emoji) => {
+  const addReaccion = (comId, reaccionId) => {
     setComunicaciones(comunicaciones.map(c => {
       if (c.id === comId) {
         const nuevasReacciones = { ...c.reacciones };
-        nuevasReacciones[emoji] = (nuevasReacciones[emoji] || 0) + 1;
+        nuevasReacciones[reaccionId] = (nuevasReacciones[reaccionId] || 0) + 1;
         return { ...c, reacciones: nuevasReacciones };
       }
       return c;
@@ -283,7 +287,7 @@ function ComunicacionesPanel({
     <div className="mt-20">
       {rolUsuario === 'admin' && (
         <button onClick={() => setMostrarFormComunicaciones(!mostrarFormComunicaciones)} className="btn-electric" style={{ width: '100%', padding: '12px', marginBottom: '15px', borderRadius: '16px', border: 'none', color: 'white', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>
-          📢 {mostrarFormComunicaciones ? 'Cerrar' : 'Nueva Comunicación'}
+          <MessageCircle size={16} color="white" strokeWidth={1.5} style={{ marginRight: '6px', display: 'inline' }} /> {mostrarFormComunicaciones ? 'Cerrar' : 'Nueva Comunicación'}
         </button>
       )}
 
@@ -291,13 +295,13 @@ function ComunicacionesPanel({
 
       <div className="segment-control mb-20">
         <div className={`segment-btn ${vistaMuro === 'noticias' ? 'active' : ''}`} onClick={() => setVistaMuro('noticias')}>
-          📢 Comunicaciones
+          <MessageCircle size={18} color="#6B7280" strokeWidth={1.5} /> Comunicaciones
         </div>
         <div className={`segment-btn ${vistaMuro === 'resultados' ? 'active' : ''}`} onClick={() => setVistaMuro('resultados')}>
-          🏆 Resultados
+          <Trophy size={18} color="#6B7280" strokeWidth={1.5} /> Resultados
         </div>
         <div className={`segment-btn ${vistaMuro === 'encuestas' ? 'active' : ''}`} onClick={() => setVistaMuro('encuestas')}>
-          📊 Encuestas
+          <BarChart3 size={18} color="#6B7280" strokeWidth={1.5} /> Encuestas
         </div>
       </div>
 
@@ -307,7 +311,7 @@ function ComunicacionesPanel({
             <div key={i} className="card citacion-card fade-in" style={{ borderColor: 'rgba(255,59,48,0.22)', background: 'linear-gradient(180deg, rgba(255,59,48,0.09) 0%, rgba(255,59,48,0.03) 100%)', borderRadius: '24px' }}>
               <div className="citacion-header">
                 <span className="badge-urgente" style={{ backgroundColor: '#FF3B30', borderRadius: '999px', padding: '7px 12px' }}>
-                  <ShieldAlert size={12} /> ALERTA DEL CLUB
+                  <ShieldAlert size={12} color="#6B7280" strokeWidth={1.5} /> ALERTA DEL CLUB
                 </span>
               </div>
               <h4 style={{ color: '#C1121F', margin: '10px 0 0 0', fontSize: '16px', fontWeight: '900' }}>{alerta}</h4>
@@ -371,11 +375,35 @@ function ComunicacionesPanel({
               )}
 
               <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid var(--borde-suave)' }}>
-                {emojisReacciones.map(emoji => (
-                  <button key={emoji} onClick={() => addReaccion(c.id, emoji)} style={{ padding: '8px 12px', borderRadius: '999px', background: Object.keys(c.reacciones || {}).includes(emoji) ? 'rgba(0, 122, 255, 0.14)' : 'rgba(120,120,128,0.08)', border: 'none', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '4px', transition: '0.2s' }}>
-                    {emoji} {(c.reacciones || {})[emoji] > 0 && <span style={{ fontSize: '11px', fontWeight: '700' }}>{(c.reacciones || {})[emoji]}</span>}
-                  </button>
-                ))}
+                {reaccionesDisponibles.map(reaccion => {
+                  const IconComponent = reaccion.icon;
+                  const tieneReaccion = Object.keys(c.reacciones || {}).includes(reaccion.id);
+                  const contador = (c.reacciones || {})[reaccion.id] || 0;
+                  return (
+                    <button 
+                      key={reaccion.id} 
+                      onClick={() => addReaccion(c.id, reaccion.id)} 
+                      style={{ 
+                        padding: '8px 12px', 
+                        borderRadius: '10px', 
+                        background: tieneReaccion ? `${reaccion.color}15` : 'rgba(120,120,128,0.08)', 
+                        border: `1.5px solid ${tieneReaccion ? reaccion.color : '#E5E7EB'}`, 
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '4px', 
+                        transition: '0.2s',
+                        fontWeight: '700',
+                        fontSize: '12px',
+                        color: tieneReaccion ? reaccion.color : 'var(--texto-secundario)'
+                      }}
+                      title={reaccion.nombre}
+                    >
+                      <IconComponent size={14} color="#6B7280" strokeWidth={1.5} fill={tieneReaccion ? reaccion.color : 'none'} />
+                      {contador > 0 && <span style={{ fontSize: '11px' }}>{contador}</span>}
+                    </button>
+                  );
+                })}
               </div>
 
               {c.asistencias && c.asistencias.length > 0 && (
@@ -425,10 +453,7 @@ function ComunicacionesPanel({
         </div>
       ) : (
         <div className="mt-20 fade-in">
-          <h4 className="rama-title femenina">🏀 Rama Femenina</h4>
-          <ResultadosCards partidos={partidos.filter(p => p.rama === 'Femenina')} />
-          <h4 className="rama-title masculina mt-20">🏀 Rama Masculina</h4>
-          <ResultadosCards partidos={partidos.filter(p => p.rama === 'Masculina')} />
+          <ResultadosCards partidos={partidos} />
         </div>
       )}
     </div>

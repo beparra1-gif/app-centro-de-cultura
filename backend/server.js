@@ -2607,6 +2607,56 @@ app.put('/api/pagos-mensualidades/:id/validar', async (req, res) => {
   }
 });
 
+// GET: Obtener pago específico por ID
+app.get('/api/pagos-mensualidades/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT pm.*, j.nombres, j.apellido_paterno
+       FROM pagos_mensualidades pm
+       LEFT JOIN jugadores j ON pm.rut_jugador = j.rut_jugador
+       WHERE pm.id = $1`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Pago no encontrado' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT: Actualizar pago de mensualidad (edición completa)
+app.put('/api/pagos-mensualidades/:id', async (req, res) => {
+  const { rut_jugador, correo_apoderado, concepto_pago, cantidad_meses_pagados, meses_correspondientes, monto_total_pagado, comprobante_url, notas_tesoreria } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE pagos_mensualidades 
+       SET rut_jugador = $1, correo_apoderado = $2, concepto_pago = $3, cantidad_meses_pagados = $4, 
+           meses_correspondientes = $5, monto_total_pagado = $6, comprobante_url = $7, notas_tesoreria = $8, updated_at = NOW()
+       WHERE id = $9
+       RETURNING *`,
+      [
+        rut_jugador,
+        correo_apoderado,
+        concepto_pago,
+        cantidad_meses_pagados,
+        meses_correspondientes,
+        monto_total_pagado,
+        comprobante_url,
+        notas_tesoreria,
+        req.params.id
+      ]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Pago no encontrado' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==========================================
 // 11. ENDPOINTS: CONVOCATORIAS/CITACIONES (FASE 1)
 // ==========================================
@@ -2727,22 +2777,28 @@ app.get('/api/partidos-live', async (req, res) => {
 // POST: Crear partido
 app.post('/api/partidos-live', async (req, res) => {
   const {
-    fecha_hora, cancha_sede, categoria_rama, equipo_local, equipo_visitante,
+    fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante,
     rut_planillero, estado_juego,
     logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url,
     pts_local, pts_visitante,
   } = req.body;
   try {
+    // Use new rama/categoria if provided, otherwise use old categoria_rama for backward compatibility
+    const ramafinal = rama || 'Mixta';
+    const categoriafinal = categoria || 'SUB-13';
+    const categoria_rama_final = categoria_rama || `${ramafinal}-${categoriafinal}`;
+    
     const result = await pool.query(
       `INSERT INTO partidos_live
-       (fecha_hora, cancha_sede, categoria_rama, equipo_local, equipo_visitante, rut_planillero,
+       (fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante, rut_planillero,
         estado_juego, logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url,
         pts_local, pts_visitante)
-       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7,'pendiente'), $8, $9, $10, $11,
-        COALESCE($12, 0), COALESCE($13, 0))
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9,'pendiente'), $10, $11, $12, $13,
+        COALESCE($14, 0), COALESCE($15, 0))
        RETURNING *`,
       [
-        fecha_hora, cancha_sede, categoria_rama, equipo_local, equipo_visitante, rut_planillero || null,
+        fecha_hora, cancha_sede, categoria_rama_final, ramafinal, categoriafinal, 
+        equipo_local, equipo_visitante, rut_planillero || null,
         estado_juego || 'pendiente',
         logo_local_url || null, logo_visitante_url || null,
         torneo_nombre || null, torneo_logo_url || null,
@@ -2757,16 +2813,83 @@ app.post('/api/partidos-live', async (req, res) => {
 
 // PUT: Actualizar marcador
 app.put('/api/partidos-live/:id', async (req, res) => {
-  const { pts_local, pts_visitante, estado_juego, periodo_actual } = req.body;
+  const {
+    pts_local,
+    pts_visitante,
+    estado_juego,
+    periodo_actual,
+    fecha_hora,
+    cancha_sede,
+    categoria_rama,
+    rama,
+    categoria,
+    equipo_local,
+    equipo_visitante,
+    logo_local_url,
+    logo_visitante_url,
+    torneo_nombre,
+    torneo_logo_url,
+  } = req.body;
   try {
     const result = await pool.query(
       `UPDATE partidos_live 
-       SET pts_local = $1, pts_visitante = $2, estado_juego = $3, periodo_actual = $4, updated_at = NOW()
-       WHERE id_partido = $5
+       SET pts_local = COALESCE($1, pts_local),
+           pts_visitante = COALESCE($2, pts_visitante),
+           estado_juego = COALESCE($3, estado_juego),
+           periodo_actual = COALESCE($4, periodo_actual),
+           fecha_hora = COALESCE($5, fecha_hora),
+           cancha_sede = COALESCE($6, cancha_sede),
+           categoria_rama = COALESCE($7, categoria_rama),
+           rama = COALESCE($8, rama),
+           categoria = COALESCE($9, categoria),
+           equipo_local = COALESCE($10, equipo_local),
+           equipo_visitante = COALESCE($11, equipo_visitante),
+           logo_local_url = COALESCE($12, logo_local_url),
+           logo_visitante_url = COALESCE($13, logo_visitante_url),
+           torneo_nombre = COALESCE($14, torneo_nombre),
+           torneo_logo_url = COALESCE($15, torneo_logo_url),
+           updated_at = NOW()
+       WHERE id_partido = $16
        RETURNING *`,
-      [pts_local, pts_visitante, estado_juego, periodo_actual, req.params.id]
+      [
+        pts_local,
+        pts_visitante,
+        estado_juego,
+        periodo_actual,
+        fecha_hora,
+        cancha_sede,
+        categoria_rama,
+        rama,
+        categoria,
+        equipo_local,
+        equipo_visitante,
+        logo_local_url,
+        logo_visitante_url,
+        torneo_nombre,
+        torneo_logo_url,
+        req.params.id,
+      ]
     );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Partido no encontrado' });
+    }
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE: Eliminar un partido
+app.delete('/api/partidos-live/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM partidos_live WHERE id_partido = $1 RETURNING id_partido`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Partido no encontrado' });
+    }
+    res.json({ success: true, message: 'Partido eliminado correctamente' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

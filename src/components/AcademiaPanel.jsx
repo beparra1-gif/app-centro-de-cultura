@@ -126,7 +126,7 @@ function AcademiaPanel({
         {animacionXP && <div className="particulas-xp">✨ +50 XP ✨</div>}
         <div className="gamificacion-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div className="nivel-box" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <Star size={34} color="#FFD700" fill="#FFD700" />
+            <Star size={34} color="#6B7280" strokeWidth={1.5} />
             <div>
               <h4 style={{ margin: 0, fontSize: '22px', fontWeight: '900' }}>Nivel {pupiloActivo.nivel}</h4>
               <span className="xp-totales" style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', fontWeight: 'bold' }}>{pupiloActivo.xp} XP Totales</span>
@@ -142,8 +142,8 @@ function AcademiaPanel({
       <h3 className="section-title">Video Análisis</h3>
       <div className="card video-card" style={{ borderRadius: '24px', boxShadow: '0 14px 34px rgba(15,23,42,0.08)' }}>
         <div className="video-placeholder" style={{ borderRadius: '20px' }}>
-          <Video size={40} color="white" />
-          <div className="play-button"><PlayCircle size={35} color="var(--azul-marino)" fill="white" /></div>
+          <Video size={40} color="#6B7280" strokeWidth={1.5} />
+          <div className="play-button"><PlayCircle size={35} color="#6B7280" strokeWidth={1.5} /></div>
         </div>
         <div className="video-info">
           <span className="badge-video" style={{ borderRadius: '999px', padding: '6px 10px' }}>NUEVO VIDEO</span>
@@ -174,7 +174,7 @@ function AcademiaPanel({
                   boxShadow: '0 8px 18px rgba(15,23,42,0.04)'
                 }}
               >
-                {(mat.TIPO_COMUNICADO || '').toLowerCase().includes('imagen') ? <Image size={16} /> : <Link2 size={16} />}
+                {(mat.TIPO_COMUNICADO || '').toLowerCase().includes('imagen') ? <Image size={16} color="#6B7280" strokeWidth={1.5} /> : <Link2 size={16} color="#6B7280" strokeWidth={1.5} />}
                 <strong style={{ fontSize: '13px' }}>{mat.TITULO}</strong>
               </a>
             ))}
@@ -185,7 +185,7 @@ function AcademiaPanel({
       <h3 className="section-title mt-20">Desafío Semanal</h3>
       <div className="card academia-card" style={{ border: '2px solid #FF9500', borderRadius: '26px', boxShadow: '0 14px 34px rgba(15,23,42,0.08)' }}>
         <div className="academia-header">
-          <span className="badge-academia" style={{ background: '#FF9500', color: 'white', borderRadius: '999px', padding: '6px 10px' }}><Brain size={12} /> QUIZ TÁCTICO</span>
+          <span className="badge-academia" style={{ background: '#FF9500', color: 'white', borderRadius: '999px', padding: '6px 10px' }}><Brain size={12} color="#6B7280" strokeWidth={1.5} /> QUIZ TÁCTICO</span>
           <span className="xp-recompensa">+50 XP</span>
         </div>
         <h4 className="titulo-leccion">{quizActivo.titulo}</h4>
@@ -229,7 +229,7 @@ function AcademiaPanel({
             <input className="form-input mt-5" value={materialForm.url} onChange={(e) => setMaterialForm((prev) => ({ ...prev, url: e.target.value }))} placeholder="https://..." />
           </div>
 
-          <button className="btn-electric" onClick={handlePublicarMaterial}><Save size={16} /> Publicar material</button>
+          <button className="btn-electric" onClick={handlePublicarMaterial}><Save size={16} color="#6B7280" strokeWidth={1.5} /> Publicar material</button>
 
           <hr style={{ margin: '18px 0', border: 'none', borderTop: '1px solid var(--borde-suave)' }} />
 

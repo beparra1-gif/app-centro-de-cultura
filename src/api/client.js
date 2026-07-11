@@ -480,10 +480,26 @@ export const pagosMensualidadesAPI = {
     return handleResponse(response);
   },
 
+  // Obtener por ID
+  getById: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/pagos-mensualidades/${id}`);
+    return handleResponse(response);
+  },
+
   // Crear
   create: async (datos) => {
     const response = await fetch(`${API_BASE_URL}/pagos-mensualidades`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+
+  // Actualizar
+  update: async (id, datos) => {
+    const response = await fetch(`${API_BASE_URL}/pagos-mensualidades/${id}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
     });
@@ -586,6 +602,25 @@ export const partidosLiveAPI = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+
+  // Actualizar partido completo
+  update: async (id, datos) => {
+    const response = await fetch(`${API_BASE_URL}/partidos-live/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+
+  // Borrar
+  delete: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/partidos-live/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
     });
     return handleResponse(response);
   }

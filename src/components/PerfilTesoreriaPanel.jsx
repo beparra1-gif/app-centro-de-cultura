@@ -148,7 +148,7 @@ function PerfilTesoreriaPanel({
           </div>
         </div>
         {estadoCuenta === 'Moroso' && (
-          <div className="status-alert"><AlertTriangle size={16} /> Presenta {mesesAtraso} meses de atraso en cuotas.</div>
+          <div className="status-alert"><AlertTriangle size={16} color="#6B7280" strokeWidth={1.5} /> Presenta {mesesAtraso} meses de atraso en cuotas.</div>
         )}
       </div>
 
@@ -185,7 +185,7 @@ function PerfilTesoreriaPanel({
         <div className="card fade-in mt-15 compact-debt-summary" style={{ borderLeft: '4px solid var(--rojo-alerta)', background: 'linear-gradient(180deg, rgba(255,59,48,0.08), rgba(255,59,48,0.02))', borderRadius: '24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'center' }}>
             <div>
-              <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', color: 'var(--rojo-alerta)', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={18} /> Deuda Pendiente</h4>
+              <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', color: 'var(--rojo-alerta)', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={18} color="#6B7280" strokeWidth={1.5} /> Deuda Pendiente</h4>
               <p style={{ margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{mesesAtraso} {mesesAtraso === 1 ? 'mes' : 'meses'} adeudados</p>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -299,7 +299,7 @@ function PerfilTesoreriaPanel({
                 detalle: `${tipoPago === 'completo' ? 'Pago total' : `Abono $${Number(montoAbono).toLocaleString('es-CL')}`} — ${mesesSeleccionados.length} mes(es) — Comprobante adjunto`,
               }]);
             }}>
-              <Camera size={24} color="white" />
+              <Camera size={24} color="#6B7280" strokeWidth={1.5} />
               <div>
                 <strong style={{ display: 'block', fontSize: '14px' }}>Adjuntar y Enviar Comprobante</strong>
                 <span style={{ fontSize: '11px', opacity: 0.8 }}>JPG · PDF · PNG · Imagen WhatsApp</span>
@@ -310,7 +310,7 @@ function PerfilTesoreriaPanel({
 
         {comprobanteSubido && (
           <div className="fade-in text-center py-20 mt-20 review-card">
-            <Clock size={40} color="#FF9500" style={{ margin: '0 auto' }} />
+            <Clock size={40} color="#6B7280" strokeWidth={1.5} style={{ margin: '0 auto' }} />
             <h3 style={{ color: '#FF9500', margin: '15px 0 10px 0', fontSize: '20px', fontWeight: '900' }}>Pago en Revisión</h3>
             <p style={{ fontSize: '14px', margin: 0, color: 'var(--texto-secundario)', lineHeight: '1.5' }}>Tesorería ha recibido tu comprobante. Será validado a la brevedad y recibirás una notificación.</p>
             <button className="btn-secondary mt-20" style={{ color: '#FF9500', background: 'rgba(255,149,0,0.1)' }} onClick={() => { setComprobanteSubido(false); setMesesSeleccionados([]); setMontoAbono(''); }}>

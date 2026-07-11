@@ -264,6 +264,7 @@ function App() {
       const sesionRaw = window.localStorage.getItem(SESSION_STORAGE_KEY);
       if (sesionRaw) {
         const sesion = JSON.parse(sesionRaw);
+        // Para SuperAdmin, no verificar expiración - mantener sesión indefinidamente
         if (sesion?.rol && sesion?.usuario) {
           const rolNormalizado = normalizarRol(sesion.rol);
           setRolUsuario(rolNormalizado);
@@ -271,7 +272,7 @@ function App() {
             ...sesion.usuario,
             rol: normalizarRol(sesion.usuario?.rol || rolNormalizado),
           });
-          setPantallaActiva(sesion.pantallaActiva || 'comunicaciones');
+          setPantallaActiva(sesion.pantallaActiva || (rolNormalizado === 'super_admin' ? 'admin_dashboard' : 'comunicaciones'));
         }
       }
     } catch {
@@ -490,8 +491,8 @@ function App() {
       if (Array.isArray(partidosLiveRes)) {
         const partidosTransformados = partidosLiveRes.map((p, idx) => ({
           id: p.id_partido || idx + 1,
-          rama: (p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina',
-          categoria: p.categoria_rama || 'General',
+          rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
+          categoria: p.categoria || p.categoria_rama || 'General',
           torneo: p.estado_juego || 'Partido oficial',
           torneoLogoUrl: p.torneo_logo_url || p.logo_torneo_url || '',
           fechaISO: p.fecha_hora || null,
@@ -727,11 +728,26 @@ function App() {
 
     setRolUsuario(perfilNormalizado);
     setUsuarioAutenticado(usuarioNormalizado);
-    if(perfilNormalizado === 'mesa') setPantallaActiva('scoreboard_live');
-    else if(perfilNormalizado === 'admin' || perfilNormalizado === 'super_admin') setPantallaActiva('admin_dashboard');
-    else if(perfilNormalizado === 'staff') setPantallaActiva('asistencia_staff'); 
-    else if(perfilNormalizado === 'jugador' || perfilNormalizado === 'visita') setPantallaActiva('jugador');
-    else setPantallaActiva('comunicaciones');
+    
+    // Determinar pantalla activa según rol
+    let pantallaActiva = 'comunicaciones';
+    if(perfilNormalizado === 'mesa') pantallaActiva = 'scoreboard_live';
+    else if(perfilNormalizado === 'admin' || perfilNormalizado === 'super_admin') pantallaActiva = 'admin_dashboard';
+    else if(perfilNormalizado === 'staff') pantallaActiva = 'asistencia_staff'; 
+    else if(perfilNormalizado === 'jugador' || perfilNormalizado === 'visita') pantallaActiva = 'jugador';
+    
+    setPantallaActiva(pantallaActiva);
+    
+    // Guardar sesión inmediatamente para todos los usuarios (sin requerimiento de contraseña en siguiente acceso)
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        rol: perfilNormalizado,
+        usuario: usuarioNormalizado,
+        pantallaActiva: pantallaActiva,
+        savedAt: new Date().toISOString(),
+      })
+    );
     
     setRutInput(''); setPassInput(''); setMostrarFormularioLogin(false);
   };
@@ -1546,7 +1562,7 @@ function App() {
         <div className="header-btn-zone">
           {rolUsuario && (
             <div className="btn-icon-header" style={{ cursor: 'default' }}>
-              <ShieldAlert size={22} color="#FFD700" />
+              <ShieldAlert size={22} color="#6B7280" strokeWidth={1.5} />
             </div>
           )}
         </div>
@@ -1565,13 +1581,13 @@ function App() {
           {rolUsuario && (
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'flex-end', width: '100%', flexWrap: 'nowrap' }}>
               <button className="btn-icon-header" onClick={() => setMostrarBusqueda(!mostrarBusqueda)} title="Búsqueda Global">
-                <Search size={24} color="white" />
+                <Search size={24} color="#6B7280" strokeWidth={1.5} />
               </button>
               <button className="btn-icon-header" onClick={() => setShowSettings(!showSettings)} title="Configuración y Perfil">
-                <Settings size={24} color="white" />
+                <Settings size={24} color="#6B7280" strokeWidth={1.5} />
               </button>
               <div style={{position: 'relative', cursor: 'pointer'}} onClick={() => setMostrarNotificaciones(!mostrarNotificaciones)}>
-                <Bell size={24} color="white" />
+                <Bell size={24} color="#6B7280" strokeWidth={1.5} />
                 {notificaciones.filter(n=>!n.leida).length > 0 && (
                   <span style={{position: 'absolute', top: '-5px', right: '-5px', background: '#FF3B30', color: 'white', fontSize: '10px', fontWeight: '900', padding: '3px 6px', borderRadius: '10px', border: '2px solid var(--azul-marino)'}}>
                     {notificaciones.filter(n=>!n.leida).length}
@@ -1579,7 +1595,7 @@ function App() {
                 )}
               </div>
               <button className="btn-icon-header" onClick={() => setMostrarWhatsAppPanel(mostrarWhatsAppPanel ? false : 'enviar')} title="WhatsApp" style={{position: 'relative'}}>
-                <MessageCircle size={22} color="white" />
+                <MessageCircle size={22} color="#6B7280" strokeWidth={1.5} />
                 {contactosWhatsApp.filter(c => c.activo).length > 0 && (
                   <span style={{position: 'absolute', top: '-5px', right: '-5px', background: '#34C759', color: 'white', fontSize: '10px', fontWeight: '900', padding: '3px 6px', borderRadius: '10px', border: '2px solid var(--azul-marino)'}}>
                     {contactosWhatsApp.filter(c => c.activo).length}
@@ -1587,7 +1603,7 @@ function App() {
                 )}
               </button>
               <button className="btn-icon-header" onClick={() => setShowModalSalir(true)}>
-                <LogOut size={24} />
+                <LogOut size={24} color="#6B7280" strokeWidth={1.5} />
               </button>
             </div>
           )}
@@ -1964,48 +1980,48 @@ function App() {
       <nav className="ios-bottom-nav">
         {!rolUsuario ? (
           <>
-            <div className={`nav-item ${vistaPublica === 'inicio' ? 'active' : ''}`} onClick={() => setVistaPublica('inicio')}><Home size={26} /><span className="mt-5">Inicio</span></div>
-            <div className={`nav-item ${vistaPublica === 'noticias' ? 'active' : ''}`} onClick={() => setVistaPublica('noticias')}><Bell size={26} /><span className="mt-5">Noticias</span></div>
-            <div className={`nav-item ${vistaPublica === 'resultados' ? 'active' : ''}`} onClick={() => setVistaPublica('resultados')}><Trophy size={26} /><span className="mt-5">Resultados</span></div>
+            <div className={`nav-item ${vistaPublica === 'inicio' ? 'active' : ''}`} onClick={() => setVistaPublica('inicio')}><Home size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Inicio</span></div>
+            <div className={`nav-item ${vistaPublica === 'noticias' ? 'active' : ''}`} onClick={() => setVistaPublica('noticias')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Noticias</span></div>
+            <div className={`nav-item ${vistaPublica === 'resultados' ? 'active' : ''}`} onClick={() => setVistaPublica('resultados')}><Trophy size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Resultados</span></div>
           </>
         ) : rolUsuario === 'visita' ? (
           <>
-            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Trophy size={26} /><span className="mt-5">Torneo</span></div>}
-            {puedeVerPantalla('jugador') && <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><QrCode size={26} /><span className="mt-5">Pase/Fixture</span></div>}
+            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Trophy size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Torneo</span></div>}
+            {puedeVerPantalla('jugador') && <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><QrCode size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Pase/Fixture</span></div>}
           </>
         ) : rolUsuario === 'jugador' ? (
           <>
-            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>}
-            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} /><span className="mt-5">Academia</span></div>}
-            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Mi Cuenta</span></div>}
-            {puedeVerPantalla('jugador') && <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><User size={26} /><span className="mt-5">Jugador</span></div>}
+            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Muro</span></div>}
+            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Academia</span></div>}
+            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Mi Cuenta</span></div>}
+            {puedeVerPantalla('jugador') && <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><User size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Jugador</span></div>}
           </>
         ) : rolUsuario === 'admin' ? (
           <>
-            {puedeVerPantalla('admin_dashboard') && <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><Activity size={26} /><span className="mt-5">Admin</span></div>}
-            {puedeVerPantalla('kiosco') && <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} /><span className="mt-5">Kiosco</span></div>}
-            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Tesorería</span></div>}
-            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>}
+            {puedeVerPantalla('admin_dashboard') && <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><Activity size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Admin</span></div>}
+            {puedeVerPantalla('kiosco') && <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Kiosco</span></div>}
+            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Tesorería</span></div>}
+            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Muro</span></div>}
           </>
         ) : rolUsuario === 'super_admin' ? (
           <>
-            {puedeVerPantalla('admin_dashboard') && <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><ShieldAlert size={26} /><span className="mt-5">Panel</span></div>}
-            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>}
-            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} /><span className="mt-5">Academia</span></div>}
-            {puedeVerPantalla('asistencia_staff') && <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} /><span className="mt-5">Staff</span></div>}
-            {puedeVerPantalla('scoreboard_live') && <div className={`nav-item ${pantallaActiva === 'scoreboard_live' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('scoreboard_live')}><Monitor size={26} /><span className="mt-5">Mesa</span></div>}
-            {puedeVerPantalla('kiosco') && <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} /><span className="mt-5">Kiosco</span></div>}
-            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} /><span className="mt-5">Tesorería</span></div>}
+            {puedeVerPantalla('admin_dashboard') && <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><ShieldAlert size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Panel</span></div>}
+            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Muro</span></div>}
+            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Academia</span></div>}
+            {puedeVerPantalla('asistencia_staff') && <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Staff</span></div>}
+            {puedeVerPantalla('scoreboard_live') && <div className={`nav-item ${pantallaActiva === 'scoreboard_live' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('scoreboard_live')}><Monitor size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Mesa</span></div>}
+            {puedeVerPantalla('kiosco') && <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Kiosco</span></div>}
+            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Tesorería</span></div>}
           </>
         ) : rolUsuario === 'staff' ? (
           <>
-            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} /><span className="mt-5">Muro</span></div>}
-            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} /><span className="mt-5">Academia</span></div>}
-            {puedeVerPantalla('asistencia_staff') && <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} /><span className="mt-5">Lista</span></div>}
-            {puedeVerPantalla('evaluacion_staff') && <div className={`nav-item ${pantallaActiva === 'evaluacion_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('evaluacion_staff')}><Sliders size={26} /><span className="mt-5">Evaluar</span></div>}
+            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Muro</span></div>}
+            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Academia</span></div>}
+            {puedeVerPantalla('asistencia_staff') && <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Lista</span></div>}
+            {puedeVerPantalla('evaluacion_staff') && <div className={`nav-item ${pantallaActiva === 'evaluacion_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('evaluacion_staff')}><Sliders size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Evaluar</span></div>}
           </>
         ) : rolUsuario === 'mesa' ? (
-          <div className="nav-item active" style={{width: '100%'}}><Monitor size={26} /><span className="mt-5">Consola Transmisión</span></div>
+          <div className="nav-item active" style={{width: '100%'}}><Monitor size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Consola Transmisión</span></div>
         ) : null}
       </nav>
 
