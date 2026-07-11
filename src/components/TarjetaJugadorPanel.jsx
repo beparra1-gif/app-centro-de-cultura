@@ -57,12 +57,21 @@ function TarjetaJugadorPanel({
   const nombreCompletoDisplay = rolUsuario === 'visita'
     ? 'INVITADO TORNEO'
     : String(pupiloActivo.nombre || `${nombreDisplay} ${apellidoDisplay}`).trim();
+  const normalizarRut = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+  const pupiloDesdeListado = Array.isArray(pupilosDisponibles)
+    ? pupilosDisponibles.find((item) => normalizarRut(item?.rut) === normalizarRut(pupiloActivo?.rut))
+    : null;
   const anioNacimiento = (
     pupiloActivo.anioNacimiento
     || pupiloActivo.anio_nacimiento
     || pupiloActivo.ano_nacimiento
     || pupiloActivo['año_nacimiento']
     || pupiloActivo['a├▒o_nacimiento']
+    || pupiloDesdeListado?.anioNacimiento
+    || pupiloDesdeListado?.anio_nacimiento
+    || pupiloDesdeListado?.ano_nacimiento
+    || pupiloDesdeListado?.['año_nacimiento']
+    || pupiloDesdeListado?.['a├▒o_nacimiento']
     || ''
   );
   const numeroCamiseta = (() => {
@@ -71,6 +80,10 @@ function TarjetaJugadorPanel({
       ?? pupiloActivo.numero_camiseta
       ?? pupiloActivo.numero
       ?? pupiloActivo.dorsal
+      ?? pupiloDesdeListado?.numeroCamiseta
+      ?? pupiloDesdeListado?.numero_camiseta
+      ?? pupiloDesdeListado?.numero
+      ?? pupiloDesdeListado?.dorsal
       ?? 0
     );
     const parsed = Number(raw);
