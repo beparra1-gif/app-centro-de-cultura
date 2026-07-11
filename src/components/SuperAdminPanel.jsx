@@ -351,7 +351,23 @@ function SuperAdminPanel({
   }, [jugadoresAdmin]);
 
   const pagosPendientesReales = useMemo(
-    () => (pagosPendientesAdmin || []).filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente'),
+    () => (pagosPendientesAdmin || []).filter((p) => {
+      const estado = (p.estado_pago || '').toLowerCase();
+      if (estado !== 'pendiente') return false;
+      // Exclude migrated payments with correction note — they go to the separate section.
+      const esLegacy = String(p.notas_tesoreria || '').includes('Migrado desde') ||
+        String(p.notas_tesoreria || '').includes('Legacy ID:');
+      return !esLegacy;
+    }),
+    [pagosPendientesAdmin]
+  );
+
+  const pagosMigradosPendientes = useMemo(
+    () => (pagosPendientesAdmin || []).filter((p) => {
+      const notas = String(p.notas_tesoreria || '');
+      return (p.estado_pago || '').toLowerCase() === 'pendiente' &&
+        (notas.includes('Migrado desde') || notas.includes('Legacy ID:'));
+    }),
     [pagosPendientesAdmin]
   );
 
@@ -2016,13 +2032,20 @@ function SuperAdminPanel({
       {vistaAdmin === 'pagos' && (
         <div className="fade-in">
           <h3 className="section-title">Bandeja de Validación</h3>
-          {pagosPendientesReales.length === 0 ? <p className="text-muted text-center italic mt-20">Sin comprobantes pendientes.</p> : null}
+
+          {/* Pagos reales con comprobante */}
+          <h4 className="form-subtitle" style={{ marginBottom: '8px' }}>
+            Comprobantes enviados ({pagosPendientesReales.length})
+          </h4>
+          {pagosPendientesReales.length === 0
+            ? <p className="text-muted text-center italic mt-20" style={{ marginBottom: '24px' }}>Sin comprobantes pendientes.</p>
+            : null}
           {pagosPendientesReales.map((pago) => (
-            <div key={pago.id} className="card" style={{ borderLeft: '4px solid var(--azul-electrico)' }}>
+            <div key={pago.id} className="card" style={{ borderLeft: '4px solid var(--azul-electrico)', marginBottom: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h4 style={{ margin: 0, color: 'var(--texto-heading)', fontSize: '16px' }}>
-                    {`${pago.nombres || 'Jugador'} ${pago.apellido_paterno || ''}`.trim()}
+                    {`${pago.nombres || 'Jugador'} ${pago.apellido_paterno || ''}`.trim() || `Pago #${pago.id}`}
                   </h4>
                   <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>
                     ID pago: #{pago.id} · RUT: {pago.rut_jugador || 'N/A'}
@@ -2035,36 +2058,89 @@ function SuperAdminPanel({
               <p style={{ fontSize: '13px', margin: '15px 0', color: 'var(--texto-principal)' }}>
                 <strong>Detalle:</strong> {pago.concepto_pago || 'Mensualidad'} · {pago.meses_correspondientes || 'Sin meses indicados'}
               </p>
-
               <div className="foto-upload-box mb-15" style={{ padding: '15px', background: 'rgba(0,122,255,0.05)', borderColor: 'rgba(0,122,255,0.2)' }}>
                 <FileText size={24} color="var(--azul-electrico)" />
                 <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--azul-electrico)' }}>
                   {pago.comprobante_url ? `Comprobante: ${pago.comprobante_url}` : 'Sin comprobante adjunto'}
                 </span>
               </div>
-
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
                   style={{ flex: 1, padding: '12px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
-                  onClick={async () => {
-                    await validarPagoMensualidad(pago.id, 'aprobado');
-                    alert('Pago aprobado correctamente.');
-                  }}
+                  onClick={async () => { await validarPagoMensualidad(pago.id, 'aprobado'); alert('Pago aprobado correctamente.'); }}
                 >
                   <CheckSquare size={16} /> Aprobar
                 </button>
                 <button
                   style={{ flex: 1, padding: '12px', background: '#FF3B30', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
-                  onClick={async () => {
-                    await validarPagoMensualidad(pago.id, 'rechazado');
-                    alert('Pago rechazado correctamente.');
-                  }}
+                  onClick={async () => { await validarPagoMensualidad(pago.id, 'rechazado'); alert('Pago rechazado correctamente.'); }}
                 >
                   <XSquare size={16} /> Rechazar
                 </button>
               </div>
             </div>
           ))}
+
+          {/* Pagos migrados pendientes de revisión */}
+          <div style={{ borderTop: '1px dashed rgba(0,0,0,0.12)', paddingTop: '16px', marginTop: '8px' }}>
+            <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>
+              <AlertTriangle size={14} style={{ marginRight: '6px', color: '#b36200', verticalAlign: 'middle' }} />
+              Pagos migrados pendientes de revisión ({pagosMigradosPendientes.length})
+            </h4>
+            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
+              Estos registros vienen de la hoja de migración de pagos y aún no han sido validados. Puedes aprobarlos o rechazarlos de forma individual.
+            </p>
+            {pagosMigradosPendientes.length === 0 && (
+              <p className="text-muted italic">No hay pagos migrados pendientes.</p>
+            )}
+            {pagosMigradosPendientes.slice(0, 200).map((pago) => {
+              const notasVisibles = String(pago.notas_tesoreria || '')
+                .replace(/Migrado desde \w+\s*\|?\s*/gi, '')
+                .replace(/Legacy ID:\s*\d+\s*\|?\s*/gi, '')
+                .replace(/^\s*\|\s*|\s*\|\s*$/g, '')
+                .trim();
+
+              return (
+                <div key={pago.id} className="card" style={{ marginBottom: '8px', borderLeft: '4px solid #FF9500', borderRadius: '18px', background: 'rgba(255,149,0,0.04)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: '13px' }}>{`${pago.nombres || ''} ${pago.apellido_paterno || ''}`.trim() || '—'}</strong>
+                        <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{pago.rut_jugador || 'Sin RUT'}</span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '3px' }}>
+                        {pago.meses_correspondientes || 'Sin mes'} · ${Number(pago.monto_total_pagado || 0).toLocaleString('es-CL')}
+                      </div>
+                      {notasVisibles && (
+                        <div style={{ fontSize: '11px', color: '#b36200', marginTop: '4px', fontStyle: 'italic' }}>{notasVisibles}</div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                      <button
+                        style={{ padding: '7px 10px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
+                        onClick={async () => { await validarPagoMensualidad(pago.id, 'aprobado'); }}
+                        title="Aprobar"
+                      >
+                        <CheckSquare size={13} />
+                      </button>
+                      <button
+                        style={{ padding: '7px 10px', background: '#FF3B30', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
+                        onClick={async () => { await validarPagoMensualidad(pago.id, 'rechazado'); }}
+                        title="Rechazar"
+                      >
+                        <XSquare size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {pagosMigradosPendientes.length > 200 && (
+              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', textAlign: 'center', marginTop: '8px' }}>
+                Mostrando 200 de {pagosMigradosPendientes.length}. Usa sincronización para consolidar masivamente.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
