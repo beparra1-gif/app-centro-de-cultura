@@ -3,6 +3,9 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const { S3Client, PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
 const axios = require('axios');
 const { parse } = require('csv-parse/sync');
 const multer = require('multer');
@@ -13,6 +16,361 @@ const { runImportFromSheets } = require('./import-google-sheets');
 const app = express();
 let isSheetsSyncRunning = false;
 let lastSheetsSyncStatus = null;
+let isBackupRunning = false;
+let lastBackupRunStatus = null;
+let backupCronTask = null;
+const execFileAsync = promisify(execFile);
+
+const resolveRuntimePath = (rawPath = '') => {
+  const cleaned = String(rawPath || '').trim();
+  if (!cleaned) return '';
+  if (path.isAbsolute(cleaned)) return cleaned;
+
+  const fromCwd = path.resolve(cleaned);
+  if (fs.existsSync(fromCwd)) return fromCwd;
+
+  return path.resolve(__dirname, cleaned);
+};
+
+const getBackupConfig = () => {
+  const backupDir = resolveRuntimePath(String(process.env.BACKUP_DIR || 'backups'));
+  const manifestPath = resolveRuntimePath(String(process.env.BACKUP_MANIFEST_PATH || path.join(backupDir, 'backup-manifest.json')));
+  const cronExpr = String(process.env.BACKUP_CRON || '0 */6 * * *').trim();
+  const keepDays = Number(process.env.BACKUP_KEEP_DAYS || 7);
+  const runOnStart = String(process.env.BACKUP_RUN_ON_START || 'true').toLowerCase() === 'true';
+  const enabled = String(process.env.BACKUP_ENABLED || 'true').toLowerCase() === 'true';
+  const allowJsonFallback = String(process.env.BACKUP_ALLOW_JSON_FALLBACK || 'true').toLowerCase() === 'true';
+
+  return {
+    enabled,
+    backupDir,
+    manifestPath,
+    cronExpr,
+    keepDays: Number.isFinite(keepDays) && keepDays > 0 ? keepDays : 7,
+    runOnStart,
+    allowJsonFallback,
+  };
+};
+
+const getBackupStorageConfig = () => {
+  const uploadEnabled = String(process.env.BACKUP_UPLOAD_ENABLED || 'false').toLowerCase() === 'true';
+  const uploadRequired = String(process.env.BACKUP_UPLOAD_REQUIRED || 'false').toLowerCase() === 'true';
+  const endpoint = String(process.env.BACKUP_S3_ENDPOINT || '').trim();
+  const region = String(process.env.BACKUP_S3_REGION || 'us-east-1').trim();
+  const bucket = String(process.env.BACKUP_S3_BUCKET || '').trim();
+  const accessKeyId = String(process.env.BACKUP_S3_ACCESS_KEY_ID || '').trim();
+  const secretAccessKey = String(process.env.BACKUP_S3_SECRET_ACCESS_KEY || '').trim();
+  const prefixRaw = String(process.env.BACKUP_S3_PREFIX || 'ccf-db-backups').trim();
+  const prefix = prefixRaw.replace(/^\/+/, '').replace(/\/+$/, '');
+
+  const hasCredentials = Boolean(accessKeyId && secretAccessKey);
+  const hasCoreConfig = Boolean(endpoint && bucket && hasCredentials);
+
+  return {
+    uploadEnabled,
+    uploadRequired,
+    endpoint,
+    region,
+    bucket,
+    accessKeyId,
+    secretAccessKey,
+    prefix,
+    hasCoreConfig,
+  };
+};
+
+const uploadBackupToObjectStorage = async ({ localFilePath, trigger, strategy }) => {
+  const storage = getBackupStorageConfig();
+  if (!storage.uploadEnabled) {
+    return { attempted: false, uploaded: false, skipped: true, reason: 'BACKUP_UPLOAD_ENABLED=false' };
+  }
+
+  if (!storage.hasCoreConfig) {
+    const reason = 'Configuración S3 incompleta (endpoint/bucket/credenciales).';
+    if (storage.uploadRequired) {
+      throw new Error(reason);
+    }
+    return { attempted: true, uploaded: false, skipped: true, reason };
+  }
+
+  const s3 = new S3Client({
+    region: storage.region,
+    endpoint: storage.endpoint,
+    credentials: {
+      accessKeyId: storage.accessKeyId,
+      secretAccessKey: storage.secretAccessKey,
+    },
+    forcePathStyle: true,
+  });
+
+  const fileName = path.basename(localFilePath);
+  const objectKey = `${storage.prefix}/${new Date().toISOString().slice(0, 10)}/${fileName}`;
+  const fileBuffer = fs.readFileSync(localFilePath);
+  const contentType = strategy === 'json_fallback' ? 'application/json' : 'application/sql';
+
+  await s3.send(new PutObjectCommand({
+    Bucket: storage.bucket,
+    Key: objectKey,
+    Body: fileBuffer,
+    ContentType: contentType,
+    Metadata: {
+      trigger,
+      strategy,
+      generated_at: new Date().toISOString(),
+    },
+  }));
+
+  const headRes = await s3.send(new HeadObjectCommand({
+    Bucket: storage.bucket,
+    Key: objectKey,
+  }));
+
+  return {
+    attempted: true,
+    uploaded: true,
+    bucket: storage.bucket,
+    endpoint: storage.endpoint,
+    region: storage.region,
+    objectKey,
+    etag: headRes.ETag || null,
+    remoteSizeBytes: Number(headRes.ContentLength || 0),
+    verifiedAt: new Date().toISOString(),
+  };
+};
+
+const writeBackupManifest = ({ manifestPath, payload }) => {
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  fs.writeFileSync(manifestPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+};
+
+const cleanupOldBackups = ({ backupDir, keepDays }) => {
+  if (!fs.existsSync(backupDir)) return 0;
+  const thresholdMs = Date.now() - keepDays * 24 * 60 * 60 * 1000;
+  let removed = 0;
+
+  for (const name of fs.readdirSync(backupDir)) {
+    const fullPath = path.join(backupDir, name);
+    try {
+      const stat = fs.statSync(fullPath);
+      if (!stat.isFile()) continue;
+      if (!/\.(sql|dump|backup|bak|gz|json)$/i.test(name)) continue;
+      if (stat.mtimeMs < thresholdMs) {
+        fs.unlinkSync(fullPath);
+        removed += 1;
+      }
+    } catch {
+      // Ignorar archivos bloqueados o removidos concurrentemente.
+    }
+  }
+
+  return removed;
+};
+
+const runPgDumpBackup = async ({ databaseUrl, outputFile }) => {
+  const args = [
+    '--no-owner',
+    '--no-privileges',
+    '--format=plain',
+    '--file',
+    outputFile,
+    databaseUrl,
+  ];
+
+  await execFileAsync('pg_dump', args, {
+    env: {
+      ...process.env,
+      PGSSLMODE: process.env.PGSSLMODE || 'prefer',
+    },
+    windowsHide: true,
+  });
+};
+
+const runJsonBackupFallback = async ({ outputFile }) => {
+  const tablesRes = await pool.query(
+    `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = 'public'
+       AND table_type = 'BASE TABLE'
+     ORDER BY table_name ASC`
+  );
+
+  const backupPayload = {
+    generatedAt: new Date().toISOString(),
+    strategy: 'json_fallback',
+    tables: {},
+  };
+
+  for (const row of tablesRes.rows) {
+    const tableName = row.table_name;
+    if (!/^[a-zA-Z0-9_]+$/.test(tableName)) continue;
+    const tableData = await pool.query(`SELECT * FROM ${tableName}`);
+    backupPayload.tables[tableName] = tableData.rows;
+  }
+
+  fs.writeFileSync(outputFile, `${JSON.stringify(backupPayload)}\n`, 'utf8');
+};
+
+const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
+  const cfg = getBackupConfig();
+  if (!cfg.enabled) {
+    return { ok: false, skipped: true, reason: 'BACKUP_ENABLED=false' };
+  }
+
+  if (isBackupRunning) {
+    return { ok: false, skipped: true, reason: 'Ya hay un backup en ejecución' };
+  }
+
+  const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+  if (!databaseUrl) {
+    return { ok: false, skipped: true, reason: 'DATABASE_URL no configurada' };
+  }
+
+  isBackupRunning = true;
+  const startedAt = new Date().toISOString();
+
+  try {
+    fs.mkdirSync(cfg.backupDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '_');
+    const sqlFileName = `ccf_backup_${stamp}.sql`;
+    const jsonFileName = `ccf_backup_${stamp}.json`;
+    const sqlOutput = path.join(cfg.backupDir, sqlFileName);
+    const jsonOutput = path.join(cfg.backupDir, jsonFileName);
+
+    let strategy = 'pg_dump';
+    let outputPath = sqlOutput;
+
+    try {
+      await runPgDumpBackup({ databaseUrl, outputFile: sqlOutput });
+    } catch (error) {
+      const isCommandMissing = String(error.code || '').toUpperCase() === 'ENOENT' || String(error.message || '').toLowerCase().includes('not recognized');
+      if (!cfg.allowJsonFallback || !isCommandMissing) {
+        throw error;
+      }
+
+      strategy = 'json_fallback';
+      outputPath = jsonOutput;
+      await runJsonBackupFallback({ outputFile: jsonOutput });
+    }
+
+    const stat = fs.statSync(outputPath);
+    const removedFiles = cleanupOldBackups({ backupDir: cfg.backupDir, keepDays: cfg.keepDays });
+    let upload = null;
+
+    try {
+      upload = await uploadBackupToObjectStorage({
+        localFilePath: outputPath,
+        trigger,
+        strategy,
+      });
+    } catch (uploadError) {
+      const storageCfg = getBackupStorageConfig();
+      if (storageCfg.uploadRequired) {
+        throw uploadError;
+      }
+      upload = {
+        attempted: true,
+        uploaded: false,
+        skipped: true,
+        reason: uploadError.message,
+      };
+    }
+
+    const manifestPayload = {
+      lastSuccessAt: new Date().toISOString(),
+      latestBackupAt: new Date().toISOString(),
+      filePath: outputPath,
+      strategy,
+      trigger,
+      sizeBytes: stat.size,
+      keepDays: cfg.keepDays,
+      cleanedOldFiles: removedFiles,
+      upload,
+      status: 'ok',
+    };
+
+    writeBackupManifest({ manifestPath: cfg.manifestPath, payload: manifestPayload });
+    lastBackupRunStatus = {
+      status: 'success',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      detail: manifestPayload,
+    };
+
+    return { ok: true, ...manifestPayload };
+  } catch (error) {
+    const failurePayload = {
+      status: 'error',
+      failedAt: new Date().toISOString(),
+      trigger,
+      message: error.message,
+    };
+    try {
+      writeBackupManifest({ manifestPath: cfg.manifestPath, payload: failurePayload });
+    } catch {
+      // Si no puede escribir manifest, de todas formas devolvemos error.
+    }
+
+    lastBackupRunStatus = {
+      status: 'error',
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      error: error.message,
+    };
+
+    return { ok: false, error: error.message };
+  } finally {
+    isBackupRunning = false;
+  }
+};
+
+const scheduleAutomaticBackups = () => {
+  const cfg = getBackupConfig();
+  if (!cfg.enabled) {
+    console.log('[BACKUP] Automatización deshabilitada (BACKUP_ENABLED=false).');
+    return;
+  }
+
+  if (!cron.validate(cfg.cronExpr)) {
+    console.error(`[BACKUP] Expresión cron inválida: ${cfg.cronExpr}`);
+    return;
+  }
+
+  if (backupCronTask) {
+    try {
+      backupCronTask.stop();
+      backupCronTask.destroy();
+    } catch {
+      // Ignorar reinicios de task.
+    }
+  }
+
+  backupCronTask = cron.schedule(cfg.cronExpr, async () => {
+    const result = await runDatabaseBackup({ trigger: 'cron' });
+    if (result.ok) {
+      console.log(`[BACKUP] OK (${result.strategy}) -> ${result.filePath}`);
+    } else if (!result.skipped) {
+      console.error(`[BACKUP] ERROR: ${result.error || result.reason || 'fallo desconocido'}`);
+    }
+  });
+
+  console.log(`[BACKUP] Programado con cron '${cfg.cronExpr}' (retención ${cfg.keepDays} días).`);
+
+  if (cfg.runOnStart) {
+    runDatabaseBackup({ trigger: 'startup' })
+      .then((result) => {
+        if (result.ok) {
+          console.log(`[BACKUP] Inicio OK (${result.strategy}) -> ${result.filePath}`);
+          return;
+        }
+        if (!result.skipped) {
+          console.error(`[BACKUP] Inicio con error: ${result.error || result.reason || 'fallo desconocido'}`);
+        }
+      })
+      .catch((error) => {
+        console.error(`[BACKUP] Inicio con excepción: ${error.message}`);
+      });
+  }
+};
 
 const getSyncTokenFromRequest = (req) => {
   const headerToken = req.headers['x-sync-token'];
@@ -520,6 +878,145 @@ const ensureSuperAdminAccount = async () => {
   console.log(`🔐 Super admin asegurado: ${email} (${rutFmt})`);
 };
 
+const ensureCuentasExtendedColumns = async () => {
+  const ddl = [
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS perfil_principal VARCHAR(50) DEFAULT 'apoderado'`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS cargo_directiva VARCHAR(50)`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS socio_admin BOOLEAN DEFAULT false`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS aprobado_superadmin BOOLEAN DEFAULT false`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS acceso_nivel VARCHAR(30) DEFAULT 'estandar'`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS utm_valor_referencia DECIMAL(12,2)`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS monto_mensual_base DECIMAL(12,2)`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS monto_mensual_override DECIMAL(12,2)`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS condiciones_pago TEXT`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fecha_corte_utm DATE`,
+  ];
+
+  for (const statement of ddl) {
+    await pool.query(statement);
+  }
+  console.log('🧩 Columnas extendidas de cuentas verificadas');
+};
+
+const getBackupStatus = () => {
+  const maxAgeHours = Number(process.env.BACKUP_MAX_AGE_HOURS || 36);
+  const nowMs = Date.now();
+  const maxAgeMs = Number.isFinite(maxAgeHours) && maxAgeHours > 0
+    ? maxAgeHours * 60 * 60 * 1000
+    : 36 * 60 * 60 * 1000;
+
+  const backupDirRaw = String(process.env.BACKUP_DIR || '').trim();
+  const manifestPathRaw = String(process.env.BACKUP_MANIFEST_PATH || '').trim();
+  const backupDir = resolveRuntimePath(backupDirRaw);
+  const manifestPath = resolveRuntimePath(manifestPathRaw);
+
+  const response = {
+    configured: Boolean(backupDir || manifestPath),
+    source: null,
+    latestBackupPath: null,
+    latestBackupAt: null,
+    ageHours: null,
+    maxAgeHours: Math.round(maxAgeMs / (60 * 60 * 1000)),
+    healthy: false,
+    warning: null,
+    upload: null,
+  };
+
+  try {
+    if (manifestPath) {
+      if (!fs.existsSync(manifestPath)) {
+        response.warning = `No existe BACKUP_MANIFEST_PATH: ${manifestPath}`;
+        return response;
+      }
+
+      const raw = fs.readFileSync(manifestPath, 'utf8');
+      const manifest = JSON.parse(raw || '{}');
+      const latestBackupAtRaw = manifest.lastSuccessAt || manifest.latestBackupAt || manifest.timestamp;
+      const latestBackupAtMs = latestBackupAtRaw ? new Date(latestBackupAtRaw).getTime() : NaN;
+
+      if (!Number.isFinite(latestBackupAtMs)) {
+        response.source = 'manifest';
+        response.warning = 'El manifest de backup no contiene una fecha válida (lastSuccessAt/latestBackupAt/timestamp).';
+        response.latestBackupPath = manifest.filePath || manifest.latestBackupPath || null;
+        return response;
+      }
+
+      const ageMs = Math.max(0, nowMs - latestBackupAtMs);
+      response.source = 'manifest';
+      response.latestBackupAt = new Date(latestBackupAtMs).toISOString();
+      response.latestBackupPath = manifest.filePath || manifest.latestBackupPath || null;
+      response.ageHours = Number((ageMs / (60 * 60 * 1000)).toFixed(2));
+      response.healthy = ageMs <= maxAgeMs;
+      if (manifest.upload) {
+        response.upload = {
+          attempted: Boolean(manifest.upload.attempted),
+          uploaded: Boolean(manifest.upload.uploaded),
+          bucket: manifest.upload.bucket || null,
+          objectKey: manifest.upload.objectKey || null,
+          endpoint: manifest.upload.endpoint || null,
+          verifiedAt: manifest.upload.verifiedAt || null,
+          reason: manifest.upload.reason || null,
+        };
+      }
+      if (!response.healthy) {
+        response.warning = `Último backup supera ventana máxima (${response.maxAgeHours}h).`;
+      }
+      return response;
+    }
+
+    if (!backupDir) {
+      response.warning = 'No hay BACKUP_DIR ni BACKUP_MANIFEST_PATH configurados.';
+      return response;
+    }
+
+    if (!fs.existsSync(backupDir)) {
+      response.warning = `No existe BACKUP_DIR: ${backupDir}`;
+      return response;
+    }
+
+    const files = fs.readdirSync(backupDir)
+      .map((name) => {
+        const fullPath = path.join(backupDir, name);
+        let stat;
+        try {
+          stat = fs.statSync(fullPath);
+        } catch {
+          return null;
+        }
+        if (!stat.isFile()) return null;
+        if (!/\.(sql|dump|backup|bak|gz)$/i.test(name)) return null;
+        return {
+          fullPath,
+          mtimeMs: stat.mtimeMs,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    if (files.length === 0) {
+      response.source = 'directory';
+      response.warning = `No se encontraron archivos de backup en ${backupDir}`;
+      return response;
+    }
+
+    const latest = files[0];
+    const ageMs = Math.max(0, nowMs - latest.mtimeMs);
+    response.source = 'directory';
+    response.latestBackupPath = latest.fullPath;
+    response.latestBackupAt = new Date(latest.mtimeMs).toISOString();
+    response.ageHours = Number((ageMs / (60 * 60 * 1000)).toFixed(2));
+    response.healthy = ageMs <= maxAgeMs;
+    if (!response.healthy) {
+      response.warning = `Último backup supera ventana máxima (${response.maxAgeHours}h).`;
+    }
+
+    return response;
+  } catch (error) {
+    response.warning = `Error evaluando backups: ${error.message}`;
+    return response;
+  }
+};
+
 // ========== HEALTH CHECK ==========
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date() });
@@ -542,6 +1039,98 @@ app.get('/api/admin/sync-sheets/status', (req, res) => {
     running: isSheetsSyncRunning,
     lastSync: lastSheetsSyncStatus,
   });
+});
+
+app.get('/api/admin/ops-status', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Consulta operativa deshabilitada: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para consultar estado operativo.' });
+  }
+
+  try {
+    const dbPing = await pool.query('SELECT NOW() AS db_now');
+    const backup = getBackupStatus();
+    const pagosSummary = await pool.query(
+      `SELECT
+         COUNT(*)::INT AS total,
+         COUNT(*) FILTER (WHERE COALESCE(notas_tesoreria, '') ILIKE '%Legacy ID:%')::INT AS legacy_consolidados,
+         MAX(updated_at) AS ultimo_update
+       FROM pagos_mensualidades`
+    );
+
+    return res.json({
+      ok: true,
+      db: {
+        reachable: true,
+        now: dbPing.rows[0]?.db_now || null,
+      },
+      sync: {
+        running: isSheetsSyncRunning,
+        lastSync: lastSheetsSyncStatus,
+      },
+      backup,
+      pagosMensualidades: pagosSummary.rows[0] || null,
+      checkedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      error: 'No se pudo obtener el estado operativo.',
+      detail: error.message,
+    });
+  }
+});
+
+app.get('/api/admin/backup-status', (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Consulta de backup deshabilitada: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para consultar backup.' });
+  }
+
+  return res.json({
+    ok: true,
+    running: isBackupRunning,
+    lastRun: lastBackupRunStatus,
+    backup: getBackupStatus(),
+    checkedAt: new Date().toISOString(),
+  });
+});
+
+app.post('/api/admin/backup-run', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Ejecución de backup deshabilitada: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para ejecutar backup.' });
+  }
+
+  const result = await runDatabaseBackup({ trigger: 'manual_api' });
+  if (!result.ok && !result.skipped) {
+    return res.status(500).json(result);
+  }
+  if (result.skipped) {
+    return res.status(409).json(result);
+  }
+  return res.json(result);
 });
 
 app.get('/api/admin/data-quality', async (req, res) => {
@@ -752,7 +1341,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const rutNormalizado = normalizarRut(rut);
     const result = await pool.query(
-      `SELECT id, correo, rut, password, nombres, apellido_paterno, rol, estado
+      `SELECT id, correo, rut, password, nombres, apellido_paterno, rol, estado, forzar_clave
        FROM cuentas
        WHERE UPPER(REPLACE(REPLACE(rut, '.', ''), '-', '')) = $1
        LIMIT 1`,
@@ -783,6 +1372,7 @@ app.post('/api/auth/login', async (req, res) => {
         correo: cuenta.correo,
         rut: formatearRut(cuenta.rut),
         rol: rolSistema,
+        forzar_clave: Boolean(cuenta.forzar_clave),
         access_profiles: rolSistema === 'super_admin'
           ? ['super_admin', 'admin', 'staff', 'mesa', 'jugador', 'visita']
           : [rolSistema]
@@ -790,6 +1380,52 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/change-password', async (req, res) => {
+  const { rut, currentPassword, newPassword } = req.body;
+
+  if (!rut || !newPassword) {
+    return res.status(400).json({ error: 'rut y newPassword son obligatorios' });
+  }
+
+  const nuevaClave = String(newPassword).trim();
+  if (nuevaClave.length < 5) {
+    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 5 caracteres.' });
+  }
+
+  try {
+    const rutNormalizado = normalizarRut(rut);
+    const result = await pool.query(
+      `SELECT id, password
+       FROM cuentas
+       WHERE UPPER(REPLACE(REPLACE(rut, '.', ''), '-', '')) = $1
+       LIMIT 1`,
+      [rutNormalizado]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Cuenta no encontrada.' });
+    }
+
+    const cuenta = result.rows[0];
+    if (!cuenta.password || String(cuenta.password) !== String(currentPassword || '')) {
+      return res.status(401).json({ error: 'La contraseña actual no coincide.' });
+    }
+
+    await pool.query(
+      `UPDATE cuentas
+       SET password = $1,
+           forzar_clave = false,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [nuevaClave, cuenta.id]
+    );
+
+    return res.json({ ok: true, message: 'Contraseña actualizada correctamente.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -1184,6 +1820,16 @@ app.post('/api/cuentas', async (req, res) => {
     es_socio,
     fecha_ingreso_socio,
     rol,
+    perfil_principal,
+    cargo_directiva,
+    socio_admin,
+    aprobado_superadmin,
+    acceso_nivel,
+    utm_valor_referencia,
+    monto_mensual_base,
+    monto_mensual_override,
+    condiciones_pago,
+    fecha_corte_utm,
     forzar_clave,
     foto_perfil_url,
     logo_url,
@@ -1208,10 +1854,13 @@ app.post('/api/cuentas', async (req, res) => {
         correo, rut, password, nombres, apellido_paterno, apellido_materno,
         fecha_nacimiento, estado_civil, direccion, comuna, prefijo_tel, telefono,
         profesion_oficio, nombre_segundo_contacto, parentesco_segundo_contacto,
-        num_segundo_contacto, es_socio, fecha_ingreso_socio, rol, forzar_clave,
-        foto_perfil_url, estado, autorizacion_imagen, dia_pago_acordado
+        num_segundo_contacto, es_socio, fecha_ingreso_socio, rol, perfil_principal,
+        cargo_directiva, socio_admin, aprobado_superadmin, acceso_nivel,
+        utm_valor_referencia, monto_mensual_base, monto_mensual_override,
+        condiciones_pago, fecha_corte_utm, forzar_clave, foto_perfil_url,
+        estado, autorizacion_imagen, dia_pago_acordado
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34
       ) RETURNING *`,
       [
         correo,
@@ -1233,6 +1882,16 @@ app.post('/api/cuentas', async (req, res) => {
         es_socio ?? false,
         fecha_ingreso_socio || null,
         rol || 'apoderado',
+        perfil_principal || rol || 'apoderado',
+        cargo_directiva || null,
+        socio_admin ?? false,
+        aprobado_superadmin ?? false,
+        acceso_nivel || 'estandar',
+        utm_valor_referencia || null,
+        monto_mensual_base || null,
+        monto_mensual_override || null,
+        condiciones_pago || null,
+        fecha_corte_utm || null,
         forzar_clave ?? false,
         logoPerfilUrl,
         estado || 'activo',
@@ -1276,6 +1935,16 @@ app.put('/api/cuentas/:id', async (req, res) => {
     es_socio,
     fecha_ingreso_socio,
     rol,
+    perfil_principal,
+    cargo_directiva,
+    socio_admin,
+    aprobado_superadmin,
+    acceso_nivel,
+    utm_valor_referencia,
+    monto_mensual_base,
+    monto_mensual_override,
+    condiciones_pago,
+    fecha_corte_utm,
     forzar_clave,
     foto_perfil_url,
     estado,
@@ -1312,13 +1981,23 @@ app.put('/api/cuentas/:id', async (req, res) => {
         es_socio = COALESCE($17, es_socio),
         fecha_ingreso_socio = COALESCE($18, fecha_ingreso_socio),
         rol = COALESCE($19, rol),
-        forzar_clave = COALESCE($20, forzar_clave),
-        foto_perfil_url = COALESCE($21, foto_perfil_url),
-        estado = COALESCE($22, estado),
-        autorizacion_imagen = COALESCE($23, autorizacion_imagen),
-        dia_pago_acordado = COALESCE($24, dia_pago_acordado),
+        perfil_principal = COALESCE($20, perfil_principal),
+        cargo_directiva = COALESCE($21, cargo_directiva),
+        socio_admin = COALESCE($22, socio_admin),
+        aprobado_superadmin = COALESCE($23, aprobado_superadmin),
+        acceso_nivel = COALESCE($24, acceso_nivel),
+        utm_valor_referencia = COALESCE($25, utm_valor_referencia),
+        monto_mensual_base = COALESCE($26, monto_mensual_base),
+        monto_mensual_override = COALESCE($27, monto_mensual_override),
+        condiciones_pago = COALESCE($28, condiciones_pago),
+        fecha_corte_utm = COALESCE($29, fecha_corte_utm),
+        forzar_clave = COALESCE($30, forzar_clave),
+        foto_perfil_url = COALESCE($31, foto_perfil_url),
+        estado = COALESCE($32, estado),
+        autorizacion_imagen = COALESCE($33, autorizacion_imagen),
+        dia_pago_acordado = COALESCE($34, dia_pago_acordado),
         updated_at = NOW()
-      WHERE id = $25
+      WHERE id = $35
       RETURNING *`,
       [
         correo || null,
@@ -1340,6 +2019,16 @@ app.put('/api/cuentas/:id', async (req, res) => {
         es_socio,
         fecha_ingreso_socio || null,
         rol || null,
+        perfil_principal || null,
+        cargo_directiva || null,
+        socio_admin,
+        aprobado_superadmin,
+        acceso_nivel || null,
+        utm_valor_referencia || null,
+        monto_mensual_base || null,
+        monto_mensual_override || null,
+        condiciones_pago || null,
+        fecha_corte_utm || null,
         forzar_clave,
         logoPerfilUrl,
         estado || null,
@@ -2707,9 +3396,15 @@ app.listen(PORT, () => {
   console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🗄️  Base de datos: ${process.env.DATABASE_URL ? 'Conectada ✓' : 'No configurada ✗'}\n`);
 
+  ensureCuentasExtendedColumns().catch((error) => {
+    console.error('❌ Error verificando columnas extendidas de cuentas:', error.message);
+  });
+
   ensureSuperAdminAccount().catch((error) => {
     console.error('❌ Error asegurando super admin:', error.message);
   });
+
+  scheduleAutomaticBackups();
 });
 
 module.exports = app;

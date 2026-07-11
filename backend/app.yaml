@@ -32,6 +32,40 @@ services:
     value: ""
   - key: GOOGLE_API_KEY
     value: ""
+  - key: ADMIN_SYNC_TOKEN
+    value: ""
+  - key: BACKUP_ENABLED
+    value: "true"
+  - key: BACKUP_CRON
+    value: "0 */6 * * *"
+  - key: BACKUP_KEEP_DAYS
+    value: "7"
+  - key: BACKUP_RUN_ON_START
+    value: "true"
+  - key: BACKUP_ALLOW_JSON_FALLBACK
+    value: "true"
+  - key: BACKUP_MAX_AGE_HOURS
+    value: "36"
+  - key: BACKUP_DIR
+    value: "backups"
+  - key: BACKUP_MANIFEST_PATH
+    value: "backups/backup-manifest.json"
+  - key: BACKUP_UPLOAD_ENABLED
+    value: "false"
+  - key: BACKUP_UPLOAD_REQUIRED
+    value: "false"
+  - key: BACKUP_S3_ENDPOINT
+    value: "https://nyc3.digitaloceanspaces.com"
+  - key: BACKUP_S3_REGION
+    value: "us-east-1"
+  - key: BACKUP_S3_BUCKET
+    value: ""
+  - key: BACKUP_S3_PREFIX
+    value: "ccf-db-backups"
+  - key: BACKUP_S3_ACCESS_KEY_ID
+    value: ""
+  - key: BACKUP_S3_SECRET_ACCESS_KEY
+    value: ""
 
 databases:
 - engine: PG

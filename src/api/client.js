@@ -177,6 +177,15 @@ export const authAPI = {
       body: JSON.stringify({ rut, password })
     });
     return handleResponse(response);
+  },
+
+  changePassword: async ({ rut, currentPassword, newPassword }) => {
+    const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rut, currentPassword, newPassword })
+    });
+    return handleResponse(response);
   }
 };
 
@@ -349,6 +358,35 @@ export const adminAPI = {
   getSyncStatus: async (token) => {
     const response = await fetch(`${API_BASE_URL}/admin/sync-sheets/status`, {
       headers: {
+        'x-sync-token': token,
+      },
+    });
+    return handleResponse(response);
+  },
+
+  getOpsStatus: async (token) => {
+    const response = await fetch(`${API_BASE_URL}/admin/ops-status`, {
+      headers: {
+        'x-sync-token': token,
+      },
+    });
+    return handleResponse(response);
+  },
+
+  getBackupStatus: async (token) => {
+    const response = await fetch(`${API_BASE_URL}/admin/backup-status`, {
+      headers: {
+        'x-sync-token': token,
+      },
+    });
+    return handleResponse(response);
+  },
+
+  runBackupNow: async (token) => {
+    const response = await fetch(`${API_BASE_URL}/admin/backup-run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
         'x-sync-token': token,
       },
     });

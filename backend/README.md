@@ -203,6 +203,74 @@ Respuesta:
 }
 ```
 
+### Estado operativo (sync + DB + backup)
+
+```http
+GET /api/admin/ops-status
+Header: x-sync-token: <ADMIN_SYNC_TOKEN>
+```
+
+Incluye:
+- Conectividad DB
+- Estado de sincronizacion y ultima ejecucion
+- Resumen de pagos mensualidades
+- Estado de backup (saludable o no)
+
+### Estado de backup (endpoint dedicado)
+
+```http
+GET /api/admin/backup-status
+Header: x-sync-token: <ADMIN_SYNC_TOKEN>
+```
+
+Incluye:
+- `running`: indica si hay un backup ejecutándose ahora
+- `lastRun`: último resultado de ejecución (éxito/error)
+- `backup`: salud del backup (archivo/fecha/antigüedad)
+- `backup.upload`: estado de subida a storage externo si está habilitado
+
+### Ejecutar backup manual (forzado)
+
+```http
+POST /api/admin/backup-run
+Header: x-sync-token: <ADMIN_SYNC_TOKEN>
+```
+
+Variables de entorno para backup:
+
+```env
+# Opción A: carpeta donde se guardan dumps
+BACKUP_DIR=/var/backups/ccf
+
+# Opción B: manifest JSON actualizado por tu job de backup
+BACKUP_MANIFEST_PATH=/var/backups/ccf-backup-manifest.json
+
+# umbral de antigüedad permitido
+BACKUP_MAX_AGE_HOURS=36
+
+# automatización en servidor
+BACKUP_ENABLED=true
+BACKUP_CRON=0 */6 * * *
+BACKUP_KEEP_DAYS=7
+BACKUP_RUN_ON_START=true
+BACKUP_ALLOW_JSON_FALLBACK=true
+
+# subida a S3/Spaces
+BACKUP_UPLOAD_ENABLED=true
+BACKUP_UPLOAD_REQUIRED=true
+BACKUP_S3_ENDPOINT=https://nyc3.digitaloceanspaces.com
+BACKUP_S3_REGION=us-east-1
+BACKUP_S3_BUCKET=ccf-backups
+BACKUP_S3_PREFIX=ccf-db-backups
+BACKUP_S3_ACCESS_KEY_ID=...
+BACKUP_S3_SECRET_ACCESS_KEY=...
+```
+
+Si configuras ambas opciones, el backend prioriza BACKUP_MANIFEST_PATH.
+El backend intenta usar `pg_dump`; si no existe en runtime y `BACKUP_ALLOW_JSON_FALLBACK=true`, genera respaldo JSON como contingencia.
+Si `BACKUP_UPLOAD_ENABLED=true`, cada backup se sube al bucket configurado y se verifica con `HeadObject`.
+Si además `BACKUP_UPLOAD_REQUIRED=true`, un fallo de subida marca el backup como error.
+
 ---
 
 ## 📝 Logs & Monitoramiento
