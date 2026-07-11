@@ -21,10 +21,16 @@ const MODULOS_ACCESO = [
 const ROLES_BASE = {
   visita: ['comunicaciones', 'jugador', 'mesa_publica'],
   jugador: ['comunicaciones', 'academia', 'jugador'],
+  apoderado: ['comunicaciones', 'academia', 'perfil', 'jugador'],
+  socio: ['comunicaciones', 'academia', 'perfil', 'jugador'],
+  socio_apoderado: ['comunicaciones', 'academia', 'perfil', 'jugador'],
+  'socio-apoderado': ['comunicaciones', 'academia', 'perfil', 'jugador'],
+  directiva: ['comunicaciones', 'academia', 'perfil', 'jugador'],
   staff: ['comunicaciones', 'academia', 'asistencia_staff', 'evaluacion_staff'],
   mesa: ['scoreboard_live'],
   admin: ['comunicaciones', 'perfil', 'kiosco', 'admin_dashboard', 'citaciones', 'auditoria', 'reportes', 'validacion_pagos', 'inventario', 'salud', 'invitados'],
   super_admin: MODULOS_ACCESO.map((modulo) => modulo.id),
+  superadmin: MODULOS_ACCESO.map((modulo) => modulo.id),
 };
 
 const PERMISOS_POR_DEFECTO = MODULOS_ACCESO.reduce((acumulado, modulo) => {

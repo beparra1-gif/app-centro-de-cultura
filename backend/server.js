@@ -959,6 +959,7 @@ const ensureCuentasExtendedColumns = async () => {
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS condiciones_pago TEXT`,
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fecha_corte_utm DATE`,
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS permisos_override JSONB DEFAULT '{}'::jsonb`,
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS requiere_foto_perfil BOOLEAN DEFAULT false`,
   ];
 
   for (const statement of ddl) {
@@ -1360,10 +1361,11 @@ app.post('/api/admin/sync-sheets', async (req, res) => {
     startedAt: new Date().toISOString(),
     syncedAt: lastSheetsSyncStatus?.syncedAt || null,
     totals: lastSheetsSyncStatus?.totals || null,
+    mode: 'incremental',
   };
 
   try {
-    const result = await runImportFromSheets({ logger: console });
+    const result = await runImportFromSheets({ logger: console, incrementalOnly: true });
     const totals = result.summary.reduce(
       (acc, item) => {
         acc.total += item.total;
@@ -1380,6 +1382,7 @@ app.post('/api/admin/sync-sheets', async (req, res) => {
       sheetId: result.sheetId,
       totals,
       detail: result.summary,
+      mode: 'incremental',
       startedAt: lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
       syncedAt: new Date().toISOString(),
     };
@@ -1389,6 +1392,7 @@ app.post('/api/admin/sync-sheets', async (req, res) => {
       sheetId: result.sheetId,
       totals,
       detail: result.summary,
+      mode: 'incremental',
       qualitySummary: result.qualitySummary || null,
       legacyPaymentsConsolidation: result.legacyPaymentsConsolidation || null,
       syncedAt: new Date().toISOString(),
@@ -1422,7 +1426,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const rutNormalizado = normalizarRut(rut);
     const result = await pool.query(
-      `SELECT id, correo, rut, password, nombres, apellido_paterno, rol, estado, forzar_clave
+      `SELECT id, correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, foto_perfil_url, requiere_foto_perfil
        FROM cuentas
        WHERE UPPER(REPLACE(REPLACE(rut, '.', ''), '-', '')) = $1
        LIMIT 1`,
@@ -1453,7 +1457,10 @@ app.post('/api/auth/login', async (req, res) => {
         correo: cuenta.correo,
         rut: formatearRut(cuenta.rut),
         rol: rolSistema,
+        perfil_principal: cuenta.perfil_principal || rolSistema,
         forzar_clave: Boolean(cuenta.forzar_clave),
+        foto_perfil_url: cuenta.foto_perfil_url || null,
+        requiere_foto_perfil: Boolean(cuenta.requiere_foto_perfil),
         access_profiles: rolSistema === 'super_admin'
           ? ['super_admin', 'admin', 'staff', 'mesa', 'jugador', 'visita']
           : [rolSistema]
@@ -1914,6 +1921,7 @@ app.post('/api/cuentas', async (req, res) => {
     permisos_override,
     forzar_clave,
     foto_perfil_url,
+    requiere_foto_perfil,
     logo_url,
     estado,
     autorizacion_imagen,
@@ -1940,9 +1948,9 @@ app.post('/api/cuentas', async (req, res) => {
         cargo_directiva, socio_admin, aprobado_superadmin, acceso_nivel,
         utm_valor_referencia, monto_mensual_base, monto_mensual_override,
         condiciones_pago, fecha_corte_utm, permisos_override, forzar_clave, foto_perfil_url,
-        estado, autorizacion_imagen, dia_pago_acordado
+        requiere_foto_perfil, estado, autorizacion_imagen, dia_pago_acordado
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36
       ) RETURNING *`,
       [
         correo,
@@ -1977,6 +1985,7 @@ app.post('/api/cuentas', async (req, res) => {
         permisos_override && typeof permisos_override === 'object' ? JSON.stringify(permisos_override) : JSON.stringify({}),
         forzar_clave ?? false,
         logoPerfilUrl,
+        requiere_foto_perfil ?? false,
         estado || 'activo',
         autorizacion_imagen ?? false,
         dia_pago_acordado || null,
@@ -2031,6 +2040,7 @@ app.put('/api/cuentas/:id', async (req, res) => {
     permisos_override,
     forzar_clave,
     foto_perfil_url,
+    requiere_foto_perfil,
     estado,
     autorizacion_imagen,
     dia_pago_acordado,
@@ -2078,11 +2088,12 @@ app.put('/api/cuentas/:id', async (req, res) => {
         permisos_override = COALESCE($30::jsonb, permisos_override),
         forzar_clave = COALESCE($31, forzar_clave),
         foto_perfil_url = COALESCE($32, foto_perfil_url),
-        estado = COALESCE($33, estado),
-        autorizacion_imagen = COALESCE($34, autorizacion_imagen),
-        dia_pago_acordado = COALESCE($35, dia_pago_acordado),
+        requiere_foto_perfil = COALESCE($33, requiere_foto_perfil),
+        estado = COALESCE($34, estado),
+        autorizacion_imagen = COALESCE($35, autorizacion_imagen),
+        dia_pago_acordado = COALESCE($36, dia_pago_acordado),
         updated_at = NOW()
-      WHERE id = $36
+      WHERE id = $37
       RETURNING *`,
       [
         correo || null,
@@ -2117,6 +2128,7 @@ app.put('/api/cuentas/:id', async (req, res) => {
         permisos_override && typeof permisos_override === 'object' ? JSON.stringify(permisos_override) : null,
         forzar_clave,
         logoPerfilUrl,
+        requiere_foto_perfil,
         estado || null,
         autorizacion_imagen,
         dia_pago_acordado || null,

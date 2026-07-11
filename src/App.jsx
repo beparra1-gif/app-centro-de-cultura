@@ -81,6 +81,18 @@ function App() {
   const [onboardingPasswordConfirm, setOnboardingPasswordConfirm] = useState('');
   const [onboardingCuenta, setOnboardingCuenta] = useState(null);
   const [onboardingPasswordActual, setOnboardingPasswordActual] = useState('');
+  const [onboardingCuentaDetalle, setOnboardingCuentaDetalle] = useState(null);
+  const [onboardingCamposPendientes, setOnboardingCamposPendientes] = useState([]);
+  const [onboardingPerfilDraft, setOnboardingPerfilDraft] = useState({
+    nombres: '',
+    apellido_paterno: '',
+    apellido_materno: '',
+    telefono: '',
+    direccion: '',
+    comuna: '',
+    foto_perfil_url: '',
+  });
+  const [onboardingSubiendoFoto, setOnboardingSubiendoFoto] = useState(false);
   const [sesionHidratada, setSesionHidratada] = useState(false);
 
   // --- ESTADOS: GAMIFICACIÓN Y PERFIL ---
@@ -596,6 +608,73 @@ function App() {
   const abrirFormularioLogin = (tipo) => { setTipoLoginSeleccionado(tipo); setMostrarFormularioLogin(true); setRutInput(tipo === 'invitado' ? 'visita' : ''); };
   const volverInicioLogin = () => { setMostrarFormularioLogin(false); setRutInput(''); setPassInput(''); };
 
+  const getCamposPendientesOnboarding = (cuenta = {}) => {
+    const rolBase = normalizarRol(cuenta.perfil_principal || cuenta.rol || rolUsuarioTemporal || 'apoderado');
+    const requiereFoto = Boolean(cuenta.requiere_foto_perfil) || ['jugador', 'staff'].includes(rolBase);
+
+    const camposTextoPorRol = {
+      jugador: ['nombres', 'apellido_paterno', 'telefono'],
+      staff: ['nombres', 'apellido_paterno', 'telefono'],
+      apoderado: ['nombres', 'apellido_paterno', 'telefono', 'direccion', 'comuna'],
+      socio: ['nombres', 'apellido_paterno', 'telefono', 'direccion', 'comuna'],
+      socio_apoderado: ['nombres', 'apellido_paterno', 'telefono', 'direccion', 'comuna'],
+      'socio-apoderado': ['nombres', 'apellido_paterno', 'telefono', 'direccion', 'comuna'],
+      directiva: ['nombres', 'apellido_paterno', 'telefono', 'direccion', 'comuna'],
+      admin: ['nombres', 'apellido_paterno', 'telefono'],
+      super_admin: ['nombres', 'apellido_paterno', 'telefono'],
+    };
+
+    const base = camposTextoPorRol[rolBase] || ['nombres', 'apellido_paterno', 'telefono'];
+    const faltantes = base.filter((campo) => !String(cuenta[campo] || '').trim());
+
+    if (requiereFoto && !String(cuenta.foto_perfil_url || cuenta.logo_url || '').trim()) {
+      faltantes.push('foto_perfil_url');
+    }
+
+    return [...new Set(faltantes)];
+  };
+
+  const cargarCuentaOnboarding = async (cuentaBase = null) => {
+    const cuentaActual = cuentaBase || onboardingCuenta;
+    if (!cuentaActual?.id) return { fusion: cuentaActual || {}, camposPendientes: [] };
+
+    const detalle = await api.cuentasAPI.getById(cuentaActual.id);
+    const fusion = { ...cuentaActual, ...(detalle || {}) };
+    const camposPendientes = getCamposPendientesOnboarding(fusion);
+
+    setOnboardingCuentaDetalle(fusion);
+    setOnboardingCamposPendientes(camposPendientes);
+    setOnboardingPerfilDraft({
+      nombres: fusion.nombres || '',
+      apellido_paterno: fusion.apellido_paterno || '',
+      apellido_materno: fusion.apellido_materno || '',
+      telefono: fusion.telefono || '',
+      direccion: fusion.direccion || '',
+      comuna: fusion.comuna || '',
+      foto_perfil_url: fusion.foto_perfil_url || fusion.logo_url || '',
+    });
+
+    return { fusion, camposPendientes };
+  };
+
+  const subirFotoOnboarding = async (file) => {
+    if (!file) return;
+    try {
+      setOnboardingSubiendoFoto(true);
+      const formData = new FormData();
+      formData.append('nombre', `perfil-${onboardingCuenta?.id || Date.now()}`);
+      formData.append('tipo', 'perfil');
+      formData.append('archivo', file);
+      const resultado = await api.assetsAPI.uploadLogo(formData);
+      const fotoUrl = resultado?.url || '';
+      setOnboardingPerfilDraft((prev) => ({ ...prev, foto_perfil_url: fotoUrl }));
+    } catch (error) {
+      alert(error.message || 'No se pudo subir la foto de perfil.');
+    } finally {
+      setOnboardingSubiendoFoto(false);
+    }
+  };
+
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     if(!rutInput || !passInput) return alert("Ingresa tu RUT y contraseña.");
@@ -621,6 +700,17 @@ function App() {
       if(requiereCambioClave) {
         setRolUsuarioTemporal(perfilDetectado);
         setOnboardingCuenta(usuarioDetectado);
+        setOnboardingCuentaDetalle(null);
+        setOnboardingCamposPendientes([]);
+        setOnboardingPerfilDraft({
+          nombres: '',
+          apellido_paterno: '',
+          apellido_materno: '',
+          telefono: '',
+          direccion: '',
+          comuna: '',
+          foto_perfil_url: '',
+        });
         setOnboardingPasswordActual(passInput);
         setOnboardingPassword('');
         setOnboardingPasswordConfirm('');
@@ -652,32 +742,77 @@ function App() {
         return;
       }
 
+      let onboardingInfo = { fusion: onboardingCuenta || {}, camposPendientes: [] };
       try {
         await api.authAPI.changePassword({
           rut: onboardingCuenta.rut,
           currentPassword: onboardingPasswordActual,
           newPassword: nuevaClave,
         });
+
+        onboardingInfo = await cargarCuentaOnboarding(onboardingCuenta);
       } catch (error) {
         alert(error.message || 'No se pudo actualizar la contraseña.');
         return;
       }
 
+      const pendiente = onboardingInfo?.camposPendientes || [];
+      if (pendiente.length === 0) {
+        setIsOnboarding(false);
+        setOnboardingPassword('');
+        setOnboardingPasswordConfirm('');
+        setOnboardingPasswordActual('');
+        setOnboardingCamposPendientes([]);
+        setOnboardingCuentaDetalle(null);
+        iniciarSesionFinal(rolUsuarioTemporal, onboardingCuenta);
+        return;
+      }
+
       setOnboardingStep(2);
-      setOnboardingProgress(45);
+      setOnboardingProgress(70);
       return;
     }
 
     if (onboardingStep === 2) {
-      setOnboardingStep(3);
-      setOnboardingProgress(70);
-      return;
+      if (!onboardingCuenta?.id) {
+        alert('No se pudo identificar la cuenta para completar perfil.');
+        return;
+      }
+
+      const faltantesTexto = onboardingCamposPendientes.filter((campo) => campo !== 'foto_perfil_url');
+      const faltanteTextoInvalido = faltantesTexto.find((campo) => !String(onboardingPerfilDraft[campo] || '').trim());
+      if (faltanteTextoInvalido) {
+        alert('Completa todos los datos pendientes antes de continuar.');
+        return;
+      }
+
+      if (onboardingCamposPendientes.includes('foto_perfil_url') && !String(onboardingPerfilDraft.foto_perfil_url || '').trim()) {
+        alert('Debes subir tu foto de perfil para continuar.');
+        return;
+      }
+
+      try {
+        const payload = {};
+        onboardingCamposPendientes.forEach((campo) => {
+          if (campo === 'foto_perfil_url') {
+            payload.foto_perfil_url = onboardingPerfilDraft.foto_perfil_url;
+          } else {
+            payload[campo] = String(onboardingPerfilDraft[campo] || '').trim();
+          }
+        });
+        await api.cuentasAPI.update(onboardingCuenta.id, payload);
+      } catch (error) {
+        alert(error.message || 'No se pudieron guardar los datos pendientes.');
+        return;
+      }
     }
 
     setIsOnboarding(false);
     setOnboardingPassword('');
     setOnboardingPasswordConfirm('');
     setOnboardingPasswordActual('');
+    setOnboardingCuentaDetalle(null);
+    setOnboardingCamposPendientes([]);
     iniciarSesionFinal(rolUsuarioTemporal, onboardingCuenta);
   };
 
@@ -736,6 +871,17 @@ function App() {
     setOnboardingPasswordConfirm('');
     setOnboardingPasswordActual('');
     setOnboardingCuenta(null);
+    setOnboardingCuentaDetalle(null);
+    setOnboardingCamposPendientes([]);
+    setOnboardingPerfilDraft({
+      nombres: '',
+      apellido_paterno: '',
+      apellido_materno: '',
+      telefono: '',
+      direccion: '',
+      comuna: '',
+      foto_perfil_url: '',
+    });
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
   };
 
@@ -872,7 +1018,11 @@ function App() {
   };
 
   const guardarCuentaAdmin = async (payload, id = null) => {
-    if (!payload?.rut || !api.validarRutChileno(payload.rut)) {
+    const rutPayload = String(payload?.rut || '').trim();
+    if (!id && (!rutPayload || !api.validarRutChileno(rutPayload))) {
+      throw new Error('RUT invalido para la cuenta.');
+    }
+    if (id && rutPayload && !api.validarRutChileno(rutPayload)) {
       throw new Error('RUT invalido para la cuenta.');
     }
 
@@ -1583,6 +1733,11 @@ function App() {
           onboardingPasswordConfirm={onboardingPasswordConfirm}
           setOnboardingPassword={setOnboardingPassword}
           setOnboardingPasswordConfirm={setOnboardingPasswordConfirm}
+          onboardingCamposPendientes={onboardingCamposPendientes}
+          onboardingPerfilDraft={onboardingPerfilDraft}
+          setOnboardingPerfilDraft={setOnboardingPerfilDraft}
+          onboardingSubiendoFoto={onboardingSubiendoFoto}
+          subirFotoOnboarding={subirFotoOnboarding}
         />
       )}
       

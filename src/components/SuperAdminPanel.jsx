@@ -250,6 +250,7 @@ function SuperAdminPanel({
     fecha_corte_utm: '',
     estado: 'activo',
     es_socio: false,
+    requiere_foto_perfil: false,
     forzar_clave: true,
     logo_url: '',
   });
@@ -1010,6 +1011,7 @@ function SuperAdminPanel({
           fecha_corte_utm: '',
           estado: 'activo',
           es_socio: false,
+          requiere_foto_perfil: false,
           forzar_clave: true,
           logo_url: '',
         });
@@ -1800,6 +1802,10 @@ function SuperAdminPanel({
                   <input type="checkbox" checked={Boolean(cuentaAdminEdit.aprobado_superadmin)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
                   Aprobado por SuperAdmin
                 </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.requiere_foto_perfil)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
+                  Solicitar foto de perfil en onboarding
+                </label>
               </div>
 
               {renderPermisosCuenta({
@@ -1994,6 +2000,10 @@ function SuperAdminPanel({
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
                   <input type="checkbox" checked={Boolean(nuevaCuenta.aprobado_superadmin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
                   Aprobado por SuperAdmin
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                  <input type="checkbox" checked={Boolean(nuevaCuenta.requiere_foto_perfil)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
+                  Solicitar foto de perfil en onboarding
                 </label>
               </div>
             )}

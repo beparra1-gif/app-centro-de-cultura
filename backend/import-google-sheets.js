@@ -270,7 +270,8 @@ function mapRowToTableColumns(row, columns) {
   return Array.from(dedup.entries()).map(([column, value]) => ({ column, value }));
 }
 
-async function upsertRow(client, tableName, mappedPairs, pkColumns, uniqueColumns, requiredColumns) {
+async function upsertRow(client, tableName, mappedPairs, pkColumns, uniqueColumns, requiredColumns, options = {}) {
+  const incrementalOnly = options.incrementalOnly !== false;
   if (mappedPairs.length === 0) return { skipped: true, reason: 'sin columnas mapeables' };
 
   const valuesByCol = new Map(mappedPairs.map((p) => [p.column, p.value]));
@@ -306,31 +307,19 @@ async function upsertRow(client, tableName, mappedPairs, pkColumns, uniqueColumn
   let sql = `INSERT INTO ${quoteIdent(tableName)} (${cols.map(quoteIdent).join(', ')}) VALUES (${placeholders.join(', ')})`;
 
   if (hasAllPk) {
-    const updateCols = cols.filter((c) => !pkColumns.includes(c));
-    if (updateCols.length > 0) {
-      sql += ` ON CONFLICT (${pkColumns.map(quoteIdent).join(', ')}) DO UPDATE SET ${updateCols
-        .map((c) => `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`)
-        .join(', ')}`;
-    } else {
-      sql += ` ON CONFLICT (${pkColumns.map(quoteIdent).join(', ')}) DO NOTHING`;
-    }
+    sql += ` ON CONFLICT (${pkColumns.map(quoteIdent).join(', ')}) DO NOTHING`;
   } else if (uniqueCandidates.length > 0) {
     const conflictCol = uniqueCandidates[0];
-    const updateCols = cols.filter((c) => c !== conflictCol);
-    if (updateCols.length > 0) {
-      sql += ` ON CONFLICT (${quoteIdent(conflictCol)}) DO UPDATE SET ${updateCols
-        .map((c) => `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`)
-        .join(', ')}`;
-    } else {
-      sql += ` ON CONFLICT (${quoteIdent(conflictCol)}) DO NOTHING`;
-    }
+    sql += ` ON CONFLICT (${quoteIdent(conflictCol)}) DO NOTHING`;
+  } else if (incrementalOnly) {
+    return { skipped: true, reason: 'sin clave primaria o unica para modo incremental' };
   }
 
   await client.query(sql, vals);
   return { skipped: false };
 }
 
-async function importSheetToTable(client, sheetId, mapping) {
+async function importSheetToTable(client, sheetId, mapping, options = {}) {
   const { sheet, table } = mapping;
   const rows = await fetchPublicSheetRows(sheetId, sheet);
   const { columns, pkColumns, uniqueColumns, requiredColumns } = await getTableMeta(client, table);
@@ -346,7 +335,7 @@ async function importSheetToTable(client, sheetId, mapping) {
   for (const row of rows) {
     const mapped = mapRowToTableColumns(row, columns);
     try {
-      const result = await upsertRow(client, table, mapped, pkColumns, uniqueColumns, requiredColumns);
+      const result = await upsertRow(client, table, mapped, pkColumns, uniqueColumns, requiredColumns, options);
       if (result.skipped) skipped += 1;
       else imported += 1;
     } catch (err) {
@@ -518,6 +507,7 @@ async function runImportFromSheets(options = {}) {
 
   const pool = createSheetsPool(databaseUrl, nodeEnv);
   const sheetId = extractSheetId(googleSheetId);
+  const incrementalOnly = options.incrementalOnly !== false;
   const client = await pool.connect();
   const summary = [];
   let legacyPaymentsConsolidation = null;
@@ -529,7 +519,7 @@ async function runImportFromSheets(options = {}) {
 
     for (const mapping of SHEET_TABLE_MAP) {
       logger.log(`\nImportando hoja ${mapping.sheet} -> tabla ${mapping.table} ...`);
-      const result = await importSheetToTable(client, sheetId, mapping);
+      const result = await importSheetToTable(client, sheetId, mapping, { incrementalOnly });
       summary.push(result);
       logger.log(
         `OK ${mapping.sheet}: total=${result.total}, importadas=${result.imported}, omitidas=${result.skipped}, errores=${result.errors}`
