@@ -33,6 +33,11 @@ function LogoPicker({
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
   const [cargando, setCargando] = useState(false);
 
+  const normalizarBusquedaLogo = (valor = '') => {
+    const base = normalizarSlugLogo(valor);
+    return base.replace(/^(club|torneo|campeonato|competencia)-/i, '');
+  };
+
   useEffect(() => {
     let activo = true;
     const cargar = async () => {
@@ -72,13 +77,18 @@ function LogoPicker({
 
     // Files from /public/logos mapped to names
     for (const logo of logosDisponibles) {
-      const limpio = logo.nombre
-        .replace(/^(club|torneo|campeonato|competencia)-/i, '')
-        .replace(/-/g, ' ')
-        .trim();
-      const key = normalizarSlugLogo(limpio);
-      if (key && !byNombre.has(key)) {
-        byNombre.set(key, { nombre: limpio, logoUrl: logo.url });
+      const nombreRaw = String(logo.nombre || '').replace(/-/g, ' ').trim();
+      const nombreSinPrefijo = nombreRaw.replace(/^(club|torneo|campeonato|competencia)\s+/i, '').trim();
+      const variantes = [nombreRaw, nombreSinPrefijo].filter(Boolean);
+
+      for (const variante of variantes) {
+        const key = normalizarSlugLogo(variante);
+        if (!key) continue;
+
+        const existente = byNombre.get(key);
+        if (!existente || !existente.logoUrl) {
+          byNombre.set(key, { nombre: variante, logoUrl: logo.url });
+        }
       }
     }
 
@@ -87,15 +97,27 @@ function LogoPicker({
 
   const sugerencias = useMemo(() => {
     const q = normalizarSlugLogo(nombre);
-    if (!q || q.length < 2) return opciones.slice(0, 8);
-    return opciones.filter((o) => normalizarSlugLogo(o.nombre).includes(q)).slice(0, 10);
+    const qSlim = normalizarBusquedaLogo(nombre);
+    if (!q || q.length < 2) return opciones.slice(0, 20);
+
+    return opciones.filter((o) => {
+      const n = normalizarSlugLogo(o.nombre);
+      const nSlim = normalizarBusquedaLogo(o.nombre);
+      return n.includes(q) || n.includes(qSlim) || nSlim.includes(q) || nSlim.includes(qSlim);
+    }).slice(0, 20);
   }, [nombre, opciones]);
 
   const handleChange = (e) => {
     const val = e.target.value;
     onNombre(val);
     // Auto-resolve logo if exact match found
-    const exacta = opciones.find((o) => normalizarSlugLogo(o.nombre) === normalizarSlugLogo(val));
+    const valNorm = normalizarSlugLogo(val);
+    const valSlim = normalizarBusquedaLogo(val);
+    const exacta = opciones.find((o) => {
+      const nombreNorm = normalizarSlugLogo(o.nombre);
+      const nombreSlim = normalizarBusquedaLogo(o.nombre);
+      return nombreNorm === valNorm || nombreNorm === valSlim || nombreSlim === valNorm || nombreSlim === valSlim;
+    });
     if (exacta && exacta.logoUrl) {
       onLogoUrl(exacta.logoUrl);
     } else if (!val) {
