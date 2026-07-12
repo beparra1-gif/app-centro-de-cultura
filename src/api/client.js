@@ -922,12 +922,40 @@ export const torneosAPI = {
 // ========== ACTIVOS VISUALES ==========
 
 export const assetsAPI = {
-  uploadLogo: async (formData) => {
-    const response = await fetch(`${API_BASE_URL}/assets/logos`, {
-      method: 'POST',
-      body: formData,
+  uploadLogo: async (formData, { onProgress } = {}) => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE_URL}/assets/logos`);
+
+      if (typeof onProgress === 'function') {
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const porcentaje = Math.round((event.loaded / event.total) * 100);
+          onProgress(Math.max(0, Math.min(100, porcentaje)));
+        };
+      }
+
+      xhr.onload = () => {
+        let payload = null;
+        try {
+          payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+        } catch {
+          payload = null;
+        }
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(payload || {});
+          return;
+        }
+
+        const errorMsg = payload?.error || payload?.message || `Error ${xhr.status}: ${xhr.statusText || 'Respuesta no válida'}`;
+        reject(new Error(errorMsg));
+      };
+
+      xhr.onerror = () => reject(new Error('Error de red al subir el logo.'));
+      xhr.onabort = () => reject(new Error('La subida del logo fue cancelada.'));
+      xhr.send(formData);
     });
-    return handleResponse(response);
   },
 
   listLogos: async () => {

@@ -276,6 +276,7 @@ function SuperAdminPanel({
     archivo: null,
   });
   const [subiendoLogoAsset, setSubiendoLogoAsset] = useState(false);
+  const [progresoLogoAsset, setProgresoLogoAsset] = useState(0);
   const [logoAssetUrl, setLogoAssetUrl] = useState('');
 
   // --- PAGOS: FORMULARIO Y PAGINACIÓN ---
@@ -1107,14 +1108,18 @@ function SuperAdminPanel({
 
     try {
       setSubiendoLogoAsset(true);
+      setProgresoLogoAsset(0);
       const formData = new FormData();
       formData.append('nombre', logoAssetForm.nombre.trim());
       formData.append('tipo', logoAssetForm.tipo);
       formData.append('archivo', logoAssetForm.archivo);
 
-      const resultado = await api.assetsAPI.uploadLogo(formData);
+      const resultado = await api.assetsAPI.uploadLogo(formData, {
+        onProgress: (porcentaje) => setProgresoLogoAsset(porcentaje),
+      });
       const urlLogo = resultado?.url || '';
       setLogoAssetUrl(urlLogo);
+      setProgresoLogoAsset(100);
 
       setLogoAssetForm({ nombre: '', tipo: 'club', archivo: null });
       alert(`Logo guardado en ${resultado.url}`);
@@ -1122,6 +1127,7 @@ function SuperAdminPanel({
       alert(`No se pudo subir el logo: ${error.message}`);
     } finally {
       setSubiendoLogoAsset(false);
+      setTimeout(() => setProgresoLogoAsset(0), 1200);
     }
   };
 
@@ -2092,6 +2098,23 @@ function SuperAdminPanel({
               {logoAssetUrl && <LogoAvatar nombre={logoAssetForm.nombre || 'Logo guardado'} logoUrl={logoAssetUrl} size={44} borderRadius="14px" />}
               {logoAssetUrl && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{logoAssetUrl}</span>}
             </div>
+            {(subiendoLogoAsset || progresoLogoAsset > 0) && (
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ height: '10px', borderRadius: '999px', background: 'rgba(15,23,42,0.08)', overflow: 'hidden', border: '1px solid rgba(0,122,255,0.15)' }}>
+                  <div
+                    style={{
+                      width: `${progresoLogoAsset}%`,
+                      height: '100%',
+                      background: 'linear-gradient(90deg, #007AFF, #34C759)',
+                      transition: 'width 0.2s ease',
+                    }}
+                  />
+                </div>
+                <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)' }}>
+                  {subiendoLogoAsset ? `Subiendo logo... ${progresoLogoAsset}%` : 'Logo subido correctamente'}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
