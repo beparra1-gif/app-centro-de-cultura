@@ -1164,6 +1164,15 @@ function SuperAdminPanel({
       const resultado = await api.assetsAPI.listLogos();
       const logos = Array.isArray(resultado?.logos) ? resultado.logos : [];
       setLogosDisponiblesActivos(logos);
+
+      if (logoAssetUrl) {
+        const normalizar = (value = '') => String(value || '').trim().replace(/^https?:\/\/[^/]+/i, '');
+        const actual = normalizar(logoAssetUrl);
+        const existe = logos.some((logo) => normalizar(logo?.url || '') === actual);
+        if (!existe) {
+          setLogoAssetUrl('');
+        }
+      }
     } catch (error) {
       setLogosDisponiblesActivos([]);
       setErrorLogosDisponibles(error.message || 'No se pudo cargar el listado de logos.');
@@ -1184,6 +1193,12 @@ function SuperAdminPanel({
     try {
       setEliminandoLogoFilename(filename);
       await api.assetsAPI.deleteLogo(filename);
+      const normalizar = (value = '') => String(value || '').trim().replace(/^https?:\/\/[^/]+/i, '');
+      const actual = normalizar(logoAssetUrl);
+      const borrado = normalizar(logo?.url || `/logos/${filename}`);
+      if (actual && actual === borrado) {
+        setLogoAssetUrl('');
+      }
       await cargarLogosDisponiblesActivos();
       alert('Logo eliminado correctamente.');
     } catch (error) {
