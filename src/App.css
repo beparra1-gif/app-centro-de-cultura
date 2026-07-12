@@ -296,7 +296,7 @@ button,
   color: white; 
   padding: 15px 20px; 
   display: grid;
-  grid-template-columns: 56px 1fr auto;
+  grid-template-columns: minmax(124px, auto) 1fr auto;
   align-items: center; 
   padding-top: env(safe-area-inset-top, 48px);
   border-bottom-left-radius: 30px; 
@@ -373,6 +373,49 @@ button,
   opacity: 0.85; transition: transform 0.2s, opacity 0.2s; 
 }
 .btn-icon-header:hover { transform: scale(1.1); opacity: 1; }
+
+.btn-app-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.10);
+  color: #F8FAFC;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 6px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.btn-app-update:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.20);
+}
+
+.btn-app-update.pending {
+  border-color: rgba(255, 149, 0, 0.70);
+  background: rgba(255, 149, 0, 0.18);
+  color: #FFF8EC;
+}
+
+.btn-app-update.latest {
+  border-color: rgba(52, 199, 89, 0.45);
+  background: rgba(52, 199, 89, 0.16);
+}
+
+.btn-app-update-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-app-update-text {
+  display: inline-block;
+}
 
 .notificaciones-panel { 
   animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1); 
@@ -829,11 +872,17 @@ button,
 
 @media (max-width: 520px) {
   .ios-header {
-    grid-template-columns: 44px 1fr auto;
+    grid-template-columns: minmax(96px, auto) 1fr auto;
     padding: 12px 14px;
   }
 
   .header-btn-zone { min-width: 44px; }
+
+  .btn-app-update {
+    font-size: 10px;
+    padding: 5px 8px;
+    gap: 4px;
+  }
 
   .header-btn-zone.right > div {
     gap: 8px !important;
@@ -1244,6 +1293,31 @@ button,
   padding: 10px 12px;
   font-size: 13px;
   font-weight: 700;
+}
+
+.local-preview-banner {
+  margin: 8px 14px 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 122, 255, 0.22);
+  background: linear-gradient(135deg, rgba(0, 122, 255, 0.14), rgba(0, 0, 0, 0.04));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.local-preview-banner strong {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.7px;
+  color: var(--azul-marino);
+}
+
+.local-preview-banner span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--texto-secundario);
 }
 .payment-overview-card { background: linear-gradient(135deg, var(--azul-marino), #1a2a42); color:white; border:none; }
 .payment-overview-card .status-titular { color: white !important; }

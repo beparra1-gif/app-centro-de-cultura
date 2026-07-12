@@ -6,7 +6,7 @@ import {
   Brain, PlayCircle, BookOpen, Video, Users, Sliders, HeartPulse, 
   Save, Monitor, Activity, ArrowRight, ArrowLeft, AlertTriangle, 
   FileText, Flag, QrCode, Lock, Camera, ChevronRight, ChevronLeft, 
-  ShieldAlert, Zap, Clock, FileDown, 
+  ShieldAlert, Zap, Clock, FileDown, RefreshCw,
   History, CheckSquare, 
   XSquare
 } from 'lucide-react';
@@ -272,10 +272,20 @@ function App() {
   const [apiOffline, setApiOffline] = useState(false);
   const [apiRetrying, setApiRetrying] = useState(false);
   const [apiStatusMessage, setApiStatusMessage] = useState('');
+  const [appVersionState, setAppVersionState] = useState({
+    checking: false,
+    hasUpdate: false,
+    isLatest: true,
+    currentBuild: '',
+    latestBuild: '',
+    error: '',
+    lastCheckedAt: null,
+  });
   const settingsButtonRef = useRef(null);
   const notificationsButtonRef = useRef(null);
   const settingsPanelRef = useRef(null);
   const notificationsPanelRef = useRef(null);
+  const appVersionCheckInFlightRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -938,6 +948,105 @@ function App() {
       return next;
     });
   };
+
+  const extractBuildHashFromUrl = (assetUrl = '') => {
+    const safeUrl = String(assetUrl || '').trim();
+    const match = safeUrl.match(/\/assets\/index-([a-zA-Z0-9_-]+)\.js/i);
+    return match?.[1] || '';
+  };
+
+  const getCurrentBuildHash = () => {
+    if (typeof document === 'undefined') return '';
+    const scripts = Array.from(document.querySelectorAll('script[src]'));
+    const indexScript = scripts.find((script) => {
+      const src = script.getAttribute('src') || '';
+      return /\/assets\/index-[a-zA-Z0-9_-]+\.js/i.test(src);
+    });
+    return extractBuildHashFromUrl(indexScript?.getAttribute('src') || '');
+  };
+
+  const getLatestBuildHashFromHtml = (html = '') => {
+    const safeHtml = String(html || '');
+    const match = safeHtml.match(/\/assets\/index-([a-zA-Z0-9_-]+)\.js/i);
+    return match?.[1] || '';
+  };
+
+  const checkLatestAppVersion = async ({ manual = false } = {}) => {
+    if (typeof window === 'undefined') return null;
+    if (appVersionCheckInFlightRef.current) return null;
+
+    appVersionCheckInFlightRef.current = true;
+    setAppVersionState((prev) => ({
+      ...prev,
+      checking: true,
+      error: '',
+      currentBuild: prev.currentBuild || getCurrentBuildHash(),
+    }));
+
+    try {
+      const basePath = `${window.location.origin}${window.location.pathname}`;
+      const response = await fetch(`${basePath}?app-version-check=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      const html = await response.text();
+      const latestBuild = getLatestBuildHashFromHtml(html);
+      const currentBuild = getCurrentBuildHash();
+      const hasHashes = Boolean(currentBuild && latestBuild);
+      const hasUpdate = hasHashes ? currentBuild !== latestBuild : false;
+
+      const nextState = {
+        checking: false,
+        hasUpdate,
+        isLatest: hasHashes ? !hasUpdate : true,
+        currentBuild,
+        latestBuild,
+        error: '',
+        lastCheckedAt: new Date().toISOString(),
+      };
+
+      setAppVersionState(nextState);
+      return nextState;
+    } catch (error) {
+      const message = manual
+        ? (error?.message || 'No se pudo verificar la versión de la app.')
+        : '';
+      setAppVersionState((prev) => ({
+        ...prev,
+        checking: false,
+        error: message,
+        currentBuild: prev.currentBuild || getCurrentBuildHash(),
+        lastCheckedAt: new Date().toISOString(),
+      }));
+      return null;
+    } finally {
+      appVersionCheckInFlightRef.current = false;
+    }
+  };
+
+  const handleUpdateAppClick = async () => {
+    const resultado = await checkLatestAppVersion({ manual: true });
+    const debeActualizar = Boolean(resultado?.hasUpdate || appVersionState.hasUpdate);
+
+    if (debeActualizar) {
+      const destino = `${window.location.origin}${window.location.pathname}?fresh=app-update-${Date.now()}`;
+      window.location.assign(destino);
+      return;
+    }
+
+    if (resultado && !resultado.hasUpdate) {
+      alert('Ya tienes la ultima version disponible.');
+    }
+  };
+
+  useEffect(() => {
+    void checkLatestAppVersion();
+    const intervalId = window.setInterval(() => {
+      void checkLatestAppVersion();
+    }, 120000);
+
+    return () => window.clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!showSettings && !mostrarNotificaciones) return;
@@ -1957,11 +2066,32 @@ function App() {
       {/* HEADER DINÁMICO E INTELIGENTE */}
       <header className="ios-header">
         <div className="header-btn-zone">
-          {rolUsuario && (
-            <div className="btn-icon-header" style={{ cursor: 'default' }}>
-              <ShieldAlert size={22} color="#6B7280" strokeWidth={1.5} />
-            </div>
-          )}
+          <button
+            className={`btn-app-update ${appVersionState.hasUpdate ? 'pending' : 'latest'}`}
+            onClick={handleUpdateAppClick}
+            title={
+              appVersionState.hasUpdate
+                ? 'Hay una nueva version disponible. Pulsa para actualizar la app.'
+                : 'Tu app esta al dia.'
+            }
+          >
+            <span className="btn-app-update-icon" aria-hidden="true">
+              {appVersionState.checking ? (
+                <Clock size={14} strokeWidth={2} />
+              ) : appVersionState.hasUpdate ? (
+                <RefreshCw size={14} strokeWidth={2} />
+              ) : (
+                <CheckCircle size={14} strokeWidth={2} />
+              )}
+            </span>
+            <span className="btn-app-update-text">
+              {appVersionState.checking
+                ? 'Revisando'
+                : appVersionState.hasUpdate
+                  ? 'Nueva version'
+                  : 'App al dia'}
+            </span>
+          </button>
         </div>
         <div className="logo-temporal" style={{ background: 'none', width: 'auto', flex: 1, minWidth: 0, padding: '0 10px' }}>
           {!rolUsuario
