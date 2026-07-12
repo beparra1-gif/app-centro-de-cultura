@@ -284,11 +284,11 @@ function App() {
         const sesion = JSON.parse(sesionRaw);
         // Para SuperAdmin, no verificar expiración - mantener sesión indefinidamente
         if (sesion?.rol && sesion?.usuario) {
-          const rolNormalizado = normalizarRol(sesion.rol);
+          const rolNormalizado = resolverRolPrincipal(sesion.rol, sesion.usuario);
           setRolUsuario(rolNormalizado);
           setUsuarioAutenticado({
             ...sesion.usuario,
-            rol: normalizarRol(sesion.usuario?.rol || rolNormalizado),
+            rol: resolverRolPrincipal(sesion.usuario?.rol || rolNormalizado, sesion.usuario),
           });
           setPantallaActiva(sesion.pantallaActiva || (rolNormalizado === 'super_admin' ? 'admin_dashboard' : 'comunicaciones'));
         }
@@ -617,6 +617,34 @@ function App() {
   const abrirFormularioLogin = (tipo) => { setTipoLoginSeleccionado(tipo); setMostrarFormularioLogin(true); setRutInput(tipo === 'invitado' ? 'visita' : ''); };
   const volverInicioLogin = () => { setMostrarFormularioLogin(false); setRutInput(''); setPassInput(''); };
 
+  const resolverRolPrincipal = (rolBase = '', usuario = null) => {
+    const candidatos = [
+      usuario?.perfil_principal,
+      usuario?.rol,
+      ...(Array.isArray(usuario?.access_profiles) ? usuario.access_profiles : []),
+      rolBase,
+    ]
+      .map((rol) => normalizarRol(rol))
+      .filter(Boolean);
+
+    const prioridadRoles = [
+      'super_admin',
+      'admin',
+      'staff',
+      'mesa',
+      'directiva',
+      'socio_apoderado',
+      'socio-apoderado',
+      'socio',
+      'apoderado',
+      'jugador',
+      'visita',
+    ];
+
+    const rolPriorizado = prioridadRoles.find((rol) => candidatos.includes(rol));
+    return rolPriorizado || normalizarRol(rolBase || usuario?.rol || 'jugador');
+  };
+
   const getCamposPendientesOnboarding = (cuenta = {}) => {
     const rolBase = normalizarRol(cuenta.perfil_principal || cuenta.rol || rolUsuarioTemporal || 'apoderado');
 
@@ -697,8 +725,8 @@ function App() {
 
     try {
       const loginRes = await api.authAPI.login(rutInput, passInput);
-      const perfilDetectado = loginRes?.user?.rol || 'jugador';
       const usuarioDetectado = loginRes?.user || null;
+      const perfilDetectado = resolverRolPrincipal(loginRes?.user?.rol || 'jugador', usuarioDetectado);
       const requiereCambioClave = passInput === '12345' || Boolean(loginRes?.user?.forzar_clave);
 
       if(requiereCambioClave) {
@@ -815,11 +843,15 @@ function App() {
   };
 
   const iniciarSesionFinal = (perfil, usuario = null) => {
-    const perfilNormalizado = normalizarRol(perfil);
+    const perfilNormalizado = resolverRolPrincipal(perfil, usuario);
     const usuarioNormalizado = usuario ? {
       ...usuario,
-      rol: normalizarRol(usuario.rol || perfilNormalizado),
-      access_profiles: usuario.access_profiles || [normalizarRol(usuario.rol || perfilNormalizado)],
+      rol: resolverRolPrincipal(usuario.rol || perfilNormalizado, usuario),
+      access_profiles: Array.from(new Set([
+        ...(Array.isArray(usuario.access_profiles) ? usuario.access_profiles.map((r) => normalizarRol(r)) : []),
+        normalizarRol(usuario.perfil_principal || ''),
+        resolverRolPrincipal(usuario.rol || perfilNormalizado, usuario),
+      ].filter(Boolean))),
     } : {
       id: `rol-${perfilNormalizado}`,
       nombre: perfilNormalizado,
@@ -1777,8 +1809,11 @@ function App() {
     foto_jugador: j.foto_jugador || j.foto_perfil_url || j.club_logo_url || '',
   }));
 
-  const esJugadorAutenticado = normalizarRol(rolUsuario || usuarioAutenticado?.rol || '') === 'jugador';
+  const rolSesionNormalizado = normalizarRol(rolUsuario || usuarioAutenticado?.rol || '');
+  const esJugadorAutenticado = rolSesionNormalizado === 'jugador';
+  const esPerfilFamiliar = ['apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'].includes(rolSesionNormalizado);
   const rutUsuarioAutenticado = normalizarRutComparacion(usuarioAutenticado?.rut || '');
+  const correoUsuarioAutenticado = String(usuarioAutenticado?.correo || '').trim().toLowerCase();
 
   const puntajeCalidadPupilo = (jugador = {}) => {
     const anio = obtenerAnioNacimientoJugador(jugador);
@@ -1794,18 +1829,27 @@ function App() {
     return score;
   };
 
-  const pupilosDisponibles = esJugadorAutenticado
-    ? (() => {
-        const propios = pupilosDisponiblesBase.filter((j) => normalizarRutComparacion(j.rut) === rutUsuarioAutenticado);
-        if (propios.length <= 1) return propios;
+  const pupilosDisponibles = (() => {
+    if (esJugadorAutenticado) {
+      const propios = pupilosDisponiblesBase.filter((j) => normalizarRutComparacion(j.rut) === rutUsuarioAutenticado);
+      if (propios.length <= 1) return propios;
 
-        const mejor = [...propios].sort((a, b) => puntajeCalidadPupilo(b) - puntajeCalidadPupilo(a))[0];
-        return mejor ? [mejor] : propios;
-      })()
-    : pupilosDisponiblesBase;
+      const mejor = [...propios].sort((a, b) => puntajeCalidadPupilo(b) - puntajeCalidadPupilo(a))[0];
+      return mejor ? [mejor] : propios;
+    }
+
+    if (esPerfilFamiliar) {
+      return pupilosDisponiblesBase.filter((j) => {
+        const correoApoderado = String(j.correo_apoderado || '').trim().toLowerCase();
+        return Boolean(correoUsuarioAutenticado) && correoApoderado === correoUsuarioAutenticado;
+      });
+    }
+
+    return pupilosDisponiblesBase;
+  })();
 
   useEffect(() => {
-    if (!esJugadorAutenticado) return;
+    if (!esJugadorAutenticado && !esPerfilFamiliar) return;
 
     if (pupilosDisponibles.length === 0) {
       setPupiloActivo(null);
@@ -1823,7 +1867,7 @@ function App() {
     if (rutActivo !== rutPropio || anioActivo !== anioPropio || numeroActivo !== numeroPropio) {
       setPupiloActivo(pupiloPropio);
     }
-  }, [esJugadorAutenticado, pupilosDisponibles, pupiloActivo]);
+  }, [esJugadorAutenticado, esPerfilFamiliar, pupilosDisponibles, pupiloActivo]);
 
   const comunicacionesPublicas = (comunicaciones || []).filter((c) => {
     const audiencia = Array.isArray(c.audiencia) ? c.audiencia : [];
@@ -1836,6 +1880,35 @@ function App() {
     titulo: c.TITULO,
     fecha: c.FECHA,
   }));
+
+  const esPerfilFamiliarNav = ['apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'].includes(rolUsuario);
+  const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'evaluacion_staff', 'scoreboard_live', 'kiosco'];
+  const modulosNavegacionVisibles = modulosNavegacionOrden.filter((modulo) => puedeVerPantalla(modulo));
+
+  const obtenerMetaModuloNav = (modulo) => {
+    switch (modulo) {
+      case 'admin_dashboard':
+        return { label: rolUsuario === 'super_admin' ? 'Panel' : 'Admin', Icon: rolUsuario === 'super_admin' ? ShieldAlert : Activity };
+      case 'comunicaciones':
+        return { label: 'Muro', Icon: Bell };
+      case 'academia':
+        return { label: 'Academia', Icon: BookOpen };
+      case 'perfil':
+        return { label: (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? 'Tesorería' : 'Mi Cuenta', Icon: CreditCard };
+      case 'jugador':
+        return { label: esPerfilFamiliarNav ? 'Pupilos' : 'Jugador', Icon: User };
+      case 'asistencia_staff':
+        return { label: 'Lista', Icon: Users };
+      case 'evaluacion_staff':
+        return { label: 'Evaluar', Icon: Sliders };
+      case 'scoreboard_live':
+        return { label: 'Mesa', Icon: Monitor };
+      case 'kiosco':
+        return { label: 'Kiosco', Icon: LayoutGrid };
+      default:
+        return null;
+    }
+  };
 
   // ==========================================
   // 10. ESTRUCTURA HTML FINAL (APP)
@@ -2291,39 +2364,26 @@ function App() {
             {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Trophy size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Torneo</span></div>}
             {puedeVerPantalla('jugador') && <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><QrCode size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Pase/Fixture</span></div>}
           </>
-        ) : (rolUsuario === 'jugador' || rolUsuario === 'deportista') ? (
-          <>
-            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Muro</span></div>}
-            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Academia</span></div>}
-            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Mi Cuenta</span></div>}
-            {puedeVerPantalla('jugador') && <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><User size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Jugador</span></div>}
-          </>
-        ) : rolUsuario === 'admin' ? (
-          <>
-            {puedeVerPantalla('admin_dashboard') && <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><Activity size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Admin</span></div>}
-            {puedeVerPantalla('kiosco') && <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Kiosco</span></div>}
-            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Tesorería</span></div>}
-            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Muro</span></div>}
-          </>
-        ) : rolUsuario === 'super_admin' ? (
-          <>
-            {puedeVerPantalla('admin_dashboard') && <div className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('admin_dashboard')}><ShieldAlert size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Panel</span></div>}
-            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Muro</span></div>}
-            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Academia</span></div>}
-            {puedeVerPantalla('asistencia_staff') && <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Staff</span></div>}
-            {puedeVerPantalla('scoreboard_live') && <div className={`nav-item ${pantallaActiva === 'scoreboard_live' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('scoreboard_live')}><Monitor size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Mesa</span></div>}
-            {puedeVerPantalla('kiosco') && <div className={`nav-item ${pantallaActiva === 'kiosco' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('kiosco')}><LayoutGrid size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Kiosco</span></div>}
-            {puedeVerPantalla('perfil') && <div className={`nav-item ${pantallaActiva === 'perfil' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('perfil')}><CreditCard size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Tesorería</span></div>}
-          </>
-        ) : rolUsuario === 'staff' ? (
-          <>
-            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Muro</span></div>}
-            {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Academia</span></div>}
-            {puedeVerPantalla('asistencia_staff') && <div className={`nav-item ${pantallaActiva === 'asistencia_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('asistencia_staff')}><Users size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Lista</span></div>}
-            {puedeVerPantalla('evaluacion_staff') && <div className={`nav-item ${pantallaActiva === 'evaluacion_staff' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('evaluacion_staff')}><Sliders size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Evaluar</span></div>}
-          </>
         ) : rolUsuario === 'mesa' ? (
           <div className="nav-item active" style={{width: '100%'}}><Monitor size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Consola Transmisión</span></div>
+        ) : modulosNavegacionVisibles.length > 0 ? (
+          <>
+            {modulosNavegacionVisibles.map((modulo) => {
+              const meta = obtenerMetaModuloNav(modulo);
+              if (!meta) return null;
+              const Icon = meta.Icon;
+              return (
+                <div
+                  key={`nav-${modulo}`}
+                  className={`nav-item ${pantallaActiva === modulo ? 'active' : ''}`}
+                  onClick={() => cambiarPantallaConLoader(modulo)}
+                >
+                  <Icon size={26} color="#6B7280" strokeWidth={1.5} />
+                  <span className="mt-5">{meta.label}</span>
+                </div>
+              );
+            })}
+          </>
         ) : null}
       </nav>
 
