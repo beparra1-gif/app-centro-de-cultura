@@ -39,6 +39,8 @@ function PerfilTesoreriaPanel({
     ? pupilosDisponibles
     : (pupiloActivo ? [pupiloActivo] : []);
   const rutPupiloActivo = pupiloActivo?.rut || pupilosActivos[0]?.rut;
+  const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+  const rutPupiloActivoNormalizado = normalizarRutComparacion(rutPupiloActivo);
   const titular = cuentaActual
     ? `${cuentaActual.nombres || ''} ${cuentaActual.apellido_paterno || ''}`.trim()
     : (pupiloActivo?.nombre || pupilosActivos[0]?.nombre || 'Cuenta principal');
@@ -46,7 +48,10 @@ function PerfilTesoreriaPanel({
   const esSocio = Boolean(cuentaActual?.es_socio) || ['socio', 'socio_apoderado', 'directiva'].includes(perfilPrincipal);
   const esSocioApoderado = perfilPrincipal === 'socio_apoderado';
 
-  const morosoActivo = (morososAdmin || []).find((m) => m.rut === rutPupiloActivo) || null;
+  const morosoActivo = (morososAdmin || []).find((m) => {
+    const rutMoroso = normalizarRutComparacion(m?.rut || '');
+    return rutMoroso && rutMoroso === rutPupiloActivoNormalizado;
+  }) || null;
   const mesesAtraso = Number(morosoActivo?.mesesDeuda || 0);
   const estadoCuenta = mesesAtraso > 0 ? 'Moroso' : 'Al Día';
 
@@ -69,7 +74,7 @@ function PerfilTesoreriaPanel({
 
   const pagosJugador = (pagosMensualidadesAdmin || []).filter((p) => {
     if (!rutPupiloActivo) return true;
-    return p.rut_jugador === rutPupiloActivo;
+    return normalizarRutComparacion(p.rut_jugador) === rutPupiloActivoNormalizado;
   });
 
   const pagosPorMes = pagosJugador.reduce((acc, pago) => {
@@ -352,7 +357,10 @@ function PerfilTesoreriaPanel({
             <div className={pagoViewMode === 'grid' ? 'grid-12-meses' : 'lista-12-meses'}>
               {mesesBase.map((mes, idx) => {
                 const mesNumero = idx + 1;
-                const pagosDelPupilo = (pagosMensualidadesAdmin || []).filter((p) => p.rut_jugador === pupilo.rut);
+                const rutPupiloCardNormalizado = normalizarRutComparacion(pupilo.rut);
+                const pagosDelPupilo = (pagosMensualidadesAdmin || []).filter(
+                  (p) => normalizarRutComparacion(p.rut_jugador) === rutPupiloCardNormalizado
+                );
                 const estadosMes = pagosDelPupilo
                   .filter((pago) => monthFromPago(pago) === mesNumero)
                   .map((pago) => (pago.estado_pago || '').toLowerCase());

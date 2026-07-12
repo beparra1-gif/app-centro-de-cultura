@@ -336,16 +336,25 @@ function App() {
   // ==========================================
 
   const construirMorososDesdePagos = (pagos = [], jugadores = []) => {
-    const jugadoresPorRut = new Map((jugadores || []).map((j) => [j.rut_jugador, j]));
+    const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+    const jugadoresPorRut = new Map(
+      (jugadores || [])
+        .map((j) => [normalizarRutComparacion(j.rut_jugador), j])
+        .filter(([rut]) => Boolean(rut))
+    );
     const pendientes = (pagos || []).filter((p) => ['pendiente', 'rechazado'].includes((p.estado_pago || '').toLowerCase()));
     const agrupados = new Map();
 
     pendientes.forEach((pago) => {
-      const rut = pago.rut_jugador || pago.correo_apoderado || `pendiente-${pago.id}`;
-      const jugador = jugadoresPorRut.get(pago.rut_jugador);
-      const actual = agrupados.get(rut) || {
-        id: rut,
-        rut,
+      const rutPagoRaw = String(pago.rut_jugador || '').trim();
+      const rutPagoNormalizado = normalizarRutComparacion(rutPagoRaw);
+      const correoPago = String(pago.correo_apoderado || '').trim().toLowerCase();
+      const keyAgrupacion = rutPagoNormalizado || correoPago || `pendiente-${pago.id}`;
+      const jugador = rutPagoNormalizado ? jugadoresPorRut.get(rutPagoNormalizado) : null;
+
+      const actual = agrupados.get(keyAgrupacion) || {
+        id: keyAgrupacion,
+        rut: jugador?.rut_jugador || rutPagoRaw || pago.correo_apoderado || keyAgrupacion,
         nombre: jugador
           ? `${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim()
           : `Pago pendiente #${pago.id}`,
@@ -358,7 +367,7 @@ function App() {
 
       actual.montoDeuda += Number(pago.monto_total_pagado || 0);
       actual.mesesDeuda += Number(pago.cantidad_meses_pagados || 1);
-      agrupados.set(rut, actual);
+      agrupados.set(keyAgrupacion, actual);
     });
 
     return [...agrupados.values()].sort((a, b) => b.montoDeuda - a.montoDeuda);
