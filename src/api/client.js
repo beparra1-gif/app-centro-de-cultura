@@ -925,7 +925,7 @@ export const assetsAPI = {
   uploadLogo: async (formData, { onProgress } = {}) => {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_BASE_URL}/assets/logos`);
+      xhr.open('POST', `${API_BASE_URL}/logo-assets`);
 
       if (typeof onProgress === 'function') {
         xhr.upload.onprogress = (event) => {
@@ -959,13 +959,13 @@ export const assetsAPI = {
   },
 
   listLogos: async () => {
-    const response = await fetch(`${API_BASE_URL}/assets/logos/list`);
+    const response = await fetch(`${API_BASE_URL}/logo-assets/list`);
     return handleResponse(response);
   },
 
   deleteLogo: async (filename) => {
     const safeFilename = encodeURIComponent(String(filename || '').trim());
-    const response = await fetch(`${API_BASE_URL}/assets/logos/${safeFilename}`, {
+    const response = await fetch(`${API_BASE_URL}/logo-assets/${safeFilename}`, {
       method: 'DELETE',
     });
     return handleResponse(response);

@@ -99,7 +99,7 @@ function ComunicacionesPanel({
     const claveMensaje = obtenerClaveMensaje(comId, convocado?.rut_jugador || actorId);
     const mensajeProfesor = String(draftMensajesProfesor[claveMensaje] ?? convocado?.mensaje_profesor ?? '').trim();
     const justificacion = respuesta === 'no'
-      ? String(convocado?.justificacion || '').trim() || (window.prompt('Debes justificar la inasistencia:', '') || '').trim()
+      ? String(convocado?.justificacion || '').trim()
       : '';
 
     if (respuesta === 'no' && !justificacion) {

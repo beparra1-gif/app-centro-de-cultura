@@ -249,6 +249,20 @@ const createSchema = async () => {
     await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS torneo_logo_url VARCHAR(255)`);
     console.log('✅ Columnas de logos en partidos_live verificadas');
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS logo_assets (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(255),
+        tipo VARCHAR(50) DEFAULT 'logo',
+        filename VARCHAR(255) UNIQUE NOT NULL,
+        mime_type VARCHAR(100) NOT NULL,
+        file_data BYTEA NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Tabla logo_assets creada/verificada');
+
     // Tabla: pagos_mensualidades (Mejorada)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS pagos_mensualidades (

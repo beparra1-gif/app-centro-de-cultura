@@ -95,6 +95,12 @@ function SuperAdminPanel({
   void nominaCita;
   void setNominaCita;
 
+  const rolActual = normalizarRol(usuarioAutenticado?.rol || usuarioAutenticado?.perfil_principal || '');
+  const esStaff = rolActual === 'staff';
+  const esAdmin = rolActual === 'admin';
+  const esSuperAdmin = rolActual === 'super_admin';
+  const puedeGestionarCitacionesComoAdmin = esAdmin || esSuperAdmin;
+
   const totalSocios = (cuentasAdmin || []).filter((c) => Boolean(c.es_socio)).length;
   const totalDeportistas = (jugadoresAdmin || []).length;
 
@@ -191,6 +197,7 @@ function SuperAdminPanel({
   const [seleccionCitacion, setSeleccionCitacion] = useState({});
   const [autorizacionMorosos, setAutorizacionMorosos] = useState({});
   const [citacionActivaId, setCitacionActivaId] = useState(null);
+  const [convocadoAAgregarPorCitacion, setConvocadoAAgregarPorCitacion] = useState({});
   const [citaForm, setCitaForm] = useState(() => ({
     tipo_competencia: 'Liga',
     competencia_nombre: '',
@@ -1210,7 +1217,7 @@ function SuperAdminPanel({
   };
 
   useEffect(() => {
-    if (vistaAdmin !== 'activos' && vistaAdmin !== 'resultados') return;
+    if (vistaAdmin !== 'activos' && vistaAdmin !== 'resultados' && vistaAdmin !== 'citaciones') return;
     cargarLogosDisponiblesActivos();
   }, [vistaAdmin]);
 
@@ -1399,21 +1406,98 @@ function SuperAdminPanel({
     ));
   };
 
-  const actualizarRespuestaConvocado = (citacionId, rut, payload = {}) => {
-    setNominaCita((prev) => (prev || []).map((c) => {
-      if (c.id !== citacionId) return c;
+  const puedeEditarNominaCitacion = (cita) => {
+    if (puedeGestionarCitacionesComoAdmin) return true;
+    if (!esStaff) return false;
+    const rutResponsable = String(cita?.responsable_rut || '').trim();
+    const rutActual = String(usuarioAutenticado?.rut || '').trim();
+    return Boolean(rutActual) && rutActual === rutResponsable;
+  };
+
+  const obtenerJugadoresDisponiblesParaCitacion = (cita) => {
+    const ramaObjetivo = String(cita?.rama || 'todas').toLowerCase();
+    const categoriaBase = String(cita?.categoria_base || 'todas').trim().toLowerCase();
+    const categoriasApoyo = Array.isArray(cita?.categorias_apoyo)
+      ? cita.categorias_apoyo.map((cat) => String(cat || '').trim().toLowerCase())
+      : [];
+    const categoriasPermitidas = new Set(
+      [categoriaBase, ...categoriasApoyo].filter((cat) => cat && cat !== 'todas')
+    );
+    const convocadosSet = new Set((cita?.convocados || []).map((conv) => String(conv.rut_jugador || '').trim()));
+
+    return (jugadoresAdmin || []).filter((jugador) => {
+      const rut = String(jugador.rut_jugador || '').trim();
+      if (!rut || convocadosSet.has(rut)) return false;
+
+      const ramaJugador = String(jugador.rama || '').trim().toLowerCase();
+      if (ramaObjetivo !== 'todas' && ramaJugador !== ramaObjetivo) return false;
+
+      if (categoriasPermitidas.size > 0) {
+        const categoriaJugador = String(jugador.categoria || '').trim().toLowerCase();
+        if (!categoriasPermitidas.has(categoriaJugador)) return false;
+      }
+
+      return true;
+    });
+  };
+
+  const sincronizarComunicacionDesdeCitacion = (citaActualizada) => {
+    setComunicaciones((prev) => (prev || []).map((com) => {
+      if (com.citacion_id !== citaActualizada.id) return com;
       return {
-        ...c,
-        convocados: (c.convocados || []).map((conv) => {
-          if (conv.rut_jugador !== rut) return conv;
-          return {
-            ...conv,
-            ...payload,
-            actualizado_en: new Date().toISOString(),
-          };
-        }),
+        ...com,
+        convocatoria_ruts: (citaActualizada.convocados || []).map((x) => x.rut_jugador),
+        convocatoria_alertas_morosidad: (citaActualizada.convocados || [])
+          .filter((x) => Boolean(x.requiere_excepcion_morosidad))
+          .map((x) => x.rut_jugador),
       };
     }));
+  };
+
+  const agregarConvocadoACitacion = (cita, jugador) => {
+    if (!cita || !jugador) return;
+
+    const nuevoConvocado = {
+      rut_jugador: jugador.rut_jugador,
+      nombre: `${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim(),
+      categoria: jugador.categoria || 'Sin categoría',
+      rama: jugador.rama || 'Sin rama',
+      correo_apoderado: jugador.correo_apoderado || '',
+      respuesta: 'pendiente',
+      justificacion: '',
+      requiere_excepcion_morosidad: (morososAdmin || []).some((m) => String(m.rut || '').trim() === String(jugador.rut_jugador || '').trim()),
+      excepcion_solicitada: false,
+      estado_excepcion: 'no_requiere',
+      actualizado_en: null,
+    };
+
+    const siguientes = (nominaCita || []).map((item) => {
+      if (item.id !== cita.id) return item;
+      if ((item.convocados || []).some((conv) => conv.rut_jugador === nuevoConvocado.rut_jugador)) {
+        return item;
+      }
+      return { ...item, convocados: [...(item.convocados || []), nuevoConvocado] };
+    });
+
+    const citaActualizada = siguientes.find((item) => item.id === cita.id);
+    setNominaCita(siguientes);
+    if (citaActualizada) sincronizarComunicacionDesdeCitacion(citaActualizada);
+  };
+
+  const quitarConvocadoDeCitacion = (cita, rutJugador) => {
+    if (!cita || !rutJugador) return;
+
+    const siguientes = (nominaCita || []).map((item) => {
+      if (item.id !== cita.id) return item;
+      return {
+        ...item,
+        convocados: (item.convocados || []).filter((conv) => String(conv.rut_jugador || '').trim() !== String(rutJugador || '').trim()),
+      };
+    });
+
+    const citaActualizada = siguientes.find((item) => item.id === cita.id);
+    setNominaCita(siguientes);
+    if (citaActualizada) sincronizarComunicacionDesdeCitacion(citaActualizada);
   };
 
   const crearCitacion = () => {
@@ -1463,6 +1547,7 @@ function SuperAdminPanel({
       convocados,
       responsable_nombre: `${usuarioAutenticado?.nombres || ''} ${usuarioAutenticado?.apellido_paterno || ''}`.trim() || usuarioAutenticado?.correo || 'Administración CCF',
       responsable_rut: usuarioAutenticado?.rut || '',
+      responsable_correo: usuarioAutenticado?.correo || '',
       responsable_rol: usuarioAutenticado?.rol || 'admin',
       creado_en: new Date().toISOString(),
     };
@@ -2586,14 +2671,16 @@ function SuperAdminPanel({
                   <option value="Amistoso">Amistoso</option>
                 </select>
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Competencia / torneo</label>
-                <input className="form-input" value={citaForm.competencia_nombre} onChange={(e) => setCitaForm((p) => ({ ...p, competencia_nombre: e.target.value }))} placeholder="Ej: Liga ARBAM U15" />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Logo competencia (URL)</label>
-                <input className="form-input" value={citaForm.competencia_logo_url} onChange={(e) => setCitaForm((p) => ({ ...p, competencia_logo_url: e.target.value }))} placeholder="Opcional" />
-              </div>
+              <LogoPicker
+                label="Competencia / torneo"
+                nombre={citaForm.competencia_nombre}
+                onNombre={(v) => setCitaForm((p) => ({ ...p, competencia_nombre: v }))}
+                logoUrl={citaForm.competencia_logo_url}
+                onLogoUrl={(v) => setCitaForm((p) => ({ ...p, competencia_logo_url: v }))}
+                tipo="competencia"
+                placeholder="Ej: Liga ARBAM U15"
+                extraOptions={opcionesLogosResultados}
+              />
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Día citación</label>
                 <input type="date" className="form-input" value={citaForm.dia_citacion} onChange={(e) => setCitaForm((p) => ({ ...p, dia_citacion: e.target.value }))} />
@@ -2606,14 +2693,16 @@ function SuperAdminPanel({
                 <label>Hora presentación / llegada</label>
                 <input type="time" className="form-input" value={citaForm.hora_presentacion} onChange={(e) => setCitaForm((p) => ({ ...p, hora_presentacion: e.target.value }))} />
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Equipo rival</label>
-                <input className="form-input" value={citaForm.rival_nombre} onChange={(e) => setCitaForm((p) => ({ ...p, rival_nombre: e.target.value }))} placeholder="Ej: Club Deportivo X" />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Logo rival (URL)</label>
-                <input className="form-input" value={citaForm.rival_logo_url} onChange={(e) => setCitaForm((p) => ({ ...p, rival_logo_url: e.target.value }))} placeholder="Opcional" />
-              </div>
+              <LogoPicker
+                label="Equipo rival"
+                nombre={citaForm.rival_nombre}
+                onNombre={(v) => setCitaForm((p) => ({ ...p, rival_nombre: v }))}
+                logoUrl={citaForm.rival_logo_url}
+                onLogoUrl={(v) => setCitaForm((p) => ({ ...p, rival_logo_url: v }))}
+                tipo="club"
+                placeholder="Ej: Club Deportivo X"
+                extraOptions={opcionesLogosResultados}
+              />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '15px' }}>
@@ -2780,27 +2869,80 @@ function SuperAdminPanel({
                       {progreso}% respondida · Confirmados {confirmados} · Inasistentes {noAsisten} · Pendientes {Math.max(total - respondidos, 0)}
                     </div>
 
+                    {abierta && puedeEditarNominaCitacion(cita) && (
+                      <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', background: 'rgba(0,122,255,0.05)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: '10px', padding: '8px' }}>
+                        <select
+                          className="form-input"
+                          style={{ margin: 0, minWidth: '240px', flex: 1 }}
+                          value={convocadoAAgregarPorCitacion[cita.id] || ''}
+                          onChange={(e) => setConvocadoAAgregarPorCitacion((prev) => ({ ...prev, [cita.id]: e.target.value }))}
+                        >
+                          <option value="">Agregar deportista a esta nómina...</option>
+                          {obtenerJugadoresDisponiblesParaCitacion(cita).map((jugador) => (
+                            <option key={`disp-cita-${cita.id}-${jugador.rut_jugador}`} value={jugador.rut_jugador}>
+                              {`${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim()} · {jugador.rama || 'N/A'} · {jugador.categoria || 'N/A'}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn-secondary"
+                          style={{ width: 'auto', padding: '8px 12px' }}
+                          onClick={() => {
+                            const rut = String(convocadoAAgregarPorCitacion[cita.id] || '').trim();
+                            if (!rut) {
+                              alert('Selecciona un deportista para agregar.');
+                              return;
+                            }
+                            const jugador = (jugadoresAdmin || []).find((item) => String(item.rut_jugador || '').trim() === rut);
+                            if (!jugador) {
+                              alert('No se encontró el deportista seleccionado.');
+                              return;
+                            }
+                            agregarConvocadoACitacion(cita, jugador);
+                            setConvocadoAAgregarPorCitacion((prev) => ({ ...prev, [cita.id]: '' }));
+                          }}
+                        >
+                          Agregar a nómina
+                        </button>
+                      </div>
+                    )}
+
                     {abierta && (
                       <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {(cita.convocados || []).map((conv) => (
                           <div key={`conv-${cita.id}-${conv.rut_jugador}`} style={{ background: 'var(--fondo-app)', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '10px', padding: '8px' }}>
                             <div style={{ fontSize: '12px', fontWeight: '800' }}>{conv.nombre} · {conv.rama} · {conv.categoria}</div>
                             <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{conv.correo_apoderado || 'Sin correo apoderado'}</div>
+                            <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                              Estado de respuesta: {conv.respuesta === 'si' ? 'Confirmado' : conv.respuesta === 'no' ? 'Inasistente' : 'Pendiente'}
+                            </div>
                             {conv.requiere_excepcion_morosidad && (
                               <div style={{ marginTop: '5px', fontSize: '11px', color: '#b36200', fontWeight: '800' }}>
                                 Moroso: requiere excepción · Estado: {conv.estado_excepcion === 'solicitada' ? 'solicitada' : conv.estado_excepcion === 'aprobada' ? 'aprobada' : 'pendiente'}
                               </div>
                             )}
-                            <div style={{ marginTop: '6px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                              <button className="btn-secondary" style={{ width: 'auto', padding: '7px 10px', background: conv.respuesta === 'si' ? 'rgba(52,199,89,0.2)' : undefined }} onClick={() => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { respuesta: 'si', justificacion: '' })}>Asiste</button>
-                              <button className="btn-secondary" style={{ width: 'auto', padding: '7px 10px', background: conv.respuesta === 'no' ? 'rgba(255,59,48,0.2)' : undefined }} onClick={() => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { respuesta: 'no' })}>No asiste</button>
-                            </div>
-                            {conv.respuesta === 'no' && (
-                              <input className="form-input" style={{ marginTop: '6px' }} placeholder="Motivo / justificación" value={conv.justificacion || ''} onChange={(e) => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { justificacion: e.target.value })} />
+                            {conv.justificacion && (
+                              <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
+                                Justificación: {conv.justificacion}
+                              </div>
                             )}
                             {conv.mensaje_profesor && (
                               <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
                                 Mensaje al profesor: {conv.mensaje_profesor}
+                              </div>
+                            )}
+                            {puedeEditarNominaCitacion(cita) && (
+                              <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                                <button
+                                  className="btn-secondary"
+                                  style={{ width: 'auto', padding: '7px 10px', borderColor: 'rgba(255,59,48,0.35)', color: '#b91c1c' }}
+                                  onClick={() => {
+                                    if (!window.confirm(`¿Quitar a ${conv.nombre} de esta nómina?`)) return;
+                                    quitarConvocadoDeCitacion(cita, conv.rut_jugador);
+                                  }}
+                                >
+                                  Quitar de nómina
+                                </button>
                               </div>
                             )}
                           </div>

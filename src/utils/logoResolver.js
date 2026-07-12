@@ -76,11 +76,13 @@ export const construirLogoCandidates = ({ nombre = '', logoUrl = '', slug = '', 
 
   if (esNuestroClub) {
     agregarCandidato('/logos/club-logo.png');
+    agregarCandidato('/api/logo-assets/file/club-logo.png');
   }
 
   if (slugBase) {
     extensionesLogo.forEach((extension) => {
       agregarCandidato(`/logos/${slugBase}.${extension}`);
+      agregarCandidato(`/api/logo-assets/file/${slugBase}.${extension}`);
     });
   }
 
@@ -89,6 +91,7 @@ export const construirLogoCandidates = ({ nombre = '', logoUrl = '', slug = '', 
     prefijos.forEach((prefijo) => {
       extensionesLogo.forEach((extension) => {
         agregarCandidato(`/logos/${prefijo}-${slugBase}.${extension}`);
+        agregarCandidato(`/api/logo-assets/file/${prefijo}-${slugBase}.${extension}`);
       });
     });
   }
