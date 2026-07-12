@@ -1081,6 +1081,19 @@ const ensurePartidosLiveLogos = async () => {
   console.log('🏆 Columnas de logos en partidos_live verificadas');
 };
 
+const ensurePartidosLiveCoreColumns = async () => {
+  const ddl = [
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS rama VARCHAR(50) DEFAULT 'Mixta'`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS categoria VARCHAR(50) DEFAULT 'SUB-13'`,
+  ];
+
+  for (const statement of ddl) {
+    await pool.query(statement);
+  }
+
+  console.log('🏀 Columnas base rama/categoria en partidos_live verificadas');
+};
+
 const getBackupStatus = () => {
   const maxAgeHours = Number(process.env.BACKUP_MAX_AGE_HOURS || 36);
   const nowMs = Date.now();
@@ -3764,6 +3777,10 @@ app.listen(PORT, () => {
 
   ensureCuentasExtendedColumns().catch((error) => {
     console.error('❌ Error verificando columnas extendidas de cuentas:', error.message);
+  });
+
+  ensurePartidosLiveCoreColumns().catch((error) => {
+    console.error('❌ Error verificando columnas base partidos_live:', error.message);
   });
 
   ensurePartidosLiveLogos().catch((error) => {
