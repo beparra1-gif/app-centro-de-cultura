@@ -260,20 +260,11 @@ function PerfilTesoreriaPanel({
         )}
       </div>
 
-      <div className="card ficha-socio-card mt-15 fade-in" style={{ borderRadius: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div className="ficha-avatar">👤</div>
-          <div style={{ flex: 1 }}>
-            <h4 style={{ margin: '0 0 3px 0', fontSize: '16px', fontWeight: '900', color: 'var(--texto-principal)' }}>{titular}</h4>
-            <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', display: 'block' }}>Estado de cuota: {estadoCuenta}</span>
-          </div>
-          <span className={`status-badge ${estadoCuenta === 'Al Día' ? 'ok' : 'moroso'}`}>{estadoCuenta}</span>
-        </div>
-      </div>
-
       {pupilosActivos.length > 0 && (
         <div className="card mt-15 fade-in" style={{ borderRadius: '22px', padding: '12px' }}>
-          <h4 style={{ margin: '2px 4px 10px 4px', fontSize: '13px', fontWeight: '900', color: 'var(--texto-heading)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Deportistas a cargo</h4>
+          <h4 style={{ margin: '2px 4px 10px 4px', fontSize: '13px', fontWeight: '900', color: 'var(--texto-heading)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+            {pupilosActivos.length > 1 ? 'Deportistas a cargo' : 'Deportista a cargo'}
+          </h4>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '10px' }}>
             {pupilosActivos.map((pupilo) => {
               const nombreCompleto = construirNombrePupilo(pupilo);
@@ -282,7 +273,6 @@ function PerfilTesoreriaPanel({
 
               return (
                 <div key={`pupilo-card-${pupilo.rut || pupilo.id}`} style={{ border: '1px solid var(--borde-suave)', borderRadius: '16px', padding: '10px', background: 'linear-gradient(180deg, #fff 0%, #f8fbff 100%)' }}>
-                  <span style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', marginBottom: '8px' }}>Deportista a cargo</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <LogoAvatar
                       nombre={nombreCompleto}
@@ -432,7 +422,7 @@ function PerfilTesoreriaPanel({
               <span>Monto a Transferir</span>
               <h2 style={{ fontSize: '38px' }}>${totalFinalPagar.toLocaleString('es-CL')}</h2>
             </div>
-            <div style={{ marginTop: '10px', border: '1px dashed rgba(0,0,0,0.2)', borderRadius: '14px', padding: '12px', background: 'rgba(0,122,255,0.04)' }}>
+            <div style={{ marginTop: '10px', border: '1px solid rgba(0,122,255,0.2)', borderRadius: '14px', padding: '12px', background: 'linear-gradient(180deg, rgba(0,122,255,0.07), rgba(0,122,255,0.02))' }}>
               <label style={{ fontSize: '12px', fontWeight: '900', display: 'block', marginBottom: '8px' }}>Subir comprobante (foto, imagen o archivo)</label>
               <input
                 type="file"
@@ -448,26 +438,26 @@ function PerfilTesoreriaPanel({
                   Archivo seleccionado: {archivoComprobante.name}
                 </span>
               )}
+
+              {errorComprobante && (
+                <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '700' }}>
+                  {errorComprobante}
+                </div>
+              )}
+
+              <button
+                className="btn-pago-cta mt-10"
+                style={{ width: '100%', border: 'none', cursor: subiendoComprobante ? 'wait' : 'pointer', opacity: subiendoComprobante ? 0.8 : 1, padding: '14px 16px', borderRadius: '14px' }}
+                onClick={enviarComprobantePago}
+                disabled={subiendoComprobante || mesesSeleccionados.length === 0}
+              >
+                <Camera size={24} color="#6B7280" strokeWidth={1.5} />
+                <div>
+                  <strong style={{ display: 'block', fontSize: '14px' }}>{subiendoComprobante ? 'Enviando comprobante...' : 'Adjuntar y Enviar Comprobante'}</strong>
+                  <span style={{ fontSize: '11px', opacity: 0.8 }}>Tesorería validará y marcará en verde los meses aprobados.</span>
+                </div>
+              </button>
             </div>
-
-            {errorComprobante && (
-              <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '700' }}>
-                {errorComprobante}
-              </div>
-            )}
-
-            <button
-              className="btn-pago-cta mt-15"
-              style={{ width: '100%', border: 'none', cursor: subiendoComprobante ? 'wait' : 'pointer', opacity: subiendoComprobante ? 0.8 : 1, padding: '14px 16px', borderRadius: '14px' }}
-              onClick={enviarComprobantePago}
-              disabled={subiendoComprobante || mesesSeleccionados.length === 0}
-            >
-              <Camera size={24} color="#6B7280" strokeWidth={1.5} />
-              <div>
-                <strong style={{ display: 'block', fontSize: '14px' }}>{subiendoComprobante ? 'Enviando comprobante...' : 'Adjuntar y Enviar Comprobante'}</strong>
-                <span style={{ fontSize: '11px', opacity: 0.8 }}>Tesorería validará y marcará en verde los meses aprobados.</span>
-              </div>
-            </button>
           </div>
         )}
 
