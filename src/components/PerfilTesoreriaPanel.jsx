@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { AlertTriangle, Camera, Clock, LayoutGrid, List } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import { getUTMLastDayPreviousMonth } from '../utils/appHelpers';
+import * as api from '../api/client';
 
 function PerfilTesoreriaPanel({
   pupiloActivo,
@@ -20,6 +22,10 @@ function PerfilTesoreriaPanel({
   pagoViewMode,
   setPageViewMode,
 }) {
+  const [archivoComprobante, setArchivoComprobante] = useState(null);
+  const [subiendoComprobante, setSubiendoComprobante] = useState(false);
+  const [errorComprobante, setErrorComprobante] = useState('');
+
   const mesesBase = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const cuentaActual = Array.isArray(cuentasAdmin)
     ? cuentasAdmin.find((cuenta) => {
@@ -122,10 +128,88 @@ function PerfilTesoreriaPanel({
 
   const toggleMes = (idMes, estado) => {
     if (estado === 'pagado') return;
+    if (!['pendiente', 'futuro'].includes(estado)) return;
     if (mesesSeleccionados.includes(idMes)) {
       setMesesSeleccionados(mesesSeleccionados.filter(m => m !== idMes));
     } else {
       setMesesSeleccionados([...mesesSeleccionados, idMes]);
+    }
+  };
+
+  const convertirArchivoABase64 = (archivo) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+    reader.readAsDataURL(archivo);
+  });
+
+  const enviarComprobantePago = async () => {
+    if (mesesSeleccionados.length === 0) {
+      setErrorComprobante('Selecciona al menos un mes para registrar el pago.');
+      return;
+    }
+
+    if (!archivoComprobante) {
+      setErrorComprobante('Debes adjuntar un comprobante (imagen o PDF).');
+      return;
+    }
+
+    const monto = Number(totalFinalPagar || 0);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setErrorComprobante('El monto a transferir debe ser mayor a cero.');
+      return;
+    }
+
+    try {
+      setSubiendoComprobante(true);
+      setErrorComprobante('');
+
+      let comprobanteUrl = '';
+      if (String(archivoComprobante.type || '').startsWith('image/')) {
+        const formData = new FormData();
+        formData.append('nombre', `comprobante-${rutPupiloActivo || Date.now()}`);
+        formData.append('tipo', 'comprobante');
+        formData.append('archivo', archivoComprobante);
+        const uploadRes = await api.assetsAPI.uploadLogo(formData);
+        comprobanteUrl = uploadRes?.url || '';
+      } else {
+        comprobanteUrl = await convertirArchivoABase64(archivoComprobante);
+      }
+
+      const mesesTexto = [...mesesSeleccionados]
+        .sort((a, b) => a - b)
+        .map((mesNumero) => mesesBase[mesNumero - 1])
+        .filter(Boolean)
+        .join(', ');
+
+      const payload = {
+        rut_jugador: rutPupiloActivo,
+        correo_apoderado: cuentaActual?.correo || pupiloActivo?.correo_apoderado || '',
+        concepto_pago: tipoPago === 'abono' ? 'Abono mensualidad' : 'Pago mensualidades',
+        cantidad_meses_pagados: mesesSeleccionados.length,
+        meses_correspondientes: mesesTexto,
+        monto_total_pagado: monto,
+        comprobante_url: comprobanteUrl,
+      };
+
+      const pagoCreado = await api.pagosMensualidadesAPI.create(payload);
+
+      setComprobanteSubido(true);
+      setPagosPendientesAdmin((prev) => [
+        ...(Array.isArray(prev) ? prev : []),
+        pagoCreado || {
+          id: nextId(),
+          familia: titular,
+          rut_jugador: rutPupiloActivo,
+          monto,
+          detalle: `${payload.concepto_pago} — ${mesesSeleccionados.length} mes(es) — Comprobante adjunto`,
+          estado_pago: 'pendiente',
+        },
+      ]);
+    } catch (error) {
+      setErrorComprobante(error.message || 'No se pudo enviar el comprobante.');
+    } finally {
+      setSubiendoComprobante(false);
     }
   };
 
@@ -251,7 +335,12 @@ function PerfilTesoreriaPanel({
                     : (mesNumero < mesActual ? 'pendiente' : 'futuro');
 
                 return (
-                <div key={mesNumero + pupilo.id} className={`mes-box mes-${estadoMes}`}>
+                <div
+                  key={mesNumero + pupilo.id}
+                  onClick={() => toggleMes(mesNumero, estadoMes)}
+                  className={`mes-box mes-${estadoMes} ${mesesSeleccionados.includes(mesNumero) ? 'seleccionado' : ''}`}
+                  style={{ cursor: estadoMes === 'pagado' ? 'not-allowed' : 'pointer' }}
+                >
                   <span className="mes-box-nombre">{mes}</span>
                 </div>
                 );
@@ -274,7 +363,7 @@ function PerfilTesoreriaPanel({
             <div className="desglose-row total-calc"><span>Total a Pagar ({mesesSeleccionados.length} meses):</span><strong>${totalSeleccionado.toLocaleString('es-CL')}</strong></div>
 
             <div className="tipo-pago-grid mb-15 mt-15" style={{ display: 'flex', gap: '10px' }}>
-              <button className={`btn-metodo-pago ${tipoPago === 'completo' ? 'activo' : ''}`} onClick={() => setTipoPago('completo')}>Deuda Completa</button>
+              <button className={`btn-metodo-pago ${tipoPago === 'completo' ? 'activo' : ''}`} onClick={() => setTipoPago('completo')}>Pago Mensualidades</button>
               <button className={`btn-metodo-pago ${tipoPago === 'abono' ? 'activo' : ''}`} onClick={() => setTipoPago('abono')}>Abono Parcial</button>
             </div>
 
@@ -289,22 +378,42 @@ function PerfilTesoreriaPanel({
               <span>Monto a Transferir</span>
               <h2>${totalFinalPagar.toLocaleString('es-CL')}</h2>
             </div>
-            <div className="btn-pago-cta mt-15" onClick={() => {
-              setComprobanteSubido(true);
-              setPagosPendientesAdmin(prev => [...prev, {
-                id: nextId(),
-                familia: titular,
-                rut_jugador: rutPupiloActivo,
-                monto: totalFinalPagar,
-                detalle: `${tipoPago === 'completo' ? 'Pago total' : `Abono $${Number(montoAbono).toLocaleString('es-CL')}`} — ${mesesSeleccionados.length} mes(es) — Comprobante adjunto`,
-              }]);
-            }}>
+            <div style={{ marginTop: '12px', border: '1px dashed rgba(0,0,0,0.2)', borderRadius: '14px', padding: '12px' }}>
+              <label style={{ fontSize: '12px', fontWeight: '800', display: 'block', marginBottom: '8px' }}>Comprobante de pago (foto o archivo)</label>
+              <input
+                type="file"
+                className="form-input"
+                accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf"
+                onChange={(e) => setArchivoComprobante(e.target.files?.[0] || null)}
+              />
+              <span style={{ display: 'block', marginTop: '6px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
+                Puedes subir JPG, PNG, WEBP o PDF (máx recomendado 5MB).
+              </span>
+              {archivoComprobante && (
+                <span style={{ display: 'block', marginTop: '6px', fontSize: '11px', color: 'var(--azul-electrico)', fontWeight: '700' }}>
+                  Archivo seleccionado: {archivoComprobante.name}
+                </span>
+              )}
+            </div>
+
+            {errorComprobante && (
+              <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '700' }}>
+                {errorComprobante}
+              </div>
+            )}
+
+            <button
+              className="btn-pago-cta mt-15"
+              style={{ width: '100%', border: 'none', cursor: subiendoComprobante ? 'wait' : 'pointer', opacity: subiendoComprobante ? 0.8 : 1 }}
+              onClick={enviarComprobantePago}
+              disabled={subiendoComprobante}
+            >
               <Camera size={24} color="#6B7280" strokeWidth={1.5} />
               <div>
-                <strong style={{ display: 'block', fontSize: '14px' }}>Adjuntar y Enviar Comprobante</strong>
-                <span style={{ fontSize: '11px', opacity: 0.8 }}>JPG · PDF · PNG · Imagen WhatsApp</span>
+                <strong style={{ display: 'block', fontSize: '14px' }}>{subiendoComprobante ? 'Enviando comprobante...' : 'Adjuntar y Enviar Comprobante'}</strong>
+                <span style={{ fontSize: '11px', opacity: 0.8 }}>Tesorería validará y marcará en verde los meses aprobados.</span>
               </div>
-            </div>
+            </button>
           </div>
         )}
 
@@ -313,7 +422,7 @@ function PerfilTesoreriaPanel({
             <Clock size={40} color="#6B7280" strokeWidth={1.5} style={{ margin: '0 auto' }} />
             <h3 style={{ color: '#FF9500', margin: '15px 0 10px 0', fontSize: '20px', fontWeight: '900' }}>Pago en Revisión</h3>
             <p style={{ fontSize: '14px', margin: 0, color: 'var(--texto-secundario)', lineHeight: '1.5' }}>Tesorería ha recibido tu comprobante. Será validado a la brevedad y recibirás una notificación.</p>
-            <button className="btn-secondary mt-20" style={{ color: '#FF9500', background: 'rgba(255,149,0,0.1)' }} onClick={() => { setComprobanteSubido(false); setMesesSeleccionados([]); setMontoAbono(''); }}>
+            <button className="btn-secondary mt-20" style={{ color: '#FF9500', background: 'rgba(255,149,0,0.1)' }} onClick={() => { setComprobanteSubido(false); setMesesSeleccionados([]); setMontoAbono(''); setArchivoComprobante(null); setErrorComprobante(''); }}>
               Entendido, volver
             </button>
           </div>
