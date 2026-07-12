@@ -273,7 +273,6 @@ function SuperAdminPanel({
   const [logoAssetForm, setLogoAssetForm] = useState({
     nombre: '',
     tipo: 'club',
-    objetivo: 'jugador',
     archivo: null,
   });
   const [subiendoLogoAsset, setSubiendoLogoAsset] = useState(false);
@@ -1117,15 +1116,7 @@ function SuperAdminPanel({
       const urlLogo = resultado?.url || '';
       setLogoAssetUrl(urlLogo);
 
-      if (logoAssetForm.objetivo === 'jugador') {
-        setNuevoJugador((prev) => ({ ...prev, foto_jugador: urlLogo }));
-      } else if (logoAssetForm.objetivo === 'cuenta') {
-        setNuevaCuenta((prev) => ({ ...prev, logo_url: urlLogo }));
-      } else if (logoAssetForm.objetivo === 'invitado') {
-        setNuevoJugadorVisita((prev) => ({ ...prev, club_logo_url: urlLogo, club_procedencia: prev.club_procedencia || logoAssetForm.nombre.trim() }));
-      }
-
-      setLogoAssetForm({ nombre: '', tipo: 'club', objetivo: 'jugador', archivo: null });
+      setLogoAssetForm({ nombre: '', tipo: 'club', archivo: null });
       alert(`Logo guardado en ${resultado.url}`);
     } catch (error) {
       alert(`No se pudo subir el logo: ${error.message}`);
@@ -2089,14 +2080,6 @@ function SuperAdminPanel({
                   <option value="torneo">Torneo</option>
                   <option value="campeonato">Campeonato</option>
                   <option value="competencia">Competencia</option>
-                </select>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Aplicar a</label>
-                <select className="form-input" value={logoAssetForm.objetivo} onChange={(e) => setLogoAssetForm((p) => ({ ...p, objetivo: e.target.value }))}>
-                  <option value="jugador">Jugador / Invitado</option>
-                  <option value="cuenta">Cuenta / Usuario</option>
-                  <option value="invitado">Jugador invitado</option>
                 </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
