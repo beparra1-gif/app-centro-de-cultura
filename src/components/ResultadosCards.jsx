@@ -23,6 +23,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
   const colorBorde = (partido) => esFemelina(partido) ? '#ec4899' : '#3b82f6';
   const colorFondo = (partido) => esFemelina(partido) ? 'rgba(236, 72, 153, 0.08)' : 'rgba(59, 130, 246, 0.08)';
   const colorBadge = (partido) => esFemelina(partido) ? '#ec4899' : '#3b82f6';
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 560;
   
   // Colores monocromáticos para iconos
   const colorIcono = '#6B7280'; // Gris neutro
@@ -48,7 +49,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
           background: colorFondo(partido),
           marginBottom: '16px',
           borderRadius: '18px',
-          padding: '16px',
+          padding: isMobile ? '12px' : '16px',
           transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
           cursor: 'pointer',
           transform: 'translateZ(0)',
@@ -65,8 +66,8 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
         }}
         >
           {/* Header - Torneo y Categoría */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '14px', gap: isMobile ? '8px' : '0', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
               {partido.torneoLogoUrl && (
                 <LogoAvatar nombre={partido.torneo || 'Torneo'} logoUrl={partido.torneoLogoUrl} size={26} borderRadius="999px" />
               )}
@@ -97,39 +98,40 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
           {/* Marcador Central - Mejorado */}
           <div style={{ 
             display: 'grid', 
-            gridTemplateColumns: '1fr 80px 1fr',
-            gap: '12px',
+            gridTemplateColumns: 'minmax(0,1fr) minmax(62px, auto) minmax(0,1fr)',
+            gap: isMobile ? '6px' : '12px',
             alignItems: 'center',
             marginBottom: '14px'
           }}>
             {/* Local */}
-            <div style={{ textAlign: 'center' }}>
+            <div style={{ textAlign: 'center', minWidth: 0 }}>
               <LogoAvatar 
                 nombre={partido.equipoLocalNombre || 'Centro de Cultura Física'} 
                 logoUrl={partido.equipoLocalLogoUrl || '/logos/club-logo.png'} 
-                size={82} 
+                size={isMobile ? 60 : 82} 
                 borderRadius="14px"
                 style={{ border: 'none', background: 'transparent', boxShadow: 'none' }}
               />
               <div style={{ 
-                fontSize: '13px', 
+                fontSize: isMobile ? '10px' : '13px', 
                 fontWeight: '700', 
                 marginTop: '8px', 
                 color: 'var(--texto-principal)',
                 lineHeight: '1.3',
                 textTransform: 'uppercase',
                 letterSpacing: '0.2px',
-                fontFamily: "'Bungee', sans-serif"
+                fontFamily: isMobile ? "'Inter Tight', sans-serif" : "'Bungee', sans-serif",
+                overflowWrap: 'anywhere'
               }}>
                 {partido.equipoLocalNombre || 'C.C. Física'}
               </div>
             </div>
 
             {/* Score - Horizontal Layout */}
-            <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '4px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+            <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '6px' : '12px', justifyContent: 'center' }}>
                 <div style={{ 
-                  fontSize: '56px', 
+                  fontSize: isMobile ? '40px' : '56px', 
                   fontWeight: '700', 
                   color: colorBadge(partido), 
                   fontFamily: "'Bungee', 'Inter Tight', monospace", 
@@ -138,32 +140,33 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                 }}>
                   {partido.miEquipo}
                 </div>
-                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--texto-secundario)', letterSpacing: '1px' }}>vs</div>
-                <div style={{ fontSize: '56px', fontWeight: '700', color: '#D1D5DB', fontFamily: "'Bungee', 'Inter Tight', monospace", lineHeight: '0.9' }}>
+                <div style={{ fontSize: isMobile ? '11px' : '14px', fontWeight: '700', color: 'var(--texto-secundario)', letterSpacing: '1px' }}>vs</div>
+                <div style={{ fontSize: isMobile ? '40px' : '56px', fontWeight: '700', color: '#D1D5DB', fontFamily: "'Bungee', 'Inter Tight', monospace", lineHeight: '0.9' }}>
                   {partido.rival}
                 </div>
               </div>
             </div>
 
             {/* Visitante */}
-            <div style={{ textAlign: 'center' }}>
+            <div style={{ textAlign: 'center', minWidth: 0 }}>
               <LogoAvatar 
                 nombre={partido.nombreRival} 
                 logoUrl={partido.rivalLogoUrl || partido.equipoVisitaLogoUrl || ''} 
-                size={82} 
+                size={isMobile ? 60 : 82} 
                 borderRadius="14px"
                 fallbackText={partido.nombreRival?.substring(0, 3).toUpperCase()}
                 style={{ border: 'none', background: 'transparent', boxShadow: 'none' }}
               />
               <div style={{ 
-                fontSize: '13px', 
+                fontSize: isMobile ? '10px' : '13px', 
                 fontWeight: '700', 
                 marginTop: '8px', 
                 color: 'var(--texto-principal)',
                 lineHeight: '1.3',
                 textTransform: 'uppercase',
                 letterSpacing: '0.2px',
-                fontFamily: "'Bungee', sans-serif"
+                fontFamily: isMobile ? "'Inter Tight', sans-serif" : "'Bungee', sans-serif",
+                overflowWrap: 'anywhere'
               }}>
                 {partido.nombreRival}
               </div>

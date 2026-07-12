@@ -1890,6 +1890,16 @@ function App() {
   const esPerfilFamiliarNav = ['apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'].includes(rolUsuario);
   const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'evaluacion_staff', 'scoreboard_live', 'kiosco'];
   const modulosNavegacionVisibles = modulosNavegacionOrden.filter((modulo) => puedeVerPantalla(modulo));
+  const LOCAL_PREVIEW_LABEL = 'MODO LOCAL · CAMBIOS INMEDIATOS';
+  const mostrarApartadoLocal = (() => {
+    if (typeof window === 'undefined') return false;
+    const host = String(window.location.hostname || '').toLowerCase();
+    const params = new URLSearchParams(window.location.search || '');
+    return host === 'localhost'
+      || host === '127.0.0.1'
+      || params.get('preview') === 'local'
+      || params.has('local');
+  })();
 
   const obtenerMetaModuloNav = (modulo) => {
     switch (modulo) {
@@ -1956,7 +1966,12 @@ function App() {
                 <span className="home-header-subtitle">Viña Del Mar</span>
               </div>
             )
-            : <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '900', letterSpacing: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getHeaderTitle()}</h2>
+            : (
+              <div className="home-header-brand">
+                <img src="/logos/Club-frase.png" alt="Club Centro de Cultura Física" className="home-header-club-mark" />
+                <span className="home-header-subtitle">{getHeaderTitle()}</span>
+              </div>
+            )
           }
         </div>
         <div className="header-btn-zone right">
@@ -1995,6 +2010,13 @@ function App() {
           void cargarDatos({ manual: true });
         }}
       />
+
+      {mostrarApartadoLocal && (
+        <section className="local-preview-banner" aria-label="apartado-local-cambios">
+          <strong>{LOCAL_PREVIEW_LABEL}</strong>
+          <span>Este entorno es para revisión inmediata de ajustes antes del deploy.</span>
+        </section>
+      )}
 
       {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && showSettings && (
         <div ref={settingsPanelRef} className="floating-panel settings-panel" style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
