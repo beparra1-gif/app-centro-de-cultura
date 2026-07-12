@@ -32,6 +32,15 @@ function LogoPicker({
   const [clubes, setClubes] = useState([]);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
   const [cargando, setCargando] = useState(false);
+  const esAliasNuestroClub = (valor = '') => {
+    const slug = normalizarSlugLogo(valor);
+    return [
+      'centro-de-cultura-fisica',
+      'club-centro-de-cultura-fisica',
+      'ccf',
+      'club-cultura-fisica',
+    ].some((alias) => slug === alias || slug.includes(alias));
+  };
 
   const normalizarBusquedaLogo = (valor = '') => {
     const base = normalizarSlugLogo(valor);
@@ -120,6 +129,8 @@ function LogoPicker({
     });
     if (exacta && exacta.logoUrl) {
       onLogoUrl(absolutizarLogoUrl(exacta.logoUrl));
+    } else if (esAliasNuestroClub(val)) {
+      onLogoUrl(absolutizarLogoUrl('/logos/club-logo.png'));
     } else if (!val) {
       onLogoUrl('');
     }

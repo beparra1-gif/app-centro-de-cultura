@@ -282,6 +282,27 @@ function SuperAdminPanel({
   const [cargandoLogosDisponibles, setCargandoLogosDisponibles] = useState(false);
   const [errorLogosDisponibles, setErrorLogosDisponibles] = useState('');
 
+  const opcionesLogosResultados = useMemo(() => {
+    const base = [
+      { nombre: 'Centro de Cultura Física', logoUrl: '/logos/club-logo.png' },
+      { nombre: 'CCF', logoUrl: '/logos/club-logo.png' },
+    ];
+
+    const porClave = new Map();
+    [...base, ...(logosDisponiblesActivos || []).map((logo) => ({
+      nombre: logo.nombre || logo.filename || 'Logo',
+      logoUrl: logo.url || '',
+    }))].forEach((item) => {
+      const key = String(item.nombre || '').trim().toLowerCase();
+      if (!key) return;
+      if (!porClave.has(key)) {
+        porClave.set(key, item);
+      }
+    });
+
+    return [...porClave.values()];
+  }, [logosDisponiblesActivos]);
+
   // --- PAGOS: FORMULARIO Y PAGINACIÓN ---
   const [mostrarFormularioPago, setMostrarFormularioPago] = useState(false);
   const [pagoEditandoId, setPagoEditandoId] = useState(null);
@@ -1151,7 +1172,7 @@ function SuperAdminPanel({
   };
 
   useEffect(() => {
-    if (vistaAdmin !== 'activos') return;
+    if (vistaAdmin !== 'activos' && vistaAdmin !== 'resultados') return;
     cargarLogosDisponiblesActivos();
   }, [vistaAdmin]);
 
@@ -3004,7 +3025,7 @@ function SuperAdminPanel({
                 onLogoUrl={(v) => setFormResultado((p) => ({ ...p, logo_local_url: v }))}
                 tipo="club"
                 placeholder="Nombre equipo local"
-                extraOptions={[{ nombre: 'Centro de Cultura Física', logoUrl: '/logos/club-logo.png' }]}
+                extraOptions={opcionesLogosResultados}
               />
               <LogoPicker
                 label="Equipo visitante *"
@@ -3014,6 +3035,7 @@ function SuperAdminPanel({
                 onLogoUrl={(v) => setFormResultado((p) => ({ ...p, logo_visitante_url: v }))}
                 tipo="club"
                 placeholder="Nombre equipo visitante"
+                extraOptions={opcionesLogosResultados}
               />
               <div className="form-group">
                 <label>Puntos local *</label>
