@@ -337,40 +337,174 @@ function App() {
 
   const construirMorososDesdePagos = (pagos = [], jugadores = []) => {
     const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
-    const jugadoresPorRut = new Map(
-      (jugadores || [])
-        .map((j) => [normalizarRutComparacion(j.rut_jugador), j])
-        .filter(([rut]) => Boolean(rut))
-    );
-    const pendientes = (pagos || []).filter((p) => ['pendiente', 'rechazado'].includes((p.estado_pago || '').toLowerCase()));
-    const agrupados = new Map();
+    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const ANIO_OBJETIVO = 2026;
+    const now = new Date();
+    const limiteMesDeuda = now.getFullYear() > ANIO_OBJETIVO
+      ? 12
+      : (now.getFullYear() < ANIO_OBJETIVO ? 0 : Math.max(0, now.getMonth()));
 
-    pendientes.forEach((pago) => {
-      const rutPagoRaw = String(pago.rut_jugador || '').trim();
-      const rutPagoNormalizado = normalizarRutComparacion(rutPagoRaw);
-      const correoPago = String(pago.correo_apoderado || '').trim().toLowerCase();
-      const keyAgrupacion = rutPagoNormalizado || correoPago || `pendiente-${pago.id}`;
-      const jugador = rutPagoNormalizado ? jugadoresPorRut.get(rutPagoNormalizado) : null;
+    const getMesNumero = (texto = '') => {
+      const normalizado = String(texto || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      if (!normalizado) return null;
+      const token = normalizado.slice(0, 3);
+      const idx = MESES.findIndex((m) => m === token);
+      return idx >= 0 ? idx + 1 : null;
+    };
 
-      const actual = agrupados.get(keyAgrupacion) || {
-        id: keyAgrupacion,
-        rut: jugador?.rut_jugador || rutPagoRaw || pago.correo_apoderado || keyAgrupacion,
-        nombre: jugador
-          ? `${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim()
-          : `Pago pendiente #${pago.id}`,
-        tipo: jugador?.rama?.toLowerCase().includes('femen') ? 'apoderado' : 'socio-apoderado',
-        mesesDeuda: 0,
-        montoDeuda: 0,
-        contacto: pago.correo_apoderado || jugador?.correo_apoderado || 'Sin contacto',
-        pupilos: jugador ? [jugador.nombres || jugador.rut_jugador] : [],
-      };
+    const getAnioIngreso = (jugador = {}) => {
+      const candidatos = [
+        jugador?.anio_ingreso,
+        jugador?.año_ingreso,
+      ];
+      for (const valor of candidatos) {
+        const num = Number(valor);
+        if (Number.isFinite(num) && num >= 2000 && num <= 2100) return num;
+      }
 
-      actual.montoDeuda += Number(pago.monto_total_pagado || 0);
-      actual.mesesDeuda += Number(pago.cantidad_meses_pagados || 1);
-      agrupados.set(keyAgrupacion, actual);
+      const fechaIngreso = String(jugador?.fecha_ingreso || '').trim();
+      const matchFecha = fechaIngreso.match(/(20\d{2})/);
+      if (matchFecha) return Number(matchFecha[1]);
+
+      // Regla de negocio: sin mes/año configurados => enero 2026.
+      return ANIO_OBJETIVO;
+    };
+
+    const getMesIngreso = (jugador = {}) => {
+      const mesDesdeCampo = getMesNumero(jugador?.mes_inicio_cobro || '');
+      if (mesDesdeCampo) return mesDesdeCampo;
+
+      const fechaIngreso = String(jugador?.fecha_ingreso || '').trim();
+      const fecha = fechaIngreso ? new Date(fechaIngreso) : null;
+      if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
+        return fecha.getMonth() + 1;
+      }
+
+      // Regla de negocio: sin mes/año configurados => enero 2026.
+      return 1;
+    };
+
+    const esBecaActiva = (jugador = {}) => {
+      const valor = String(jugador?.beca || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      if (!valor) return false;
+      if (valor.includes('sin beca')) return false;
+      return valor.includes('beca');
+    };
+
+    const parseMesesDePago = (pago = {}) => {
+      const textoMeses = String(pago.meses_correspondientes || '').trim();
+      if (!textoMeses) return [];
+
+      const anioMatch = textoMeses.match(/(20\d{2})/);
+      const anio = anioMatch ? Number(anioMatch[1]) : ANIO_OBJETIVO;
+      if (anio !== ANIO_OBJETIVO) return [];
+
+      const partes = textoMeses
+        .replace(/20\d{2}/g, '')
+        .replace(/[,]/g, ' ')
+        .split(/\s+/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      const candidatos = [];
+      partes.forEach((parte) => {
+        if (parte.includes('-')) {
+          const [inicio, fin] = parte.split('-');
+          const mIni = getMesNumero(inicio);
+          const mFin = getMesNumero(fin);
+          if (mIni && mFin && mIni <= mFin) {
+            for (let m = mIni; m <= mFin; m += 1) candidatos.push(m);
+            return;
+          }
+        }
+
+        const mes = getMesNumero(parte);
+        if (mes) candidatos.push(mes);
+      });
+
+      return [...new Set(candidatos)];
+    };
+
+    const esPagoInvalidoLegacy = (pago = {}) => {
+      const monto = Number(pago.monto_total_pagado || 0);
+      const meses = String(pago.meses_correspondientes || '').trim();
+      const notas = String(pago.notas_tesoreria || '').toLowerCase();
+      const sinMes = /^sinmes\b/i.test(meses);
+      const correccionLegacy = notas.includes('correccion requerida');
+      return (monto <= 0 && sinMes) || (monto <= 0 && correccionLegacy);
+    };
+
+    const pagosPorRut = new Map();
+    (pagos || []).forEach((pago) => {
+      if (esPagoInvalidoLegacy(pago)) return;
+      const rutPagoJugador = normalizarRutComparacion(pago.rut_jugador || '');
+      const rutPagoPagador = normalizarRutComparacion(pago.rut_pagos || '');
+      const rutPago = rutPagoJugador || rutPagoPagador;
+      if (!rutPago) return;
+      const mesesPago = parseMesesDePago(pago);
+      if (mesesPago.length === 0) return;
+      if (!pagosPorRut.has(rutPago)) pagosPorRut.set(rutPago, []);
+      pagosPorRut.get(rutPago).push({ ...pago, mesesPago });
     });
 
-    return [...agrupados.values()].sort((a, b) => b.montoDeuda - a.montoDeuda);
+    const morosos = [];
+
+    (jugadores || []).forEach((jugador) => {
+      const rutJugadorNorm = normalizarRutComparacion(jugador.rut_jugador || '');
+      if (!rutJugadorNorm) return;
+
+      if (esBecaActiva(jugador)) {
+        // Regla de negocio: BECA activa = meses vencidos marcados como pagados (sin deuda).
+        return;
+      }
+
+      const anioIngreso = getAnioIngreso(jugador);
+      const mesIngreso = getMesIngreso(jugador);
+      const inicioCobro = anioIngreso > ANIO_OBJETIVO
+        ? 13
+        : (anioIngreso < ANIO_OBJETIVO ? 1 : mesIngreso);
+      const pagosJugador = pagosPorRut.get(rutJugadorNorm) || [];
+
+      const estadoPorMes = new Map();
+      pagosJugador.forEach((pago) => {
+        const estado = String(pago.estado_pago || '').toLowerCase();
+        pago.mesesPago.forEach((mes) => {
+          if (!estadoPorMes.has(mes)) estadoPorMes.set(mes, new Set());
+          estadoPorMes.get(mes).add(estado);
+        });
+      });
+
+      let mesesDeuda = 0;
+      for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
+        const estados = estadoPorMes.get(mes) || new Set();
+        const pagado = estados.has('aprobado') || estados.has('validado');
+        if (!pagado) mesesDeuda += 1;
+      }
+
+      if (mesesDeuda <= 0) return;
+
+      const cuotaRef = Number(jugador.valor_mensualidad || 0);
+      morosos.push({
+        id: rutJugadorNorm,
+        rut: jugador.rut_jugador || rutJugadorNorm,
+        nombre: `${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim() || `Jugador ${jugador.rut_jugador || ''}`,
+        tipo: jugador?.rama?.toLowerCase().includes('femen') ? 'apoderado' : 'socio-apoderado',
+        mesesDeuda,
+        montoDeuda: cuotaRef > 0 ? (mesesDeuda * cuotaRef) : mesesDeuda,
+        contacto: jugador.correo_apoderado || 'Sin contacto',
+        pupilos: [jugador.nombres || jugador.rut_jugador],
+      });
+    });
+
+    return morosos.sort((a, b) => b.montoDeuda - a.montoDeuda);
   };
 
   const cargarDatos = async ({ manual = false } = {}) => {
@@ -486,6 +620,9 @@ function App() {
             categoria: primerJugador.categoria || 'General',
             rama: primerJugador.rama || primerJugador.categoria_rama || 'General',
             genero: primerJugador.genero || primerJugador.sexo || '',
+            fecha_ingreso: primerJugador.fecha_ingreso || null,
+            mes_inicio_cobro: primerJugador.mes_inicio_cobro || '',
+            anio_ingreso: primerJugador.anio_ingreso ?? primerJugador.año_ingreso ?? null,
             nivel: Number(primerJugador.nivel_actual || 1),
             xp: Number(primerJugador.xp_total || 0),
             anioNacimiento: obtenerAnioNacimientoJugador(primerJugador),
@@ -1934,6 +2071,10 @@ function App() {
     asistencia: j.asistencia || 'N/A',
     estadoDeportivo: j.estado_deportivo || 'Activo',
     beca: j.beca || 'Sin beca',
+    fecha_ingreso: j.fecha_ingreso || null,
+    mes_inicio_cobro: j.mes_inicio_cobro || '',
+    anio_ingreso: j.anio_ingreso ?? j.año_ingreso ?? null,
+    valor_mensualidad: j.valor_mensualidad ?? null,
     anioNacimiento: obtenerAnioNacimientoJugador(j),
     foto_jugador: j.foto_jugador || j.foto_perfil_url || j.club_logo_url || '',
   }));

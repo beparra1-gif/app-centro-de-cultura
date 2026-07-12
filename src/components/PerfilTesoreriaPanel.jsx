@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { AlertTriangle, Camera, Clock, LayoutGrid, List } from 'lucide-react';
-import { nextId } from '../utils/runtimeId';
 import { getUTMLastDayPreviousMonth } from '../utils/appHelpers';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
@@ -28,6 +27,7 @@ function PerfilTesoreriaPanel({
   const [errorComprobante, setErrorComprobante] = useState('');
 
   const mesesBase = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const anioObjetivo = 2026;
   const cuentaActual = Array.isArray(cuentasAdmin)
     ? cuentasAdmin.find((cuenta) => {
       const correoCuenta = String(cuenta.correo || '').trim().toLowerCase();
@@ -41,6 +41,15 @@ function PerfilTesoreriaPanel({
   const rutPupiloActivo = pupiloActivo?.rut || pupilosActivos[0]?.rut;
   const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
   const rutPupiloActivoNormalizado = normalizarRutComparacion(rutPupiloActivo);
+  const rutCuentaNormalizado = normalizarRutComparacion(cuentaActual?.rut || '');
+  const esPagoInvalidoLegacy = (pago = {}) => {
+    const monto = Number(pago.monto_total_pagado || 0);
+    const meses = String(pago.meses_correspondientes || '').trim();
+    const notas = String(pago.notas_tesoreria || '').toLowerCase();
+    const sinMes = /^sinmes\b/i.test(meses);
+    const correccionLegacy = notas.includes('correccion requerida');
+    return (monto <= 0 && sinMes) || (monto <= 0 && correccionLegacy);
+  };
   const titular = cuentaActual
     ? `${cuentaActual.nombres || ''} ${cuentaActual.apellido_paterno || ''}`.trim()
     : (pupiloActivo?.nombre || pupilosActivos[0]?.nombre || 'Cuenta principal');
@@ -55,13 +64,78 @@ function PerfilTesoreriaPanel({
   const mesesAtraso = Number(morosoActivo?.mesesDeuda || 0);
   const estadoCuenta = mesesAtraso > 0 ? 'Moroso' : 'Al Día';
 
+  const getMesNumero = (texto = '') => {
+    const token = String(texto || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .slice(0, 3);
+    const idx = mesesBase.findIndex((m) => m.toLowerCase() === token);
+    return idx >= 0 ? idx + 1 : null;
+  };
+
+  const esBecaActiva = (pupilo = {}) => {
+    const valor = String(pupilo?.beca || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    if (!valor) return false;
+    if (valor.includes('sin beca')) return false;
+    return valor.includes('beca');
+  };
+
+  const getAnioIngreso = (pupilo = {}) => {
+    const candidatos = [
+      pupilo?.anio_ingreso,
+      pupilo?.año_ingreso,
+    ];
+    for (const valor of candidatos) {
+      const num = Number(valor);
+      if (Number.isFinite(num) && num >= 2000 && num <= 2100) return num;
+    }
+
+    const fechaIngreso = String(pupilo?.fecha_ingreso || '').trim();
+    const matchFecha = fechaIngreso.match(/(20\d{2})/);
+    if (matchFecha) return Number(matchFecha[1]);
+
+    // Regla de negocio: sin mes/año configurados => enero 2026.
+    return anioObjetivo;
+  };
+
+  const obtenerInicioCobro = (pupilo = {}) => {
+    const anioIngreso = getAnioIngreso(pupilo);
+    const mesDesdeCampo = getMesNumero(pupilo.mes_inicio_cobro || '');
+
+    let mesIngreso = mesDesdeCampo;
+    if (!mesIngreso) {
+      const fechaIngreso = String(pupilo?.fecha_ingreso || '').trim();
+      const fecha = fechaIngreso ? new Date(fechaIngreso) : null;
+      if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
+        mesIngreso = fecha.getMonth() + 1;
+      }
+    }
+
+    if (!mesIngreso) mesIngreso = 1;
+
+    if (anioIngreso > anioObjetivo) return 13;
+    if (anioIngreso < anioObjetivo) return 1;
+    return mesIngreso;
+  };
+
   const monthFromPago = (pago) => {
     if (Number.isFinite(Number(pago.mes_pago_numero))) return Number(pago.mes_pago_numero);
 
     if (typeof pago.meses_correspondientes === 'string' && pago.meses_correspondientes.trim()) {
-      const token = pago.meses_correspondientes.trim().split(/\s+/)[0].toLowerCase().slice(0, 3);
-      const idx = mesesBase.findIndex((m) => m.toLowerCase() === token);
-      if (idx >= 0) return idx + 1;
+      const texto = String(pago.meses_correspondientes || '').trim();
+      const yearMatch = texto.match(/(20\d{2})/);
+      const year = yearMatch ? Number(yearMatch[1]) : anioObjetivo;
+      if (year !== anioObjetivo) return null;
+
+      const tokenBase = texto.split(/\s+/)[0];
+      const mesDesdeToken = getMesNumero(tokenBase.split('-')[0]);
+      if (mesDesdeToken) return mesDesdeToken;
     }
 
     if (typeof pago.mes_pagado === 'string' && pago.mes_pagado.length >= 3) {
@@ -73,8 +147,19 @@ function PerfilTesoreriaPanel({
   };
 
   const pagosJugador = (pagosMensualidadesAdmin || []).filter((p) => {
+    if (esPagoInvalidoLegacy(p)) return false;
     if (!rutPupiloActivo) return true;
-    return normalizarRutComparacion(p.rut_jugador) === rutPupiloActivoNormalizado;
+    const rutJugadorPago = normalizarRutComparacion(p.rut_jugador);
+    const rutPagadorPago = normalizarRutComparacion(p.rut_pagos);
+    if (rutJugadorPago && rutJugadorPago === rutPupiloActivoNormalizado) return true;
+    if (rutPagadorPago && rutPagadorPago === rutPupiloActivoNormalizado) return true;
+
+    // Fallback para cuentas con un solo pupilo: acepta pagos ligados por rut_pagos.
+    if (!rutJugadorPago && pupilosActivos.length <= 1 && rutCuentaNormalizado && rutPagadorPago === rutCuentaNormalizado) {
+      return true;
+    }
+
+    return false;
   });
 
   const pagosPorMes = pagosJugador.reduce((acc, pago) => {
@@ -87,14 +172,23 @@ function PerfilTesoreriaPanel({
   }, {});
 
   const mesActual = new Date().getMonth() + 1;
+  const limiteMesDeuda = Math.max(0, mesActual - 1);
+  const inicioCobroActivo = obtenerInicioCobro(pupiloActivo || pupilosActivos[0] || {});
   const mesesVisuales = mesesBase.map((mes, idx) => {
     const mesNumero = idx + 1;
     const estadosMes = pagosPorMes[mesNumero] || [];
-    const estado = estadosMes.includes('aprobado')
+    const becaActiva = esBecaActiva(pupiloActivo || pupilosActivos[0] || {});
+    const estado = (estadosMes.includes('aprobado') || estadosMes.includes('validado'))
       ? 'pagado'
+      : (becaActiva && mesNumero <= limiteMesDeuda)
+        ? 'pagado'
+      : (mesNumero < inicioCobroActivo)
+        ? 'futuro'
+        : (mesNumero > limiteMesDeuda)
+          ? 'futuro'
       : (estadosMes.includes('pendiente') || estadosMes.includes('rechazado'))
         ? 'pendiente'
-        : (mesNumero < mesActual ? 'pendiente' : 'futuro');
+        : (mesNumero <= limiteMesDeuda ? 'pendiente' : 'futuro');
 
     return { id: mesNumero, mes, estado };
   });
@@ -110,6 +204,15 @@ function PerfilTesoreriaPanel({
 
   const calcularCuotaDeportistas = () => {
     if (cantidadPupilos <= 0) return 0;
+
+    const pupilosSinBeca = pupilosActivos.filter((p) => !esBecaActiva(p));
+    if (pupilosSinBeca.length === 0) return 0;
+
+    const sumaDesdeSheet = pupilosSinBeca.reduce((acc, p) => {
+      const monto = Number(p?.valor_mensualidad || 0);
+      return acc + (Number.isFinite(monto) && monto > 0 ? monto : 0);
+    }, 0);
+    if (sumaDesdeSheet > 0) return Math.round(sumaDesdeSheet);
 
     // Excepción acordada/beca: aplica solo a la parte deportistas, nunca a la cuota socio.
     const cuotaAcordada = Number(cuentaActual?.monto_mensual_override || 0);
@@ -205,35 +308,35 @@ function PerfilTesoreriaPanel({
         comprobanteUrl = await convertirArchivoABase64(archivoComprobante);
       }
 
-      const mesesTexto = [...mesesSeleccionados]
-        .sort((a, b) => a - b)
-        .map((mesNumero) => mesesBase[mesNumero - 1])
-        .filter(Boolean)
-        .join(', ');
-
       const payload = {
         rut_jugador: rutPupiloActivo,
+        rut_pagos: cuentaActual?.rut || '',
         correo_apoderado: cuentaActual?.correo || pupiloActivo?.correo_apoderado || '',
         concepto_pago: tipoPago === 'abono' ? 'Abono mensualidad' : 'Pago mensualidades',
-        cantidad_meses_pagados: mesesSeleccionados.length,
-        meses_correspondientes: mesesTexto,
-        monto_total_pagado: monto,
+        cantidad_meses_pagados: 1,
         comprobante_url: comprobanteUrl,
       };
 
-      const pagoCreado = await api.pagosMensualidadesAPI.create(payload);
+      const mesesOrdenados = [...mesesSeleccionados].sort((a, b) => a - b);
+      const montoUnitario = tipoPago === 'abono' && mesesOrdenados.length > 0
+        ? Number((monto / mesesOrdenados.length).toFixed(0))
+        : Number((tarifaRedondeada || 0));
+
+      const pagosCreados = [];
+      for (const mesNumero of mesesOrdenados) {
+        const mesTexto = String(mesesBase[mesNumero - 1] || '').toLowerCase();
+        const pagoCreado = await api.pagosMensualidadesAPI.create({
+          ...payload,
+          meses_correspondientes: `${mesTexto}-${anioObjetivo}`,
+          monto_total_pagado: montoUnitario > 0 ? montoUnitario : monto,
+        });
+        pagosCreados.push(pagoCreado);
+      }
 
       setComprobanteSubido(true);
       setPagosPendientesAdmin((prev) => [
         ...(Array.isArray(prev) ? prev : []),
-        pagoCreado || {
-          id: nextId(),
-          familia: titular,
-          rut_jugador: rutPupiloActivo,
-          monto,
-          detalle: `${payload.concepto_pago} — ${mesesSeleccionados.length} mes(es) — Comprobante adjunto`,
-          estado_pago: 'pendiente',
-        },
+        ...pagosCreados.filter(Boolean),
       ]);
     } catch (error) {
       setErrorComprobante(error.message || 'No se pudo enviar el comprobante.');
@@ -357,18 +460,31 @@ function PerfilTesoreriaPanel({
             <div className={pagoViewMode === 'grid' ? 'grid-12-meses' : 'lista-12-meses'}>
               {mesesBase.map((mes, idx) => {
                 const mesNumero = idx + 1;
+                const inicioCobroPupilo = obtenerInicioCobro(pupilo);
+                const becaActivaPupilo = esBecaActiva(pupilo);
                 const rutPupiloCardNormalizado = normalizarRutComparacion(pupilo.rut);
                 const pagosDelPupilo = (pagosMensualidadesAdmin || []).filter(
-                  (p) => normalizarRutComparacion(p.rut_jugador) === rutPupiloCardNormalizado
+                  (p) => {
+                    if (esPagoInvalidoLegacy(p)) return false;
+                    const rutJugadorPago = normalizarRutComparacion(p.rut_jugador);
+                    const rutPagadorPago = normalizarRutComparacion(p.rut_pagos);
+                    return rutJugadorPago === rutPupiloCardNormalizado || rutPagadorPago === rutPupiloCardNormalizado;
+                  }
                 );
                 const estadosMes = pagosDelPupilo
                   .filter((pago) => monthFromPago(pago) === mesNumero)
                   .map((pago) => (pago.estado_pago || '').toLowerCase());
                 const estadoMes = (estadosMes.includes('aprobado') || estadosMes.includes('validado'))
                   ? 'pagado'
+                  : (becaActivaPupilo && mesNumero <= limiteMesDeuda)
+                    ? 'pagado'
+                  : (mesNumero < inicioCobroPupilo)
+                    ? 'futuro'
+                    : (mesNumero > limiteMesDeuda)
+                      ? 'futuro'
                   : (estadosMes.includes('pendiente') || estadosMes.includes('rechazado'))
                     ? 'pendiente'
-                    : (mesNumero < mesActual ? 'pendiente' : 'futuro');
+                    : (mesNumero <= limiteMesDeuda ? 'pendiente' : 'futuro');
 
                 return (
                 <div
