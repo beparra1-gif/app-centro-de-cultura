@@ -893,7 +893,8 @@ const obtenerResumenCalidadDatos = async () => {
   const pagosSinRutRes = await pool.query(
     `SELECT COUNT(*)::INT AS total
      FROM pagos_mensualidades
-     WHERE COALESCE(TRIM(rut_jugador), '') = ''`
+     WHERE COALESCE(TRIM(rut_jugador), '') = ''
+       AND COALESCE(TRIM(rut_pagos), '') = ''`
   );
 
   const pagosSinMesesRes = await pool.query(
@@ -998,7 +999,7 @@ const obtenerDetalleCalidadDatos = async () => {
      WHERE LOWER(COALESCE(estado_pago, '')) = 'pendiente'
        AND (
          LOWER(COALESCE(notas_tesoreria, '')) LIKE '%correccion requerida%'
-         OR COALESCE(TRIM(rut_jugador), '') = ''
+         OR (COALESCE(TRIM(rut_jugador), '') = '' AND COALESCE(TRIM(rut_pagos), '') = '')
          OR COALESCE(TRIM(meses_correspondientes), '') = ''
        )`
   );
@@ -1018,7 +1019,7 @@ const obtenerDetalleCalidadDatos = async () => {
      WHERE LOWER(COALESCE(estado_pago, '')) = 'pendiente'
        AND (
          LOWER(COALESCE(notas_tesoreria, '')) LIKE '%correccion requerida%'
-         OR COALESCE(TRIM(rut_jugador), '') = ''
+         OR (COALESCE(TRIM(rut_jugador), '') = '' AND COALESCE(TRIM(rut_pagos), '') = '')
          OR COALESCE(TRIM(meses_correspondientes), '') = ''
        )
      ORDER BY fecha_registro DESC NULLS LAST, id DESC
@@ -1137,6 +1138,18 @@ const ensurePartidosLiveCoreColumns = async () => {
   }
 
   console.log('🏀 Columnas base rama/categoria en partidos_live verificadas');
+};
+
+const ensurePagosMensualidadesColumns = async () => {
+  const ddl = [
+    `ALTER TABLE pagos_mensualidades ADD COLUMN IF NOT EXISTS rut_pagos VARCHAR(20)`,
+  ];
+
+  for (const statement of ddl) {
+    await pool.query(statement);
+  }
+
+  console.log('💳 Columnas de pagos_mensualidades verificadas');
 };
 
 const ensureLogoAssetsTable = async () => {
@@ -1442,7 +1455,7 @@ app.get('/api/admin/ops-status', async (req, res) => {
     const pagosSummary = await pool.query(
       `SELECT
          COUNT(*)::INT AS total,
-         COUNT(*) FILTER (WHERE COALESCE(notas_tesoreria, '') ILIKE '%Legacy ID:%')::INT AS legacy_consolidados,
+         COUNT(*) FILTER (WHERE COALESCE(TRIM(rut_pagos), '') <> '')::INT AS con_rut_pagos,
          MAX(updated_at) AS ultimo_update
        FROM pagos_mensualidades`
     );
@@ -1694,7 +1707,6 @@ app.post('/api/admin/sync-sheets', async (req, res) => {
       detail: result.summary,
       mode: 'incremental',
       qualitySummary: result.qualitySummary || null,
-      legacyPaymentsConsolidation: result.legacyPaymentsConsolidation || null,
       syncedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -2867,10 +2879,22 @@ app.put('/api/jugadores/:rut', async (req, res) => {
 // GET: Todos los pagos de mensualidades
 app.get('/api/pagos-mensualidades', async (req, res) => {
   try {
+    const incluirLegacy = ['1', 'true', 'yes', 'si'].includes(String(req.query.includeLegacy || '').trim().toLowerCase());
+    const whereLegacy = incluirLegacy
+      ? ''
+      : `WHERE NOT (
+           COALESCE(pm.monto_total_pagado, 0) <= 0
+           AND (
+             COALESCE(pm.meses_correspondientes, '') ~* '^sinmes\\b'
+             OR LOWER(COALESCE(pm.notas_tesoreria, '')) LIKE '%correccion requerida%'
+           )
+         )`;
+
     const result = await pool.query(
       `SELECT pm.*, j.nombres, j.apellido_paterno
        FROM pagos_mensualidades pm
        LEFT JOIN jugadores j ON pm.rut_jugador = j.rut_jugador
+       ${whereLegacy}
        ORDER BY pm.fecha_registro DESC`
     );
     res.json(result.rows);
@@ -2881,10 +2905,49 @@ app.get('/api/pagos-mensualidades', async (req, res) => {
 
 // POST: Crear pago de mensualidad
 app.post('/api/pagos-mensualidades', async (req, res) => {
-  const { rut_jugador, correo_apoderado, concepto_pago, cantidad_meses_pagados, meses_correspondientes, monto_total_pagado, comprobante_url } = req.body;
+  const {
+    rut_jugador,
+    rut_pagos,
+    correo_apoderado,
+    concepto_pago,
+    cantidad_meses_pagados,
+    meses_correspondientes,
+    monto_total_pagado,
+    comprobante_url,
+  } = req.body;
   try {
+    let rutPagosFinal = String(rut_pagos || '').trim();
+
+    if (!rutPagosFinal) {
+      if (String(correo_apoderado || '').trim()) {
+        const cuentaPorCorreo = await pool.query(
+          `SELECT rut
+           FROM cuentas
+           WHERE LOWER(COALESCE(correo, '')) = LOWER($1)
+           LIMIT 1`,
+          [correo_apoderado]
+        );
+        rutPagosFinal = String(cuentaPorCorreo.rows[0]?.rut || '').trim();
+      }
+
+      if (!rutPagosFinal && String(rut_jugador || '').trim()) {
+        const cuentaDesdeJugador = await pool.query(
+          `SELECT c.rut
+           FROM jugadores j
+           LEFT JOIN cuentas c
+             ON LOWER(COALESCE(c.correo, '')) = LOWER(COALESCE(j.correo_apoderado, ''))
+           WHERE UPPER(REPLACE(REPLACE(COALESCE(j.rut_jugador, ''), '.', ''), '-', '')) = UPPER(REPLACE(REPLACE($1, '.', ''), '-', ''))
+           LIMIT 1`,
+          [rut_jugador]
+        );
+        rutPagosFinal = String(cuentaDesdeJugador.rows[0]?.rut || '').trim();
+      }
+    }
+
     const correccionesPago = [];
-    if (!String(rut_jugador || '').trim()) correccionesPago.push('rut_jugador vacio');
+    if (!String(rut_jugador || '').trim() && !String(rutPagosFinal || '').trim()) {
+      correccionesPago.push('rut_jugador/rut_pagos vacio');
+    }
     if (!String(meses_correspondientes || '').trim()) correccionesPago.push('meses_correspondientes vacio');
     if (!Number.isFinite(Number(monto_total_pagado)) || Number(monto_total_pagado) <= 0) {
       correccionesPago.push('monto_total_pagado invalido');
@@ -2892,11 +2955,12 @@ app.post('/api/pagos-mensualidades', async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO pagos_mensualidades 
-       (rut_jugador, correo_apoderado, concepto_pago, cantidad_meses_pagados, meses_correspondientes, monto_total_pagado, comprobante_url, estado_pago, notas_tesoreria)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendiente', $8)
+       (rut_jugador, rut_pagos, correo_apoderado, concepto_pago, cantidad_meses_pagados, meses_correspondientes, monto_total_pagado, comprobante_url, estado_pago, notas_tesoreria)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pendiente', $9)
        RETURNING *`,
       [
         rut_jugador,
+        rutPagosFinal || null,
         correo_apoderado,
         concepto_pago,
         cantidad_meses_pagados,
@@ -2952,16 +3016,27 @@ app.get('/api/pagos-mensualidades/:id', async (req, res) => {
 
 // PUT: Actualizar pago de mensualidad (edición completa)
 app.put('/api/pagos-mensualidades/:id', async (req, res) => {
-  const { rut_jugador, correo_apoderado, concepto_pago, cantidad_meses_pagados, meses_correspondientes, monto_total_pagado, comprobante_url, notas_tesoreria } = req.body;
+  const {
+    rut_jugador,
+    rut_pagos,
+    correo_apoderado,
+    concepto_pago,
+    cantidad_meses_pagados,
+    meses_correspondientes,
+    monto_total_pagado,
+    comprobante_url,
+    notas_tesoreria,
+  } = req.body;
   try {
     const result = await pool.query(
       `UPDATE pagos_mensualidades 
-       SET rut_jugador = $1, correo_apoderado = $2, concepto_pago = $3, cantidad_meses_pagados = $4, 
-           meses_correspondientes = $5, monto_total_pagado = $6, comprobante_url = $7, notas_tesoreria = $8, updated_at = NOW()
-       WHERE id = $9
+       SET rut_jugador = $1, rut_pagos = $2, correo_apoderado = $3, concepto_pago = $4, cantidad_meses_pagados = $5,
+           meses_correspondientes = $6, monto_total_pagado = $7, comprobante_url = $8, notas_tesoreria = $9, updated_at = NOW()
+       WHERE id = $10
        RETURNING *`,
       [
         rut_jugador,
+        rut_pagos,
         correo_apoderado,
         concepto_pago,
         cantidad_meses_pagados,
@@ -3972,6 +4047,10 @@ app.listen(PORT, () => {
 
   ensurePartidosLiveLogos().catch((error) => {
     console.error('❌ Error verificando columnas de logos partidos_live:', error.message);
+  });
+
+  ensurePagosMensualidadesColumns().catch((error) => {
+    console.error('❌ Error verificando columnas pagos_mensualidades:', error.message);
   });
 
   ensureLogoAssetsTable().catch((error) => {
