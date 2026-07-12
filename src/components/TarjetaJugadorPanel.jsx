@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BadgeCheck, Download, Mars, QrCode, ShieldCheck, Shirt, Target, Trophy, User, Venus, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
+import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer } from 'recharts';
 import PupiloSelector from './PupiloSelector';
 import * as api from '../api/client';
 
@@ -22,7 +23,7 @@ function TarjetaJugadorPanel({
   const cardFrontExportRef = useRef(null);
   const cardBackRef = useRef(null);
   const [mostrarCredencialAsistencia, setMostrarCredencialAsistencia] = useState(false);
-  const [estiloColeccion, setEstiloColeccion] = useState('coleccionista');
+  const estiloColeccion = 'coleccionista';
   const [vistaColeccion, setVistaColeccion] = useState('frente');
   const [detalleJugador, setDetalleJugador] = useState(null);
 
@@ -82,15 +83,29 @@ function TarjetaJugadorPanel({
   const nivelActualNumero = Number(nivelActual) || 0;
   const rolNormalizado = String(rolUsuario || '').toLowerCase().replace('-', '_');
   const mostrarIndumentaria = ['admin', 'super_admin'].includes(rolNormalizado);
-  const nombreDisplay = rolUsuario === 'visita' ? 'Invitado' : pupiloActivo.nombre.split(' ')[0];
-  const apellidoDisplay = rolUsuario === 'visita' ? 'TORNEO' : pupiloActivo.nombre.split(' ')[1]?.toUpperCase() || '';
-  const nombreCompletoDisplay = rolUsuario === 'visita'
-    ? 'INVITADO TORNEO'
-    : String(pupiloActivo.nombre || `${nombreDisplay} ${apellidoDisplay}`).trim();
   const normalizarRut = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
   const pupiloDesdeListado = Array.isArray(pupilosDisponibles)
     ? pupilosDisponibles.find((item) => normalizarRut(item?.rut) === normalizarRut(pupiloActivo?.rut))
     : null;
+  const construirNombreCompleto = (jugador = {}) => {
+    const nombres = String(jugador?.nombres || '').trim();
+    const paterno = String(jugador?.apellido_paterno || '').trim();
+    const materno = String(jugador?.apellido_materno || '').trim();
+    const compuesto = [nombres, paterno, materno].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    if (compuesto) return compuesto;
+    return String(jugador?.nombre || '').replace(/\s+/g, ' ').trim();
+  };
+  const nombreCompletoReal =
+    construirNombreCompleto(pupiloActivo)
+    || construirNombreCompleto(pupiloDesdeListado)
+    || construirNombreCompleto(detalleJugador)
+    || String(pupiloActivo?.nombre || '').trim();
+  const nombreCompletoDisplay = rolUsuario === 'visita' ? 'INVITADO TORNEO' : (nombreCompletoReal || 'JUGADOR');
+  const partesNombre = String(nombreCompletoDisplay || '').trim().split(/\s+/).filter(Boolean);
+  const nombreDisplay = rolUsuario === 'visita' ? 'Invitado' : (partesNombre[0] || 'Jugador');
+  const apellidoDisplay = rolUsuario === 'visita'
+    ? 'TORNEO'
+    : ((partesNombre.slice(1).join(' ') || partesNombre[0] || '').toUpperCase());
   const anioNacimiento = (
     pupiloActivo.anioNacimiento
     || pupiloActivo.anio_nacimiento
@@ -187,9 +202,35 @@ function TarjetaJugadorPanel({
   const qrPayload = JSON.stringify({
     tipo: 'asistencia_ccf',
     rut: rutValidacion,
-    nombre: pupiloActivo.nombre,
+    nombre: nombreCompletoDisplay,
     categoria: pupiloActivo.categoria || 'General',
   });
+  const porcentajeDesdeTexto = (valor = '') => {
+    const txt = String(valor || '').trim();
+    const match = txt.match(/(\d{1,3})/);
+    if (!match) return null;
+    const parsed = Number(match[1]);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.min(100, parsed));
+  };
+  const asistenciaRadar = porcentajeDesdeTexto(pupiloActivo.asistencia) ?? Math.max(20, Math.min(100, rachaActual * 12));
+  const progresoRadar = Math.max(0, Math.min(100, progresoNivel));
+  const fisicoRadar = Number.isFinite(Number(detalleJugador?.fisico_score))
+    ? Math.max(0, Math.min(100, Number(detalleJugador.fisico_score)))
+    : 60;
+  const tecnicaRadar = Number.isFinite(Number(detalleJugador?.tecnica_score))
+    ? Math.max(0, Math.min(100, Number(detalleJugador.tecnica_score)))
+    : 58;
+  const tacticaRadar = Number.isFinite(Number(detalleJugador?.tactica_score))
+    ? Math.max(0, Math.min(100, Number(detalleJugador.tactica_score)))
+    : 55;
+  const radarGamificacionData = [
+    { area: 'Fisico', valor: fisicoRadar },
+    { area: 'Tecnica', valor: tecnicaRadar },
+    { area: 'Tactica', valor: tacticaRadar },
+    { area: 'Asistencia', valor: asistenciaRadar },
+    { area: 'Progreso', valor: progresoRadar },
+  ];
 
   const descargarDataUrl = (dataUrl, nombreArchivo) => {
     const link = document.createElement('a');
@@ -237,7 +278,6 @@ function TarjetaJugadorPanel({
             <div className="history-summary-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
                 <div>
-                  <div style={{ fontSize: '10px', fontWeight: '800', letterSpacing: '0.8px', textTransform: 'uppercase', opacity: 0.85 }}>Historial Deportivo</div>
                   <strong style={{ fontSize: '16px', fontWeight: '900' }}>Resumen del jugador</strong>
                 </div>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '900', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>
@@ -388,22 +428,6 @@ function TarjetaJugadorPanel({
 
       </div>
 
-      <div className="collection-style-switch" role="radiogroup" aria-label="Estilo de descarga">
-        <button
-          type="button"
-          className={estiloColeccion === 'coleccionista' ? 'active' : ''}
-          onClick={() => setEstiloColeccion('coleccionista')}
-        >
-          Estilo Coleccionista
-        </button>
-        <button
-          type="button"
-          className={estiloColeccion === 'tecnica' ? 'active' : ''}
-          onClick={() => setEstiloColeccion('tecnica')}
-        >
-          Estilo Tecnica
-        </button>
-      </div>
       <div className="card collection-panel" style={{ marginTop: '8px', borderRadius: '18px', border: '1px solid var(--borde-suave)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <h4 className="collection-title" style={{ margin: 0, fontSize: '15px', fontWeight: '900', color: 'var(--azul-marino)' }}>Ver mi tarjeta de coleccion</h4>
@@ -497,12 +521,22 @@ function TarjetaJugadorPanel({
         <div className="card" style={{ marginTop: '14px', borderRadius: '18px', background: 'linear-gradient(135deg, #101C2E 0%, #142E45 100%)', color: 'white', border: '1px solid rgba(255,255,255,0.12)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
             <div>
-              <div style={{ fontSize: '10px', fontWeight: '800', letterSpacing: '0.8px', textTransform: 'uppercase', opacity: 0.85 }}>Gamificación</div>
               <strong style={{ fontSize: '16px', fontWeight: '900' }}>Progreso deportivo</strong>
             </div>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '900', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>
               <Trophy size={14} /> Nivel {nivelActualNumero}
             </div>
+          </div>
+
+          <div style={{ width: '100%', height: '230px', marginBottom: '10px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarGamificacionData} outerRadius={80}>
+                <PolarGrid stroke="rgba(255,255,255,0.25)" />
+                <PolarAngleAxis dataKey="area" tick={{ fill: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: 700 }} />
+                <PolarRadiusAxis domain={[0, 100]} tick={{ fill: 'rgba(255,255,255,0.65)', fontSize: 10 }} tickCount={5} />
+                <Radar dataKey="valor" stroke="#00C7BE" fill="#00C7BE" fillOpacity={0.32} strokeWidth={2} />
+              </RadarChart>
+            </ResponsiveContainer>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>

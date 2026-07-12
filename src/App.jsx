@@ -436,7 +436,7 @@ function App() {
         const nuevoRoster = jugadoresRes.slice(0, 24).map((j, idx) => ({
           id: idx + 1,
           rut_jugador: j.rut_jugador || `sin-rut-${idx + 1}`,
-          nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim(),
+          nombre: `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''}`.trim(),
           correo_apoderado: j.correo_apoderado || '',
           rama: j.rama || 'MASCULINA',
           categoria: j.categoria || 'SUB-13',
@@ -459,7 +459,10 @@ function App() {
           setPupiloActivo((prev) => prev || {
             id: 1,
             rut: primerJugador.rut_jugador,
-            nombre: `${primerJugador.nombres || ''} ${primerJugador.apellido_paterno || ''}`.trim(),
+            nombre: `${primerJugador.nombres || ''} ${primerJugador.apellido_paterno || ''} ${primerJugador.apellido_materno || ''}`.trim(),
+            nombres: primerJugador.nombres || '',
+            apellido_paterno: primerJugador.apellido_paterno || '',
+            apellido_materno: primerJugador.apellido_materno || '',
             correo_apoderado: primerJugador.correo_apoderado || '',
             categoria: primerJugador.categoria || 'General',
             rama: primerJugador.rama || primerJugador.categoria_rama || 'General',
@@ -1787,7 +1790,10 @@ function App() {
   const pupilosDisponiblesBase = (jugadoresAdmin || []).map((j, idx) => ({
     id: idx + 1,
     rut: j.rut_jugador,
-    nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim(),
+    nombre: `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''}`.trim(),
+    nombres: j.nombres || '',
+    apellido_paterno: j.apellido_paterno || '',
+    apellido_materno: j.apellido_materno || '',
     correo_apoderado: j.correo_apoderado || '',
     categoria: j.categoria || 'General',
     rama: j.rama || j.categoria_rama || 'General',
