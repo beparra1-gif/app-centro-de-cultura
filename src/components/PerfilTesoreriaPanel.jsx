@@ -387,7 +387,7 @@ function PerfilTesoreriaPanel({
           </div>
         ))}
 
-        {mesesSeleccionados.length > 0 && !comprobanteSubido && (
+        {!comprobanteSubido && (
           <div className="dynamic-checkout-box fade-in mt-15" style={{ padding: '16px', borderRadius: '18px' }}>
             <h4 className="form-subtitle">Resumen de Liquidación</h4>
             <div className="checkbox-grid mb-15">
@@ -403,6 +403,12 @@ function PerfilTesoreriaPanel({
             )}
             <div className="desglose-row"><span>Detalle cuota deportista(s):</span><strong>${cuotaDeportistas.toLocaleString('es-CL')}</strong></div>
             <div className="desglose-row total-calc"><span>Total a Pagar ({mesesSeleccionados.length} meses):</span><strong>${totalSeleccionado.toLocaleString('es-CL')}</strong></div>
+
+            {mesesSeleccionados.length === 0 && (
+              <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', marginTop: '6px' }}>
+                Selecciona meses pendientes o futuros para calcular y enviar la liquidación.
+              </div>
+            )}
 
             {condicionesPagoPerfil && (
               <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', marginBottom: '10px' }}>
@@ -454,7 +460,7 @@ function PerfilTesoreriaPanel({
               className="btn-pago-cta mt-15"
               style={{ width: '100%', border: 'none', cursor: subiendoComprobante ? 'wait' : 'pointer', opacity: subiendoComprobante ? 0.8 : 1, padding: '14px 16px', borderRadius: '14px' }}
               onClick={enviarComprobantePago}
-              disabled={subiendoComprobante}
+              disabled={subiendoComprobante || mesesSeleccionados.length === 0}
             >
               <Camera size={24} color="#6B7280" strokeWidth={1.5} />
               <div>
