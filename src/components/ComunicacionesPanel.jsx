@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ShieldAlert, MessageCircle, Trophy, BarChart3, Heart, ThumbsUp, Frown } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import LogoAvatar from './LogoAvatar';
@@ -34,6 +35,50 @@ function ComunicacionesPanel({
   ];
   const rolNormalizado = String(rolUsuario || '').toLowerCase();
   const esApoderadoRol = rolNormalizado === 'apoderado' || rolNormalizado === 'socio-apoderado';
+  const [draftMensajesProfesor, setDraftMensajesProfesor] = useState({});
+
+  const obtenerClaveMensaje = (comId, rut) => `${comId}-${rut}`;
+
+  const obtenerCitacion = (comunicacion) => (nominaCita || []).find((cita) => cita.id === comunicacion.citacion_id) || null;
+
+  const obtenerConvocadosVisibles = (comunicacion) => {
+    const cita = obtenerCitacion(comunicacion);
+    return Array.isArray(cita?.convocados) ? cita.convocados : [];
+  };
+
+  const obtenerConvocadosPropios = (comunicacion) => {
+    const cita = obtenerCitacion(comunicacion);
+    const rutUsuario = String(usuarioAutenticado?.rut || pupiloActivo?.rut || '').trim();
+    const correoUsuario = String(usuarioAutenticado?.correo || pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
+    return (cita?.convocados || []).filter((conv) => {
+      const correoConv = String(conv.correo_apoderado || '').trim().toLowerCase();
+      const rutConv = String(conv.rut_jugador || '').trim();
+      return (rutUsuario && rutConv === rutUsuario) || (correoUsuario && correoConv && correoConv === correoUsuario);
+    });
+  };
+
+  const obtenerEstadoTexto = (respuesta) => {
+    if (respuesta === 'si') return 'Confirmado';
+    if (respuesta === 'no') return 'Inasistente';
+    return 'Pendiente';
+  };
+
+  const obtenerColorEstado = (respuesta) => {
+    if (respuesta === 'si') return { bg: 'rgba(52,199,89,0.14)', color: '#15803d' };
+    if (respuesta === 'no') return { bg: 'rgba(255,59,48,0.14)', color: '#b91c1c' };
+    return { bg: 'rgba(15,23,42,0.07)', color: 'var(--texto-secundario)' };
+  };
+
+  const calcularResumenCitacion = (comunicacion) => {
+    const convocados = obtenerConvocadosVisibles(comunicacion);
+    const total = convocados.length;
+    const confirmados = convocados.filter((item) => item.respuesta === 'si').length;
+    const inasistentes = convocados.filter((item) => item.respuesta === 'no').length;
+    const respondidos = confirmados + inasistentes;
+    const pendientes = Math.max(total - respondidos, 0);
+    const progreso = total > 0 ? Math.round((respondidos / total) * 100) : 0;
+    return { total, confirmados, inasistentes, pendientes, progreso };
+  };
 
   const addReaccion = (comId, reaccionId) => {
     setComunicaciones(comunicaciones.map(c => {
@@ -46,14 +91,21 @@ function ComunicacionesPanel({
     }));
   };
 
-  const addRSVP = (comId, respuesta) => {
+  const addRSVP = (comId, convocado, respuesta) => {
     const rutUsuario = String(usuarioAutenticado?.rut || pupiloActivo?.rut || '').trim();
     const correoUsuario = String(usuarioAutenticado?.correo || pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
     const actorId = rutUsuario || correoUsuario || `anon-${Date.now()}`;
     const esApoderado = esApoderadoRol;
-    const justificacion = (respuesta === 'no' || respuesta === 'justificado')
-      ? (window.prompt('Agrega una justificación breve (opcional):', '') || '').trim()
+    const claveMensaje = obtenerClaveMensaje(comId, convocado?.rut_jugador || actorId);
+    const mensajeProfesor = String(draftMensajesProfesor[claveMensaje] ?? convocado?.mensaje_profesor ?? '').trim();
+    const justificacion = respuesta === 'no'
+      ? String(convocado?.justificacion || '').trim() || (window.prompt('Debes justificar la inasistencia:', '') || '').trim()
       : '';
+
+    if (respuesta === 'no' && !justificacion) {
+      alert('Debes justificar la inasistencia para registrar la respuesta.');
+      return;
+    }
 
     setComunicaciones(comunicaciones.map(c => {
       if (c.id === comId) {
@@ -82,12 +134,15 @@ function ComunicacionesPanel({
           : false;
 
         const asistencias = Array.isArray(c.asistencias) ? [...c.asistencias] : [];
-        const idx = asistencias.findIndex((a) => String(a.actorId || '').trim() === actorId);
+        const idx = asistencias.findIndex((a) => String(a.rut_jugador || a.actorId || '').trim() === String(convocado?.rut_jugador || actorId).trim());
         const payload = {
           respuesta,
           justificacion,
+          mensaje_profesor: mensajeProfesor,
           timestamp: new Date(),
           actorId,
+          rut_jugador: convocado?.rut_jugador || rutUsuario,
+          nombre: convocado?.nombre || usuarioAutenticado?.nombres || pupiloActivo?.nombre || 'Usuario',
           excepcion_solicitada: solicitaExcepcion,
         };
         if (idx >= 0) asistencias[idx] = { ...asistencias[idx], ...payload };
@@ -106,6 +161,7 @@ function ComunicacionesPanel({
                 ...conv,
                 respuesta,
                 justificacion,
+                mensaje_profesor: mensajeProfesor,
                 excepcion_solicitada: solicitaExcepcion || Boolean(conv.excepcion_solicitada),
                 estado_excepcion: solicitaExcepcion ? 'solicitada' : conv.estado_excepcion,
                 actualizado_en: new Date().toISOString(),
@@ -120,6 +176,35 @@ function ComunicacionesPanel({
       }
       return c;
     }));
+  };
+
+  const guardarMensajeProfesor = (comId, convocado) => {
+    const claveMensaje = obtenerClaveMensaje(comId, convocado?.rut_jugador || 'sin-rut');
+    const mensajeProfesor = String(draftMensajesProfesor[claveMensaje] ?? '').trim();
+    const comunicacion = comunicaciones.find((item) => item.id === comId);
+    const citacionId = comunicacion?.citacion_id || convocado?.citacion_id || null;
+
+    setComunicaciones(comunicaciones.map((c) => {
+      if (c.id !== comId) return c;
+      const asistencias = Array.isArray(c.asistencias) ? [...c.asistencias] : [];
+      const idx = asistencias.findIndex((a) => String(a.rut_jugador || '').trim() === String(convocado?.rut_jugador || '').trim());
+      if (idx >= 0) {
+        asistencias[idx] = { ...asistencias[idx], mensaje_profesor: mensajeProfesor, timestamp: new Date() };
+      }
+      return { ...c, asistencias };
+    }));
+
+    if (typeof setNominaCita === 'function' && convocado?.rut_jugador) {
+      setNominaCita((prev) => (prev || []).map((cita) => {
+        if (cita.id !== citacionId) return cita;
+        return {
+          ...cita,
+          convocados: (cita.convocados || []).map((item) => item.rut_jugador === convocado.rut_jugador ? { ...item, mensaje_profesor: mensajeProfesor, actualizado_en: new Date().toISOString() } : item),
+        };
+      }));
+    }
+
+    alert('Mensaje al profesor actualizado.');
   };
 
   const voteEncuesta = (encId, opcion) => {
@@ -349,28 +434,142 @@ function ComunicacionesPanel({
               {c.solicita_asistencia && (
                 <div style={{ background: 'rgba(0, 122, 255, 0.08)', padding: '12px', borderRadius: '18px', marginBottom: '12px', marginTop: '10px' }}>
                   {(() => {
-                    const cita = (nominaCita || []).find((x) => x.id === c.citacion_id);
+                    const cita = obtenerCitacion(c);
+                    const propios = obtenerConvocadosPropios(c);
+                    const convocados = obtenerConvocadosVisibles(c);
+                    const { confirmados, inasistentes, pendientes, progreso } = calcularResumenCitacion(c);
                     const rutUsuario = String(usuarioAutenticado?.rut || pupiloActivo?.rut || '').trim();
                     const correoUsuario = String(usuarioAutenticado?.correo || pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
-                    const convocado = (cita?.convocados || []).find((conv) => {
-                      const correoConv = String(conv.correo_apoderado || '').trim().toLowerCase();
-                      const rutConv = String(conv.rut_jugador || '').trim();
-                      return (rutUsuario && rutConv && rutConv === rutUsuario) || (correoUsuario && correoConv && correoConv === correoUsuario);
-                    });
+                    const actorId = rutUsuario || correoUsuario || 'anon';
+                    const rsvpPropio = (c.asistencias || []).find((item) => String(item.rut_jugador || item.actorId || '').trim() === actorId);
 
-                    if (!esApoderadoRol || !convocado?.requiere_excepcion_morosidad) return null;
                     return (
-                      <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.14)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '10px', padding: '8px 10px' }}>
-                        Alerta tesorería: deportista moroso. Debes solicitar excepción de citación para confirmar asistencia.
-                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {cita && (
+                          <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: '14px', padding: '10px' }}>
+                            <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--texto-principal)' }}>
+                              {cita.tipo_competencia} · {cita.competencia_nombre} · vs {cita.rival_nombre}
+                            </div>
+                            <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                              Día {cita.dia_citacion} · Citación {cita.hora_citacion} · Presentación {cita.hora_presentacion}
+                            </div>
+                            <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                              Responsable: {cita.responsable_nombre || c.responsable_nombre || 'Administración CCF'}
+                            </div>
+                            <div className="recaud-bar" style={{ marginTop: '10px' }}>
+                              <div className="recaud-bar-fill" style={{ width: `${progreso}%`, background: 'linear-gradient(90deg, var(--azul-electrico), var(--verde-victoria))' }} />
+                            </div>
+                            <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                              {progreso}% respondida · Confirmados {confirmados} · Inasistentes {inasistentes} · Pendientes {pendientes}
+                            </div>
+                          </div>
+                        )}
+
+                        {convocados.length > 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {(convocados || []).map((convocado) => {
+                              const esPropio = propios.some((item) => item.rut_jugador === convocado.rut_jugador);
+                              const colores = obtenerColorEstado(convocado.respuesta);
+                              const claveMensaje = obtenerClaveMensaje(c.id, convocado.rut_jugador);
+                              const mensajeActual = draftMensajesProfesor[claveMensaje] ?? convocado.mensaje_profesor ?? '';
+                              return (
+                                <div key={`${c.id}-${convocado.rut_jugador}`} style={{ border: '1px solid rgba(15,23,42,0.08)', borderRadius: '14px', padding: '10px', background: 'rgba(255,255,255,0.72)' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <div>
+                                      <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--texto-principal)' }}>{convocado.nombre}</div>
+                                      <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{convocado.rama} · {convocado.categoria}</div>
+                                    </div>
+                                    <span style={{ padding: '5px 10px', borderRadius: '999px', background: colores.bg, color: colores.color, fontSize: '11px', fontWeight: '900' }}>
+                                      {obtenerEstadoTexto(convocado.respuesta)}
+                                    </span>
+                                  </div>
+
+                                  {convocado.requiere_excepcion_morosidad && esApoderadoRol && esPropio && (
+                                    <p style={{ margin: '8px 0 0 0', fontSize: '12px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.14)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '10px', padding: '8px 10px' }}>
+                                      Alerta tesorería: deportista moroso. Debes solicitar excepción de citación para confirmar asistencia.
+                                    </p>
+                                  )}
+
+                                  {esPropio && (
+                                    <>
+                                      <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)' }}>Selecciona una opción de asistencia</div>
+                                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                                        <button onClick={() => addRSVP(c.id, convocado, 'si')} className="btn-confirmar" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: convocado.respuesta === 'si' ? '#15803d' : '#34C759', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✓ Sí asiste</button>
+                                        <button onClick={() => addRSVP(c.id, convocado, 'no')} className="btn-ausente" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#FF3B30', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✕ No asiste</button>
+                                      </div>
+
+                                      {convocado.respuesta === 'no' && (
+                                        <div style={{ marginTop: '8px' }}>
+                                          <input
+                                            className="form-input"
+                                            placeholder="Justificación obligatoria"
+                                            value={convocado.justificacion || ''}
+                                            onChange={(e) => {
+                                              const valor = e.target.value;
+                                              setNominaCita((prev) => (prev || []).map((citaItem) => citaItem.id !== c.citacion_id ? citaItem : ({
+                                                ...citaItem,
+                                                convocados: (citaItem.convocados || []).map((item) => item.rut_jugador === convocado.rut_jugador ? { ...item, justificacion: valor } : item),
+                                              })));
+                                            }}
+                                          />
+                                        </div>
+                                      )}
+
+                                      <div style={{ marginTop: '8px' }}>
+                                        <textarea
+                                          className="form-input"
+                                          rows="2"
+                                          placeholder="Mensaje opcional al profesor"
+                                          value={mensajeActual}
+                                          onChange={(e) => setDraftMensajesProfesor((prev) => ({ ...prev, [claveMensaje]: e.target.value }))}
+                                        />
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                                        <button className="btn-secondary" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => guardarMensajeProfesor(c.id, { ...convocado, citacion_id: c.citacion_id })}>
+                                          Guardar mensaje al profesor
+                                        </button>
+                                        {convocado.respuesta && (
+                                          <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>
+                                            Información de asistencia completada: usted {convocado.respuesta === 'si' ? 'sí asiste' : 'no asiste'}.
+                                          </span>
+                                        )}
+                                      </div>
+                                    </>
+                                  )}
+
+                                  {!esPropio && convocado.justificacion && (
+                                    <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
+                                      Justificación: {convocado.justificacion}
+                                    </div>
+                                  )}
+                                  {!esPropio && convocado.mensaje_profesor && (
+                                    <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
+                                      Mensaje al profesor: {convocado.mensaje_profesor}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {!cita && (
+                          <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: '14px', padding: '10px' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)', marginBottom: '8px' }}>Selecciona una opción de asistencia</div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <button onClick={() => addRSVP(c.id, null, 'si')} className="btn-confirmar" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#34C759', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✓ Sí asiste</button>
+                              <button onClick={() => addRSVP(c.id, null, 'no')} className="btn-ausente" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#FF3B30', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✕ No asiste</button>
+                            </div>
+                            {rsvpPropio?.respuesta && (
+                              <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>
+                                Información de asistencia completada: usted {rsvpPropio.respuesta === 'si' ? 'sí asiste' : 'no asiste'}.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     );
                   })()}
-                  <p style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '600', color: 'var(--texto-principal)' }}>¿Vas a asistir?</p>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button onClick={() => addRSVP(c.id, 'si')} className="btn-confirmar" style={{ flex: 1, padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#34C759', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✓ Sí</button>
-                    <button onClick={() => addRSVP(c.id, 'no')} className="btn-ausente" style={{ flex: 1, padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#FF3B30', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✕ No</button>
-                    <button onClick={() => addRSVP(c.id, 'justificado')} style={{ flex: 1, padding: '10px', fontSize: '13px', borderRadius: '14px', border: '1px solid var(--borde-suave)', background: 'rgba(255,255,255,0.92)', color: 'var(--texto-principal)', cursor: 'pointer', fontWeight: '700' }}>📝 Justificar</button>
-                  </div>
                 </div>
               )}
 
@@ -406,11 +605,11 @@ function ComunicacionesPanel({
                 })}
               </div>
 
-              {c.asistencias && c.asistencias.length > 0 && (
+              {!c.citacion_id && c.asistencias && c.asistencias.length > 0 && (
                 <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '8px', padding: '10px 12px', background: 'rgba(0,0,0,0.02)', borderRadius: '14px' }}>
                   ✓ <strong>{c.asistencias.filter(a => a.respuesta === 'si').length}</strong> confirmados •
                   <strong>{c.asistencias.filter(a => a.respuesta === 'no').length}</strong> rechazaron •
-                  <strong>{c.asistencias.filter(a => a.respuesta === 'justificado').length}</strong> justificados
+                  Pendientes según convocatoria
                 </div>
               )}
 

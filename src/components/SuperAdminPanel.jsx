@@ -37,6 +37,7 @@ import SaludTimelinePanel from './SaludTimelinePanel';
 import SettingsPanel from './SettingsPanel';
 
 function SuperAdminPanel({
+  usuarioAutenticado,
   vistaAdmin,
   setVistaAdmin,
   generarAlertas,
@@ -1460,6 +1461,9 @@ function SuperAdminPanel({
       categoria_base: citaCategoria,
       categorias_apoyo: categoriasExtraCitacion,
       convocados,
+      responsable_nombre: `${usuarioAutenticado?.nombres || ''} ${usuarioAutenticado?.apellido_paterno || ''}`.trim() || usuarioAutenticado?.correo || 'Administración CCF',
+      responsable_rut: usuarioAutenticado?.rut || '',
+      responsable_rol: usuarioAutenticado?.rol || 'admin',
       creado_en: new Date().toISOString(),
     };
 
@@ -1477,6 +1481,8 @@ function SuperAdminPanel({
       asistencias: [],
       reacciones: {},
       citacion_id: citacion.id,
+      responsable_nombre: citacion.responsable_nombre,
+      responsable_rol: citacion.responsable_rol,
       convocatoria_ruts: convocados.map((x) => x.rut_jugador),
       convocatoria_alertas_morosidad: convocados
         .filter((x) => Boolean(x.requiere_excepcion_morosidad))
@@ -2751,8 +2757,7 @@ function SuperAdminPanel({
                 const total = (cita.convocados || []).length;
                 const confirmados = (cita.convocados || []).filter((x) => x.respuesta === 'si').length;
                 const noAsisten = (cita.convocados || []).filter((x) => x.respuesta === 'no').length;
-                const justificados = (cita.convocados || []).filter((x) => x.respuesta === 'justificado').length;
-                const respondidos = confirmados + noAsisten + justificados;
+                const respondidos = confirmados + noAsisten;
                 const progreso = total > 0 ? Math.round((respondidos / total) * 100) : 0;
                 const abierta = citacionActivaId === cita.id;
 
@@ -2767,9 +2772,12 @@ function SuperAdminPanel({
                     <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
                       {cita.dia_citacion} · Citación {cita.hora_citacion} · Presentación {cita.hora_presentacion}
                     </div>
+                    <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      Responsable: {cita.responsable_nombre || 'Administración CCF'}
+                    </div>
                     <div className="recaud-bar mt-10"><div className="recaud-bar-fill" style={{ width: `${progreso}%`, background: 'linear-gradient(90deg, var(--azul-electrico), var(--verde-victoria))' }} /></div>
                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                      {progreso}% respondida · Asisten {confirmados} · No asisten {noAsisten} · Justificados {justificados} · Pendientes {Math.max(total - respondidos, 0)}
+                      {progreso}% respondida · Confirmados {confirmados} · Inasistentes {noAsisten} · Pendientes {Math.max(total - respondidos, 0)}
                     </div>
 
                     {abierta && (
@@ -2786,10 +2794,14 @@ function SuperAdminPanel({
                             <div style={{ marginTop: '6px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                               <button className="btn-secondary" style={{ width: 'auto', padding: '7px 10px', background: conv.respuesta === 'si' ? 'rgba(52,199,89,0.2)' : undefined }} onClick={() => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { respuesta: 'si', justificacion: '' })}>Asiste</button>
                               <button className="btn-secondary" style={{ width: 'auto', padding: '7px 10px', background: conv.respuesta === 'no' ? 'rgba(255,59,48,0.2)' : undefined }} onClick={() => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { respuesta: 'no' })}>No asiste</button>
-                              <button className="btn-secondary" style={{ width: 'auto', padding: '7px 10px', background: conv.respuesta === 'justificado' ? 'rgba(255,149,0,0.2)' : undefined }} onClick={() => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { respuesta: 'justificado' })}>Justifica</button>
                             </div>
-                            {(conv.respuesta === 'no' || conv.respuesta === 'justificado') && (
+                            {conv.respuesta === 'no' && (
                               <input className="form-input" style={{ marginTop: '6px' }} placeholder="Motivo / justificación" value={conv.justificacion || ''} onChange={(e) => actualizarRespuestaConvocado(cita.id, conv.rut_jugador, { justificacion: e.target.value })} />
+                            )}
+                            {conv.mensaje_profesor && (
+                              <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
+                                Mensaje al profesor: {conv.mensaje_profesor}
+                              </div>
                             )}
                           </div>
                         ))}

@@ -1247,6 +1247,11 @@ function App() {
       solicita_asistencia: c.solicita_asistencia,
       reacciones: c.reacciones || {},
       asistencias: c.asistencias || [],
+      citacion_id: c.citacion_id || null,
+      convocatoria_ruts: c.convocatoria_ruts || [],
+      convocatoria_alertas_morosidad: c.convocatoria_alertas_morosidad || [],
+      responsable_nombre: c.responsable_nombre || '',
+      responsable_rol: c.responsable_rol || '',
     }));
   };
 
@@ -2323,6 +2328,7 @@ function App() {
             )}
             {puedeVerPantalla('admin_dashboard') && pantallaActiva === 'admin_dashboard' && (
               <SuperAdminPanel
+                usuarioAutenticado={usuarioAutenticado}
                 vistaAdmin={vistaAdmin}
                 setVistaAdmin={setVistaAdmin}
                 generarAlertas={generarAlertas}
