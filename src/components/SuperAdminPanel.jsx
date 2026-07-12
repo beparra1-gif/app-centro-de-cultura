@@ -281,6 +281,7 @@ function SuperAdminPanel({
   const [logosDisponiblesActivos, setLogosDisponiblesActivos] = useState([]);
   const [cargandoLogosDisponibles, setCargandoLogosDisponibles] = useState(false);
   const [errorLogosDisponibles, setErrorLogosDisponibles] = useState('');
+  const [eliminandoLogoFilename, setEliminandoLogoFilename] = useState('');
 
   const opcionesLogosResultados = useMemo(() => {
     const base = [
@@ -1168,6 +1169,27 @@ function SuperAdminPanel({
       setErrorLogosDisponibles(error.message || 'No se pudo cargar el listado de logos.');
     } finally {
       setCargandoLogosDisponibles(false);
+    }
+  };
+
+  const eliminarLogoAsset = async (logo) => {
+    const filename = String(logo?.filename || '').trim();
+    if (!filename) {
+      alert('No se pudo identificar el archivo para borrar.');
+      return;
+    }
+
+    if (!window.confirm(`¿Borrar logo ${filename}? Esta acción no se puede deshacer.`)) return;
+
+    try {
+      setEliminandoLogoFilename(filename);
+      await api.assetsAPI.deleteLogo(filename);
+      await cargarLogosDisponiblesActivos();
+      alert('Logo eliminado correctamente.');
+    } catch (error) {
+      alert(`No se pudo borrar el logo: ${error.message}`);
+    } finally {
+      setEliminandoLogoFilename('');
     }
   };
 
@@ -2204,6 +2226,14 @@ function SuperAdminPanel({
                         {logo.filename || logo.url || ''}
                       </div>
                     </div>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => eliminarLogoAsset(logo)}
+                      disabled={eliminandoLogoFilename === logo.filename}
+                      style={{ marginLeft: 'auto', borderColor: 'rgba(239,68,68,0.35)', color: '#b91c1c' }}
+                    >
+                      <XSquare size={14} /> {eliminandoLogoFilename === logo.filename ? 'Borrando...' : 'Borrar'}
+                    </button>
                   </div>
                 ))}
               </div>

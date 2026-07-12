@@ -466,6 +466,15 @@ const normalizarSlugLogo = (texto = '') => {
 const logosPublicDir = path.join(__dirname, '..', 'public', 'logos');
 fs.mkdirSync(logosPublicDir, { recursive: true });
 
+app.use('/logos', express.static(logosPublicDir, {
+  fallthrough: true,
+  maxAge: '7d',
+  setHeaders: (res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  },
+}));
+
 const storageLogo = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, logosPublicDir),
   filename: (req, file, cb) => {
@@ -517,6 +526,29 @@ app.get('/api/assets/logos/list', (req, res) => {
     return res.json({ logos: files });
   } catch (error) {
     return res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/assets/logos/:filename', (req, res) => {
+  try {
+    const rawFilename = decodeURIComponent(String(req.params.filename || '')).trim();
+    const safeFilename = path.basename(rawFilename);
+
+    if (!safeFilename || safeFilename !== rawFilename || !/\.(png|jpg|jpeg|webp|svg)$/i.test(safeFilename)) {
+      res.status(400).json({ error: 'Nombre de archivo inválido para borrar logo.' });
+      return;
+    }
+
+    const filePath = path.join(logosPublicDir, safeFilename);
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'El logo indicado no existe en la carpeta de activos.' });
+      return;
+    }
+
+    fs.unlinkSync(filePath);
+    res.json({ ok: true, filename: safeFilename });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'No se pudo borrar el logo.' });
   }
 });
 

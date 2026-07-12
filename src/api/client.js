@@ -962,6 +962,14 @@ export const assetsAPI = {
     const response = await fetch(`${API_BASE_URL}/assets/logos/list`);
     return handleResponse(response);
   },
+
+  deleteLogo: async (filename) => {
+    const safeFilename = encodeURIComponent(String(filename || '').trim());
+    const response = await fetch(`${API_BASE_URL}/assets/logos/${safeFilename}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(response);
+  },
 };
 
 // ========== CAJA EVENTO (FASE 3) ==========
