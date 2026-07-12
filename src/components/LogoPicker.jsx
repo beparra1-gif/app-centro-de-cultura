@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
-import { normalizarSlugLogo } from '../utils/logoResolver';
+import { absolutizarLogoUrl, normalizarSlugLogo } from '../utils/logoResolver';
 
 /**
  * LogoPicker — selects a logo URL by entity name, without manual URL input.
@@ -64,14 +64,14 @@ function LogoPicker({
     // Static extras (highest priority)
     for (const item of extraOptions) {
       const key = normalizarSlugLogo(item.nombre);
-      if (key) byNombre.set(key, { nombre: item.nombre, logoUrl: item.logoUrl || '' });
+      if (key) byNombre.set(key, { nombre: item.nombre, logoUrl: absolutizarLogoUrl(item.logoUrl || '') });
     }
 
     // Clubs from DB
     for (const c of clubes) {
       const key = normalizarSlugLogo(c.nombre_club);
       if (key && !byNombre.has(key)) {
-        byNombre.set(key, { nombre: c.nombre_club, logoUrl: c.logo_url || c.club_logo_url || '' });
+        byNombre.set(key, { nombre: c.nombre_club, logoUrl: absolutizarLogoUrl(c.logo_url || c.club_logo_url || '') });
       }
     }
 
@@ -87,7 +87,7 @@ function LogoPicker({
 
         const existente = byNombre.get(key);
         if (!existente || !existente.logoUrl) {
-          byNombre.set(key, { nombre: variante, logoUrl: logo.url });
+          byNombre.set(key, { nombre: variante, logoUrl: absolutizarLogoUrl(logo.url) });
         }
       }
     }
@@ -119,7 +119,7 @@ function LogoPicker({
       return nombreNorm === valNorm || nombreNorm === valSlim || nombreSlim === valNorm || nombreSlim === valSlim;
     });
     if (exacta && exacta.logoUrl) {
-      onLogoUrl(exacta.logoUrl);
+      onLogoUrl(absolutizarLogoUrl(exacta.logoUrl));
     } else if (!val) {
       onLogoUrl('');
     }
@@ -128,7 +128,7 @@ function LogoPicker({
 
   const seleccionar = (opcion) => {
     onNombre(opcion.nombre);
-    onLogoUrl(opcion.logoUrl || '');
+    onLogoUrl(absolutizarLogoUrl(opcion.logoUrl || ''));
     setMostrarSugerencias(false);
   };
 
