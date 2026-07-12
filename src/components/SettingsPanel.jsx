@@ -34,9 +34,17 @@ function SettingsPanel({
       'admin_dashboard',
       'invitados',
     ].includes(modulo.id));
-    const usuariosFiltrados = matrixPermisos.filter(
-      u => u.nombre.toLowerCase().includes(busquedaPermisos.toLowerCase()) && (filtroRolPermisos === 'Todos' || normalizarRol(u.rol) === normalizarRol(filtroRolPermisos))
-    );
+    const usuariosFiltrados = matrixPermisos.filter((u) => {
+      if (!u.nombre.toLowerCase().includes(busquedaPermisos.toLowerCase())) return false;
+      if (filtroRolPermisos === 'Todos') return true;
+
+      if (filtroRolPermisos === 'Deportista/Jugador') {
+        const rol = normalizarRol(u.rol);
+        return rol === 'jugador' || rol === 'deportista';
+      }
+
+      return normalizarRol(u.rol) === normalizarRol(filtroRolPermisos);
+    });
 
     return (
       <div style={{ padding: '12px', borderRadius: '24px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
@@ -49,7 +57,7 @@ function SettingsPanel({
           style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '16px', border: '1px solid var(--borde-suave)', fontSize: '12px', background: 'rgba(255,255,255,0.92)' }}
         />
         <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
-          {['Todos', 'Admin', 'Staff', 'Socio', 'Jugador'].map(r => (
+          {['Todos', 'Admin', 'Staff', 'Socio', 'Deportista/Jugador'].map(r => (
             <button
               key={r}
               onClick={() => setFiltroRolPermisos(r)}

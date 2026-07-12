@@ -884,6 +884,7 @@ function App() {
   };
 
   const toggleSettingsPanel = () => {
+    if (rolUsuario !== 'admin' && rolUsuario !== 'super_admin') return;
     setShowSettings((prev) => {
       const next = !prev;
       if (next) {
@@ -1882,9 +1883,11 @@ function App() {
         <div className="header-btn-zone right">
           {rolUsuario && (
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'flex-end', width: '100%', flexWrap: 'nowrap' }}>
-              <button ref={settingsButtonRef} className="btn-icon-header" onClick={toggleSettingsPanel} title="Configuración y Perfil">
-                <Settings size={24} color="#6B7280" strokeWidth={1.5} />
-              </button>
+              {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && (
+                <button ref={settingsButtonRef} className="btn-icon-header" onClick={toggleSettingsPanel} title="Configuración y Perfil">
+                  <Settings size={24} color="#6B7280" strokeWidth={1.5} />
+                </button>
+              )}
               <div
                 ref={notificationsButtonRef}
                 style={{position: 'relative', cursor: 'pointer'}}
@@ -1914,7 +1917,7 @@ function App() {
         }}
       />
 
-      {showSettings && (
+      {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && showSettings && (
         <div ref={settingsPanelRef} className="floating-panel settings-panel" style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
           <SettingsPanel
             rolUsuario={rolUsuario}
@@ -2288,7 +2291,7 @@ function App() {
             {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Trophy size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Torneo</span></div>}
             {puedeVerPantalla('jugador') && <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><QrCode size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Pase/Fixture</span></div>}
           </>
-        ) : rolUsuario === 'jugador' ? (
+        ) : (rolUsuario === 'jugador' || rolUsuario === 'deportista') ? (
           <>
             {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Muro</span></div>}
             {puedeVerPantalla('academia') && <div className={`nav-item ${pantallaActiva === 'academia' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('academia')}><BookOpen size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Academia</span></div>}

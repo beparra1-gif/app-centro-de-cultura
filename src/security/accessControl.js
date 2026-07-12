@@ -21,6 +21,7 @@ const MODULOS_ACCESO = [
 const ROLES_BASE = {
   visita: ['comunicaciones', 'jugador', 'mesa_publica'],
   jugador: ['comunicaciones', 'academia', 'jugador'],
+  deportista: ['comunicaciones', 'academia', 'jugador'],
   apoderado: ['comunicaciones', 'academia', 'perfil', 'jugador'],
   socio: ['comunicaciones', 'academia', 'perfil', 'jugador'],
   socio_apoderado: ['comunicaciones', 'academia', 'perfil', 'jugador'],
@@ -38,7 +39,11 @@ const PERMISOS_POR_DEFECTO = MODULOS_ACCESO.reduce((acumulado, modulo) => {
   return acumulado;
 }, {});
 
-const normalizarRol = (rol = '') => String(rol || '').trim().toLowerCase();
+const normalizarRol = (rol = '') => {
+  const rolNormalizado = String(rol || '').trim().toLowerCase();
+  if (rolNormalizado === 'deportista') return 'jugador';
+  return rolNormalizado;
+};
 
 const crearPermisosDesdeLista = (modulos = []) => {
   const permisos = { ...PERMISOS_POR_DEFECTO };

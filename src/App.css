@@ -588,6 +588,38 @@ button,
 .btn-secondary:hover { transform: translateY(-1px); background: linear-gradient(180deg, rgba(0, 122, 255, 0.16) 0%, rgba(0, 122, 255, 0.10) 100%); box-shadow: 0 8px 18px rgba(0,122,255,0.10); }
 .btn-secondary:active { transform: scale(0.96); }
 
+.filter-chip {
+  border: 1px solid rgba(0, 122, 255, 0.22);
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.14) 0%, rgba(0, 122, 255, 0.08) 100%);
+  color: var(--azul-electrico);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(0, 122, 255, 0.12);
+}
+
+.filter-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(0, 122, 255, 0.18);
+}
+
+.filter-chip.active {
+  background: linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%);
+  color: white;
+  border-color: rgba(0, 122, 255, 0.45);
+}
+
+.sub-category-chip {
+  padding: 9px 16px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  font-size: 12px;
+  min-width: 86px;
+}
+
 .btn-modificar {
   border: 1px solid rgba(0, 122, 255, 0.28);
   background: linear-gradient(180deg, rgba(0, 122, 255, 0.16) 0%, rgba(0, 122, 255, 0.1) 100%);

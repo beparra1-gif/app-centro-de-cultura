@@ -1,7 +1,7 @@
 import { Users } from 'lucide-react';
 
 export default function PupiloSelector({ pupilos, pupiloActivo, rolUsuario, onChangePupilo }) {
-  if (!pupilos || pupilos.length <= 1 || rolUsuario === 'jugador') {
+  if (!pupilos || pupilos.length <= 1 || rolUsuario === 'jugador' || rolUsuario === 'deportista') {
     return null;
   }
 

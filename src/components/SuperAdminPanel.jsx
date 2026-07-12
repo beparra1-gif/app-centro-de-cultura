@@ -34,6 +34,7 @@ import ReportesPanel from './ReportesPanel';
 import SaludAlertasPanel from './SaludAlertasPanel';
 import SaludDashboardPanel from './SaludDashboardPanel';
 import SaludTimelinePanel from './SaludTimelinePanel';
+import SettingsPanel from './SettingsPanel';
 
 function SuperAdminPanel({
   vistaAdmin,
@@ -131,6 +132,8 @@ function SuperAdminPanel({
   const [filtroRamaJugadores, setFiltroRamaJugadores] = useState('todas');
   const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState('todas');
   const [filtroPupiloManual, setFiltroPupiloManual] = useState('');
+  const [busquedaPermisosAjustes, setBusquedaPermisosAjustes] = useState('');
+  const [filtroRolPermisosAjustes, setFiltroRolPermisosAjustes] = useState('Todos');
   // Snapshot of override state captured when an edit opens; used to revert on cancel.
   const [permisosSnapshotAntesEdicion, setPermisosSnapshotAntesEdicion] = useState(null);
 
@@ -294,6 +297,7 @@ function SuperAdminPanel({
     { value: 'socio_apoderado', label: 'Socio / Apoderado' },
     { value: 'directiva', label: 'Directiva' },
     { value: 'staff', label: 'Staff' },
+    { value: 'jugador', label: 'Deportista / Jugador' },
     { value: 'admin', label: 'Admin' },
     { value: 'super_admin', label: 'Super Admin' },
   ];
@@ -372,6 +376,31 @@ function SuperAdminPanel({
     return [...new Set(valores)].sort((a, b) => a.localeCompare(b, 'es'));
   }, [jugadoresAdmin]);
 
+  const obtenerNivelCategoria = (categoria = '') => {
+    const valor = String(categoria || '').trim().toLowerCase();
+    if (!valor || valor === 'todas' || valor === 'general') return null;
+
+    const match = valor.match(/(?:sub|u)[\s\-_]?(\d{1,2})/i);
+    if (!match) return null;
+
+    const nivel = Number(match[1]);
+    return Number.isFinite(nivel) ? nivel : null;
+  };
+
+  const categoriasExtraCitacionPermitidas = useMemo(() => {
+    const nivelBase = obtenerNivelCategoria(citaCategoria);
+    if (!Number.isFinite(nivelBase)) return [];
+
+    return categoriasUnicas.filter((cat) => {
+      const nivel = obtenerNivelCategoria(cat);
+      return Number.isFinite(nivel) && nivel < nivelBase;
+    });
+  }, [categoriasUnicas, citaCategoria]);
+
+  useEffect(() => {
+    setCategoriasExtraCitacion((prev) => prev.filter((cat) => categoriasExtraCitacionPermitidas.includes(cat)));
+  }, [categoriasExtraCitacionPermitidas]);
+
   const pagosPendientesReales = useMemo(
     () => (pagosPendientesAdmin || []).filter((p) => {
       const estado = (p.estado_pago || '').toLowerCase();
@@ -440,7 +469,10 @@ function SuperAdminPanel({
     const cuentas = (cuentasAdmin || []).map((c) => ({
       id: `cuenta-${c.id}`,
       tipo: 'cuenta',
-      perfil: (c.perfil_principal || c.rol || 'apoderado').toLowerCase(),
+      perfil: (() => {
+        const perfil = String(c.perfil_principal || c.rol || 'apoderado').toLowerCase();
+        return perfil === 'deportista' ? 'jugador' : perfil;
+      })(),
       nombre: `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || c.correo,
       busqueda: `${c.nombres || ''} ${c.apellido_paterno || ''} ${c.apellido_materno || ''} ${c.correo || ''} ${c.rut || ''} ${c.rol || ''} ${c.perfil_principal || ''} ${c.cargo_directiva || ''}`.toLowerCase(),
       rama: null,
@@ -1274,6 +1306,12 @@ function SuperAdminPanel({
   const toggleCategoriaExtraCitacion = (categoria) => {
     const valor = String(categoria || '').trim();
     if (!valor || valor.toLowerCase() === 'todas') return;
+
+    if (!categoriasExtraCitacionPermitidas.includes(valor)) {
+      alert('Solo puedes citar categorías menores a la categoría base oficial.');
+      return;
+    }
+
     setCategoriasExtraCitacion((prev) => (
       prev.includes(valor)
         ? prev.filter((c) => c !== valor)
@@ -1706,7 +1744,7 @@ function SuperAdminPanel({
                 <label>Tipo de perfil</label>
                 <select className="form-input" value={filtroTipoPerfil} onChange={(e) => setFiltroTipoPerfil(e.target.value)}>
                   <option value="todos">Todos</option>
-                  <option value="jugador">Jugador</option>
+                  <option value="jugador">Deportista / Jugador</option>
                   <option value="apoderado">Apoderado</option>
                     <option value="socio">Socio</option>
                     <option value="socio_apoderado">Socio / Apoderado</option>
@@ -1778,7 +1816,7 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Teléfono</label><input className="form-input" value={cuentaAdminEdit.telefono || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, telefono: e.target.value }))} /></div>
                 <div className="form-group"><label>Dirección</label><input className="form-input" value={cuentaAdminEdit.direccion || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, direccion: e.target.value }))} /></div>
                 <div className="form-group"><label>Comuna</label><input className="form-input" value={cuentaAdminEdit.comuna || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, comuna: e.target.value }))} /></div>
-                <div className="form-group"><label>Rol de acceso</label><select className="form-input" value={cuentaAdminEdit.rol || 'apoderado'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rol: e.target.value }))}><option value="apoderado">Apoderado</option><option value="staff">Staff</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
+                <div className="form-group"><label>Rol de acceso</label><select className="form-input" value={cuentaAdminEdit.rol || 'apoderado'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rol: e.target.value }))}><option value="apoderado">Apoderado</option><option value="staff">Staff</option><option value="jugador">Deportista / Jugador</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
                 <div className="form-group"><label>Perfil principal</label><select className="form-input" value={cuentaAdminEdit.perfil_principal || 'apoderado'} onChange={(e) => actualizarCuentaAdminEdit({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={cuentaAdminEdit.acceso_nivel || 'estandar'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, acceso_nivel: e.target.value }))}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
@@ -1954,7 +1992,7 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
                 <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
                 <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
-                <div className="form-group"><label>Rol de acceso *</label><select className="form-input" value={nuevaCuenta.rol} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rol: e.target.value }))}><option value="apoderado">Apoderado</option><option value="staff">Staff</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
+                <div className="form-group"><label>Rol de acceso *</label><select className="form-input" value={nuevaCuenta.rol} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rol: e.target.value }))}><option value="apoderado">Apoderado</option><option value="staff">Staff</option><option value="jugador">Deportista / Jugador</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
                 <div className="form-group"><label>Perfil principal *</label><select className="form-input" value={nuevaCuenta.perfil_principal || 'apoderado'} onChange={(e) => actualizarNuevaCuenta({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={nuevaCuenta.cargo_directiva || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-new-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={nuevaCuenta.acceso_nivel || 'estandar'} onChange={(e) => setNuevaCuenta((p) => ({ ...p, acceso_nivel: e.target.value }))}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
@@ -2451,16 +2489,16 @@ function SuperAdminPanel({
 
             <div style={{ marginBottom: '12px' }}>
               <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Citar jugadoras de otras categorías
+                Citar jugadoras de otras categorías (solo menores)
               </label>
               <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {categoriasUnicas.map((cat) => {
+                {categoriasExtraCitacionPermitidas.map((cat) => {
                   const activa = categoriasExtraCitacion.includes(cat);
                   return (
                     <button
                       key={`cat-extra-${cat}`}
                       type="button"
-                      className="filter-chip"
+                      className="filter-chip sub-category-chip"
                       style={{
                         border: '1px solid rgba(0,122,255,0.24)',
                         background: activa ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.08)',
@@ -2474,6 +2512,16 @@ function SuperAdminPanel({
                   );
                 })}
               </div>
+              {citaCategoria === 'todas' && (
+                <p style={{ marginTop: '8px', marginBottom: 0, fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                  Selecciona primero una categoría base oficial para habilitar categorías menores.
+                </p>
+              )}
+              {citaCategoria !== 'todas' && categoriasExtraCitacionPermitidas.length === 0 && (
+                <p style={{ marginTop: '8px', marginBottom: 0, fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                  No hay categorías menores disponibles para la base seleccionada.
+                </p>
+              )}
             </div>
 
             <div className="card" style={{ marginBottom: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
@@ -3249,7 +3297,23 @@ function SuperAdminPanel({
       {vistaAdmin === 'permisos' && (
         <div className="fade-in card">
           <h4 className="form-subtitle">Permisos de Sistema</h4>
-          <p>Gestión de permisos activa. Configura accesos por rol y módulo según políticas del club.</p>
+          <p style={{ marginTop: 0, marginBottom: '10px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+            Aquí puedes administrar permisos por usuario con la misma lógica del panel de configuración del header.
+          </p>
+          <SettingsPanel
+            rolUsuario="super_admin"
+            busquedaPermisos={busquedaPermisosAjustes}
+            setBusquedaPermisos={setBusquedaPermisosAjustes}
+            filtroRolPermisos={filtroRolPermisosAjustes}
+            setFiltroRolPermisos={setFiltroRolPermisosAjustes}
+            matrixPermisos={matrixPermisos || []}
+            togglePermiso={togglePermiso}
+            preferenciasSonido={{}}
+            setPreferenciasSonido={() => {}}
+            reproducirSonido={() => {}}
+            onProbarPush={() => {}}
+            onCerrarConfiguracion={() => setVistaAdmin('dashboard')}
+          />
         </div>
       )}
 
