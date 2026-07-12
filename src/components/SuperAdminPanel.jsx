@@ -278,6 +278,9 @@ function SuperAdminPanel({
   const [subiendoLogoAsset, setSubiendoLogoAsset] = useState(false);
   const [progresoLogoAsset, setProgresoLogoAsset] = useState(0);
   const [logoAssetUrl, setLogoAssetUrl] = useState('');
+  const [logosDisponiblesActivos, setLogosDisponiblesActivos] = useState([]);
+  const [cargandoLogosDisponibles, setCargandoLogosDisponibles] = useState(false);
+  const [errorLogosDisponibles, setErrorLogosDisponibles] = useState('');
 
   // --- PAGOS: FORMULARIO Y PAGINACIÓN ---
   const [mostrarFormularioPago, setMostrarFormularioPago] = useState(false);
@@ -1120,6 +1123,7 @@ function SuperAdminPanel({
       const urlLogo = resultado?.url || '';
       setLogoAssetUrl(urlLogo);
       setProgresoLogoAsset(100);
+      await cargarLogosDisponiblesActivos();
 
       setLogoAssetForm({ nombre: '', tipo: 'club', archivo: null });
       alert(`Logo guardado en ${resultado.url}`);
@@ -1130,6 +1134,26 @@ function SuperAdminPanel({
       setTimeout(() => setProgresoLogoAsset(0), 1200);
     }
   };
+
+  const cargarLogosDisponiblesActivos = async () => {
+    try {
+      setCargandoLogosDisponibles(true);
+      setErrorLogosDisponibles('');
+      const resultado = await api.assetsAPI.listLogos();
+      const logos = Array.isArray(resultado?.logos) ? resultado.logos : [];
+      setLogosDisponiblesActivos(logos);
+    } catch (error) {
+      setLogosDisponiblesActivos([]);
+      setErrorLogosDisponibles(error.message || 'No se pudo cargar el listado de logos.');
+    } finally {
+      setCargandoLogosDisponibles(false);
+    }
+  };
+
+  useEffect(() => {
+    if (vistaAdmin !== 'activos') return;
+    cargarLogosDisponiblesActivos();
+  }, [vistaAdmin]);
 
   const guardarEdicionJugadorVisita = async () => {
     if (!jugadorVisitaEdit?.id_visita) return;
@@ -2113,6 +2137,54 @@ function SuperAdminPanel({
                 <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)' }}>
                   {subiendoLogoAsset ? `Subiendo logo... ${progresoLogoAsset}%` : 'Logo subido correctamente'}
                 </div>
+              </div>
+            )}
+          </div>
+
+          <div className="card" style={{ borderRadius: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+              <h4 className="form-subtitle" style={{ margin: 0 }}><Image size={16} /> Logos disponibles</h4>
+              <button className="btn-secondary" onClick={cargarLogosDisponiblesActivos} disabled={cargandoLogosDisponibles}>
+                <RefreshCcw size={14} /> {cargandoLogosDisponibles ? 'Actualizando...' : 'Actualizar listado'}
+              </button>
+            </div>
+            <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+              Revisa aquí todos los logos detectados para confirmar si falta alguno por subir.
+            </p>
+
+            {errorLogosDisponibles && (
+              <div style={{ fontSize: '12px', color: '#b91c1c', fontWeight: '700', marginBottom: '10px' }}>
+                No se pudo cargar el listado: {errorLogosDisponibles}
+              </div>
+            )}
+
+            {!errorLogosDisponibles && cargandoLogosDisponibles && (
+              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
+                Cargando logos disponibles...
+              </p>
+            )}
+
+            {!errorLogosDisponibles && !cargandoLogosDisponibles && logosDisponiblesActivos.length === 0 && (
+              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
+                Aún no se detectan logos cargados.
+              </p>
+            )}
+
+            {!errorLogosDisponibles && logosDisponiblesActivos.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
+                {logosDisponiblesActivos.map((logo) => (
+                  <div key={logo.filename || logo.url} style={{ border: '1px solid rgba(15,23,42,0.08)', borderRadius: '14px', padding: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <LogoAvatar nombre={logo.nombre || logo.filename || 'Logo'} logoUrl={logo.url || ''} size={36} borderRadius="10px" />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-principal)', wordBreak: 'break-word' }}>
+                        {logo.nombre || logo.filename || 'Sin nombre'}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', wordBreak: 'break-word' }}>
+                        {logo.filename || logo.url || ''}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
