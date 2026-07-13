@@ -3,6 +3,7 @@ import { ArrowRightLeft, FileText, Filter, Shield, Tv, Users } from 'lucide-reac
 import { nextId } from '../utils/runtimeId';
 import { calcularEff } from '../utils/appHelpers';
 import LogoAvatar from './LogoAvatar';
+import LogoPicker from './LogoPicker';
 import { normalizarSlugLogo } from '../utils/logoResolver';
 
 const LIMITE_JUGADORES_POR_EQUIPO = 12;
@@ -85,9 +86,12 @@ function MesaControlPanel({
   const [filtroRama, setFiltroRama] = useState('Todas');
   const [filtroCategoria, setFiltroCategoria] = useState('Todas');
   const [filtroCompeticion, setFiltroCompeticion] = useState('Todas');
-  const [busquedaEquipo, setBusquedaEquipo] = useState('');
   const [equipoLocalKey, setEquipoLocalKey] = useState('LOCAL_DEFAULT');
   const [equipoVisitaKey, setEquipoVisitaKey] = useState('VISITA_DEFAULT');
+  const [clubLocalNombre, setClubLocalNombre] = useState('Centro de Cultura Física');
+  const [clubLocalLogoUrl, setClubLocalLogoUrl] = useState('/logos/club-logo.png');
+  const [clubVisitaNombre, setClubVisitaNombre] = useState('Visitante');
+  const [clubVisitaLogoUrl, setClubVisitaLogoUrl] = useState('');
   const [partidoIniciado, setPartidoIniciado] = useState(false);
   const [ultimoGuardadoAt, setUltimoGuardadoAt] = useState('');
   const [quintetoLocalIds, setQuintetoLocalIds] = useState([]);
@@ -210,6 +214,31 @@ function MesaControlPanel({
     return construirOpcionesFiltro(valores);
   }, [rosterNormalizado, opcionesCompeticionPartidos, equiposDesdePartidos]);
 
+  const equiposDesdeClubPicker = useMemo(() => {
+    const equipos = [];
+    if (normalizarTexto(clubLocalNombre)) {
+      equipos.push({
+        key: construirEquipoKey(clubLocalNombre, clubLocalLogoUrl),
+        nombre: normalizarTexto(clubLocalNombre),
+        logoUrl: normalizarTexto(clubLocalLogoUrl),
+        ramas: [],
+        categorias: [],
+        competiciones: [],
+      });
+    }
+    if (normalizarTexto(clubVisitaNombre)) {
+      equipos.push({
+        key: construirEquipoKey(clubVisitaNombre, clubVisitaLogoUrl),
+        nombre: normalizarTexto(clubVisitaNombre),
+        logoUrl: normalizarTexto(clubVisitaLogoUrl),
+        ramas: [],
+        categorias: [],
+        competiciones: [],
+      });
+    }
+    return equipos;
+  }, [clubLocalNombre, clubLocalLogoUrl, clubVisitaNombre, clubVisitaLogoUrl]);
+
   const equiposDisponibles = useMemo(() => {
     const map = new Map();
     const upsert = ({ key, nombre, logoUrl, ramas = [], categorias = [], competiciones = [] }) => {
@@ -235,6 +264,7 @@ function MesaControlPanel({
       });
     };
 
+    equiposDesdeClubPicker.forEach((e) => upsert(e));
     equiposDesdePartidos.forEach((e) => upsert(e));
 
     rosterNormalizado.forEach((j) => {
@@ -270,18 +300,31 @@ function MesaControlPanel({
     }
 
     return Array.from(map.values());
-  }, [equiposDesdePartidos, rosterNormalizado, liveScore.equipoLocalNombre, liveScore.equipoLocalLogoUrl, liveScore.equipoVisitaNombre, liveScore.equipoVisitaLogoUrl]);
+  }, [equiposDesdePartidos, equiposDesdeClubPicker, rosterNormalizado, liveScore.equipoLocalNombre, liveScore.equipoLocalLogoUrl, liveScore.equipoVisitaNombre, liveScore.equipoVisitaLogoUrl]);
 
-  const equiposFiltrados = useMemo(() => {
-    const texto = normalizarSlugLogo(busquedaEquipo || '');
-    return equiposDisponibles.filter((equipo) => {
+  const equiposFiltrados = useMemo(() => (
+    equiposDisponibles.filter((equipo) => {
       const okRama = filtroRama === 'Todas' || !equipo.ramas?.length || equipo.ramas.some((rama) => coincideFiltro(rama, filtroRama));
       const okCategoria = filtroCategoria === 'Todas' || !equipo.categorias?.length || equipo.categorias.some((categoria) => coincideFiltro(categoria, filtroCategoria));
       const okCompeticion = filtroCompeticion === 'Todas' || !equipo.competiciones?.length || equipo.competiciones.some((competicion) => coincideFiltro(competicion, filtroCompeticion));
-      const okBusqueda = !texto || normalizarSlugLogo(equipo.nombre).includes(texto);
-      return okRama && okCategoria && okCompeticion && okBusqueda;
-    });
-  }, [equiposDisponibles, busquedaEquipo, filtroRama, filtroCategoria, filtroCompeticion]);
+      return okRama && okCategoria && okCompeticion;
+    })
+  ), [equiposDisponibles, filtroRama, filtroCategoria, filtroCompeticion]);
+
+  useEffect(() => {
+    const localKey = construirEquipoKey(clubLocalNombre, clubLocalLogoUrl);
+    if (normalizarTexto(clubLocalNombre) && localKey !== equipoLocalKey) {
+      setEquipoLocalKey(localKey);
+    }
+  }, [clubLocalNombre, clubLocalLogoUrl, equipoLocalKey]);
+
+  useEffect(() => {
+    if (modoAnalisis !== 'dos') return;
+    const visitaKey = construirEquipoKey(clubVisitaNombre, clubVisitaLogoUrl);
+    if (normalizarTexto(clubVisitaNombre) && visitaKey !== equipoVisitaKey) {
+      setEquipoVisitaKey(visitaKey);
+    }
+  }, [clubVisitaNombre, clubVisitaLogoUrl, equipoVisitaKey, modoAnalisis]);
 
   useEffect(() => {
     if (!equiposFiltrados.find((e) => e.key === equipoLocalKey)) {
@@ -297,6 +340,12 @@ function MesaControlPanel({
 
   useEffect(() => {
     if (!equipoLocal) return;
+    setClubLocalNombre(equipoLocal.nombre || 'Centro de Cultura Física');
+    setClubLocalLogoUrl(equipoLocal.logoUrl || '/logos/club-logo.png');
+    if (modoAnalisis === 'dos' && equipoVisita) {
+      setClubVisitaNombre(equipoVisita.nombre || 'Visitante');
+      setClubVisitaLogoUrl(equipoVisita.logoUrl || '');
+    }
     setLiveScore((prev) => ({
       ...prev,
       equipoLocalNombre: equipoLocal.nombre || prev.equipoLocalNombre,
@@ -668,16 +717,6 @@ function MesaControlPanel({
 
       <div className="mesa-filtros-grid card mb-15">
         <label className="mesa-filter-item">
-          <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Buscar Equipo / Logo</span>
-          <input
-            className="form-input"
-            value={busquedaEquipo}
-            onChange={(e) => setBusquedaEquipo(e.target.value)}
-            placeholder="Ej: CCF, rival, club..."
-          />
-        </label>
-
-        <label className="mesa-filter-item">
           <span><Filter size={14} color="#6B7280" strokeWidth={1.5} /> Rama</span>
           <select className="form-input" value={filtroRama} onChange={(e) => setFiltroRama(e.target.value)}>
             {opcionesRama.map((op) => <option key={op} value={op}>{op}</option>)}
@@ -698,20 +737,32 @@ function MesaControlPanel({
           </select>
         </label>
 
-        <label className="mesa-filter-item">
-          <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Equipo Local</span>
-          <select className="form-input" value={equipoLocalKey} onChange={(e) => setEquipoLocalKey(e.target.value)}>
-            {equiposFiltrados.map((e) => <option key={e.key} value={e.key}>{e.nombre}</option>)}
-          </select>
-        </label>
+        <div className="mesa-filter-item">
+          <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Local (logo automático)</span>
+          <LogoPicker
+            nombre={clubLocalNombre}
+            onNombre={setClubLocalNombre}
+            logoUrl={clubLocalLogoUrl}
+            onLogoUrl={setClubLocalLogoUrl}
+            tipo="club"
+            placeholder="Escribe club local"
+            logoSize={30}
+          />
+        </div>
 
         {modoAnalisis === 'dos' && (
-          <label className="mesa-filter-item">
-            <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Equipo Visita</span>
-            <select className="form-input" value={equipoVisitaKey} onChange={(e) => setEquipoVisitaKey(e.target.value)}>
-              {equiposFiltrados.map((e) => <option key={e.key} value={e.key}>{e.nombre}</option>)}
-            </select>
-          </label>
+          <div className="mesa-filter-item">
+            <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Visita (logo automático)</span>
+            <LogoPicker
+              nombre={clubVisitaNombre}
+              onNombre={setClubVisitaNombre}
+              logoUrl={clubVisitaLogoUrl}
+              onLogoUrl={setClubVisitaLogoUrl}
+              tipo="club"
+              placeholder="Escribe club visita"
+              logoSize={30}
+            />
+          </div>
         )}
       </div>
 

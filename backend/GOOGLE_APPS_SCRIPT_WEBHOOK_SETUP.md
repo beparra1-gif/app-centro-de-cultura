@@ -28,9 +28,101 @@ Notas:
 
 ```javascript
 const WEBHOOK_TOKEN = 'REEMPLAZAR_TOKEN';
+const SCRIPT_VERSION = 'strict-schema-v4-2026-07-13';
+const USE_TABLE_WHITELIST = false;
+
+const KNOWN_SHEETS = new Set([
+  'CUENTAS',
+  'ENCUESTAS',
+  'ENCUESTAS_RESPUESTAS',
+  'PAGOS_MENSUALIDADES',
+  'EGRESOS',
+  'ALERTAS',
+  'ASISTENCIA',
+  'EVENTOS',
+  'CAJA_EVENTO_KIOSCO',
+  'MARCAS_TIEMPO',
+  'CATALOGO_INVENTARIO',
+  'QUIZ_PREGUNTAS',
+  'PIZARRA_TACTICA',
+  'ASISTENCIA_EVENTOS',
+  'CONVOCATORIAS',
+  'AUDITORIA_CAMBIOS',
+  'PARTIDOS_LIVE',
+  'JUGADORES',
+  'EVALUACIONES',
+  'JUGADORES_VISITA',
+  'STAFF',
+  'AUDITORIA',
+  'ZZZ_TEST_SYNC',
+  'ESTADISTICAS_STATS',
+  'GAMIFICACION_PUNTOS',
+  'TORNEOS',
+  'CLUBES',
+  'RESULTADOS',
+  'COMUNICACIONES',
+  'LESIONES',
+  'DISCIPLINA',
+  'ENTRENAMIENTOS'
+]);
+
+const SHEET_ALIASES = {
+  ESTADISTICAS: 'ESTADISTICAS_STATS'
+};
+
+const ALLOWED_FIELDS_BY_TABLE = {
+  JUGADORES: [
+    'RUT_JUGADOR','CORREO_APODERADO','CORREO_JUGADOR','PASSWORD_JUGADOR','FORZAR_CLAVE_JUGADOR','PARENTESCO_APODERADO','NOMBRES','APELLIDO_PATERNO','APELLIDO_MATERNO','FECHA_NACIMIENTO','AÑO_NACIMIENTO','COLEGIO','RAMA','CATEGORIA','POSICION_DE_JUEGO','ESTATURA','PESO','MANO_HABIL','NUMERO_CAMISETA','CLUB_ANTERIOR','FECHA_INGRESO','MES_INICIO_COBRO','BECA','VALOR_MENSUALIDAD','MATRICULA_PAGADA','TALLA_CAMISETA','TALLA_SHORT','POLERA ENTREGADA','POLERON_ENTREGADO','DERECHOS_IMAGEN','PREVISION','TIPO_SANGRE','ALERGIAS','NOMBRE_EMERGENCIA','PARENTESCO_EMERGENCIA','NUM_EMERGENCIA','ESTADO','FOTO_JUGADOR','ESTADO_DEPORTIVO','FECHA_INICIO_BAJA','FECHA_FIN_BAJA','XP_PUNTOS'
+  ],
+  PAGOS_MENSUALIDADES: ['ID_PAGO','FECHA_REGISTRO','RUT_PAGOS','CONCEPTO_PAGO','CANTIDAD_MESES_PAGADOS','MESES_CORRESPONDIENTES','MONTO_TOTAL_PAGADO','COMPROBANTE_URL','ESTADO_PAGO','FECHA_APROBACION','NOTAS_TESORERIA'],
+  EGRESOS: ['ID_EGRESO','FECHA_GASTO','DETALLE_DESCRIPCION','MONTO_PAGADO','ID_TORNEO_O_PARTIDO','COMPROBANTE_GASTO_URL','RUT_RESPONSABLE','CATEGORIA_EGRESO','METODO_PAGO'],
+  ALERTAS: ['ID_ALERTA','FECHA_EMISION','TIPO','FECHA_AFECTADA','HORA_AFECTADA','CATEGORIA_DESTINO','MENSAJE','ENTRENADOR_AUTOR'],
+  ASISTENCIA: ['ID_ASISTENCIA','FECHA','RAMA','CATEGORIA','RUT_JUGADOR','ESTADO_ASISTENCIA','OBSERVACION','ENTRENADOR_CARGO'],
+  EVENTOS: ['ID_EVENTO','FECHA','HORA','TITULO','LUGAR','DESCRIPCION'],
+  CAJA_EVENTO_KIOSCO: ['ID TRANSACCION','ID_EVENTO','FECHA_HORA','TIPO MOVIMIENTO','ID_PRODUCTO','PRODUCTO_O_CONCEPTO','CANTIDAD','PRECIO_UNITARIO','MONTO_TOTAL','MEDIO_PAGO','RUT_VOLUNTARIO'],
+  MARCAS_TIEMPO: ['ID_MARCA','ID_PARTIDO','EQUIPO','RUT_JUGADOR','NOMBRE_JUGADOR','DORSAL','TIEMPO_RELOJ_REAL','TIEMPO_JUEGO','TIPO_DESTACADO','DESCRIPCION_EDICION'],
+  CATALOGO_INVENTARIO: ['ID_PRODUCTO','CATEGORIA','NOMBRE_PRODUCTO','COSTO_COMPRA','PRECIO_VENTA','STOCK_ACTUAL','STOCK_CRITICO','ESTADO_PRODUCTO'],
+  QUIZ_PREGUNTAS: ['ID_PREGUNTA','ID_LECCION','PREGUNTA','OPCION_A','OPCION_B','OPCION_C','RESPUESTA_CORRECTA','EXPLICACION_RESPUESTA'],
+  PIZARRA_TACTICA: ['ID_LECCION','FECHA_PUBLICACION','RUT_AUTOR','RAMA_DESTINO','CATEGORIA_DESTINO','TITULO_LECCION','TIPO_CONTENIDO','ETIQUETAS','MULTIMEDIA_URL','PUNTOS_ENFASIS','ESTADO_PUBLICACION'],
+  ASISTENCIA_EVENTOS: ['ID_ASISTENCIA','ID_EVENTO','RUT_JUGADOR','ESTADO_CONFIRMACION','MOTIVO_AUSENCIA','NECESITA_TRANSPORTE','CUPOS_AUTOS_OFRECIDOS','RESERVA_BUS_ACOMAPAÑANTE','ASISTENCIA_REAL_CANCHA'],
+  CONVOCATORIAS: ['ID_CONV','FECHA_CREACION','RAMA','CATEGORIA','COMPETENCIA','DIA_PARTIDO','HORA_CITACION','HORA_PARTIDO','LUGAR','TITULARES','RESERVAS','ENTRENADOR','ESTADO'],
+  AUDITORIA_CAMBIOS: ['event_time','table','action','path','status_code','actor_id','actor_rut','actor_rol','params_json','body_json','_event_action','_event_time','_event_path','_event_status_code','_actor_id','_actor_rut','_actor_rol','_event_id','note','run_at'],
+  PARTIDOS_LIVE: ['ID_PARTIDO','ID_TORNEO','FECHA_HORA','CANCHA_SEDE','CATEGORIA_RAMA','EQUIPO_LOCAL','EQUIPO_VISITANTE','MODO_ESTADISTICA','PERIODO ACTUAL','PTS_LOCAL','PTS_VISITANTE','FALTAS_LOCAL_CUARTO','FALTAS_VISITA_CUARTO','TIEMPOS_MUERTOS_LOCAL','TIEMPOS_MUERTOS_VISITA','ESTADO_JUEGO','LINK_TRANSMISION_VIVO','RUT_PLANILLERO','FLECHA_POSESION','BONUS_LOCAL','BONUS_VISITANTE','RELOJ_PARTIDO','ARBITRO_PRINCIPAL','ARBITRO_ASISTENTE'],
+  EVALUACIONES: ['ID_EVALUACIONES','FECHA_EVALUACION','RUT_JUGADOR','RUT_EVALUADOR','PORCENTAJE_ASISTENCIA','RADAR_TIRO','RADAR_DEFENSA','RADAR_DRIBBLING','RADAR_FISICO','RADAR_INTELIGENCIA_TACTICA','FORTALEZA_ACTUAL','ASPECTO_A_MEJORAR','METAS_CORTOPLAZO','COMENTARIOS_GENERALES','ACUSE_RECIBO_APODERADO'],
+  JUGADORES_VISITA: ['ID_JUGADOR_VISITA','ID_EQUIPO_VISITANTE','RUT_JUGADOR','NOMBRE_COMPLETO','DORSAL','CATEGORIA_RAMA','ID_PARTIDO_ASOCIADO','TELEFONO_CONTACTO','ENTRENADOR_VISITA','ASISTENTE_VISITA'],
+  STAFF: ['CORREO','RUT_O_ID','PASSWORD','NOMBRES','APELLIDOS_MATERNO','APELLIDO_PATERNO','FECHA_NACIMIENTO','ROL','CARGO','BIO','CERTIFICACIONES','FOTO_PERFIL_URL','ESTADO'],
+  AUDITORIA: ['ID_LOG','TIMESTAMP','USUARIO','ACCION','DETALLE'],
+  ZZZ_TEST_SYNC: ['_event_action','_event_time','_event_path','_event_status_code','_actor_id','_actor_rut','_actor_rol','created_at','marker','_event_id'],
+  ESTADISTICAS_STATS: ['ID_REGISTRO','ID_PARTIDO','EQUIPO','RUT_JUGADOR','NOMBRE_JUGADOR','DORSAL','TIROS_LIBRES_ANOTADOS','DOBLES_ANOTADOS','TRIPLES_ANOTADOS','TOTAL_PUNTOS','REBOTES_TOTALES','ASISTENCIAS','ROBOS','BLOQUEOS','PERDIDAS','FALTAS_PERSONALES','VALORACION_EFF','NOTAS_SCOUTING_DT'],
+  GAMIFICACION_PUNTOS: ['ID_REGISTRO','FECHA','RUT_JUGADOR','ID_LECCION','VIDEO_VISTO','PREGUNTAS_CORRECTAS','TOTAL_PREGUNTAS','PUNTOS_AUTOMATICOS_GANADOS'],
+  TORNEOS: ['ID_TORNEO','NOMBRE_TORNEO','ORGANIZADOR','CATEGORIAS_INCLUIDAS','RAMA','FECHA_INICIO','FECHA_TERMINO','ESTADO_TORNEO','BASES_TORNEO_URL','FIXTURE_DOCUMENTOS_URL'],
+  CLUBES: ['ID_CLUB','NOMBRE_OFICIAL','NOMBRE_CORTO','LOGO_URL','COLOR_PRIMARIO','COLOR_SECUNDARIO','CIUDAD_ORIGEN','ASOCIACION_LIGA','DIRECCION_SEDE_GIMNASIO'],
+  RESULTADOS: ['ID_RESULTADO','ID_PARTIDO','FECHA_PUBLICACION','RIVAL','PTS_CCF','PTS_RIVAL','RESULTADO_FINAL','CONTEXTO_JUEGO','FRASE_MOTIVACIONAL','FOTO_DESTACADA_URL','ESTADO_PUBLICACION'],
+  COMUNICACIONES: ['ID_POST','FECHA','AUTOR_RUT','TIPO_COMUNICADO','TITULO','LIKES','COOMENTARIOS','CUERPO_TEXTO','IMAGEN_ADJUNTA_URL','LINK_ADJUNTO','RAMA_DESTINO','CATEGORIA_DESTINO','ACUSE_DE_RECIBO','ESTADO_AVISO','FECHA_EXPIRACION','NOTIFICACION_PUSH'],
+  CUENTAS: ['CORREO_APODERADO','RUT','PASSWORD','NOMBRES','APELLIDO_PATERNO','APELLIDO_MATERNO','FECHA_NACIMIENTO','ESTADO_CIVIL','DIRECCION','COMUNA','PREFIJO_TEL','TELEFONO','PROFESIÓN_OFICIO','NOMBRE_SEGUNDO_CONTACTO','PARENTESCO_SEGUNDO_CONTACTO','NUM_SEGUNDO_CONTACTO','ES_SOCIO','FECHA_INGRESO_SOCIO','ROL','FORZAR_CLAVE','FOTO_PERFIL_URL','ESTADO','AUTORIZACION_IMAGEN','DIA_PAGO_ACORDADO'],
+  ENCUESTAS: ['ID','PREGUNTA','OPCIONES','VOTOS'],
+  ENCUESTAS_RESPUESTAS: ['ID_ENCUESTA','RUT_RESPONDENTE','OPCION_SELECCIONADA','COMENTARIO_ADICIONAL'],
+  LESIONES: ['RUT_JUGADOR','TIPO_LESION','DESCRIPCION','FECHA_LESION','FECHA_RECUPERACION_ESTIMADA','MEDICO_TRATANTE','ESTADO_LESION'],
+  DISCIPLINA: ['RUT_JUGADOR','TIPO_SANCION','RAZON_SANCION','FECHA_SANCION','DURACION_DIAS','MULTA_APLICADA','APLICADA_POR','ESTADO'],
+  ENTRENAMIENTOS: ['RAMA','CATEGORIA','FECHA_ENTRENAMIENTO','HORA_INICIO','HORA_FIN','LUGAR','ENTRENADOR_A_CARGO','TEMA_ENTRENAMIENTO','CAPACIDAD']
+};
+
+const ALLOWED_CANONICAL_BY_TABLE = Object.fromEntries(
+  Object.entries(ALLOWED_FIELDS_BY_TABLE).map(([table, headers]) => [
+    table,
+    new Set(headers.map((h) => normalizeHeaderKey(h)))
+  ])
+);
 
 function normalizeTableName(name) {
   return String(name || '').trim().toUpperCase();
+}
+
+function resolveSheetName(tableName) {
+  const normalized = normalizeTableName(tableName || 'AUDITORIA_CAMBIOS');
+  const aliased = SHEET_ALIASES[normalized] || normalized;
+  if (KNOWN_SHEETS.has(aliased)) return aliased;
+  return 'AUDITORIA_CAMBIOS';
 }
 
 function ensureSheet(ss, name) {
@@ -53,59 +145,86 @@ function getHeaderMap(sheet) {
   return map;
 }
 
-function ensureHeaders(sheet, keys) {
-  const headerMap = getHeaderMap(sheet);
-  let nextCol = Object.keys(headerMap).length + 1;
+function normalizeHeaderKey(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9]/g, '');
+}
 
-  keys.forEach((key) => {
-    if (!headerMap[key]) {
-      sheet.getRange(1, nextCol).setValue(key);
-      headerMap[key] = nextCol;
-      nextCol += 1;
+function buildCanonicalHeaderIndex(headerMap) {
+  const index = {};
+  Object.keys(headerMap).forEach((header) => {
+    const canonical = normalizeHeaderKey(header);
+    if (canonical && !index[canonical]) {
+      index[canonical] = headerMap[header];
+    }
+  });
+  return index;
+}
+
+function filterPayloadByTable(payload, table) {
+  if (!USE_TABLE_WHITELIST) return payload;
+
+  const allowed = ALLOWED_CANONICAL_BY_TABLE[table];
+  if (!allowed) return payload;
+
+  const filtered = {};
+  Object.keys(payload).forEach((key) => {
+    if (allowed.has(normalizeHeaderKey(key))) {
+      filtered[key] = payload[key];
     }
   });
 
-  return headerMap;
+  return filtered;
 }
 
-function findRowByKey(sheet, headerMap, keyField, keyValue) {
-  const col = headerMap[keyField];
-  if (!col) return -1;
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return -1;
+function appendUsingExistingHeaders(sheet, payload) {
+  const headerMap = getHeaderMap(sheet);
+  const headers = Object.keys(headerMap);
+  const canonicalHeaderIndex = buildCanonicalHeaderIndex(headerMap);
 
-  const values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
-  for (let i = 0; i < values.length; i += 1) {
-    if (String(values[i][0]) === String(keyValue)) return i + 2;
+  // Modo estricto: no se crean columnas nuevas. Si no hay cabeceras, se omite.
+  if (headers.length === 0) return;
+
+  const rowValues = new Array(headers.length).fill('');
+  const unknown = {};
+
+  Object.keys(payload).forEach((key) => {
+    const directCol = headerMap[key];
+    const canonicalCol = canonicalHeaderIndex[normalizeHeaderKey(key)] || null;
+    const col = directCol || canonicalCol;
+
+    if (!col) {
+      unknown[key] = payload[key];
+      return;
+    }
+
+    const value = payload[key];
+    rowValues[col - 1] = value == null ? '' : value;
+  });
+
+  // Si existe columna _extras_json, guardamos campos no mapeados sin abrir columnas nuevas.
+  if (headerMap._extras_json && Object.keys(unknown).length > 0) {
+    rowValues[headerMap._extras_json - 1] = JSON.stringify(unknown);
   }
-  return -1;
-}
 
-function chooseKeyField(eventObj) {
-  const body = eventObj.body || {};
-  const params = eventObj.params || {};
-
-  if (body.id != null || params.id != null) return ['id', body.id != null ? body.id : params.id];
-  if (body.rut_jugador != null || params.rut != null) return ['rut_jugador', body.rut_jugador != null ? body.rut_jugador : params.rut];
-  if (body.rut != null || params.rut != null) return ['rut', body.rut != null ? body.rut : params.rut];
-  if (body.correo != null) return ['correo', body.correo];
-
-  return ['_event_id', Utilities.getUuid()];
+  sheet.appendRow(rowValues);
 }
 
 function writeDataEvent(ss, eventObj) {
-  const table = normalizeTableName(eventObj.table || 'AUDITORIA_CAMBIOS');
+  const table = resolveSheetName(eventObj.table || 'AUDITORIA_CAMBIOS');
   const action = String(eventObj.action || '').toUpperCase();
   const body = eventObj.body || {};
   const params = eventObj.params || {};
   const actor = eventObj.actor || {};
 
   const sh = ensureSheet(ss, table);
-  const keyPair = chooseKeyField(eventObj);
-  const keyField = keyPair[0];
-  const keyValue = keyPair[1];
 
   const payload = {
+    _event_id: Utilities.getUuid(),
     _event_action: action,
     _event_time: eventObj.occurredAt || new Date().toISOString(),
     _event_path: eventObj.path || '',
@@ -120,51 +239,22 @@ function writeDataEvent(ss, eventObj) {
     }, {}),
   };
 
-  payload[keyField] = keyValue;
-
-  const keys = Object.keys(payload);
-  const headerMap = ensureHeaders(sh, keys);
-
-  let targetRow = findRowByKey(sh, headerMap, keyField, keyValue);
   if (action === 'DELETE') {
-    if (targetRow < 0) {
-      targetRow = sh.getLastRow() + 1;
-    }
     payload._deleted = 'true';
     payload._deleted_at = new Date().toISOString();
-  } else if (targetRow < 0) {
-    targetRow = sh.getLastRow() + 1;
   }
 
-  const rowValues = new Array(Object.keys(headerMap).length).fill('');
-  Object.keys(payload).forEach((key) => {
-    const col = headerMap[key];
-    if (!col) return;
-    rowValues[col - 1] = payload[key];
-  });
+  const filteredPayload = filterPayloadByTable(payload, table);
 
-  sh.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
+  // Append-only + esquema estricto: solo columnas ya existentes en la hoja.
+  appendUsingExistingHeaders(sh, filteredPayload);
 }
 
 function appendAudit(ss, eventObj) {
   const sh = ensureSheet(ss, 'AUDITORIA_CAMBIOS');
-  const keys = [
-    'event_time',
-    'table',
-    'action',
-    'path',
-    'status_code',
-    'actor_id',
-    'actor_rut',
-    'actor_rol',
-    'params_json',
-    'body_json'
-  ];
-  const headerMap = ensureHeaders(sh, keys);
 
   const actor = eventObj.actor || {};
-  const row = new Array(Object.keys(headerMap).length).fill('');
-  const values = {
+  const payload = {
     event_time: eventObj.occurredAt || new Date().toISOString(),
     table: eventObj.table || '',
     action: eventObj.action || '',
@@ -177,13 +267,8 @@ function appendAudit(ss, eventObj) {
     body_json: JSON.stringify(eventObj.body || {}),
   };
 
-  Object.keys(values).forEach((k) => {
-    const col = headerMap[k];
-    if (!col) return;
-    row[col - 1] = values[k];
-  });
-
-  sh.appendRow(row);
+  const filteredPayload = filterPayloadByTable(payload, 'AUDITORIA_CAMBIOS');
+  appendUsingExistingHeaders(sh, filteredPayload);
 }
 
 function doPost(e) {
@@ -199,7 +284,7 @@ function doPost(e) {
     // Apps Script no expone facilmente headers en Web App clasica.
     // Usamos token por query param: ?token=XYZ
     if (token !== WEBHOOK_TOKEN) {
-      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'unauthorized' }))
+      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'unauthorized', script_version: SCRIPT_VERSION }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -213,10 +298,10 @@ function doPost(e) {
       writeDataEvent(ss, evt);
     });
 
-    return ContentService.createTextOutput(JSON.stringify({ ok: true, processed: events.length }))
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, processed: events.length, script_version: SCRIPT_VERSION }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: String(error.message || error) }))
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: String(error.message || error), script_version: SCRIPT_VERSION }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }

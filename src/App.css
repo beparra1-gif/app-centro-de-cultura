@@ -2325,8 +2325,8 @@ button,
   }
 }
 
-/* Tablet landscape y pantallas medianas: evita sidebar lateral y mantiene nav inferior */
-@media (min-width: 1200px) and (max-width: 1366px), (min-width: 1200px) and (pointer: coarse) and (hover: none) {
+/* Tablet (vertical/horizontal) y touch grande: mantener navegación en el pie */
+@media (min-width: 1200px) and (max-width: 1366px), (min-width: 768px) and (pointer: coarse) and (hover: none) {
   .ios-app-container {
     display: flex !important;
     grid-template-columns: none !important;

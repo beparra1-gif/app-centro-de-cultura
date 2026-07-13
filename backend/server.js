@@ -440,6 +440,8 @@ const RESOURCE_TABLE_MAP = {
   cuentas: 'cuentas',
   jugadores: 'jugadores',
   'jugadores-visita': 'jugadores_visita',
+  usuarios: 'cuentas',
+  encuestas: 'encuestas',
   comunicaciones: 'comunicaciones',
   comentarios: 'comentarios',
   convocatorias: 'convocatorias',
@@ -449,16 +451,24 @@ const RESOURCE_TABLE_MAP = {
   'pagos-mensualidades': 'pagos_mensualidades',
   alertas: 'alertas',
   estadisticas: 'estadisticas',
+  marcas: 'marcas_tiempo',
   evaluaciones: 'evaluaciones',
   gamificacion: 'gamificacion_puntos',
   quiz: 'quiz_preguntas',
   pizarra: 'pizarra_tactica',
   resultados: 'resultados',
   'partidos-live': 'partidos_live',
+  'asistencia-eventos': 'asistencia_eventos',
   staff: 'staff',
   torneos: 'torneos',
   kiosco: 'caja_evento_kiosco',
+  'caja-evento': 'caja_evento_kiosco',
+  inventario: 'catalogo_inventario',
+  egresos: 'egresos',
   clubes: 'clubes',
+  lesiones: 'lesiones',
+  disciplina: 'disciplina',
+  entrenamientos: 'entrenamientos',
 };
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -502,6 +512,12 @@ const getTableFromApiRequest = (req) => {
   if (pathParts[0] !== 'api') return '';
   const resource = String(pathParts[1] || '').toLowerCase();
   if (!resource || resource === 'admin' || resource === 'auth') return '';
+
+  // /api/encuestas/:encuestaId/respuesta writes to encuestas_respuestas.
+  if (resource === 'encuestas' && String(pathParts[3] || '').toLowerCase() === 'respuesta') {
+    return 'encuestas_respuestas';
+  }
+
   return RESOURCE_TABLE_MAP[resource] || '';
 };
 
