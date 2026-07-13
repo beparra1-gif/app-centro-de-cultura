@@ -521,6 +521,9 @@ function MesaControlPanel({
       if (guardada.moduloMesa) setModuloMesa(guardada.moduloMesa);
       if (guardada.filtroRama) setFiltroRama(guardada.filtroRama);
       if (guardada.filtroCategoria) setFiltroCategoria(guardada.filtroCategoria);
+      if (typeof guardada.historialFiltroTexto === 'string') setHistorialFiltroTexto(guardada.historialFiltroTexto);
+      if (guardada.historialFiltroRama) setHistorialFiltroRama(guardada.historialFiltroRama);
+      if (guardada.historialFiltroCategoria) setHistorialFiltroCategoria(guardada.historialFiltroCategoria);
       setCompetenciaNombre(guardada.competenciaNombre || '');
       setCompetenciaLogoUrl(guardada.competenciaLogoUrl || '');
       setCanchaSede(guardada.canchaSede || '');
@@ -575,6 +578,9 @@ function MesaControlPanel({
       moduloMesa,
       filtroRama,
       filtroCategoria,
+      historialFiltroTexto,
+      historialFiltroRama,
+      historialFiltroCategoria,
       competenciaNombre,
       competenciaLogoUrl,
       canchaSede,
@@ -624,6 +630,9 @@ function MesaControlPanel({
     moduloMesa,
     filtroRama,
     filtroCategoria,
+    historialFiltroTexto,
+    historialFiltroRama,
+    historialFiltroCategoria,
     competenciaNombre,
     competenciaLogoUrl,
     canchaSede,
