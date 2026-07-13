@@ -731,6 +731,11 @@ function MesaControlPanel({
     };
   }, [modoAnalisis, rosterVisita, dorsalesDuplicadosVisita, quintetoVisitaIds, quintetoVisitaValidado]);
 
+  const visitaEsNuestroClub = useMemo(
+    () => esNuestroClub(clubVisitaNombre || equipoVisita?.nombre || ''),
+    [clubVisitaNombre, equipoVisita]
+  );
+
   const prepartidoValido = useMemo(
     () => validacionLocal.minimoOk
       && validacionLocal.maximoOk
@@ -858,6 +863,8 @@ function MesaControlPanel({
     if (!nombre) return alert('Ingresa el nombre del jugador.');
     if (!Number.isFinite(dorsal) || dorsal <= 0) return alert('Ingresa un dorsal valido.');
 
+    let nuevoIdCreado = null;
+
     setRosterEquipo((prev) => {
       const normalizadoPrev = (Array.isArray(prev) ? prev : []).map((j, idx) => ({
         ...j,
@@ -894,8 +901,17 @@ function MesaControlPanel({
         flt: 0,
         to: 0,
       };
+      nuevoIdCreado = nuevo.id;
       return [...prev, nuevo];
     });
+
+    if (nuevoIdCreado != null) {
+      if (esLocal) {
+        setNominaLocalIds((prev) => (prev.length >= LIMITE_JUGADORES_POR_EQUIPO ? prev : [...prev, nuevoIdCreado]));
+      } else {
+        setNominaVisitaIds((prev) => (prev.length >= LIMITE_JUGADORES_POR_EQUIPO ? prev : [...prev, nuevoIdCreado]));
+      }
+    }
 
     if (esLocal) {
       setNuevoNombreLocal('');
@@ -1403,6 +1419,7 @@ function MesaControlPanel({
             <p>Citadas/os: {validacionLocal.total} (max 12)</p>
             <p>Quinteto inicial: {quintetoLocalIds.length}/5 {quintetoLocalValidado ? '· Validado' : ''}</p>
             {!validacionLocal.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosLocal.join(', ')}</p>}
+            <p style={{ marginTop: '8px', fontWeight: 800 }}>1) Selecciona nómina citada (hasta 12)</p>
             <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
               {rosterLocalCompleto.map((j) => (
                 <button key={`nom-local-${j.id}`} type="button" className={`mesa-quinteto-pill ${nominaLocalIds.includes(j.id) ? 'active' : ''}`} onClick={() => alternarNomina({ tipo: 'local', jugadorId: j.id })}>
@@ -1410,6 +1427,7 @@ function MesaControlPanel({
                 </button>
               ))}
             </div>
+            <p style={{ marginTop: '8px', fontWeight: 800 }}>2) Elige y valida quinteto inicial</p>
             <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
               {rosterLocal.map((j) => (
                 <button
@@ -1431,6 +1449,7 @@ function MesaControlPanel({
               <p>Citadas/os: {validacionVisita.total} (max 12)</p>
               <p>Quinteto inicial: {quintetoVisitaIds.length}/5 {quintetoVisitaValidado ? '· Validado' : ''}</p>
               {!validacionVisita.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosVisita.join(', ')}</p>}
+              <p style={{ marginTop: '8px', fontWeight: 800 }}>1) Selecciona nómina citada (hasta 12)</p>
               <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
                 {rosterVisitaCompleto.map((j) => (
                   <button key={`nom-vis-${j.id}`} type="button" className={`mesa-quinteto-pill ${nominaVisitaIds.includes(j.id) ? 'active' : ''}`} onClick={() => alternarNomina({ tipo: 'visita', jugadorId: j.id })}>
@@ -1438,6 +1457,14 @@ function MesaControlPanel({
                   </button>
                 ))}
               </div>
+              {!visitaEsNuestroClub && (
+                <div className="mesa-add-player mt-10">
+                  <input className="form-input" placeholder="Nombre jugadora/or visita" value={nuevoNombreVisita} onChange={(e) => setNuevoNombreVisita(e.target.value)} />
+                  <input className="form-input" placeholder="Dorsal" value={nuevoDorsalVisita} onChange={(e) => setNuevoDorsalVisita(e.target.value)} />
+                  <button className="btn-secondary" onClick={() => agregarJugadorManual({ tipo: 'visita' })}>Agregar a nómina visita</button>
+                </div>
+              )}
+              <p style={{ marginTop: '8px', fontWeight: 800 }}>2) Elige y valida quinteto inicial</p>
               <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
                 {rosterVisita.map((j) => (
                   <button
