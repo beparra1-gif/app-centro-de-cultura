@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowRightLeft, FileText, Filter, Shield, Tv, Users } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import { calcularEff } from '../utils/appHelpers';
+import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
 import { normalizarSlugLogo } from '../utils/logoResolver';
@@ -126,8 +127,18 @@ function MesaControlPanel({
   const [clubVisitaNombre, setClubVisitaNombre] = useState('Visitante');
   const [clubVisitaLogoUrl, setClubVisitaLogoUrl] = useState('');
   const [partidoIniciado, setPartidoIniciado] = useState(false);
+  const [partidoPersistidoId, setPartidoPersistidoId] = useState(null);
   const [ultimoGuardadoAt, setUltimoGuardadoAt] = useState('');
   const [historialPartidosMesa, setHistorialPartidosMesa] = useState([]);
+  const [historialRemotoMesa, setHistorialRemotoMesa] = useState([]);
+  const [partidoAnalisisId, setPartidoAnalisisId] = useState(null);
+  const [eventosPartido, setEventosPartido] = useState([]);
+  const [rolOperadorActivo, setRolOperadorActivo] = useState('planillero');
+  const [operadoresMesa, setOperadoresMesa] = useState({
+    planillero: '',
+    estadistico: '',
+    supervisor: '',
+  });
   const [quintetoLocalIds, setQuintetoLocalIds] = useState([]);
   const [quintetoVisitaIds, setQuintetoVisitaIds] = useState([]);
   const [nuevoNombreLocal, setNuevoNombreLocal] = useState('');
@@ -699,10 +710,147 @@ function MesaControlPanel({
   const resumenLocal = useMemo(() => crearResumenEquipo(rosterLocal), [rosterLocal]);
   const resumenVisita = useMemo(() => crearResumenEquipo(rosterVisita), [rosterVisita]);
 
-  const guardarEstadisticaPartido = () => {
+  const registrarEventoPlantilla = ({ tipo, detalle, equipo = 'local' }) => {
+    if (!partidoIniciado || !prepartidoValido) return;
+    const operadorNombre = normalizarTexto(operadoresMesa[rolOperadorActivo]) || 'Operador sin nombre';
+    const evento = {
+      id: nextId(),
+      tipo,
+      detalle,
+      equipo,
+      periodo: liveScore.periodo,
+      reloj: liveScore.reloj,
+      operadorRol: rolOperadorActivo,
+      operadorNombre,
+      createdAt: new Date().toISOString(),
+    };
+    setEventosPartido((prev) => [evento, ...prev].slice(0, 300));
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `${tipo}: ${detalle} · ${operadorNombre}` }, ...prev]);
+  };
+
+  const crearPartidoPersistido = async () => {
+    try {
+      const creado = await api.partidosLiveAPI.create({
+        fecha_hora: new Date().toISOString(),
+        cancha_sede: normalizarTexto(canchaSede) || null,
+        rama: filtroRama === 'Todas' ? 'Mixta' : filtroRama,
+        categoria: filtroCategoria === 'Todas' ? 'General' : filtroCategoria,
+        equipo_local: normalizarTexto(clubLocalNombre) || liveScore.equipoLocalNombre || 'Centro de Cultura Física',
+        equipo_visitante: modoAnalisis === 'dos' ? (normalizarTexto(clubVisitaNombre) || liveScore.equipoVisitaNombre || 'Visitante') : 'N/A',
+        logo_local_url: normalizarTexto(clubLocalLogoUrl) || liveScore.equipoLocalLogoUrl || '',
+        logo_visitante_url: modoAnalisis === 'dos' ? (normalizarTexto(clubVisitaLogoUrl) || liveScore.equipoVisitaLogoUrl || '') : '',
+        torneo_nombre: normalizarTexto(competenciaNombre) || null,
+        torneo_logo_url: normalizarTexto(competenciaLogoUrl) || null,
+        estado_juego: 'en_curso',
+        pts_local: liveScore.ptsLocal,
+        pts_visitante: liveScore.ptsVisita,
+      });
+      return creado?.id_partido || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const recargarHistorialRemoto = async () => {
+    try {
+      const rows = await api.partidosLiveAPI.getMesaHistorial({
+        rival: modoAnalisis === 'dos' ? normalizarTexto(clubVisitaNombre) : '',
+        torneo: normalizarTexto(competenciaNombre),
+        rama: filtroRama === 'Todas' ? '' : filtroRama,
+        categoria: filtroCategoria === 'Todas' ? '' : filtroCategoria,
+        limit: 60,
+      });
+      setHistorialRemotoMesa(Array.isArray(rows) ? rows : []);
+    } catch {
+      setHistorialRemotoMesa([]);
+    }
+  };
+
+  useEffect(() => {
+    recargarHistorialRemoto();
+  }, [filtroRama, filtroCategoria, competenciaNombre, clubVisitaNombre, modoAnalisis]);
+
+  const historialCombinado = useMemo(() => {
+    const local = (historialPartidosMesa || []).map((item) => ({ ...item, _origen: 'local' }));
+    const remoto = (historialRemotoMesa || []).map((item) => ({
+      id: item.id_partido || item.id,
+      finalizadoAt: item.finalizado_at || item.finalizadoAt,
+      equipos: {
+        local: {
+          nombre: item.equipo_local,
+          logoUrl: item.logo_local_url,
+          resumen: item.mesa_payload?.equipos?.local?.resumen || {},
+          roster: item.mesa_payload?.equipos?.local?.roster || [],
+        },
+        visita: {
+          nombre: item.equipo_visitante,
+          logoUrl: item.logo_visitante_url,
+          resumen: item.mesa_payload?.equipos?.visita?.resumen || {},
+          roster: item.mesa_payload?.equipos?.visita?.roster || [],
+        },
+      },
+      marcador: {
+        ptsLocal: item.pts_local,
+        ptsVisita: item.pts_visitante,
+      },
+      filtros: {
+        rama: item.rama,
+        categoria: item.categoria,
+        competicion: item.competencia_nombre || item.torneo_nombre,
+      },
+      canchaSede: item.cancha_sede,
+      operadores: item.operadores_json || {},
+      playByPlay: item.play_by_play_json || [],
+      eventos: item.eventos_json || [],
+      _origen: 'remoto',
+    }));
+
+    const map = new Map();
+    [...remoto, ...local].forEach((p) => {
+      if (!p?.id) return;
+      if (!map.has(p.id)) map.set(p.id, p);
+    });
+    return Array.from(map.values()).sort((a, b) => new Date(b.finalizadoAt || 0) - new Date(a.finalizadoAt || 0));
+  }, [historialPartidosMesa, historialRemotoMesa]);
+
+  const resumenHistoricoComparativo = useMemo(() => {
+    if (historialCombinado.length === 0) {
+      return { partidos: 0, victorias: 0, derrotas: 0, promedioFavor: 0, promedioContra: 0, rivalTop: '' };
+    }
+
+    const victorias = historialCombinado.filter((p) => Number(p.marcador?.ptsLocal || 0) > Number(p.marcador?.ptsVisita || 0)).length;
+    const derrotas = historialCombinado.filter((p) => Number(p.marcador?.ptsLocal || 0) < Number(p.marcador?.ptsVisita || 0)).length;
+    const promedioFavor = historialCombinado.reduce((acc, p) => acc + Number(p.marcador?.ptsLocal || 0), 0) / historialCombinado.length;
+    const promedioContra = historialCombinado.reduce((acc, p) => acc + Number(p.marcador?.ptsVisita || 0), 0) / historialCombinado.length;
+
+    const rivals = new Map();
+    historialCombinado.forEach((p) => {
+      const rival = normalizarTexto(p.equipos?.visita?.nombre || 'Rival');
+      rivals.set(rival, (rivals.get(rival) || 0) + 1);
+    });
+    const rivalTop = Array.from(rivals.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+
+    return {
+      partidos: historialCombinado.length,
+      victorias,
+      derrotas,
+      promedioFavor,
+      promedioContra,
+      rivalTop,
+    };
+  }, [historialCombinado]);
+
+  const partidoAnalisisSeleccionado = useMemo(
+    () => historialCombinado.find((p) => String(p.id) === String(partidoAnalisisId)) || historialCombinado[0] || null,
+    [historialCombinado, partidoAnalisisId]
+  );
+
+  const guardarEstadisticaPartido = async () => {
     const payload = {
       id: nextId(),
       finalizadoAt: new Date().toISOString(),
+      operadores: operadoresMesa,
+      operadorActivo: rolOperadorActivo,
       equipos: {
         local: {
           nombre: liveScore.equipoLocalNombre || equipoLocal?.nombre || 'Local',
@@ -738,6 +886,8 @@ function MesaControlPanel({
       },
       canchaSede: normalizarTexto(canchaSede),
       playByPlay,
+      eventos: eventosPartido,
+      analisis: resumenHistoricoComparativo,
     };
 
     try {
@@ -747,29 +897,52 @@ function MesaControlPanel({
       window.localStorage.setItem(clave, JSON.stringify(siguiente));
       setHistorialPartidosMesa(siguiente);
       setUltimoGuardadoAt(new Date().toLocaleString('es-CL'));
+      if (partidoPersistidoId) {
+        await api.partidosLiveAPI.finalizarMesa(partidoPersistidoId, {
+          mesa_payload: payload,
+          play_by_play_json: playByPlay,
+          eventos_json: eventosPartido,
+          operadores_json: operadoresMesa,
+          analisis_json: {
+            resumenHistoricoComparativo,
+            topEficienciaLocal,
+            topEficienciaVisita,
+          },
+          competencia_nombre: filtroCompeticionActiva || null,
+          competencia_logo_url: normalizarTexto(competenciaLogoUrl) || null,
+          cancha_sede: normalizarTexto(canchaSede) || null,
+          pts_local: liveScore.ptsLocal,
+          pts_visitante: liveScore.ptsVisita,
+        });
+        await recargarHistorialRemoto();
+      }
       return true;
     } catch {
       return false;
     }
   };
 
-  const confirmarInicioPartido = () => {
+  const confirmarInicioPartido = async () => {
     if (partidoIniciado) return;
     if (!prepartidoValido) {
       alert('Corrige las validaciones prepartido antes de iniciar.');
       return;
     }
     if (!window.confirm('¿Confirmas iniciar el partido?')) return;
+    const creadoId = await crearPartidoPersistido();
+    if (creadoId) setPartidoPersistidoId(creadoId);
     setPartidoIniciado(true);
-    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '10:00', texto: '▶ Partido iniciado' }, ...prev]);
+    const operadorNombre = normalizarTexto(operadoresMesa[rolOperadorActivo]) || 'Operador';
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '10:00', texto: `▶ Partido iniciado · ${operadorNombre}` }, ...prev]);
   };
 
-  const confirmarFinalizacionPartido = () => {
+  const confirmarFinalizacionPartido = async () => {
     if (!partidoIniciado) return;
     if (!window.confirm('¿Finalizar partido y guardar estadística?')) return;
 
-    const guardado = guardarEstadisticaPartido();
+    const guardado = await guardarEstadisticaPartido();
     setPartidoIniciado(false);
+    setPartidoPersistidoId(null);
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '00:00', texto: guardado ? '■ Partido finalizado y estadística guardada' : '■ Partido finalizado (falló guardado local)' }, ...prev]);
     if (!guardado) {
       alert('Partido finalizado, pero no se pudo guardar la estadística en este dispositivo.');
@@ -978,6 +1151,43 @@ function MesaControlPanel({
         )}
       </div>
 
+      <div className="card mb-15" style={{ borderRadius: '18px' }}>
+        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="#6B7280" strokeWidth={1.5} /> Operadores de Mesa (Trazabilidad)</h4>
+        <div className="mesa-filtros-grid" style={{ marginBottom: '10px' }}>
+          <label className="mesa-filter-item">
+            <span>Planillero/a</span>
+            <input className="form-input" value={operadoresMesa.planillero} onChange={(e) => setOperadoresMesa((prev) => ({ ...prev, planillero: e.target.value }))} placeholder="Nombre planillero" />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Estadístico/a</span>
+            <input className="form-input" value={operadoresMesa.estadistico} onChange={(e) => setOperadoresMesa((prev) => ({ ...prev, estadistico: e.target.value }))} placeholder="Nombre estadístico" />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Supervisor/a</span>
+            <input className="form-input" value={operadoresMesa.supervisor} onChange={(e) => setOperadoresMesa((prev) => ({ ...prev, supervisor: e.target.value }))} placeholder="Nombre supervisor" />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Rol activo para registrar</span>
+            <select className="form-input" value={rolOperadorActivo} onChange={(e) => setRolOperadorActivo(e.target.value)}>
+              <option value="planillero">Planillero/a</option>
+              <option value="estadistico">Estadístico/a</option>
+              <option value="supervisor">Supervisor/a</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="mesa-eventos-template-grid">
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SISTEMA', detalle: 'Timeout local solicitado', equipo: 'local' })}>Timeout Local</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SISTEMA', detalle: 'Timeout visita solicitado', equipo: 'visita' })}>Timeout Visita</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SUSTITUCION', detalle: 'Cambio de quinteto local', equipo: 'local' })}>Sustitución Local</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SUSTITUCION', detalle: 'Cambio de quinteto visita', equipo: 'visita' })}>Sustitución Visita</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'LANZAMIENTO', detalle: 'Tiro fallado local', equipo: 'local' })}>Tiro Fallado Local</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'LANZAMIENTO', detalle: 'Tiro fallado visita', equipo: 'visita' })}>Tiro Fallado Visita</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva local', equipo: 'local' })}>Recuperación Local</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva visita', equipo: 'visita' })}>Recuperación Visita</button>
+        </div>
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
         <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={() => setModoChromaKey(true)}><Tv size={14} color="#6B7280" strokeWidth={1.5} /> Modo Transmisión (OBS)</button>
       </div>
@@ -1169,15 +1379,22 @@ function MesaControlPanel({
 
       <div className="card mt-20 mesa-historial-card" style={{ borderRadius: '24px' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="#6B7280" strokeWidth={1.5} /> Historial de Partidos Guardados</h4>
-        {historialPartidosMesa.length === 0 ? (
-          <p className="text-muted" style={{ marginBottom: 0 }}>Aun no hay partidos guardados en este dispositivo.</p>
+        {historialCombinado.length === 0 ? (
+          <p className="text-muted" style={{ marginBottom: 0 }}>Aun no hay partidos guardados en historial local o backend.</p>
         ) : (
           <div className="mesa-historial-list">
-            {historialPartidosMesa.slice().reverse().slice(0, 5).map((partido) => (
-              <div key={partido.id} className="mesa-historial-item">
+            {historialCombinado.slice(0, 8).map((partido) => (
+              <div
+                key={partido.id}
+                className={`mesa-historial-item ${String(partidoAnalisisId || partidoAnalisisSeleccionado?.id || '') === String(partido.id) ? 'active' : ''}`}
+                onClick={() => setPartidoAnalisisId(partido.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter') setPartidoAnalisisId(partido.id); }}
+              >
                 <div>
                   <strong>{partido.equipos?.local?.nombre || 'Local'} vs {partido.equipos?.visita?.nombre || 'Visita'}</strong>
-                  <span>{partido.finalizadoAt ? new Date(partido.finalizadoAt).toLocaleString('es-CL') : 'Sin fecha'} · {partido.filtros?.rama || 'Rama'} · {partido.filtros?.categoria || 'Categoria'}</span>
+                  <span>{partido.finalizadoAt ? new Date(partido.finalizadoAt).toLocaleString('es-CL') : 'Sin fecha'} · {partido.filtros?.rama || 'Rama'} · {partido.filtros?.categoria || 'Categoria'} · {partido._origen === 'remoto' ? 'Backend' : 'Local'}</span>
                 </div>
                 <div className="mesa-historial-score">
                   <strong>{partido.marcador?.ptsLocal ?? 0} - {partido.marcador?.ptsVisita ?? 0}</strong>
@@ -1185,6 +1402,43 @@ function MesaControlPanel({
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Analítica Histórica Comparativa</h4>
+        <div className="mesa-stats-grid">
+          <div className="mesa-stats-box">
+            <h6>Rendimiento Global</h6>
+            <p>Partidos: <strong>{resumenHistoricoComparativo.partidos}</strong></p>
+            <p>Victorias: <strong>{resumenHistoricoComparativo.victorias}</strong> · Derrotas: <strong>{resumenHistoricoComparativo.derrotas}</strong></p>
+            <p>PF/PC: <strong>{resumenHistoricoComparativo.promedioFavor.toFixed(1)}</strong> / <strong>{resumenHistoricoComparativo.promedioContra.toFixed(1)}</strong></p>
+          </div>
+          <div className="mesa-stats-box">
+            <h6>Rival Frecuente</h6>
+            <p><strong>{resumenHistoricoComparativo.rivalTop || 'Sin datos'}</strong></p>
+            <p>Competencia activa: <strong>{filtroCompeticionActiva || 'Todas'}</strong></p>
+            <p>Cancha/Sede: <strong>{canchaSede || 'No definida'}</strong></p>
+          </div>
+        </div>
+
+        {partidoAnalisisSeleccionado && (
+          <div className="mesa-stats-tables">
+            <div className="mesa-stats-table">
+              <h6>Detalle Partido Seleccionado</h6>
+              <div className="mesa-stats-row"><span>Encuentro</span><strong>{partidoAnalisisSeleccionado.equipos?.local?.nombre || 'Local'} vs {partidoAnalisisSeleccionado.equipos?.visita?.nombre || 'Visita'}</strong></div>
+              <div className="mesa-stats-row"><span>Marcador</span><strong>{partidoAnalisisSeleccionado.marcador?.ptsLocal ?? 0} - {partidoAnalisisSeleccionado.marcador?.ptsVisita ?? 0}</strong></div>
+              <div className="mesa-stats-row"><span>Rama/Categoría</span><strong>{partidoAnalisisSeleccionado.filtros?.rama || 'Rama'} · {partidoAnalisisSeleccionado.filtros?.categoria || 'Categoría'}</strong></div>
+              <div className="mesa-stats-row"><span>Sede</span><strong>{partidoAnalisisSeleccionado.canchaSede || 'No registrada'}</strong></div>
+            </div>
+            <div className="mesa-stats-table">
+              <h6>Trazabilidad Operadores</h6>
+              <div className="mesa-stats-row"><span>Planillero/a</span><strong>{partidoAnalisisSeleccionado.operadores?.planillero || 'Sin registro'}</strong></div>
+              <div className="mesa-stats-row"><span>Estadístico/a</span><strong>{partidoAnalisisSeleccionado.operadores?.estadistico || 'Sin registro'}</strong></div>
+              <div className="mesa-stats-row"><span>Supervisor/a</span><strong>{partidoAnalisisSeleccionado.operadores?.supervisor || 'Sin registro'}</strong></div>
+              <div className="mesa-stats-row"><span>Eventos registrados</span><strong>{(partidoAnalisisSeleccionado.eventos || []).length}</strong></div>
+            </div>
           </div>
         )}
       </div>

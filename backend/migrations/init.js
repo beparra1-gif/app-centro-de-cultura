@@ -398,6 +398,35 @@ const createSchema = async () => {
     `);
     console.log('✅ Columnas rama y categoria agregadas a partidos_live');
 
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS competencia_nombre VARCHAR(255)
+    `);
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS competencia_logo_url VARCHAR(255)
+    `);
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS mesa_payload JSONB DEFAULT '{}'::jsonb
+    `);
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS play_by_play_json JSONB DEFAULT '[]'::jsonb
+    `);
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS eventos_json JSONB DEFAULT '[]'::jsonb
+    `);
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS operadores_json JSONB DEFAULT '{}'::jsonb
+    `);
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS analisis_json JSONB DEFAULT '{}'::jsonb
+    `);
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS iniciado_at TIMESTAMP
+    `);
+    await pool.query(`
+      ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS finalizado_at TIMESTAMP
+    `);
+    console.log('✅ Columnas avanzadas de mesa agregadas a partidos_live');
+
     // Tabla: alertas
     await pool.query(`
       CREATE TABLE IF NOT EXISTS alertas (

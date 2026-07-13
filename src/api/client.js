@@ -724,6 +724,30 @@ export const partidosLiveAPI = {
       headers: { 'Content-Type': 'application/json' }
     });
     return handleResponse(response);
+  },
+
+  // Historial mesa con filtros
+  getMesaHistorial: async (filtros = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filtros || {}).forEach(([k, v]) => {
+      if (v == null) return;
+      const text = String(v).trim();
+      if (!text) return;
+      params.set(k, text);
+    });
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/partidos-live/historial${suffix}`);
+    return handleResponse(response);
+  },
+
+  // Finalizar partido con payload completo de mesa
+  finalizarMesa: async (id, datos) => {
+    const response = await fetch(`${API_BASE_URL}/partidos-live/${id}/finalizar-mesa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    });
+    return handleResponse(response);
   }
 };
 

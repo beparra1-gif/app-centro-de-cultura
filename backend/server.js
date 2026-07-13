@@ -1320,6 +1320,26 @@ const ensurePartidosLiveCoreColumns = async () => {
   console.log('🏀 Columnas base rama/categoria en partidos_live verificadas');
 };
 
+const ensurePartidosLiveMesaColumns = async () => {
+  const ddl = [
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS competencia_nombre VARCHAR(255)`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS competencia_logo_url VARCHAR(255)`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS mesa_payload JSONB DEFAULT '{}'::jsonb`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS play_by_play_json JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS eventos_json JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS operadores_json JSONB DEFAULT '{}'::jsonb`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS analisis_json JSONB DEFAULT '{}'::jsonb`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS iniciado_at TIMESTAMP`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS finalizado_at TIMESTAMP`,
+  ];
+
+  for (const statement of ddl) {
+    await pool.query(statement);
+  }
+
+  console.log('📋 Columnas avanzadas de mesa en partidos_live verificadas');
+};
+
 const ensurePagosMensualidadesColumns = async () => {
   const ddl = [
     `ALTER TABLE pagos_mensualidades ADD COLUMN IF NOT EXISTS rut_pagos VARCHAR(20)`,
@@ -3599,6 +3619,62 @@ app.get('/api/partidos-live', async (req, res) => {
   }
 });
 
+// GET: Historial mesa con filtros
+app.get('/api/partidos-live/historial', async (req, res) => {
+  try {
+    const {
+      rival = '',
+      torneo = '',
+      rama = '',
+      categoria = '',
+      limit = '40',
+    } = req.query || {};
+
+    const valores = [];
+    const where = [`(estado_juego ILIKE 'finalizado' OR finalizado_at IS NOT NULL)`];
+
+    if (String(rival || '').trim()) {
+      valores.push(`%${String(rival).trim()}%`);
+      where.push(`equipo_visitante ILIKE $${valores.length}`);
+    }
+    if (String(torneo || '').trim()) {
+      valores.push(`%${String(torneo).trim()}%`);
+      where.push(`COALESCE(competencia_nombre, torneo_nombre, '') ILIKE $${valores.length}`);
+    }
+    if (String(rama || '').trim()) {
+      valores.push(String(rama).trim());
+      where.push(`COALESCE(rama, '') ILIKE $${valores.length}`);
+    }
+    if (String(categoria || '').trim()) {
+      valores.push(String(categoria).trim());
+      where.push(`COALESCE(categoria, '') ILIKE $${valores.length}`);
+    }
+
+    const limite = Math.min(200, Math.max(5, Number(limit) || 40));
+    valores.push(limite);
+
+    const result = await pool.query(
+      `SELECT id_partido, fecha_hora, cancha_sede, rama, categoria,
+              equipo_local, equipo_visitante,
+              logo_local_url, logo_visitante_url,
+              COALESCE(competencia_nombre, torneo_nombre) AS competencia_nombre,
+              COALESCE(competencia_logo_url, torneo_logo_url) AS competencia_logo_url,
+              pts_local, pts_visitante, estado_juego, iniciado_at, finalizado_at,
+              mesa_payload, play_by_play_json, eventos_json, operadores_json, analisis_json,
+              created_at, updated_at
+       FROM partidos_live
+       WHERE ${where.join(' AND ')}
+       ORDER BY COALESCE(finalizado_at, updated_at, fecha_hora, created_at) DESC
+       LIMIT $${valores.length}`,
+      valores
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST: Crear partido
 app.post('/api/partidos-live', async (req, res) => {
   const {
@@ -3698,6 +3774,65 @@ app.put('/api/partidos-live/:id', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Partido no encontrado' });
     }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: Finalizar partido desde mesa avanzada (persistencia historica + trazabilidad)
+app.post('/api/partidos-live/:id/finalizar-mesa', async (req, res) => {
+  const {
+    mesa_payload,
+    play_by_play_json,
+    eventos_json,
+    operadores_json,
+    analisis_json,
+    competencia_nombre,
+    competencia_logo_url,
+    cancha_sede,
+    pts_local,
+    pts_visitante,
+  } = req.body || {};
+
+  try {
+    const result = await pool.query(
+      `UPDATE partidos_live
+       SET estado_juego = 'finalizado',
+           finalizado_at = COALESCE(finalizado_at, NOW()),
+           iniciado_at = COALESCE(iniciado_at, NOW()),
+           mesa_payload = COALESCE($1::jsonb, mesa_payload),
+           play_by_play_json = COALESCE($2::jsonb, play_by_play_json),
+           eventos_json = COALESCE($3::jsonb, eventos_json),
+           operadores_json = COALESCE($4::jsonb, operadores_json),
+           analisis_json = COALESCE($5::jsonb, analisis_json),
+           competencia_nombre = COALESCE($6, competencia_nombre, torneo_nombre),
+           competencia_logo_url = COALESCE($7, competencia_logo_url, torneo_logo_url),
+           cancha_sede = COALESCE($8, cancha_sede),
+           pts_local = COALESCE($9, pts_local),
+           pts_visitante = COALESCE($10, pts_visitante),
+           updated_at = NOW()
+       WHERE id_partido = $11
+       RETURNING *`,
+      [
+        mesa_payload ? JSON.stringify(mesa_payload) : null,
+        play_by_play_json ? JSON.stringify(play_by_play_json) : null,
+        eventos_json ? JSON.stringify(eventos_json) : null,
+        operadores_json ? JSON.stringify(operadores_json) : null,
+        analisis_json ? JSON.stringify(analisis_json) : null,
+        competencia_nombre || null,
+        competencia_logo_url || null,
+        cancha_sede || null,
+        pts_local ?? null,
+        pts_visitante ?? null,
+        req.params.id,
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Partido no encontrado' });
+    }
+
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -4469,6 +4604,10 @@ app.listen(PORT, () => {
 
   ensurePartidosLiveCoreColumns().catch((error) => {
     console.error('❌ Error verificando columnas base partidos_live:', error.message);
+  });
+
+  ensurePartidosLiveMesaColumns().catch((error) => {
+    console.error('❌ Error verificando columnas avanzadas de mesa:', error.message);
   });
 
   ensurePartidosLiveLogos().catch((error) => {
