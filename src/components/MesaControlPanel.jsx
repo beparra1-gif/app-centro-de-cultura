@@ -84,6 +84,12 @@ const construirEquipoKey = (nombre = '', logoUrl = '') => {
   return nombreKey || normalizarTexto(logoUrl) || 'equipo';
 };
 
+const colorConAlpha = (hex = '#0a84ff', alpha = '22') => {
+  const limpio = String(hex || '').trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(limpio)) return `${limpio}${alpha}`;
+  return '#0a84ff22';
+};
+
 const sonEquiposCompatibles = (jugador = {}, equipo = null) => {
   if (!equipo) return false;
   if (jugador._equipoKey && equipo.key && jugador._equipoKey === equipo.key) return true;
@@ -189,6 +195,8 @@ function MesaControlPanel({
   const [capitanVisitaId, setCapitanVisitaId] = useState('');
   const [colorLocal, setColorLocal] = useState('#0a84ff');
   const [colorVisita, setColorVisita] = useState('#ff3b30');
+  const [colorLocalDraft, setColorLocalDraft] = useState('#0a84ff');
+  const [colorVisitaDraft, setColorVisitaDraft] = useState('#ff3b30');
   const [staffLocal, setStaffLocal] = useState({ entrenador: '', asistente: '', delegado: '' });
   const [staffVisita, setStaffVisita] = useState({ entrenador: '', asistente: '', delegado: '' });
   const [cambioSalidaId, setCambioSalidaId] = useState('');
@@ -198,6 +206,10 @@ function MesaControlPanel({
   const [quintetoLocalValidado, setQuintetoLocalValidado] = useState(false);
   const [quintetoVisitaValidado, setQuintetoVisitaValidado] = useState(false);
   const [busquedaInclusionLocal, setBusquedaInclusionLocal] = useState('');
+  const [busquedaNominaLocal, setBusquedaNominaLocal] = useState('');
+  const [busquedaNominaVisita, setBusquedaNominaVisita] = useState('');
+  const [selectorNominaLocalId, setSelectorNominaLocalId] = useState('');
+  const [selectorNominaVisitaId, setSelectorNominaVisitaId] = useState('');
   const [forzarPantallaCompletaLive, setForzarPantallaCompletaLive] = useState(true);
   const liveFullScreenRef = useRef(null);
 
@@ -458,6 +470,7 @@ function MesaControlPanel({
 
   const equipoLocal = equiposDisponibles.find((e) => e.key === equipoLocalKey) || equiposDisponibles[0] || null;
   const equipoVisita = equiposDisponibles.find((e) => e.key === equipoVisitaKey) || equiposDisponibles[1] || equiposDisponibles[0] || null;
+  const visitaEsNuestroClub = useMemo(() => esNuestroClub(clubVisitaNombre), [clubVisitaNombre]);
 
   useEffect(() => {
     try {
@@ -531,6 +544,28 @@ function MesaControlPanel({
     () => rosterVisitaCompleto.filter((j) => nominaVisitaIds.includes(j.id)).slice(0, LIMITE_JUGADORES_POR_EQUIPO),
     [rosterVisitaCompleto, nominaVisitaIds]
   );
+
+  const disponiblesNominaLocal = useMemo(
+    () => rosterLocalCompleto.filter((j) => !nominaLocalIds.includes(j.id)),
+    [rosterLocalCompleto, nominaLocalIds]
+  );
+
+  const disponiblesNominaVisita = useMemo(
+    () => rosterVisitaCompleto.filter((j) => !nominaVisitaIds.includes(j.id)),
+    [rosterVisitaCompleto, nominaVisitaIds]
+  );
+
+  const rosterLocalVisible = useMemo(() => {
+    const q = normalizarTexto(busquedaNominaLocal).toLowerCase();
+    if (!q) return rosterLocal;
+    return rosterLocal.filter((j) => normalizarTexto(j.nombre).toLowerCase().includes(q) || String(j.dorsal || '').includes(q));
+  }, [rosterLocal, busquedaNominaLocal]);
+
+  const rosterVisitaVisible = useMemo(() => {
+    const q = normalizarTexto(busquedaNominaVisita).toLowerCase();
+    if (!q) return rosterVisita;
+    return rosterVisita.filter((j) => normalizarTexto(j.nombre).toLowerCase().includes(q) || String(j.dorsal || '').includes(q));
+  }, [rosterVisita, busquedaNominaVisita]);
 
   const candidatasInferioresLocal = useMemo(() => {
     if (!incluirCategoriasMenores || filtroCategoria === 'Todas') return [];
@@ -645,6 +680,15 @@ function MesaControlPanel({
     });
   };
 
+  const agregarNominaDesdeSelector = ({ tipo }) => {
+    const esLocal = tipo === 'local';
+    const seleccionadoId = esLocal ? selectorNominaLocalId : selectorNominaVisitaId;
+    if (!seleccionadoId) return;
+    alternarNomina({ tipo, jugadorId: Number(seleccionadoId) });
+    if (esLocal) setSelectorNominaLocalId('');
+    else setSelectorNominaVisitaId('');
+  };
+
   const incluirDesdeCategoriasInferioresLocal = (jugadorId) => {
     if (nominaLocalIds.includes(jugadorId)) return;
     if (nominaLocalIds.length >= LIMITE_JUGADORES_POR_EQUIPO) {
@@ -730,11 +774,6 @@ function MesaControlPanel({
       quintetoOk: quintetoVisitaIds.length === 5 && quintetoVisitaValidado,
     };
   }, [modoAnalisis, rosterVisita, dorsalesDuplicadosVisita, quintetoVisitaIds, quintetoVisitaValidado]);
-
-  const visitaEsNuestroClub = useMemo(
-    () => esNuestroClub(clubVisitaNombre || equipoVisita?.nombre || ''),
-    [clubVisitaNombre, equipoVisita]
-  );
 
   const prepartidoValido = useMemo(
     () => validacionLocal.minimoOk
@@ -1250,14 +1289,18 @@ function MesaControlPanel({
       <div className="card mb-15" style={{ borderRadius: '18px' }}>
         <h4 className="form-subtitle" style={{ marginTop: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Datos de Partido y Staff</h4>
         <div className="mesa-filtros-grid">
-          <label className="mesa-filter-item">
+          <div className="mesa-filter-item">
             <span>Color equipo local</span>
-            <input type="color" className="form-input" value={colorLocal} onChange={(e) => setColorLocal(e.target.value)} />
-          </label>
-          <label className="mesa-filter-item">
+            <input type="color" className="form-input" value={colorLocalDraft} onChange={(e) => setColorLocalDraft(e.target.value)} />
+            <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => setColorLocal(colorLocalDraft)}>Aplicar color local</button>
+            <span style={{ textTransform: 'none', letterSpacing: 0 }}>Aplicado: <strong style={{ color: colorLocal }}>{colorLocal}</strong></span>
+          </div>
+          <div className="mesa-filter-item">
             <span>Color equipo visita</span>
-            <input type="color" className="form-input" value={colorVisita} onChange={(e) => setColorVisita(e.target.value)} />
-          </label>
+            <input type="color" className="form-input" value={colorVisitaDraft} onChange={(e) => setColorVisitaDraft(e.target.value)} />
+            <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => setColorVisita(colorVisitaDraft)}>Aplicar color visita</button>
+            <span style={{ textTransform: 'none', letterSpacing: 0 }}>Aplicado: <strong style={{ color: colorVisita }}>{colorVisita}</strong></span>
+          </div>
           <label className="mesa-filter-item">
             <span>Capitán/a local</span>
             <select className="form-input" value={capitanLocalId} onChange={(e) => setCapitanLocalId(e.target.value)}>
@@ -1420,25 +1463,26 @@ function MesaControlPanel({
             <p>Quinteto inicial: {quintetoLocalIds.length}/5 {quintetoLocalValidado ? '· Validado' : ''}</p>
             {!validacionLocal.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosLocal.join(', ')}</p>}
             <p style={{ marginTop: '8px', fontWeight: 800 }}>1) Selecciona nómina citada (hasta 12)</p>
-            <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
-              {rosterLocalCompleto.map((j) => (
-                <button key={`nom-local-${j.id}`} type="button" className={`mesa-quinteto-pill ${nominaLocalIds.includes(j.id) ? 'active' : ''}`} onClick={() => alternarNomina({ tipo: 'local', jugadorId: j.id })}>
-                  {nominaLocalIds.includes(j.id) ? '✓' : '+'} #{j.dorsal} {j.nombre}
-                </button>
-              ))}
+            <div className="mesa-add-player" style={{ marginTop: '8px' }}>
+              <select className="form-input" value={selectorNominaLocalId} onChange={(e) => setSelectorNominaLocalId(e.target.value)}>
+                <option value="">Agregar desde lista...</option>
+                {disponiblesNominaLocal.map((j) => <option key={`dloc-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre} ({j._categoria})</option>)}
+              </select>
+              <input className="form-input" placeholder="Buscar citada/o" value={busquedaNominaLocal} onChange={(e) => setBusquedaNominaLocal(e.target.value)} />
+              <button className="btn-secondary" onClick={() => agregarNominaDesdeSelector({ tipo: 'local' })}>Agregar</button>
             </div>
-            <p style={{ marginTop: '8px', fontWeight: 800 }}>2) Elige y valida quinteto inicial</p>
             <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
-              {rosterLocal.map((j) => (
-                <button
-                  key={`ql-${j.id}`}
-                  className={`mesa-quinteto-pill ${quintetoLocalIds.includes(j.id) ? 'active' : ''} ${j._bloqueado || j.flt >= 5 ? 'locked' : ''}`}
-                  onClick={() => alternarTitular({ tipo: 'local', jugadorId: j.id })}
-                  disabled={j._bloqueado || j.flt >= 5}
-                  type="button"
-                >
-                  #{j.dorsal} {j.nombre}
-                </button>
+              {rosterLocalVisible.map((j) => (
+                <div key={`row-local-${j.id}`} className="mesa-historial-item" style={{ background: quintetoLocalIds.includes(j.id) ? colorConAlpha(colorLocal, '22') : undefined, borderColor: quintetoLocalIds.includes(j.id) ? colorConAlpha(colorLocal, '99') : undefined }}>
+                  <div>
+                    <strong>#{j.dorsal} {j.nombre}</strong>
+                    <span>{j._categoria} · {j._rama}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => alternarNomina({ tipo: 'local', jugadorId: j.id })}>Quitar</button>
+                    <button className={`btn-secondary ${quintetoLocalIds.includes(j.id) ? 'mesa-btn-live' : ''}`} style={{ width: 'auto' }} onClick={() => alternarTitular({ tipo: 'local', jugadorId: j.id })}>Quinteto inicial</button>
+                  </div>
+                </div>
               ))}
             </div>
             <button className="btn-secondary" style={{ width: 'auto', marginTop: '10px' }} onClick={() => validarQuinteto({ tipo: 'local' })}>Validar quinteto local</button>
@@ -1450,12 +1494,13 @@ function MesaControlPanel({
               <p>Quinteto inicial: {quintetoVisitaIds.length}/5 {quintetoVisitaValidado ? '· Validado' : ''}</p>
               {!validacionVisita.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosVisita.join(', ')}</p>}
               <p style={{ marginTop: '8px', fontWeight: 800 }}>1) Selecciona nómina citada (hasta 12)</p>
-              <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
-                {rosterVisitaCompleto.map((j) => (
-                  <button key={`nom-vis-${j.id}`} type="button" className={`mesa-quinteto-pill ${nominaVisitaIds.includes(j.id) ? 'active' : ''}`} onClick={() => alternarNomina({ tipo: 'visita', jugadorId: j.id })}>
-                    {nominaVisitaIds.includes(j.id) ? '✓' : '+'} #{j.dorsal} {j.nombre}
-                  </button>
-                ))}
+              <div className="mesa-add-player" style={{ marginTop: '8px' }}>
+                <select className="form-input" value={selectorNominaVisitaId} onChange={(e) => setSelectorNominaVisitaId(e.target.value)}>
+                  <option value="">Agregar desde lista...</option>
+                  {disponiblesNominaVisita.map((j) => <option key={`dvis-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre} ({j._categoria})</option>)}
+                </select>
+                <input className="form-input" placeholder="Buscar citada/o" value={busquedaNominaVisita} onChange={(e) => setBusquedaNominaVisita(e.target.value)} />
+                <button className="btn-secondary" onClick={() => agregarNominaDesdeSelector({ tipo: 'visita' })}>Agregar</button>
               </div>
               {!visitaEsNuestroClub && (
                 <div className="mesa-add-player mt-10">
@@ -1464,18 +1509,18 @@ function MesaControlPanel({
                   <button className="btn-secondary" onClick={() => agregarJugadorManual({ tipo: 'visita' })}>Agregar a nómina visita</button>
                 </div>
               )}
-              <p style={{ marginTop: '8px', fontWeight: 800 }}>2) Elige y valida quinteto inicial</p>
               <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
-                {rosterVisita.map((j) => (
-                  <button
-                    key={`qv-${j.id}`}
-                    className={`mesa-quinteto-pill ${quintetoVisitaIds.includes(j.id) ? 'active' : ''} ${j._bloqueado || j.flt >= 5 ? 'locked' : ''}`}
-                    onClick={() => alternarTitular({ tipo: 'visita', jugadorId: j.id })}
-                    disabled={j._bloqueado || j.flt >= 5}
-                    type="button"
-                  >
-                    #{j.dorsal} {j.nombre}
-                  </button>
+                {rosterVisitaVisible.map((j) => (
+                  <div key={`row-vis-${j.id}`} className="mesa-historial-item" style={{ background: quintetoVisitaIds.includes(j.id) ? colorConAlpha(colorVisita, '22') : undefined, borderColor: quintetoVisitaIds.includes(j.id) ? colorConAlpha(colorVisita, '99') : undefined }}>
+                    <div>
+                      <strong>#{j.dorsal} {j.nombre}</strong>
+                      <span>{j._categoria} · {j._rama}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => alternarNomina({ tipo: 'visita', jugadorId: j.id })}>Quitar</button>
+                      <button className={`btn-secondary ${quintetoVisitaIds.includes(j.id) ? 'mesa-btn-live' : ''}`} style={{ width: 'auto' }} onClick={() => alternarTitular({ tipo: 'visita', jugadorId: j.id })}>Quinteto inicial</button>
+                    </div>
+                  </div>
                 ))}
               </div>
               <button className="btn-secondary" style={{ width: 'auto', marginTop: '10px' }} onClick={() => validarQuinteto({ tipo: 'visita' })}>Validar quinteto visita</button>
@@ -1562,7 +1607,7 @@ function MesaControlPanel({
       )}
 
       <div className="checkout-total-box mb-15" style={{ background: 'linear-gradient(180deg, #1C1C1E 0%, #101114 100%)', border: '2px solid rgba(0,122,255,0.2)', display: 'flex', flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', padding: '20px 10px', borderRadius: '24px', boxShadow: '0 16px 34px rgba(15,23,42,0.12)', opacity: partidoIniciado ? 1 : 0.65 }}>
-        <div className="text-center" style={{ flex: 1 }}>
+        <div className="text-center" style={{ flex: 1, border: `1px solid ${colorConAlpha(colorLocal, '88')}`, borderRadius: '14px', padding: '10px', background: colorConAlpha(colorLocal, '14') }}>
           <span style={{ fontSize: '12px', color: colorLocal, fontWeight: '800' }}>LOCAL {liveScore.flecha === 'LOCAL' && '◀'}</span>
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '8px', marginBottom: '4px' }}>
             {!!normalizarTexto(liveScore.equipoLocalLogoUrl) && <img src={liveScore.equipoLocalLogoUrl} alt={liveScore.equipoLocalNombre || 'Local'} style={{ width: '62px', height: '62px', objectFit: 'contain' }} />}
@@ -1577,7 +1622,7 @@ function MesaControlPanel({
           </div>
         </div>
 
-        <div className="text-center" style={{ flex: 1 }}>
+        <div className="text-center" style={{ flex: 1, border: `1px solid ${colorConAlpha(colorVisita, '88')}`, borderRadius: '14px', padding: '10px', background: colorConAlpha(colorVisita, '14') }}>
           <span className="mesa-competicion-chip">{filtroCompeticionActiva || 'Competición abierta'}</span>
           {!!normalizarTexto(competenciaLogoUrl) && (
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
