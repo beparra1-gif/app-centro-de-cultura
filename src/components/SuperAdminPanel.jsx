@@ -80,6 +80,8 @@ function SuperAdminPanel({
   jugadoresVisitaAdmin,
   guardarCuentaAdmin,
   guardarJugadorAdmin,
+  eliminarCuentaAdmin,
+  eliminarJugadorAdmin,
   guardarJugadorVisitaAdmin,
   validarPagoMensualidad,
   morososAdmin,
@@ -191,6 +193,7 @@ function SuperAdminPanel({
   const [jugadorAdminEdit, setJugadorAdminEdit] = useState(null);
   const [tipoNuevoUsuario, setTipoNuevoUsuario] = useState('cuenta');
   const [guardandoUsuario, setGuardandoUsuario] = useState(false);
+  const [eliminandoUsuarioId, setEliminandoUsuarioId] = useState('');
   const [citaRama, setCitaRama] = useState('todas');
   const [citaCategoria, setCitaCategoria] = useState('todas');
   const [categoriasExtraCitacion, setCategoriasExtraCitacion] = useState([]);
@@ -1043,6 +1046,52 @@ function SuperAdminPanel({
       alert(`No se pudo guardar: ${error.message}`);
     } finally {
       setGuardandoUsuario(false);
+    }
+  };
+
+  const eliminarUsuarioDefinitivo = async (item) => {
+    if (!esSuperAdmin) {
+      alert('Solo super admin puede borrar usuarios definitivamente.');
+      return;
+    }
+
+    const esCuenta = item?.tipo === 'cuenta';
+    const etiqueta = esCuenta
+      ? `cuenta ${item?.raw?.correo || item?.nombre || ''}`
+      : `jugador ${item?.raw?.rut_jugador || item?.nombre || ''}`;
+
+    const mensaje = `¿Confirmas borrar definitivamente ${etiqueta}? Esta acción no se puede deshacer.`;
+    if (!window.confirm(mensaje)) return;
+
+    try {
+      setEliminandoUsuarioId(String(item?.id || ''));
+
+      if (esCuenta) {
+        if (typeof eliminarCuentaAdmin !== 'function') {
+          throw new Error('No existe manejador para eliminar cuentas.');
+        }
+        await eliminarCuentaAdmin(item?.raw?.id);
+      } else {
+        if (typeof eliminarJugadorAdmin !== 'function') {
+          throw new Error('No existe manejador para eliminar jugadores.');
+        }
+        await eliminarJugadorAdmin(item?.raw?.rut_jugador);
+      }
+
+      if (editandoTipo === item?.tipo) {
+        if (item?.tipo === 'cuenta' && cuentaAdminEdit?.id === item?.raw?.id) {
+          cancelarEdicion();
+        }
+        if (item?.tipo === 'jugador' && jugadorAdminEdit?.rut_jugador === item?.raw?.rut_jugador) {
+          cancelarEdicion();
+        }
+      }
+
+      alert('Usuario eliminado definitivamente.');
+    } catch (error) {
+      alert(`No se pudo eliminar: ${error.message}`);
+    } finally {
+      setEliminandoUsuarioId('');
     }
   };
 
@@ -1965,9 +2014,27 @@ function SuperAdminPanel({
                           : `${u.raw.correo || '-'} · ${u.raw.rut || '-'} · ${(u.raw.rol || 'sin rol').toUpperCase()}`}
                       </div>
                     </div>
-                    <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
-                      Modificar
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
+                        Modificar
+                      </button>
+                      {esSuperAdmin && (
+                        <button
+                          className="btn-secondary"
+                          style={{
+                            width: 'auto',
+                            background: 'rgba(255,59,48,0.12)',
+                            borderColor: 'rgba(255,59,48,0.36)',
+                            color: '#b00020',
+                            fontWeight: '800',
+                          }}
+                          onClick={() => eliminarUsuarioDefinitivo(u)}
+                          disabled={eliminandoUsuarioId === u.id}
+                        >
+                          {eliminandoUsuarioId === u.id ? 'Borrando...' : 'Borrar definitivo'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -2021,9 +2088,19 @@ function SuperAdminPanel({
                 titulo: 'Permisos y accesos de la cuenta',
               })}
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
                 <button className="btn-secondary" onClick={cancelarEdicion}>Cancelar</button>
+                {esSuperAdmin && (
+                  <button
+                    className="btn-secondary"
+                    style={{ width: 'auto', background: 'rgba(255,59,48,0.12)', borderColor: 'rgba(255,59,48,0.36)', color: '#b00020', fontWeight: '800' }}
+                    onClick={() => eliminarUsuarioDefinitivo({ id: `cuenta-${cuentaAdminEdit.id}`, tipo: 'cuenta', raw: cuentaAdminEdit, nombre: `${cuentaAdminEdit.nombres || ''} ${cuentaAdminEdit.apellido_paterno || ''}`.trim() })}
+                    disabled={eliminandoUsuarioId === `cuenta-${cuentaAdminEdit.id}`}
+                  >
+                    {eliminandoUsuarioId === `cuenta-${cuentaAdminEdit.id}` ? 'Borrando...' : 'Borrar cuenta definitivo'}
+                  </button>
+                )}
               </div>
 
               <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
@@ -2143,9 +2220,19 @@ function SuperAdminPanel({
                 emptyMessage: 'Este jugador no tiene una cuenta asociada por correo_apoderado. Guarda o corrige esa relación para poder administrar permisos desde aquí.',
               })}
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
                 <button className="btn-secondary" onClick={cancelarEdicion}>Cancelar</button>
+                {esSuperAdmin && (
+                  <button
+                    className="btn-secondary"
+                    style={{ width: 'auto', background: 'rgba(255,59,48,0.12)', borderColor: 'rgba(255,59,48,0.36)', color: '#b00020', fontWeight: '800' }}
+                    onClick={() => eliminarUsuarioDefinitivo({ id: `jugador-${jugadorAdminEdit.rut_jugador}`, tipo: 'jugador', raw: jugadorAdminEdit, nombre: `${jugadorAdminEdit.nombres || ''} ${jugadorAdminEdit.apellido_paterno || ''}`.trim() })}
+                    disabled={eliminandoUsuarioId === `jugador-${jugadorAdminEdit.rut_jugador}`}
+                  >
+                    {eliminandoUsuarioId === `jugador-${jugadorAdminEdit.rut_jugador}` ? 'Borrando...' : 'Borrar jugador definitivo'}
+                  </button>
+                )}
               </div>
             </div>
           )}

@@ -203,6 +203,32 @@ Respuesta:
 }
 ```
 
+### Escritura de cambios hacia Google Sheets (webhook sin costo)
+
+Para que toda modificacion en la app (crear/editar/borrar) se refleje en Sheets, habilita webhook Apps Script:
+
+```env
+GOOGLE_SHEETS_WEBHOOK_ENABLED=true
+GOOGLE_SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?token=<TOKEN>
+GOOGLE_SHEETS_WEBHOOK_TOKEN=
+GOOGLE_SHEETS_WEBHOOK_DEBOUNCE_MS=2500
+```
+
+Pruebas operativas:
+
+```http
+POST /api/admin/sync-sheets/webhook-ping
+Header: x-sync-token: <ADMIN_SYNC_TOKEN>
+```
+
+```http
+POST /api/admin/sync-sheets/webhook-flush
+Header: x-sync-token: <ADMIN_SYNC_TOKEN>
+```
+
+Guia completa de Apps Script en:
+- `backend/GOOGLE_APPS_SCRIPT_WEBHOOK_SETUP.md`
+
 ### Estado operativo (sync + DB + backup)
 
 ```http

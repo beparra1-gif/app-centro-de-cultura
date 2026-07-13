@@ -26,7 +26,6 @@ const SHEET_TABLE_MAP = [
   { sheet: 'RESULTADOS', table: 'resultados' },
   { sheet: 'QUIZ_PREGUNTAS', table: 'quiz_preguntas' },
   { sheet: 'PIZARRA_TACTICA', table: 'pizarra_tactica' },
-  { sheet: 'MIGRACION_PAGOS', table: 'migracion_pagos' },
   { sheet: 'JUGADORES_VISITA', table: 'jugadores_visita' },
   { sheet: 'AUDITORIA', table: 'auditoria' },
   { sheet: 'STAFF', table: 'staff' },
@@ -55,6 +54,7 @@ const HEADER_ALIASES = {
   periodo_actual: 'periodo_actual',
   apellidos_materno: 'apellido_materno',
   reserva_bus_acomapañante: 'reserva_bus_acompanante',
+  rut_pago: 'rut_pagos',
 };
 
 function createSheetsPool(databaseUrl, nodeEnv) {
@@ -89,20 +89,6 @@ function quoteIdent(ident) {
   return `"${String(ident).replace(/"/g, '""')}"`;
 }
 
-function normalizeLegacyEstadoPago(value) {
-  const raw = String(value || '').trim().toLowerCase();
-  if (!raw) return 'pendiente';
-
-  if (['aprobado', 'aprobada', 'pagado', 'pagada', 'ok', 'completado', 'completada'].includes(raw)) {
-    return 'aprobado';
-  }
-
-  if (['rechazado', 'rechazada', 'anulado', 'anulada', 'fallido', 'fallida'].includes(raw)) {
-    return 'rechazado';
-  }
-
-  return 'pendiente';
-}
 
 function extractSheetId(input) {
   if (!input) return '';
@@ -276,6 +262,11 @@ async function upsertRow(client, tableName, mappedPairs, pkColumns, uniqueColumn
 
   const valuesByCol = new Map(mappedPairs.map((p) => [p.column, p.value]));
 
+  // Let SERIAL/BIGSERIAL defaults assign IDs when sheet row doesn't provide one.
+  if (valuesByCol.has('id') && valuesByCol.get('id') == null) {
+    valuesByCol.delete('id');
+  }
+
   if (tableName === 'cuentas') {
     const rawCorreo = valuesByCol.get('correo');
     const rawRut = valuesByCol.get('rut');
@@ -311,6 +302,60 @@ async function upsertRow(client, tableName, mappedPairs, pkColumns, uniqueColumn
   } else if (uniqueCandidates.length > 0) {
     const conflictCol = uniqueCandidates[0];
     sql += ` ON CONFLICT (${quoteIdent(conflictCol)}) DO NOTHING`;
+  } else if (tableName === 'pagos_mensualidades') {
+    const rutPagos = String(valuesByCol.get('rut_pagos') || '').trim();
+    const rutJugador = String(valuesByCol.get('rut_jugador') || '').trim();
+    const meses = String(valuesByCol.get('meses_correspondientes') || '').trim();
+    const concepto = String(valuesByCol.get('concepto_pago') || 'Mensualidad').trim();
+    const monto = Number(valuesByCol.get('monto_total_pagado') || 0);
+
+    if (!rutPagos || !meses || !(Number.isFinite(monto) && monto > 0)) {
+      if (incrementalOnly) {
+        return { skipped: true, reason: 'pagos_mensualidades sin llave rut_pagos/meses/monto valida para incremental' };
+      }
+      await client.query(sql, vals);
+      return { skipped: false };
+    }
+
+    const existingRes = await client.query(
+      `SELECT id
+       FROM pagos_mensualidades
+       WHERE UPPER(REPLACE(REPLACE(COALESCE(rut_pagos, ''), '.', ''), '-', '')) = UPPER(REPLACE(REPLACE($1, '.', ''), '-', ''))
+         AND UPPER(COALESCE(meses_correspondientes, '')) = UPPER($2)
+         AND UPPER(COALESCE(concepto_pago, 'Mensualidad')) = UPPER($3)
+         AND COALESCE(monto_total_pagado, 0) = $4::numeric
+         AND UPPER(REPLACE(REPLACE(COALESCE(rut_jugador, ''), '.', ''), '-', '')) = UPPER(REPLACE(REPLACE($5, '.', ''), '-', ''))
+       LIMIT 1`,
+      [rutPagos, meses, concepto || 'Mensualidad', monto, rutJugador]
+    );
+
+    if (existingRes.rows.length > 0) {
+      const updateColumns = [];
+      const updateValues = [];
+      let index = 1;
+
+      for (const [column, value] of valuesByCol.entries()) {
+        if (column === 'id') continue;
+        updateColumns.push(`${quoteIdent(column)} = $${index}`);
+        updateValues.push(value);
+        index += 1;
+      }
+
+      updateColumns.push(`updated_at = NOW()`);
+      updateValues.push(existingRes.rows[0].id);
+
+      await client.query(
+        `UPDATE pagos_mensualidades
+         SET ${updateColumns.join(', ')}
+         WHERE id = $${index}`,
+        updateValues
+      );
+
+      return { skipped: false };
+    }
+
+    await client.query(sql, vals);
+    return { skipped: false };
   } else if (incrementalOnly) {
     return { skipped: true, reason: 'sin clave primaria o unica para modo incremental' };
   }
@@ -349,107 +394,6 @@ async function importSheetToTable(client, sheetId, mapping, options = {}) {
   return { sheet, table, total: rows.length, imported, skipped, errors };
 }
 
-async function consolidateMigracionPagosToMensualidades(client) {
-  const rowsRes = await client.query(
-    `SELECT
-       mp.id_migracion,
-       NULLIF(TRIM(mp.rut_jugador), '') AS rut_jugador,
-       CASE
-         WHEN NULLIF(TRIM(mp.rut_jugador), '') IS NOT NULL AND j.rut_jugador IS NULL THEN TRUE
-         ELSE FALSE
-       END AS rut_sin_jugador,
-       COALESCE(j.correo_apoderado, '') AS correo_jugador,
-       COALESCE(TRIM(mp.mes_pago), 'SinMes') AS mes_pago,
-       COALESCE(mp.año_pago, EXTRACT(YEAR FROM NOW())::INT) AS ano_pago,
-       COALESCE(mp.monto_pago, 0) AS monto_pago,
-       COALESCE(mp.estado_pago, 'pendiente') AS estado_pago,
-       COALESCE(mp.metodo_pago, '') AS metodo_pago,
-       mp.fecha_registro_original,
-       mp.fecha_migracion,
-       COALESCE(mp.observaciones, '') AS observaciones,
-       COALESCE(mp.migrado_desde, 'legacy') AS migrado_desde,
-       COALESCE(mp.nombre_jugador, '') AS nombre_jugador,
-       COALESCE(mp.comprobante_antiguo, '') AS comprobante_antiguo
-     FROM migracion_pagos mp
-     LEFT JOIN jugadores j ON j.rut_jugador = mp.rut_jugador
-     ORDER BY mp.id_migracion ASC`
-  );
-
-  let inserted = 0;
-
-  for (const row of rowsRes.rows) {
-    const mesesCorrespondientes = `${row.mes_pago} ${row.ano_pago}`.trim();
-    const correcciones = [];
-    const rutJugadorPago = row.rut_sin_jugador ? null : row.rut_jugador;
-
-    if (!row.rut_jugador) correcciones.push('rut_jugador vacio');
-    if (row.rut_sin_jugador) correcciones.push('rut_jugador sin perfil en jugadores');
-    if (!row.mes_pago || row.mes_pago === 'SinMes') correcciones.push('mes_pago sin valor');
-    if (Number(row.monto_pago || 0) <= 0) correcciones.push('monto_pago invalido');
-
-    const estadoPago = correcciones.length > 0 ? 'pendiente' : normalizeLegacyEstadoPago(row.estado_pago);
-    const notas = [
-      `Migrado desde ${row.migrado_desde}`,
-      row.metodo_pago ? `Metodo: ${row.metodo_pago}` : '',
-      row.nombre_jugador ? `Nombre legacy: ${row.nombre_jugador}` : '',
-      row.rut_jugador ? `RUT legacy: ${row.rut_jugador}` : '',
-      correcciones.length > 0 ? `Correccion requerida: ${correcciones.join(', ')}` : '',
-      row.observaciones || '',
-      `Legacy ID: ${row.id_migracion}`,
-    ].filter(Boolean).join(' | ');
-
-    const existsRes = await client.query(
-      `SELECT 1
-       FROM pagos_mensualidades
-       WHERE COALESCE(concepto_pago, '') = 'Mensualidad'
-         AND COALESCE(notas_tesoreria, '') ILIKE $1
-       LIMIT 1`,
-      [`%Legacy ID: ${row.id_migracion}%`]
-    );
-
-    if (existsRes.rows.length > 0) continue;
-
-    await client.query(
-      `INSERT INTO pagos_mensualidades (
-         fecha_registro,
-         correo_apoderado,
-         concepto_pago,
-         cantidad_meses_pagados,
-         meses_correspondientes,
-         monto_total_pagado,
-         comprobante_url,
-         estado_pago,
-         fecha_aprobacion,
-         notas_tesoreria,
-         rut_jugador,
-         updated_at
-       ) VALUES (
-         COALESCE($1::timestamp, $2::timestamp, NOW()),
-         NULLIF($3, ''),
-         'Mensualidad',
-         1,
-         $4,
-         $5::numeric,
-         NULLIF($6, ''),
-         $7::varchar,
-         CASE WHEN $7::varchar = 'aprobado' THEN NOW() ELSE NULL::timestamp END,
-         $8,
-         $9,
-         NOW()
-       )`,
-      [row.fecha_registro_original, row.fecha_migracion, row.correo_jugador, mesesCorrespondientes, row.monto_pago, row.comprobante_antiguo, estadoPago, notas, rutJugadorPago]
-    );
-
-    inserted += 1;
-  }
-
-  return {
-    sourceRows: rowsRes.rows.length,
-    inserted,
-    skipped: rowsRes.rows.length - inserted,
-  };
-}
-
 async function buildDataQualitySummary(client) {
   const jugadoresMissingRes = await client.query(
     `SELECT COUNT(*)::INT AS total
@@ -470,7 +414,8 @@ async function buildDataQualitySummary(client) {
   const pagosSinRutRes = await client.query(
     `SELECT COUNT(*)::INT AS total
      FROM pagos_mensualidades
-     WHERE COALESCE(TRIM(rut_jugador), '') = ''`
+     WHERE COALESCE(TRIM(rut_jugador), '') = ''
+       AND COALESCE(TRIM(rut_pagos), '') = ''`
   );
 
   const pagosSinMesesRes = await client.query(
@@ -510,7 +455,6 @@ async function runImportFromSheets(options = {}) {
   const incrementalOnly = options.incrementalOnly !== false;
   const client = await pool.connect();
   const summary = [];
-  let legacyPaymentsConsolidation = null;
   let qualitySummary = null;
 
   try {
@@ -533,11 +477,6 @@ async function runImportFromSheets(options = {}) {
       );
     }
 
-    legacyPaymentsConsolidation = await consolidateMigracionPagosToMensualidades(client);
-    logger.log(
-      `\nMIGRACION_PAGOS -> PAGOS_MENSUALIDADES: fuente=${legacyPaymentsConsolidation.sourceRows}, insertadas=${legacyPaymentsConsolidation.inserted}, omitidas=${legacyPaymentsConsolidation.skipped}`
-    );
-
     qualitySummary = await buildDataQualitySummary(client);
     logger.log(
       `Calidad jugadores: faltantes=${qualitySummary.jugadores.faltantesClave}, rutFormatoInvalido=${qualitySummary.jugadores.rutFormatoInvalido}`
@@ -546,7 +485,11 @@ async function runImportFromSheets(options = {}) {
       `Calidad pagos_mensualidades: sinRut=${qualitySummary.pagosMensualidades.sinRutJugador}, sinMeses=${qualitySummary.pagosMensualidades.sinMeses}`
     );
 
-    return { sheetId, summary, legacyPaymentsConsolidation, qualitySummary };
+    return {
+      sheetId,
+      summary,
+      qualitySummary,
+    };
   } catch (err) {
     logger.error('Fallo general de importacion:', err.message);
     throw err;

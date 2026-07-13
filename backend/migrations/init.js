@@ -269,6 +269,7 @@ const createSchema = async () => {
         id SERIAL PRIMARY KEY,
         fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         correo_apoderado VARCHAR(255),
+        rut_pagos VARCHAR(20),
         concepto_pago VARCHAR(100),
         cantidad_meses_pagados INT,
         meses_correspondientes VARCHAR(500),
@@ -282,6 +283,9 @@ const createSchema = async () => {
       )
     `);
     console.log('✅ Tabla pagos_mensualidades creada');
+
+    await pool.query(`ALTER TABLE pagos_mensualidades ADD COLUMN IF NOT EXISTS rut_pagos VARCHAR(20)`);
+    console.log('✅ Columna rut_pagos verificada en pagos_mensualidades');
 
     // Tabla: convocatorias (Citaciones)
     await pool.query(`

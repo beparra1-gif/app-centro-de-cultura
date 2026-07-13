@@ -12,6 +12,8 @@ const multer = require('multer');
 require('dotenv').config();
 const cron = require('node-cron');
 const { runImportFromSheets } = require('./import-google-sheets');
+const { createSheetsSyncManager } = require('./google-sheets-sync');
+const { createSheetsWebhookSyncManager } = require('./google-sheets-webhook-sync');
 
 const app = express();
 let isSheetsSyncRunning = false;
@@ -434,6 +436,118 @@ const getSyncTokenFromRequest = (req) => {
   return '';
 };
 
+const RESOURCE_TABLE_MAP = {
+  cuentas: 'cuentas',
+  jugadores: 'jugadores',
+  'jugadores-visita': 'jugadores_visita',
+  comunicaciones: 'comunicaciones',
+  comentarios: 'comentarios',
+  convocatorias: 'convocatorias',
+  eventos: 'eventos',
+  asistencia: 'asistencia',
+  pagos: 'pagos',
+  'pagos-mensualidades': 'pagos_mensualidades',
+  alertas: 'alertas',
+  estadisticas: 'estadisticas',
+  evaluaciones: 'evaluaciones',
+  gamificacion: 'gamificacion_puntos',
+  quiz: 'quiz_preguntas',
+  pizarra: 'pizarra_tactica',
+  resultados: 'resultados',
+  'partidos-live': 'partidos_live',
+  staff: 'staff',
+  torneos: 'torneos',
+  kiosco: 'caja_evento_kiosco',
+  clubes: 'clubes',
+};
+
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+const normalizarRolSistema = (rol = '') => {
+  const raw = String(rol || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === 'superadmin') return 'super_admin';
+  return raw;
+};
+
+const obtenerActorRequest = (req) => {
+  const idHeader = req.headers['x-user-id'];
+  const rutHeader = req.headers['x-user-rut'];
+  const rolHeader = req.headers['x-user-role'];
+
+  return {
+    id: idHeader == null ? null : String(idHeader).trim(),
+    rut: normalizarRut(String(rutHeader || '')),
+    rol: normalizarRolSistema(rolHeader),
+  };
+};
+
+const exigirSuperAdmin = (req, res) => {
+  const actor = obtenerActorRequest(req);
+  if (actor.rol !== 'super_admin') {
+    res.status(403).json({ error: 'Solo super admin puede ejecutar esta acción.' });
+    return null;
+  }
+  return actor;
+};
+
+const quoteIdent = (ident = '') => `"${String(ident || '').replace(/"/g, '""')}"`;
+
+const getTableFromApiRequest = (req) => {
+  const pathParts = String(req.path || '')
+    .split('/')
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (pathParts[0] !== 'api') return '';
+  const resource = String(pathParts[1] || '').toLowerCase();
+  if (!resource || resource === 'admin' || resource === 'auth') return '';
+  return RESOURCE_TABLE_MAP[resource] || '';
+};
+
+const registrarAuditoriaCambio = async (poolRef, req, tableName) => {
+  if (!tableName) return;
+
+  try {
+    const actor = obtenerActorRequest(req);
+    const registroRaw = req.params?.id || req.params?.rut || req.params?.id_partido || null;
+    const registroNumerico = Number.parseInt(String(registroRaw || ''), 10);
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const cambios = Object.fromEntries(Object.entries(payload).slice(0, 40));
+
+    await poolRef.query(
+      `INSERT INTO auditoria (
+        usuario_id,
+        tabla_afectada,
+        tipo_accion,
+        registro_id,
+        valores_nuevos,
+        descripcion,
+        ip_usuario
+      ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
+      [
+        Number.isFinite(Number(actor.id)) ? Number(actor.id) : null,
+        tableName,
+        String(req.method || '').toUpperCase(),
+        Number.isFinite(registroNumerico) ? registroNumerico : null,
+        JSON.stringify({
+          params: req.params || {},
+          changes: cambios,
+          actor: {
+            id: actor.id || null,
+            rut: actor.rut || null,
+            rol: actor.rol || null,
+          },
+        }),
+        `Cambio ${String(req.method || '').toUpperCase()} en ${tableName}`,
+        req.ip || null,
+      ]
+    );
+  } catch (error) {
+    console.error(`[AUDITORIA] No se pudo registrar cambio en ${tableName}: ${error.message}`);
+  }
+};
+
 const normalizarEstadoPagoMensualidad = (estado) => {
   const raw = String(estado || '').trim().toLowerCase();
   if (['aprobado', 'aprobada', 'pagado', 'pagada', 'ok', 'completado', 'completada'].includes(raw)) {
@@ -452,6 +566,47 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+app.use((req, res, next) => {
+  const shouldTrack = MUTATING_METHODS.has(String(req.method || '').toUpperCase());
+  if (!shouldTrack) {
+    next();
+    return;
+  }
+
+  const tableName = getTableFromApiRequest(req);
+  if (!tableName) {
+    next();
+    return;
+  }
+
+  res.on('finish', () => {
+    if (res.statusCode >= 400) return;
+
+    void (async () => {
+      const actor = obtenerActorRequest(req);
+      await registrarAuditoriaCambio(pool, req, tableName);
+      sheetsSyncManager.enqueueTable(tableName);
+      sheetsSyncManager.enqueueTable('auditoria');
+      sheetsWebhookSyncManager.enqueueEvent({
+        table: tableName,
+        action: String(req.method || '').toUpperCase(),
+        path: req.path,
+        params: req.params || {},
+        body: req.body && typeof req.body === 'object' ? req.body : {},
+        actor: {
+          id: actor.id || null,
+          rut: actor.rut || null,
+          rol: actor.rol || null,
+        },
+        statusCode: res.statusCode,
+        occurredAt: new Date().toISOString(),
+      });
+    })();
+  });
+
+  next();
+});
 
 const normalizarSlugLogo = (texto = '') => {
   return String(texto)
@@ -584,6 +739,15 @@ const pool = new Pool({
 
 pool.on('error', (err) => {
   console.error('Error en pool:', err);
+});
+
+const sheetsSyncManager = createSheetsSyncManager({
+  pool,
+  logger: console,
+});
+
+const sheetsWebhookSyncManager = createSheetsWebhookSyncManager({
+  logger: console,
 });
 
 const normalizarRut = (rut = '') => {
@@ -1725,6 +1889,75 @@ app.post('/api/admin/sync-sheets', async (req, res) => {
   }
 });
 
+app.post('/api/admin/sync-sheets/export', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Exportacion deshabilitada: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para exportar a Google Sheets.' });
+  }
+
+  try {
+    const result = await sheetsSyncManager.syncAllMappedTables();
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({
+      error: 'No se pudo exportar la base de datos al Google Sheet.',
+      detail: error.message,
+    });
+  }
+});
+
+app.post('/api/admin/sync-sheets/webhook-ping', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Ping webhook deshabilitado: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para validar webhook.' });
+  }
+
+  const result = await sheetsWebhookSyncManager.sendPing();
+  if (!result.ok) {
+    return res.status(400).json(result);
+  }
+
+  return res.json({ ok: true, message: 'Webhook Google Sheets operativo.' });
+});
+
+app.post('/api/admin/sync-sheets/webhook-flush', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Flush webhook deshabilitado: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para forzar flush webhook.' });
+  }
+
+  try {
+    await sheetsWebhookSyncManager.flush();
+    return res.json({ ok: true, message: 'Flush webhook ejecutado.' });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // ==========================================
 // AUTH: LOGIN BÁSICO POR RUT/PASSWORD
 // ==========================================
@@ -2477,6 +2710,79 @@ app.put('/api/cuentas/:id', async (req, res) => {
   }
 });
 
+// DELETE: Borrar cuenta definitivamente (solo super admin)
+app.delete('/api/cuentas/:id', async (req, res) => {
+  const actor = exigirSuperAdmin(req, res);
+  if (!actor) return;
+
+  const idCuenta = Number.parseInt(String(req.params.id || ''), 10);
+  if (!Number.isFinite(idCuenta) || idCuenta <= 0) {
+    return res.status(400).json({ error: 'ID de cuenta inválido.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const cuentaRes = await client.query(
+      `SELECT id, correo, rut, rol, perfil_principal
+       FROM cuentas
+       WHERE id = $1
+       LIMIT 1`,
+      [idCuenta]
+    );
+
+    if (cuentaRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cuenta no encontrada.' });
+    }
+
+    const cuenta = cuentaRes.rows[0];
+    const rolCuenta = normalizarRolSistema(cuenta.rol || cuenta.perfil_principal || '');
+    if (rolCuenta === 'super_admin') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'No se puede borrar una cuenta super admin.' });
+    }
+
+    const rutCuentaNormalizado = normalizarRut(cuenta.rut || '');
+    if ((actor.id && String(actor.id) === String(cuenta.id)) || (actor.rut && actor.rut === rutCuentaNormalizado)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'No puedes borrar tu propia cuenta.' });
+    }
+
+    let jugadoresDesvinculados = 0;
+    const correoCuenta = String(cuenta.correo || '').trim().toLowerCase();
+    if (correoCuenta) {
+      const desvincular = await client.query(
+        `UPDATE jugadores
+         SET correo_apoderado = ''
+         WHERE LOWER(COALESCE(correo_apoderado, '')) = $1`,
+        [correoCuenta]
+      );
+      jugadoresDesvinculados = desvincular.rowCount || 0;
+    }
+
+    await client.query('DELETE FROM cuentas WHERE id = $1', [idCuenta]);
+
+    await client.query('COMMIT');
+    return res.json({
+      ok: true,
+      message: 'Cuenta eliminada definitivamente.',
+      deleted: { id: idCuenta },
+      jugadores_desvinculados: jugadoresDesvinculados,
+    });
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // Ignorar errores secundarios de rollback.
+    }
+    return res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // ==========================================
 // 5. ENDPOINTS: CONTACTOS WHATSAPP
 // ==========================================
@@ -2869,6 +3175,110 @@ app.put('/api/jugadores/:rut', async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE: Borrar jugador definitivamente (solo super admin)
+app.delete('/api/jugadores/:rut', async (req, res) => {
+  const actor = exigirSuperAdmin(req, res);
+  if (!actor) return;
+
+  const rutObjetivoNormalizado = normalizarRut(req.params.rut || '');
+  if (!rutObjetivoNormalizado) {
+    return res.status(400).json({ error: 'RUT de jugador inválido.' });
+  }
+
+  if (actor.rut && actor.rut === rutObjetivoNormalizado) {
+    return res.status(400).json({ error: 'No puedes borrar tu propio registro por RUT.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const jugadorRes = await client.query(
+      `SELECT rut_jugador
+       FROM jugadores
+       WHERE UPPER(REPLACE(REPLACE(COALESCE(rut_jugador, ''), '.', ''), '-', '')) = $1
+       LIMIT 1`,
+      [rutObjetivoNormalizado]
+    );
+
+    if (jugadorRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Jugador no encontrado.' });
+    }
+
+    const cleanupTables = await client.query(
+      `SELECT table_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND column_name IN ('rut_jugador', 'rut_pagos')
+         AND table_name <> 'jugadores'
+       GROUP BY table_name
+       ORDER BY table_name ASC`
+    );
+
+    const resumenEliminados = {};
+    for (const row of cleanupTables.rows) {
+      const tableName = String(row.table_name || '').trim();
+      if (!/^[a-zA-Z0-9_]+$/.test(tableName)) continue;
+
+      const columnsRes = await client.query(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = $1
+           AND column_name IN ('rut_jugador', 'rut_pagos')`,
+        [tableName]
+      );
+
+      const tieneRutJugador = columnsRes.rows.some((col) => col.column_name === 'rut_jugador');
+      const tieneRutPagos = columnsRes.rows.some((col) => col.column_name === 'rut_pagos');
+      if (!tieneRutJugador && !tieneRutPagos) continue;
+
+      const condiciones = [];
+      if (tieneRutJugador) {
+        condiciones.push(`UPPER(REPLACE(REPLACE(COALESCE(rut_jugador, ''), '.', ''), '-', '')) = $1`);
+      }
+      if (tieneRutPagos) {
+        condiciones.push(`UPPER(REPLACE(REPLACE(COALESCE(rut_pagos, ''), '.', ''), '-', '')) = $1`);
+      }
+
+      const sql = `DELETE FROM ${quoteIdent(tableName)} WHERE ${condiciones.join(' OR ')}`;
+      const deletedRes = await client.query(sql, [rutObjetivoNormalizado]);
+      if ((deletedRes.rowCount || 0) > 0) {
+        resumenEliminados[tableName] = deletedRes.rowCount;
+      }
+    }
+
+    const deletedJugador = await client.query(
+      `DELETE FROM jugadores
+       WHERE UPPER(REPLACE(REPLACE(COALESCE(rut_jugador, ''), '.', ''), '-', '')) = $1`,
+      [rutObjetivoNormalizado]
+    );
+
+    if ((deletedJugador.rowCount || 0) === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Jugador no encontrado.' });
+    }
+
+    await client.query('COMMIT');
+    return res.json({
+      ok: true,
+      message: 'Jugador eliminado definitivamente.',
+      deleted: { rut: rutObjetivoNormalizado },
+      cleanup: resumenEliminados,
+    });
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // Ignorar errores secundarios de rollback.
+    }
+    return res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

@@ -20,6 +20,25 @@ export const API_BASE_URL_CONFIG = API_BASE_URL;
 
 const normalizarRut = (rut = '') => String(rut).replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 
+const construirHeadersActor = (actor = null) => {
+  const headers = {};
+  const id = actor?.id;
+  const rol = String(actor?.rol || actor?.perfil_principal || '').trim().toLowerCase();
+  const rut = normalizarRut(actor?.rut || '');
+
+  if (id != null && String(id).trim() !== '') {
+    headers['x-user-id'] = String(id).trim();
+  }
+  if (rol) {
+    headers['x-user-role'] = rol;
+  }
+  if (rut) {
+    headers['x-user-rut'] = rut;
+  }
+
+  return headers;
+};
+
 // Funciones auxiliares
 const handleResponse = async (response) => {
   if (!response.ok) {
@@ -296,6 +315,17 @@ export const cuentasAPI = {
       body: JSON.stringify(payload)
     });
     return handleResponse(response);
+  },
+
+  // Eliminar definitivamente (solo super admin)
+  delete: async (id, actor = null) => {
+    const response = await fetch(`${API_BASE_URL}/cuentas/${id}`, {
+      method: 'DELETE',
+      headers: {
+        ...construirHeadersActor(actor),
+      },
+    });
+    return handleResponse(response);
   }
 };
 
@@ -526,6 +556,17 @@ export const jugadoresAPI = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+
+  // Eliminar definitivamente (solo super admin)
+  delete: async (rut, actor = null) => {
+    const response = await fetch(`${API_BASE_URL}/jugadores/${rut}`, {
+      method: 'DELETE',
+      headers: {
+        ...construirHeadersActor(actor),
+      },
     });
     return handleResponse(response);
   },

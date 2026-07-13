@@ -1389,6 +1389,26 @@ function App() {
     await recargarUsuariosAdmin();
   };
 
+  const eliminarCuentaAdmin = async (idCuenta) => {
+    if (!idCuenta) {
+      throw new Error('ID de cuenta inválido.');
+    }
+
+    await api.cuentasAPI.delete(idCuenta, usuarioAutenticado);
+    await recargarUsuariosAdmin();
+  };
+
+  const eliminarJugadorAdmin = async (rutJugador) => {
+    const rut = String(rutJugador || '').trim();
+    if (!rut) {
+      throw new Error('RUT de jugador inválido.');
+    }
+
+    await api.jugadoresAPI.delete(rut, usuarioAutenticado);
+    await recargarUsuariosAdmin();
+    await recargarPagosMensualidades();
+  };
+
   const guardarJugadorVisitaAdmin = async (payload, id = null) => {
     if (id) {
       await api.jugadoresVisitaAPI.update(id, payload);
@@ -2650,6 +2670,8 @@ function App() {
                 jugadoresAdmin={jugadoresAdmin}
                 guardarCuentaAdmin={guardarCuentaAdmin}
                 guardarJugadorAdmin={guardarJugadorAdmin}
+                eliminarCuentaAdmin={eliminarCuentaAdmin}
+                eliminarJugadorAdmin={eliminarJugadorAdmin}
                 jugadoresVisitaAdmin={jugadoresVisitaAdmin}
                 guardarJugadorVisitaAdmin={guardarJugadorVisitaAdmin}
                 validarPagoMensualidad={validarPagoMensualidad}
