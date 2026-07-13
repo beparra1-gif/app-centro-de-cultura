@@ -13,6 +13,21 @@ const numero = (valor) => Number(valor || 0);
 const normalizarTexto = (valor = '') => String(valor || '').trim();
 const normalizarClaveFiltro = (valor = '') => normalizarSlugLogo(valor);
 const coincideFiltro = (valorA, valorB) => normalizarClaveFiltro(valorA) === normalizarClaveFiltro(valorB);
+const esNuestroClub = (valor = '') => {
+  const slug = normalizarSlugLogo(valor);
+  return [
+    'centro-de-cultura-fisica',
+    'club-centro-de-cultura-fisica',
+    'ccf',
+    'club-cultura-fisica',
+    'cultura-fisica',
+  ].some((alias) => slug === alias || slug.includes(alias));
+};
+
+const canonizarNombreEquipo = (valor = '') => {
+  if (esNuestroClub(valor)) return 'centro-de-cultura-fisica';
+  return normalizarSlugLogo(valor);
+};
 
 const construirOpcionesFiltro = (valores = []) => {
   const map = new Map();
@@ -27,8 +42,8 @@ const construirOpcionesFiltro = (valores = []) => {
 };
 
 const construirEquipoKey = (nombre = '', logoUrl = '') => {
-  const nombreKey = normalizarSlugLogo(nombre) || 'equipo';
-  return `${nombreKey}::${normalizarTexto(logoUrl)}`;
+  const nombreKey = canonizarNombreEquipo(nombre) || 'equipo';
+  return nombreKey || normalizarTexto(logoUrl) || 'equipo';
 };
 
 const crearResumenEquipo = (jugadores = []) => {
@@ -94,6 +109,7 @@ function MesaControlPanel({
   const [clubVisitaLogoUrl, setClubVisitaLogoUrl] = useState('');
   const [partidoIniciado, setPartidoIniciado] = useState(false);
   const [ultimoGuardadoAt, setUltimoGuardadoAt] = useState('');
+  const [historialPartidosMesa, setHistorialPartidosMesa] = useState([]);
   const [quintetoLocalIds, setQuintetoLocalIds] = useState([]);
   const [quintetoVisitaIds, setQuintetoVisitaIds] = useState([]);
   const [nuevoNombreLocal, setNuevoNombreLocal] = useState('');
@@ -302,15 +318,6 @@ function MesaControlPanel({
     return Array.from(map.values());
   }, [equiposDesdePartidos, equiposDesdeClubPicker, rosterNormalizado, liveScore.equipoLocalNombre, liveScore.equipoLocalLogoUrl, liveScore.equipoVisitaNombre, liveScore.equipoVisitaLogoUrl]);
 
-  const equiposFiltrados = useMemo(() => (
-    equiposDisponibles.filter((equipo) => {
-      const okRama = filtroRama === 'Todas' || !equipo.ramas?.length || equipo.ramas.some((rama) => coincideFiltro(rama, filtroRama));
-      const okCategoria = filtroCategoria === 'Todas' || !equipo.categorias?.length || equipo.categorias.some((categoria) => coincideFiltro(categoria, filtroCategoria));
-      const okCompeticion = filtroCompeticion === 'Todas' || !equipo.competiciones?.length || equipo.competiciones.some((competicion) => coincideFiltro(competicion, filtroCompeticion));
-      return okRama && okCategoria && okCompeticion;
-    })
-  ), [equiposDisponibles, filtroRama, filtroCategoria, filtroCompeticion]);
-
   useEffect(() => {
     const localKey = construirEquipoKey(clubLocalNombre, clubLocalLogoUrl);
     if (normalizarTexto(clubLocalNombre) && localKey !== equipoLocalKey) {
@@ -326,17 +333,17 @@ function MesaControlPanel({
     }
   }, [clubVisitaNombre, clubVisitaLogoUrl, equipoVisitaKey, modoAnalisis]);
 
-  useEffect(() => {
-    if (!equiposFiltrados.find((e) => e.key === equipoLocalKey)) {
-      setEquipoLocalKey(equiposFiltrados[0]?.key || equiposDisponibles[0]?.key || 'LOCAL_DEFAULT');
-    }
-    if (!equiposFiltrados.find((e) => e.key === equipoVisitaKey)) {
-      setEquipoVisitaKey(equiposFiltrados[1]?.key || equiposFiltrados[0]?.key || equiposDisponibles[1]?.key || equiposDisponibles[0]?.key || 'VISITA_DEFAULT');
-    }
-  }, [equiposFiltrados, equiposDisponibles, equipoLocalKey, equipoVisitaKey]);
-
   const equipoLocal = equiposDisponibles.find((e) => e.key === equipoLocalKey) || equiposDisponibles[0] || null;
   const equipoVisita = equiposDisponibles.find((e) => e.key === equipoVisitaKey) || equiposDisponibles[1] || equiposDisponibles[0] || null;
+
+  useEffect(() => {
+    try {
+      const guardados = JSON.parse(window.localStorage.getItem('mesa_partidos_guardados') || '[]');
+      setHistorialPartidosMesa(Array.isArray(guardados) ? guardados : []);
+    } catch {
+      setHistorialPartidosMesa([]);
+    }
+  }, []);
 
   useEffect(() => {
     if (!equipoLocal) return;
@@ -659,6 +666,7 @@ function MesaControlPanel({
       const actual = JSON.parse(window.localStorage.getItem(clave) || '[]');
       const siguiente = [...actual, payload].slice(-30);
       window.localStorage.setItem(clave, JSON.stringify(siguiente));
+      setHistorialPartidosMesa(siguiente);
       setUltimoGuardadoAt(new Date().toLocaleString('es-CL'));
       return true;
     } catch {
@@ -745,7 +753,7 @@ function MesaControlPanel({
             logoUrl={clubLocalLogoUrl}
             onLogoUrl={setClubLocalLogoUrl}
             tipo="club"
-            placeholder="Escribe club local"
+            placeholder="Buscar club local"
             logoSize={30}
           />
         </div>
@@ -759,33 +767,14 @@ function MesaControlPanel({
               logoUrl={clubVisitaLogoUrl}
               onLogoUrl={setClubVisitaLogoUrl}
               tipo="club"
-              placeholder="Escribe club visita"
+              placeholder="Buscar club visita"
               logoSize={30}
             />
           </div>
         )}
       </div>
 
-      <div className="mesa-team-preview card mb-15">
-        <div className="mesa-team-preview-item">
-          <LogoAvatar nombre={equipoLocal?.nombre || 'Local'} logoUrl={equipoLocal?.logoUrl || '/logos/club-logo.png'} size={44} borderRadius="12px" />
-          <div>
-            <strong>{equipoLocal?.nombre || 'Equipo local'}</strong>
-            <span>Roster: {rosterLocal.length}/{LIMITE_JUGADORES_POR_EQUIPO}</span>
-          </div>
-        </div>
-        {modoAnalisis === 'dos' && (
-          <div className="mesa-team-preview-item">
-            <LogoAvatar nombre={equipoVisita?.nombre || 'Visita'} logoUrl={equipoVisita?.logoUrl || ''} size={44} borderRadius="12px" />
-            <div>
-              <strong>{equipoVisita?.nombre || 'Equipo visita'}</strong>
-              <span>Roster: {rosterVisita.length}/{LIMITE_JUGADORES_POR_EQUIPO}</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="card mb-15 mesa-prepartido-card">
+      <div className={`card mb-15 mesa-prepartido-card ${partidoIniciado ? 'mesa-prepartido-live' : ''}`}>
         <div className="mesa-prepartido-header">
           <h4 className="form-subtitle" style={{ margin: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Validacion Prepartido</h4>
           <div className="mesa-prepartido-actions">
@@ -1040,6 +1029,28 @@ function MesaControlPanel({
             </div>
           )}
         </div>
+      </div>
+
+      <div className="card mt-20 mesa-historial-card" style={{ borderRadius: '24px' }}>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="#6B7280" strokeWidth={1.5} /> Historial de Partidos Guardados</h4>
+        {historialPartidosMesa.length === 0 ? (
+          <p className="text-muted" style={{ marginBottom: 0 }}>Aun no hay partidos guardados en este dispositivo.</p>
+        ) : (
+          <div className="mesa-historial-list">
+            {historialPartidosMesa.slice().reverse().slice(0, 5).map((partido) => (
+              <div key={partido.id} className="mesa-historial-item">
+                <div>
+                  <strong>{partido.equipos?.local?.nombre || 'Local'} vs {partido.equipos?.visita?.nombre || 'Visita'}</strong>
+                  <span>{partido.finalizadoAt ? new Date(partido.finalizadoAt).toLocaleString('es-CL') : 'Sin fecha'} · {partido.filtros?.rama || 'Rama'} · {partido.filtros?.categoria || 'Categoria'}</span>
+                </div>
+                <div className="mesa-historial-score">
+                  <strong>{partido.marcador?.ptsLocal ?? 0} - {partido.marcador?.ptsVisita ?? 0}</strong>
+                  <span>{partido.equipos?.local?.resumen?.effTotal ?? 0} EFF / {partido.equipos?.visita?.resumen?.effTotal ?? 0} EFF</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
