@@ -2435,6 +2435,24 @@ button,
   gap: 8px;
 }
 
+.mesa-nomina-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.mesa-nomina-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.mesa-nomina-actions .btn-secondary {
+  min-height: 38px;
+}
+
 .mesa-prepartido-actions {
   display: inline-flex;
   gap: 8px;
@@ -2553,6 +2571,15 @@ button,
 
   .mesa-prepartido-actions {
     width: 100%;
+  }
+
+  .mesa-nomina-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .mesa-nomina-actions {
+    justify-content: flex-start;
   }
 
   .mesa-team-config-grid.dos-equipos {

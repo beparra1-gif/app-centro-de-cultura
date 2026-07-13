@@ -1658,16 +1658,18 @@ function MesaControlPanel({
           </label>
         </div>
 
-        <div className="mesa-eventos-template-grid">
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SISTEMA', detalle: 'Timeout local solicitado', equipo: 'local' })}>Timeout Local</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SISTEMA', detalle: 'Timeout visita solicitado', equipo: 'visita' })}>Timeout Visita</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SUSTITUCION', detalle: 'Cambio de quinteto local', equipo: 'local' })}>Sustitución Local</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SUSTITUCION', detalle: 'Cambio de quinteto visita', equipo: 'visita' })}>Sustitución Visita</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'LANZAMIENTO', detalle: 'Tiro fallado local', equipo: 'local' })}>Tiro Fallado Local</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'LANZAMIENTO', detalle: 'Tiro fallado visita', equipo: 'visita' })}>Tiro Fallado Visita</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva local', equipo: 'local' })}>Recuperación Local</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva visita', equipo: 'visita' })}>Recuperación Visita</button>
-        </div>
+        {partidoIniciado && (
+          <div className="mesa-eventos-template-grid">
+            <button className="btn-secondary" onClick={() => registrarEventoPlantilla({ tipo: 'SISTEMA', detalle: 'Timeout local solicitado', equipo: 'local' })}>Timeout Local</button>
+            <button className="btn-secondary" onClick={() => registrarEventoPlantilla({ tipo: 'SISTEMA', detalle: 'Timeout visita solicitado', equipo: 'visita' })}>Timeout Visita</button>
+            <button className="btn-secondary" onClick={() => registrarEventoPlantilla({ tipo: 'SUSTITUCION', detalle: 'Cambio de quinteto local', equipo: 'local' })}>Sustitución Local</button>
+            <button className="btn-secondary" onClick={() => registrarEventoPlantilla({ tipo: 'SUSTITUCION', detalle: 'Cambio de quinteto visita', equipo: 'visita' })}>Sustitución Visita</button>
+            <button className="btn-secondary" onClick={() => registrarEventoPlantilla({ tipo: 'LANZAMIENTO', detalle: 'Tiro fallado local', equipo: 'local' })}>Tiro Fallado Local</button>
+            <button className="btn-secondary" onClick={() => registrarEventoPlantilla({ tipo: 'LANZAMIENTO', detalle: 'Tiro fallado visita', equipo: 'visita' })}>Tiro Fallado Visita</button>
+            <button className="btn-secondary" onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva local', equipo: 'local' })}>Recuperación Local</button>
+            <button className="btn-secondary" onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva visita', equipo: 'visita' })}>Recuperación Visita</button>
+          </div>
+        )}
 
         <div className="mesa-prepartido-actions" style={{ marginTop: '10px' }}>
           <button
@@ -1886,12 +1888,12 @@ function MesaControlPanel({
             </div>
             <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
               {rosterLocalVisible.map((j) => (
-                <div key={`row-local-${j.id}`} className="mesa-historial-item" style={{ background: quintetoLocalIds.includes(j.id) ? colorConAlpha(colorLocal, '22') : undefined, borderColor: quintetoLocalIds.includes(j.id) ? colorConAlpha(colorLocal, '99') : undefined }}>
+                <div key={`row-local-${j.id}`} className="mesa-historial-item mesa-nomina-row" style={{ background: quintetoLocalIds.includes(j.id) ? colorConAlpha(colorLocal, '22') : undefined, borderColor: quintetoLocalIds.includes(j.id) ? colorConAlpha(colorLocal, '99') : undefined }}>
                   <div>
                     <strong>#{j.dorsal} {j.nombre}</strong>
                     <span>{j._categoria} · {j._rama}</span>
                   </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                  <div className="mesa-nomina-actions">
                       <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => editarDorsalJugador({ tipo: 'local', jugadorId: j.id })}>Editar dorsal</button>
                     <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => alternarNomina({ tipo: 'local', jugadorId: j.id })}>Quitar</button>
                     <button className={`btn-secondary ${quintetoLocalIds.includes(j.id) ? 'mesa-btn-live' : ''}`} style={{ width: 'auto' }} onClick={() => alternarTitular({ tipo: 'local', jugadorId: j.id })}>Quinteto inicial</button>
@@ -1932,12 +1934,12 @@ function MesaControlPanel({
               )}
               <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
                 {rosterVisitaVisible.map((j) => (
-                  <div key={`row-vis-${j.id}`} className="mesa-historial-item" style={{ background: quintetoVisitaIds.includes(j.id) ? colorConAlpha(colorVisita, '22') : undefined, borderColor: quintetoVisitaIds.includes(j.id) ? colorConAlpha(colorVisita, '99') : undefined }}>
+                  <div key={`row-vis-${j.id}`} className="mesa-historial-item mesa-nomina-row" style={{ background: quintetoVisitaIds.includes(j.id) ? colorConAlpha(colorVisita, '22') : undefined, borderColor: quintetoVisitaIds.includes(j.id) ? colorConAlpha(colorVisita, '99') : undefined }}>
                     <div>
                       <strong>#{j.dorsal} {j.nombre}</strong>
                       <span>{j._categoria} · {j._rama}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
+                    <div className="mesa-nomina-actions">
                       <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => editarDorsalJugador({ tipo: 'visita', jugadorId: j.id })}>Editar dorsal</button>
                       <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => alternarNomina({ tipo: 'visita', jugadorId: j.id })}>Quitar</button>
                       <button className={`btn-secondary ${quintetoVisitaIds.includes(j.id) ? 'mesa-btn-live' : ''}`} style={{ width: 'auto' }} onClick={() => alternarTitular({ tipo: 'visita', jugadorId: j.id })}>Quinteto inicial</button>
