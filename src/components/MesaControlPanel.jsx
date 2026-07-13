@@ -3,6 +3,54 @@ import { ArrowRightLeft, FileText, Filter, Shield, Tv, Users } from 'lucide-reac
 import { nextId } from '../utils/runtimeId';
 import { calcularEff } from '../utils/appHelpers';
 import LogoAvatar from './LogoAvatar';
+import { normalizarSlugLogo } from '../utils/logoResolver';
+
+const LIMITE_JUGADORES_POR_EQUIPO = 12;
+
+const numero = (valor) => Number(valor || 0);
+
+const normalizarTexto = (valor = '') => String(valor || '').trim();
+
+const construirEquipoKey = (nombre = '', logoUrl = '') => {
+  const nombreKey = normalizarSlugLogo(nombre) || 'equipo';
+  return `${nombreKey}::${normalizarTexto(logoUrl)}`;
+};
+
+const crearResumenEquipo = (jugadores = []) => {
+  const base = {
+    jugadores: jugadores.length,
+    pts: 0,
+    reb: 0,
+    ast: 0,
+    stl: 0,
+    blk: 0,
+    flt: 0,
+    to: 0,
+    effTotal: 0,
+  };
+
+  return jugadores.reduce((acc, j) => {
+    const eff = calcularEff({
+      pts: numero(j.pts),
+      reb: numero(j.reb),
+      ast: numero(j.ast),
+      stl: numero(j.stl),
+      blk: numero(j.blk),
+      to: numero(j.to),
+    });
+    return {
+      ...acc,
+      pts: acc.pts + numero(j.pts),
+      reb: acc.reb + numero(j.reb),
+      ast: acc.ast + numero(j.ast),
+      stl: acc.stl + numero(j.stl),
+      blk: acc.blk + numero(j.blk),
+      flt: acc.flt + numero(j.flt),
+      to: acc.to + numero(j.to),
+      effTotal: acc.effTotal + eff,
+    };
+  }, base);
+};
 
 function MesaControlPanel({
   jugadorSeleccionadoLive,
@@ -23,10 +71,62 @@ function MesaControlPanel({
   const [filtroRama, setFiltroRama] = useState('Todas');
   const [filtroCategoria, setFiltroCategoria] = useState('Todas');
   const [filtroCompeticion, setFiltroCompeticion] = useState('Todas');
+  const [busquedaEquipo, setBusquedaEquipo] = useState('');
   const [equipoLocalKey, setEquipoLocalKey] = useState('LOCAL_DEFAULT');
   const [equipoVisitaKey, setEquipoVisitaKey] = useState('VISITA_DEFAULT');
+  const [nuevoNombreLocal, setNuevoNombreLocal] = useState('');
+  const [nuevoDorsalLocal, setNuevoDorsalLocal] = useState('');
+  const [nuevoNombreVisita, setNuevoNombreVisita] = useState('');
+  const [nuevoDorsalVisita, setNuevoDorsalVisita] = useState('');
 
-  const normalizarTexto = (v = '') => String(v || '').trim();
+  const equiposDesdePartidos = useMemo(() => {
+    const map = new Map();
+    const upsert = ({ nombre, logoUrl, rama, categoria, competicion }) => {
+      const nombreLimpio = normalizarTexto(nombre);
+      if (!nombreLimpio) return;
+      const key = construirEquipoKey(nombreLimpio, logoUrl);
+      const existente = map.get(key);
+      const ramas = new Set(existente?.ramas || []);
+      const categorias = new Set(existente?.categorias || []);
+      const competiciones = new Set(existente?.competiciones || []);
+
+      if (normalizarTexto(rama)) ramas.add(normalizarTexto(rama));
+      if (normalizarTexto(categoria)) categorias.add(normalizarTexto(categoria));
+      if (normalizarTexto(competicion)) competiciones.add(normalizarTexto(competicion));
+
+      map.set(key, {
+        key,
+        nombre: nombreLimpio,
+        logoUrl: normalizarTexto(logoUrl) || (existente?.logoUrl || ''),
+        ramas: Array.from(ramas),
+        categorias: Array.from(categorias),
+        competiciones: Array.from(competiciones),
+      });
+    };
+
+    (Array.isArray(partidos) ? partidos : []).forEach((p) => {
+      const rama = normalizarTexto(p.rama || 'General');
+      const categoria = normalizarTexto(p.categoria || p.categoriaRama || 'General');
+      const competicion = normalizarTexto(p.torneo || p.competicion || p.competencia || 'Sin competencia');
+
+      upsert({
+        nombre: p.equipoLocalNombre || 'Centro de Cultura Física',
+        logoUrl: p.equipoLocalLogoUrl || '/logos/club-logo.png',
+        rama,
+        categoria,
+        competicion,
+      });
+      upsert({
+        nombre: p.nombreRival || p.equipoVisitanteNombre || p.equipoVisitaNombre || 'Visitante',
+        logoUrl: p.rivalLogoUrl || p.equipoVisitaLogoUrl || p.equipoVisitanteLogoUrl || '',
+        rama,
+        categoria,
+        competicion,
+      });
+    });
+
+    return Array.from(map.values());
+  }, [partidos]);
 
   const rosterNormalizado = useMemo(
     () => (Array.isArray(rosterEquipo) ? rosterEquipo : []).map((j, idx) => {
@@ -41,10 +141,17 @@ function MesaControlPanel({
       return {
         ...j,
         id: j.id != null ? j.id : idx + 1,
+        pts: numero(j.pts),
+        reb: numero(j.reb),
+        ast: numero(j.ast),
+        stl: numero(j.stl),
+        blk: numero(j.blk),
+        flt: numero(j.flt),
+        to: numero(j.to),
         _rama: normalizarTexto(j.rama || 'General'),
         _categoria: normalizarTexto(j.categoria || 'General'),
         _competicion: competicion,
-        _equipoKey: `${equipoNombre}::${equipoLogoUrl}`,
+        _equipoKey: construirEquipoKey(equipoNombre, equipoLogoUrl),
         _equipoNombre: equipoNombre,
         _equipoLogoUrl: equipoLogoUrl,
       };
@@ -61,58 +168,106 @@ function MesaControlPanel({
 
   const opcionesRama = useMemo(() => {
     const valores = new Set(rosterNormalizado.map((j) => j._rama).filter(Boolean));
+    equiposDesdePartidos.forEach((e) => (e.ramas || []).forEach((rama) => valores.add(rama)));
     return ['Todas', ...Array.from(valores)];
-  }, [rosterNormalizado]);
+  }, [rosterNormalizado, equiposDesdePartidos]);
 
   const opcionesCategoria = useMemo(() => {
     const valores = new Set(rosterNormalizado.map((j) => j._categoria).filter(Boolean));
+    equiposDesdePartidos.forEach((e) => (e.categorias || []).forEach((cat) => valores.add(cat)));
     return ['Todas', ...Array.from(valores)];
-  }, [rosterNormalizado]);
+  }, [rosterNormalizado, equiposDesdePartidos]);
 
   const opcionesCompeticion = useMemo(() => {
     const valores = new Set([
       ...rosterNormalizado.map((j) => j._competicion).filter(Boolean),
       ...opcionesCompeticionPartidos,
     ]);
+    equiposDesdePartidos.forEach((e) => (e.competiciones || []).forEach((comp) => valores.add(comp)));
     return ['Todas', ...Array.from(valores)];
-  }, [rosterNormalizado, opcionesCompeticionPartidos]);
+  }, [rosterNormalizado, opcionesCompeticionPartidos, equiposDesdePartidos]);
 
   const equiposDisponibles = useMemo(() => {
     const map = new Map();
+    const upsert = ({ key, nombre, logoUrl, ramas = [], categorias = [], competiciones = [] }) => {
+      const nombreLimpio = normalizarTexto(nombre);
+      if (!nombreLimpio) return;
+      const finalKey = key || construirEquipoKey(nombreLimpio, logoUrl);
+      const existente = map.get(finalKey);
+
+      const ramasSet = new Set(existente?.ramas || []);
+      const categoriasSet = new Set(existente?.categorias || []);
+      const competicionesSet = new Set(existente?.competiciones || []);
+      ramas.forEach((r) => normalizarTexto(r) && ramasSet.add(normalizarTexto(r)));
+      categorias.forEach((c) => normalizarTexto(c) && categoriasSet.add(normalizarTexto(c)));
+      competiciones.forEach((c) => normalizarTexto(c) && competicionesSet.add(normalizarTexto(c)));
+
+      map.set(finalKey, {
+        key: finalKey,
+        nombre: nombreLimpio,
+        logoUrl: normalizarTexto(logoUrl) || (existente?.logoUrl || ''),
+        ramas: Array.from(ramasSet),
+        categorias: Array.from(categoriasSet),
+        competiciones: Array.from(competicionesSet),
+      });
+    };
+
+    equiposDesdePartidos.forEach((e) => upsert(e));
+
     rosterNormalizado.forEach((j) => {
-      if (!map.has(j._equipoKey)) {
-        map.set(j._equipoKey, {
-          key: j._equipoKey,
-          nombre: j._equipoNombre,
-          logoUrl: j._equipoLogoUrl,
-        });
-      }
+      upsert({
+        key: j._equipoKey,
+        nombre: j._equipoNombre,
+        logoUrl: j._equipoLogoUrl,
+        ramas: [j._rama],
+        categorias: [j._categoria],
+        competiciones: [j._competicion],
+      });
     });
 
     if (map.size === 0) {
-      map.set('LOCAL_DEFAULT', {
+      const localDefault = {
         key: 'LOCAL_DEFAULT',
         nombre: liveScore.equipoLocalNombre || 'Centro de Cultura Física',
-        logoUrl: liveScore.equipoLocalLogoUrl || '',
-      });
-      map.set('VISITA_DEFAULT', {
+        logoUrl: liveScore.equipoLocalLogoUrl || '/logos/club-logo.png',
+        ramas: [],
+        categorias: [],
+        competiciones: [],
+      };
+      const visitaDefault = {
         key: 'VISITA_DEFAULT',
         nombre: liveScore.equipoVisitaNombre || 'Visitante',
         logoUrl: liveScore.equipoVisitaLogoUrl || '',
-      });
+        ramas: [],
+        categorias: [],
+        competiciones: [],
+      };
+      map.set(localDefault.key, localDefault);
+      map.set(visitaDefault.key, visitaDefault);
     }
 
     return Array.from(map.values());
-  }, [rosterNormalizado, liveScore.equipoLocalNombre, liveScore.equipoLocalLogoUrl, liveScore.equipoVisitaNombre, liveScore.equipoVisitaLogoUrl]);
+  }, [equiposDesdePartidos, rosterNormalizado, liveScore.equipoLocalNombre, liveScore.equipoLocalLogoUrl, liveScore.equipoVisitaNombre, liveScore.equipoVisitaLogoUrl]);
+
+  const equiposFiltrados = useMemo(() => {
+    const texto = normalizarSlugLogo(busquedaEquipo || '');
+    return equiposDisponibles.filter((equipo) => {
+      const okRama = filtroRama === 'Todas' || !equipo.ramas?.length || equipo.ramas.includes(filtroRama);
+      const okCategoria = filtroCategoria === 'Todas' || !equipo.categorias?.length || equipo.categorias.includes(filtroCategoria);
+      const okCompeticion = filtroCompeticion === 'Todas' || !equipo.competiciones?.length || equipo.competiciones.includes(filtroCompeticion);
+      const okBusqueda = !texto || normalizarSlugLogo(equipo.nombre).includes(texto);
+      return okRama && okCategoria && okCompeticion && okBusqueda;
+    });
+  }, [equiposDisponibles, busquedaEquipo, filtroRama, filtroCategoria, filtroCompeticion]);
 
   useEffect(() => {
-    if (!equiposDisponibles.find((e) => e.key === equipoLocalKey)) {
-      setEquipoLocalKey(equiposDisponibles[0]?.key || 'LOCAL_DEFAULT');
+    if (!equiposFiltrados.find((e) => e.key === equipoLocalKey)) {
+      setEquipoLocalKey(equiposFiltrados[0]?.key || equiposDisponibles[0]?.key || 'LOCAL_DEFAULT');
     }
-    if (!equiposDisponibles.find((e) => e.key === equipoVisitaKey)) {
-      setEquipoVisitaKey(equiposDisponibles[1]?.key || equiposDisponibles[0]?.key || 'VISITA_DEFAULT');
+    if (!equiposFiltrados.find((e) => e.key === equipoVisitaKey)) {
+      setEquipoVisitaKey(equiposFiltrados[1]?.key || equiposFiltrados[0]?.key || equiposDisponibles[1]?.key || equiposDisponibles[0]?.key || 'VISITA_DEFAULT');
     }
-  }, [equiposDisponibles, equipoLocalKey, equipoVisitaKey]);
+  }, [equiposFiltrados, equiposDisponibles, equipoLocalKey, equipoVisitaKey]);
 
   const equipoLocal = equiposDisponibles.find((e) => e.key === equipoLocalKey) || equiposDisponibles[0] || null;
   const equipoVisita = equiposDisponibles.find((e) => e.key === equipoVisitaKey) || equiposDisponibles[1] || equiposDisponibles[0] || null;
@@ -135,31 +290,48 @@ function MesaControlPanel({
     return okRama && okCategoria && okCompeticion;
   }), [rosterNormalizado, filtroRama, filtroCategoria, filtroCompeticion]);
 
-  const rosterLocal = useMemo(
+  const rosterLocalCompleto = useMemo(
     () => rosterFiltrado.filter((j) => j._equipoKey === equipoLocalKey),
     [rosterFiltrado, equipoLocalKey]
   );
 
-  const rosterVisita = useMemo(
+  const rosterLocal = useMemo(
+    () => rosterLocalCompleto.slice(0, LIMITE_JUGADORES_POR_EQUIPO),
+    [rosterLocalCompleto]
+  );
+
+  const rosterVisitaCompleto = useMemo(
     () => rosterFiltrado.filter((j) => j._equipoKey === equipoVisitaKey),
     [rosterFiltrado, equipoVisitaKey]
   );
+
+  const rosterVisita = useMemo(
+    () => rosterVisitaCompleto.slice(0, LIMITE_JUGADORES_POR_EQUIPO),
+    [rosterVisitaCompleto]
+  );
+
+  useEffect(() => {
+    if (!jugadorSeleccionadoLive) return;
+    if (!rosterLocal.some((j) => j.id === jugadorSeleccionadoLive)) {
+      setJugadorSeleccionadoLive(null);
+    }
+  }, [jugadorSeleccionadoLive, rosterLocal, setJugadorSeleccionadoLive]);
 
   const ejecutarAccionFIBA = (tipo, puntos = 0) => {
     if (!jugadorSeleccionadoLive) return alert('Selecciona un jugador del Roster primero.');
     let nombreJugador = '';
 
-    setRosterEquipo(rosterEquipo.map((j) => {
+    setRosterEquipo((prev) => prev.map((j) => {
       if (j.id === jugadorSeleccionadoLive) {
         nombreJugador = `#${j.dorsal} ${j.nombre}`;
         return {
           ...j,
-          pts: j.pts + puntos,
-          reb: tipo === 'REB' ? j.reb + 1 : j.reb,
-          ast: tipo === 'AST' ? j.ast + 1 : j.ast,
-          stl: tipo === 'ROBO' ? j.stl + 1 : j.stl,
-          flt: tipo === 'FALTA' ? j.flt + 1 : j.flt,
-          to: tipo === 'PERDIDA' ? j.to + 1 : j.to,
+          pts: numero(j.pts) + puntos,
+          reb: tipo === 'REB' ? numero(j.reb) + 1 : numero(j.reb),
+          ast: tipo === 'AST' ? numero(j.ast) + 1 : numero(j.ast),
+          stl: tipo === 'ROBO' ? numero(j.stl) + 1 : numero(j.stl),
+          flt: tipo === 'FALTA' ? numero(j.flt) + 1 : numero(j.flt),
+          to: tipo === 'PERDIDA' ? numero(j.to) + 1 : numero(j.to),
         };
       }
       return j;
@@ -171,6 +343,65 @@ function MesaControlPanel({
     const logTexto = puntos > 0 ? `${nombreJugador} anota ${puntos} pts` : `${nombreJugador} registra ${tipo}`;
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: logTexto }, ...prev]);
     setJugadorSeleccionadoLive(null);
+  };
+
+  const agregarJugadorManual = ({ tipo }) => {
+    const esLocal = tipo === 'local';
+    const equipoTarget = esLocal ? equipoLocal : equipoVisita;
+    const nombre = normalizarTexto(esLocal ? nuevoNombreLocal : nuevoNombreVisita);
+    const dorsalTexto = normalizarTexto(esLocal ? nuevoDorsalLocal : nuevoDorsalVisita);
+    const dorsal = Number(dorsalTexto);
+
+    if (!equipoTarget?.key) return;
+    if (!nombre) return alert('Ingresa el nombre del jugador.');
+    if (!Number.isFinite(dorsal) || dorsal <= 0) return alert('Ingresa un dorsal valido.');
+
+    setRosterEquipo((prev) => {
+      const normalizadoPrev = (Array.isArray(prev) ? prev : []).map((j, idx) => ({
+        ...j,
+        id: j.id != null ? j.id : idx + 1,
+        _equipoKey: construirEquipoKey(
+          j.equipo_nombre || j.equipo || j.club_nombre || j.club || j.team_name || liveScore.equipoLocalNombre || 'Centro de Cultura Física',
+          j.equipo_logo_url || j.logo_equipo_url || j.club_logo_url || j.logo_url || ''
+        ),
+      }));
+
+      const cantidadEquipo = normalizadoPrev.filter((j) => j._equipoKey === equipoTarget.key).length;
+      if (cantidadEquipo >= LIMITE_JUGADORES_POR_EQUIPO) {
+        alert(`El equipo ${equipoTarget.nombre} ya tiene ${LIMITE_JUGADORES_POR_EQUIPO} jugadores en mesa.`);
+        return prev;
+      }
+
+      const maxId = normalizadoPrev.reduce((acc, j) => Math.max(acc, Number(j.id || 0)), 0);
+      const nuevo = {
+        id: maxId + 1,
+        rut_jugador: `manual-${nextId()}`,
+        nombre,
+        dorsal,
+        rama: filtroRama === 'Todas' ? (esLocal ? (equipoTarget.ramas?.[0] || 'General') : 'General') : filtroRama,
+        categoria: filtroCategoria === 'Todas' ? (equipoTarget.categorias?.[0] || 'General') : filtroCategoria,
+        competicion: filtroCompeticion === 'Todas' ? (equipoTarget.competiciones?.[0] || 'Sin competencia') : filtroCompeticion,
+        equipo: equipoTarget.nombre,
+        equipo_nombre: equipoTarget.nombre,
+        logo_equipo_url: equipoTarget.logoUrl || '',
+        pts: 0,
+        reb: 0,
+        ast: 0,
+        stl: 0,
+        blk: 0,
+        flt: 0,
+        to: 0,
+      };
+      return [...prev, nuevo];
+    });
+
+    if (esLocal) {
+      setNuevoNombreLocal('');
+      setNuevoDorsalLocal('');
+    } else {
+      setNuevoNombreVisita('');
+      setNuevoDorsalVisita('');
+    }
   };
 
   const registrarPuntosVisita = (puntos = 1) => {
@@ -186,6 +417,19 @@ function MesaControlPanel({
     setLiveScore((prev) => ({ ...prev, faltasVisita: prev.faltasVisita + 1 }));
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `${nombreEquipo} registra FALTA` }, ...prev]);
   };
+
+  const topEficienciaLocal = useMemo(
+    () => [...rosterLocal].sort((a, b) => calcularEff(b) - calcularEff(a)),
+    [rosterLocal]
+  );
+
+  const topEficienciaVisita = useMemo(
+    () => [...rosterVisita].sort((a, b) => calcularEff(b) - calcularEff(a)),
+    [rosterVisita]
+  );
+
+  const resumenLocal = useMemo(() => crearResumenEquipo(rosterLocal), [rosterLocal]);
+  const resumenVisita = useMemo(() => crearResumenEquipo(rosterVisita), [rosterVisita]);
 
   if (modoChromaKey) {
     return (
@@ -215,6 +459,16 @@ function MesaControlPanel({
 
       <div className="mesa-filtros-grid card mb-15">
         <label className="mesa-filter-item">
+          <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Buscar Equipo / Logo</span>
+          <input
+            className="form-input"
+            value={busquedaEquipo}
+            onChange={(e) => setBusquedaEquipo(e.target.value)}
+            placeholder="Ej: CCF, rival, club..."
+          />
+        </label>
+
+        <label className="mesa-filter-item">
           <span><Filter size={14} color="#6B7280" strokeWidth={1.5} /> Rama</span>
           <select className="form-input" value={filtroRama} onChange={(e) => setFiltroRama(e.target.value)}>
             {opcionesRama.map((op) => <option key={op} value={op}>{op}</option>)}
@@ -238,7 +492,7 @@ function MesaControlPanel({
         <label className="mesa-filter-item">
           <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Equipo Local</span>
           <select className="form-input" value={equipoLocalKey} onChange={(e) => setEquipoLocalKey(e.target.value)}>
-            {equiposDisponibles.map((e) => <option key={e.key} value={e.key}>{e.nombre}</option>)}
+            {equiposFiltrados.map((e) => <option key={e.key} value={e.key}>{e.nombre}</option>)}
           </select>
         </label>
 
@@ -246,9 +500,28 @@ function MesaControlPanel({
           <label className="mesa-filter-item">
             <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Equipo Visita</span>
             <select className="form-input" value={equipoVisitaKey} onChange={(e) => setEquipoVisitaKey(e.target.value)}>
-              {equiposDisponibles.map((e) => <option key={e.key} value={e.key}>{e.nombre}</option>)}
+              {equiposFiltrados.map((e) => <option key={e.key} value={e.key}>{e.nombre}</option>)}
             </select>
           </label>
+        )}
+      </div>
+
+      <div className="mesa-team-preview card mb-15">
+        <div className="mesa-team-preview-item">
+          <LogoAvatar nombre={equipoLocal?.nombre || 'Local'} logoUrl={equipoLocal?.logoUrl || '/logos/club-logo.png'} size={44} borderRadius="12px" />
+          <div>
+            <strong>{equipoLocal?.nombre || 'Equipo local'}</strong>
+            <span>Roster: {rosterLocal.length}/{LIMITE_JUGADORES_POR_EQUIPO}</span>
+          </div>
+        </div>
+        {modoAnalisis === 'dos' && (
+          <div className="mesa-team-preview-item">
+            <LogoAvatar nombre={equipoVisita?.nombre || 'Visita'} logoUrl={equipoVisita?.logoUrl || ''} size={44} borderRadius="12px" />
+            <div>
+              <strong>{equipoVisita?.nombre || 'Equipo visita'}</strong>
+              <span>Roster: {rosterVisita.length}/{LIMITE_JUGADORES_POR_EQUIPO}</span>
+            </div>
+          </div>
         )}
       </div>
 
@@ -296,7 +569,7 @@ function MesaControlPanel({
 
       <div className="caja-doble-grid landscape-mode">
         <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
-          <h5 className="sub-caja-title">Roster Local ({rosterLocal.length})</h5>
+          <h5 className="sub-caja-title">Roster Local ({rosterLocal.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
           <div className="roster-fiba-list">
             {rosterLocal.map((j) => (
               <div key={j.id} onClick={() => setJugadorSeleccionadoLive(j.id)} className={`roster-fiba-item ${jugadorSeleccionadoLive === j.id ? 'seleccionado' : ''}`}>
@@ -308,6 +581,11 @@ function MesaControlPanel({
               </div>
             ))}
             {rosterLocal.length === 0 && <p className="text-muted text-center" style={{ margin: '15px 0' }}>No hay jugadores para los filtros actuales.</p>}
+          </div>
+          <div className="mesa-add-player mt-10">
+            <input className="form-input" placeholder="Nombre jugadora/or" value={nuevoNombreLocal} onChange={(e) => setNuevoNombreLocal(e.target.value)} />
+            <input className="form-input" placeholder="Dorsal" value={nuevoDorsalLocal} onChange={(e) => setNuevoDorsalLocal(e.target.value)} />
+            <button className="btn-secondary" onClick={() => agregarJugadorManual({ tipo: 'local' })}>Añadir Local</button>
           </div>
         </div>
 
@@ -342,7 +620,7 @@ function MesaControlPanel({
 
         {modoAnalisis === 'dos' && (
           <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
-            <h5 className="sub-caja-title">Roster Visita ({rosterVisita.length})</h5>
+            <h5 className="sub-caja-title">Roster Visita ({rosterVisita.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
             <div className="roster-fiba-list">
               {rosterVisita.map((j) => (
                 <div key={j.id} className="roster-fiba-item">
@@ -355,8 +633,63 @@ function MesaControlPanel({
               ))}
               {rosterVisita.length === 0 && <p className="text-muted text-center" style={{ margin: '15px 0' }}>Sin jugadores de visita para este filtro.</p>}
             </div>
+            <div className="mesa-add-player mt-10">
+              <input className="form-input" placeholder="Nombre jugadora/or" value={nuevoNombreVisita} onChange={(e) => setNuevoNombreVisita(e.target.value)} />
+              <input className="form-input" placeholder="Dorsal" value={nuevoDorsalVisita} onChange={(e) => setNuevoDorsalVisita(e.target.value)} />
+              <button className="btn-secondary" onClick={() => agregarJugadorManual({ tipo: 'visita' })}>Añadir Visita</button>
+            </div>
           </div>
         )}
+      </div>
+
+      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Seguimiento Estadístico (Eficiencia)</h4>
+        <div className="mesa-stats-grid">
+          <div className="mesa-stats-box">
+            <h6>{equipoLocal?.nombre || 'Local'}</h6>
+            <p>EFF Equipo: <strong>{resumenLocal.effTotal}</strong> | Promedio: <strong>{resumenLocal.jugadores ? (resumenLocal.effTotal / resumenLocal.jugadores).toFixed(1) : '0.0'}</strong></p>
+            <p>PTS: {resumenLocal.pts} | REB: {resumenLocal.reb} | AST: {resumenLocal.ast} | STL: {resumenLocal.stl}</p>
+          </div>
+          {modoAnalisis === 'dos' && (
+            <div className="mesa-stats-box">
+              <h6>{equipoVisita?.nombre || 'Visita'}</h6>
+              <p>EFF Equipo: <strong>{resumenVisita.effTotal}</strong> | Promedio: <strong>{resumenVisita.jugadores ? (resumenVisita.effTotal / resumenVisita.jugadores).toFixed(1) : '0.0'}</strong></p>
+              <p>PTS: {resumenVisita.pts} | REB: {resumenVisita.reb} | AST: {resumenVisita.ast} | STL: {resumenVisita.stl}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="mesa-stats-tables">
+          <div className="mesa-stats-table">
+            <h6>Ranking Local</h6>
+            {topEficienciaLocal.length === 0 ? (
+              <p className="text-muted">Sin datos locales.</p>
+            ) : (
+              topEficienciaLocal.map((j, idx) => (
+                <div key={j.id} className="mesa-stats-row">
+                  <span>#{idx + 1} #{j.dorsal} {j.nombre}</span>
+                  <strong>EFF {calcularEff(j)}</strong>
+                </div>
+              ))
+            )}
+          </div>
+
+          {modoAnalisis === 'dos' && (
+            <div className="mesa-stats-table">
+              <h6>Ranking Visita</h6>
+              {topEficienciaVisita.length === 0 ? (
+                <p className="text-muted">Sin datos de visita.</p>
+              ) : (
+                topEficienciaVisita.map((j, idx) => (
+                  <div key={j.id} className="mesa-stats-row">
+                    <span>#{idx + 1} #{j.dorsal} {j.nombre}</span>
+                    <strong>EFF {calcularEff(j)}</strong>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="card mt-20" style={{ borderRadius: '24px' }}>

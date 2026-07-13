@@ -2058,6 +2058,105 @@ button,
   gap: 8px;
 }
 
+.mesa-team-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.mesa-team-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--borde-suave);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mesa-team-preview-item strong {
+  display: block;
+  font-size: 13px;
+}
+
+.mesa-team-preview-item span {
+  color: var(--texto-secundario);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mesa-add-player {
+  display: grid;
+  grid-template-columns: 1fr 90px auto;
+  gap: 8px;
+}
+
+.mesa-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mesa-stats-box {
+  border: 1px solid var(--borde-suave);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(0, 122, 255, 0.05);
+}
+
+.mesa-stats-box h6 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mesa-stats-box p {
+  margin: 5px 0;
+  font-size: 12px;
+  color: var(--texto-secundario);
+}
+
+.mesa-stats-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.mesa-stats-table {
+  border: 1px solid var(--borde-suave);
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.mesa-stats-table h6 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--texto-secundario);
+}
+
+.mesa-stats-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--borde-suave);
+  font-size: 12px;
+}
+
+.mesa-stats-row:last-child {
+  border-bottom: none;
+}
+
+@media (max-width: 720px) {
+  .mesa-add-player {
+    grid-template-columns: 1fr;
+  }
+}
+
 .roster-fiba-list { display: flex; flex-direction: column; gap: 12px; max-height: 320px; overflow-y: auto; padding-right: 8px; }
 .roster-fiba-item { 
   display: flex; align-items: center; padding: 14px; border: 1px solid var(--borde-suave); 
