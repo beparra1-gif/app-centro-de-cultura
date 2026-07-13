@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeft, FileText, Filter, Shield, Tv, Users } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowRightLeft, Expand, FileText, Filter, Shield, Tv, Users } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import { calcularEff } from '../utils/appHelpers';
 import * as api from '../api/client';
@@ -45,6 +45,19 @@ const esCategoriaMenorOIgual = (categoriaJugador = '', categoriaBase = '') => {
   return subJugador <= subBase;
 };
 
+const inferirRamaDesdeTexto = (valor = '') => {
+  const slug = normalizarSlugLogo(valor);
+  if (slug.includes('femen')) return 'Femenina';
+  if (slug.includes('mascul')) return 'Masculina';
+  return '';
+};
+
+const inferirCategoriaDesdeTexto = (valor = '') => {
+  const sub = obtenerSubCategoriaNumero(valor);
+  if (sub == null) return '';
+  return `SUB-${sub}`;
+};
+
 const construirOpcionesFiltro = (valores = []) => {
   const map = new Map();
   valores.forEach((valor) => {
@@ -60,6 +73,22 @@ const construirOpcionesFiltro = (valores = []) => {
 const construirEquipoKey = (nombre = '', logoUrl = '') => {
   const nombreKey = canonizarNombreEquipo(nombre) || 'equipo';
   return nombreKey || normalizarTexto(logoUrl) || 'equipo';
+};
+
+const sonEquiposCompatibles = (jugador = {}, equipo = null) => {
+  if (!equipo) return false;
+  if (jugador._equipoKey && equipo.key && jugador._equipoKey === equipo.key) return true;
+
+  const canonJugador = jugador._equipoCanon || canonizarNombreEquipo(jugador._equipoNombre || '');
+  const canonEquipo = equipo._canon || canonizarNombreEquipo(equipo.nombre || '');
+  if (canonJugador && canonEquipo && canonJugador === canonEquipo) return true;
+
+  if (esNuestroClub(jugador._equipoNombre || '') && esNuestroClub(equipo.nombre || '')) return true;
+
+  const nombreJugador = normalizarClaveFiltro(jugador._equipoNombre || '');
+  const nombreEquipo = normalizarClaveFiltro(equipo.nombre || '');
+  if (!nombreJugador || !nombreEquipo) return false;
+  return nombreJugador.includes(nombreEquipo) || nombreEquipo.includes(nombreJugador);
 };
 
 const crearResumenEquipo = (jugadores = []) => {
@@ -114,6 +143,7 @@ function MesaControlPanel({
   partidos = [],
 }) {
   const [modoAnalisis, setModoAnalisis] = useState('dos');
+  const [moduloMesa, setModuloMesa] = useState('prepartido');
   const [filtroRama, setFiltroRama] = useState('Todas');
   const [filtroCategoria, setFiltroCategoria] = useState('Todas');
   const [competenciaNombre, setCompetenciaNombre] = useState('');
@@ -145,6 +175,15 @@ function MesaControlPanel({
   const [nuevoDorsalLocal, setNuevoDorsalLocal] = useState('');
   const [nuevoNombreVisita, setNuevoNombreVisita] = useState('');
   const [nuevoDorsalVisita, setNuevoDorsalVisita] = useState('');
+  const [capitanLocalId, setCapitanLocalId] = useState('');
+  const [capitanVisitaId, setCapitanVisitaId] = useState('');
+  const [colorLocal, setColorLocal] = useState('#0a84ff');
+  const [colorVisita, setColorVisita] = useState('#ff3b30');
+  const [staffLocal, setStaffLocal] = useState({ entrenador: '', asistente: '', delegado: '' });
+  const [staffVisita, setStaffVisita] = useState({ entrenador: '', asistente: '', delegado: '' });
+  const [cambioSalidaId, setCambioSalidaId] = useState('');
+  const [cambioIngresoId, setCambioIngresoId] = useState('');
+  const liveFullScreenRef = useRef(null);
 
   const equiposDesdePartidos = useMemo(() => {
     const map = new Map();
@@ -204,6 +243,8 @@ function MesaControlPanel({
         j.equipo_logo_url || j.logo_equipo_url || j.club_logo_url || j.logo_url || ''
       );
       const competicion = normalizarTexto(j.competicion || j.competencia || j.torneo || 'Sin competencia');
+      const ramaInferida = inferirRamaDesdeTexto(j.rama || j.categoria || equipoNombre);
+      const categoriaInferida = inferirCategoriaDesdeTexto(j.categoria || equipoNombre);
 
       return {
         ...j,
@@ -215,10 +256,11 @@ function MesaControlPanel({
         blk: numero(j.blk),
         flt: numero(j.flt),
         to: numero(j.to),
-        _rama: normalizarTexto(j.rama || 'General'),
-        _categoria: normalizarTexto(j.categoria || 'General'),
+        _rama: normalizarTexto(j.rama || ramaInferida || 'General'),
+        _categoria: normalizarTexto(j.categoria || categoriaInferida || 'General'),
         _competicion: competicion,
         _equipoKey: construirEquipoKey(equipoNombre, equipoLogoUrl),
+        _equipoCanon: canonizarNombreEquipo(equipoNombre),
         _equipoNombre: equipoNombre,
         _equipoLogoUrl: equipoLogoUrl,
         _bloqueado: Boolean(j.sancionado || j.bloqueado || j.expulsado || j._expulsado),
@@ -337,6 +379,7 @@ function MesaControlPanel({
       map.set(finalKey, {
         key: finalKey,
         nombre: nombreLimpio,
+        _canon: canonizarNombreEquipo(nombreLimpio),
         logoUrl: normalizarTexto(logoUrl) || (existente?.logoUrl || ''),
         ramas: Array.from(ramasSet),
         categorias: Array.from(categoriasSet),
@@ -453,8 +496,8 @@ function MesaControlPanel({
   ]);
 
   const rosterLocalCompleto = useMemo(
-    () => rosterFiltrado.filter((j) => j._equipoKey === equipoLocalKey),
-    [rosterFiltrado, equipoLocalKey]
+    () => rosterFiltrado.filter((j) => sonEquiposCompatibles(j, equipoLocal)),
+    [rosterFiltrado, equipoLocal]
   );
 
   const rosterLocal = useMemo(
@@ -463,8 +506,8 @@ function MesaControlPanel({
   );
 
   const rosterVisitaCompleto = useMemo(
-    () => rosterFiltrado.filter((j) => j._equipoKey === equipoVisitaKey),
-    [rosterFiltrado, equipoVisitaKey]
+    () => rosterFiltrado.filter((j) => sonEquiposCompatibles(j, equipoVisita)),
+    [rosterFiltrado, equipoVisita]
   );
 
   const rosterVisita = useMemo(
@@ -580,6 +623,54 @@ function MesaControlPanel({
     }
   }, [jugadorSeleccionadoLive, rosterLocal, setJugadorSeleccionadoLive]);
 
+  const registrarEventoJuego = ({ tipo, detalle, equipo = 'local', jugadorId = null, valor = 0 }) => {
+    const operadorNombre = normalizarTexto(operadoresMesa[rolOperadorActivo]) || 'Operador sin nombre';
+    const rosterBase = equipo === 'visita' ? rosterVisitaCompleto : rosterLocalCompleto;
+    const jugador = rosterBase.find((j) => String(j.id) === String(jugadorId));
+    const evento = {
+      id: nextId(),
+      tipo,
+      detalle,
+      equipo,
+      jugadorId: jugador?.id || null,
+      jugadorNombre: jugador ? `#${jugador.dorsal} ${jugador.nombre}` : '',
+      valor,
+      periodo: liveScore.periodo,
+      reloj: liveScore.reloj,
+      operadorRol: rolOperadorActivo,
+      operadorNombre,
+      createdAt: new Date().toISOString(),
+    };
+    setEventosPartido((prev) => [evento, ...prev].slice(0, 400));
+  };
+
+  const ejecutarCambioJugadorLocal = () => {
+    if (!partidoIniciado || !prepartidoValido) return;
+    const salida = rosterLocalCompleto.find((j) => String(j.id) === String(cambioSalidaId));
+    const ingreso = rosterLocalCompleto.find((j) => String(j.id) === String(cambioIngresoId));
+    if (!salida || !ingreso) return;
+    if (!quintetoLocalIds.includes(salida.id)) return alert('La jugadora/o de salida debe estar en cancha.');
+    if (quintetoLocalIds.includes(ingreso.id)) return alert('La jugadora/o de ingreso ya está en cancha.');
+    if (ingreso._bloqueado || ingreso.flt >= 5) return alert('La jugadora/o de ingreso está bloqueada/o.');
+
+    setQuintetoLocalIds((prev) => prev.filter((id) => id !== salida.id).concat(ingreso.id).slice(0, 5));
+    const detalle = `Cambio Local: sale #${salida.dorsal} ${salida.nombre}, entra #${ingreso.dorsal} ${ingreso.nombre}`;
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `🔁 ${detalle}` }, ...prev]);
+    registrarEventoJuego({ tipo: 'CAMBIO', detalle, equipo: 'local', jugadorId: ingreso.id, valor: 0 });
+    setCambioSalidaId('');
+    setCambioIngresoId('');
+  };
+
+  const cambiarVistaLivePantallaCompleta = async () => {
+    const node = liveFullScreenRef.current;
+    if (!node || !document?.fullscreenEnabled) return;
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+    await node.requestFullscreen();
+  };
+
   const ejecutarAccionFIBA = (tipo, puntos = 0) => {
     if (!partidoIniciado || !prepartidoValido) return alert('Valida y comienza el partido antes de capturar eventos.');
     if (!jugadorSeleccionadoLive) return alert('Selecciona un jugador del Roster primero.');
@@ -615,6 +706,7 @@ function MesaControlPanel({
 
     const logTexto = puntos > 0 ? `${nombreJugador} anota ${puntos} pts` : `${nombreJugador} registra ${tipo}`;
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: logTexto }, ...prev]);
+    registrarEventoJuego({ tipo, detalle: logTexto, equipo: 'local', jugadorId: jugadorSeleccionadoLive, valor: puntos });
     if (expulsionNombre) {
       setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `⚠ ${expulsionNombre} llega a 5 faltas y debe salir.` }, ...prev]);
       setQuintetoLocalIds((prev) => prev.filter((id) => id !== jugadorSeleccionadoLive));
@@ -686,7 +778,9 @@ function MesaControlPanel({
     if (modoAnalisis !== 'dos') return;
     const nombreEquipo = equipoVisita?.nombre || liveScore.equipoVisitaNombre || 'Visita';
     setLiveScore((prev) => ({ ...prev, ptsVisita: prev.ptsVisita + puntos }));
-    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `${nombreEquipo} anota ${puntos} pts` }, ...prev]);
+    const detalle = `${nombreEquipo} anota ${puntos} pts`;
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalle }, ...prev]);
+    registrarEventoJuego({ tipo: 'PUNTO', detalle, equipo: 'visita', valor: puntos });
   };
 
   const registrarFaltaVisita = () => {
@@ -694,7 +788,9 @@ function MesaControlPanel({
     if (modoAnalisis !== 'dos') return;
     const nombreEquipo = equipoVisita?.nombre || liveScore.equipoVisitaNombre || 'Visita';
     setLiveScore((prev) => ({ ...prev, faltasVisita: prev.faltasVisita + 1 }));
-    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `${nombreEquipo} registra FALTA` }, ...prev]);
+    const detalle = `${nombreEquipo} registra FALTA`;
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalle }, ...prev]);
+    registrarEventoJuego({ tipo: 'FALTA', detalle, equipo: 'visita' });
   };
 
   const topEficienciaLocal = useMemo(
@@ -884,6 +980,14 @@ function MesaControlPanel({
         nombre: filtroCompeticionActiva,
         logoUrl: normalizarTexto(competenciaLogoUrl),
       },
+      configuracionPartido: {
+        colorLocal,
+        colorVisita,
+        capitanLocalId,
+        capitanVisitaId,
+        staffLocal,
+        staffVisita,
+      },
       canchaSede: normalizarTexto(canchaSede),
       playByPlay,
       eventos: eventosPartido,
@@ -969,11 +1073,21 @@ function MesaControlPanel({
           <h3 className="form-subtitle" style={{ margin: 0 }}><Users size={18} color="#6B7280" strokeWidth={1.5} /> Mesa Insights</h3>
           <span className="mesa-lab-subtitle">Analiza uno o dos equipos con filtros competitivos y control live.</span>
         </div>
-        <div className="mesa-lab-mode-switch" role="tablist" aria-label="Modo de análisis">
-          <button className={`mesa-mode-btn ${modoAnalisis === 'uno' ? 'active' : ''}`} onClick={() => setModoAnalisis('uno')}>1 Equipo</button>
-          <button className={`mesa-mode-btn ${modoAnalisis === 'dos' ? 'active' : ''}`} onClick={() => setModoAnalisis('dos')}>2 Equipos</button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="mesa-lab-mode-switch" role="tablist" aria-label="Modo de análisis">
+            <button className={`mesa-mode-btn ${modoAnalisis === 'uno' ? 'active' : ''}`} onClick={() => setModoAnalisis('uno')}>1 Equipo</button>
+            <button className={`mesa-mode-btn ${modoAnalisis === 'dos' ? 'active' : ''}`} onClick={() => setModoAnalisis('dos')}>2 Equipos</button>
+          </div>
+          <div className="mesa-lab-mode-switch" style={{ gridTemplateColumns: '1fr 1fr 1fr' }} role="tablist" aria-label="Módulo de mesa">
+            <button className={`mesa-mode-btn ${moduloMesa === 'prepartido' ? 'active' : ''}`} onClick={() => setModuloMesa('prepartido')}>1. Datos partido</button>
+            <button className={`mesa-mode-btn ${moduloMesa === 'live' ? 'active' : ''}`} onClick={() => setModuloMesa('live')}>2. Juego en vivo</button>
+            <button className={`mesa-mode-btn ${moduloMesa === 'analitica' ? 'active' : ''}`} onClick={() => setModuloMesa('analitica')}>3. Estadística</button>
+          </div>
         </div>
       </div>
+
+      {moduloMesa === 'prepartido' && (
+        <>
 
       <div className="mesa-filtros-grid card mb-15">
         <label className="mesa-filter-item">
@@ -1188,13 +1302,54 @@ function MesaControlPanel({
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
-        <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={() => setModoChromaKey(true)}><Tv size={14} color="#6B7280" strokeWidth={1.5} /> Modo Transmisión (OBS)</button>
+      <div className="card mb-15" style={{ borderRadius: '18px' }}>
+        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Datos de Partido y Staff</h4>
+        <div className="mesa-filtros-grid">
+          <label className="mesa-filter-item">
+            <span>Color equipo local</span>
+            <input type="color" className="form-input" value={colorLocal} onChange={(e) => setColorLocal(e.target.value)} />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Color equipo visita</span>
+            <input type="color" className="form-input" value={colorVisita} onChange={(e) => setColorVisita(e.target.value)} />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Capitán/a local</span>
+            <select className="form-input" value={capitanLocalId} onChange={(e) => setCapitanLocalId(e.target.value)}>
+              <option value="">Seleccionar</option>
+              {rosterLocalCompleto.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+            </select>
+          </label>
+          {modoAnalisis === 'dos' && (
+            <label className="mesa-filter-item">
+              <span>Capitán/a visita</span>
+              <select className="form-input" value={capitanVisitaId} onChange={(e) => setCapitanVisitaId(e.target.value)}>
+                <option value="">Seleccionar</option>
+                {rosterVisitaCompleto.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="mesa-filter-item"><span>DT Local</span><input className="form-input" value={staffLocal.entrenador} onChange={(e) => setStaffLocal((prev) => ({ ...prev, entrenador: e.target.value }))} placeholder="Opcional" /></label>
+          <label className="mesa-filter-item"><span>Asistente Local</span><input className="form-input" value={staffLocal.asistente} onChange={(e) => setStaffLocal((prev) => ({ ...prev, asistente: e.target.value }))} placeholder="Opcional" /></label>
+          <label className="mesa-filter-item"><span>Delegado Local</span><input className="form-input" value={staffLocal.delegado} onChange={(e) => setStaffLocal((prev) => ({ ...prev, delegado: e.target.value }))} placeholder="Opcional" /></label>
+          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>DT Visita</span><input className="form-input" value={staffVisita.entrenador} onChange={(e) => setStaffVisita((prev) => ({ ...prev, entrenador: e.target.value }))} placeholder="Opcional" /></label>}
+          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>Asistente Visita</span><input className="form-input" value={staffVisita.asistente} onChange={(e) => setStaffVisita((prev) => ({ ...prev, asistente: e.target.value }))} placeholder="Opcional" /></label>}
+          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>Delegado Visita</span><input className="form-input" value={staffVisita.delegado} onChange={(e) => setStaffVisita((prev) => ({ ...prev, delegado: e.target.value }))} placeholder="Opcional" /></label>}
+        </div>
       </div>
+        </>
+      )}
+
+      {moduloMesa === 'live' && (
+        <div ref={liveFullScreenRef} className="mesa-live-wrap">
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', gap: '8px' }}>
+            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={cambiarVistaLivePantallaCompleta}><Expand size={14} color="#6B7280" strokeWidth={1.5} /> Pantalla Completa Live</button>
+            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={() => setModoChromaKey(true)}><Tv size={14} color="#6B7280" strokeWidth={1.5} /> Modo Transmisión (OBS)</button>
+          </div>
 
       <div className="checkout-total-box mb-15" style={{ background: 'linear-gradient(180deg, #1C1C1E 0%, #101114 100%)', border: '2px solid rgba(0,122,255,0.2)', display: 'flex', flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', padding: '20px 10px', borderRadius: '24px', boxShadow: '0 16px 34px rgba(15,23,42,0.12)' }}>
         <div className="text-center" style={{ flex: 1 }}>
-          <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '800' }}>LOCAL {liveScore.flecha === 'LOCAL' && '◀'}</span>
+          <span style={{ fontSize: '12px', color: colorLocal, fontWeight: '800' }}>LOCAL {liveScore.flecha === 'LOCAL' && '◀'}</span>
           <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px', marginBottom: '4px' }}>
             <LogoAvatar nombre={liveScore.equipoLocalNombre || 'Centro de Cultura Física'} logoUrl={liveScore.equipoLocalLogoUrl} size={46} borderRadius="16px" />
           </div>
@@ -1227,7 +1382,7 @@ function MesaControlPanel({
         </div>
 
         <div className="text-center" style={{ flex: 1 }}>
-          <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '800' }}>{liveScore.flecha === 'VISITA' && '▶'} VISITA</span>
+          <span style={{ fontSize: '12px', color: colorVisita, fontWeight: '800' }}>{liveScore.flecha === 'VISITA' && '▶'} VISITA</span>
           <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px', marginBottom: '4px' }}>
             <LogoAvatar nombre={liveScore.equipoVisitaNombre || 'Visitante'} logoUrl={liveScore.equipoVisitaLogoUrl} size={46} borderRadius="16px" />
           </div>
@@ -1290,6 +1445,21 @@ function MesaControlPanel({
             <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !prepartidoValido} onClick={() => ejecutarAccionFIBA('FALTA')}>FALTA</button>
           </div>
 
+          <div className="mesa-visitor-actions">
+            <h6>Cambio de Jugador Local</h6>
+            <div className="mesa-visitor-actions-grid" style={{ gridTemplateColumns: '1fr 1fr 120px' }}>
+              <select className="form-input" value={cambioSalidaId} onChange={(e) => setCambioSalidaId(e.target.value)}>
+                <option value="">Sale...</option>
+                {rosterLocalCompleto.filter((j) => quintetoLocalIds.includes(j.id)).map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+              </select>
+              <select className="form-input" value={cambioIngresoId} onChange={(e) => setCambioIngresoId(e.target.value)}>
+                <option value="">Entra...</option>
+                {rosterLocalCompleto.filter((j) => !quintetoLocalIds.includes(j.id)).map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+              </select>
+              <button className="btn-secondary" disabled={!partidoIniciado || !prepartidoValido || !cambioSalidaId || !cambioIngresoId} onClick={ejecutarCambioJugadorLocal}>Cambiar</button>
+            </div>
+          </div>
+
           {modoAnalisis === 'dos' && (
             <div className="mesa-visitor-actions">
               <h6>Acciones Rápidas Visita</h6>
@@ -1326,7 +1496,11 @@ function MesaControlPanel({
           </div>
         )}
       </div>
+        </div>
+      )}
 
+      {moduloMesa === 'analitica' && (
+      <>
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Seguimiento Estadístico (Eficiencia)</h4>
         <div className="mesa-stats-grid">
@@ -1439,15 +1613,48 @@ function MesaControlPanel({
               <div className="mesa-stats-row"><span>Supervisor/a</span><strong>{partidoAnalisisSeleccionado.operadores?.supervisor || 'Sin registro'}</strong></div>
               <div className="mesa-stats-row"><span>Eventos registrados</span><strong>{(partidoAnalisisSeleccionado.eventos || []).length}</strong></div>
             </div>
+
+            <div className="mesa-stats-table">
+              <h6>Jugadoras/es Local</h6>
+              {(partidoAnalisisSeleccionado.equipos?.local?.roster || []).length === 0 ? (
+                <p className="text-muted">Sin detalle individual local.</p>
+              ) : (
+                (partidoAnalisisSeleccionado.equipos?.local?.roster || []).slice(0, 12).map((j) => (
+                  <div key={`local-${partidoAnalisisSeleccionado.id}-${j.id || j.dorsal || j.nombre}`} className="mesa-stats-row">
+                    <span>#{j.dorsal || '-'} {j.nombre || 'Jugador/a'}</span>
+                    <strong>{Number(j.pts || 0)} PTS · {Number(j.reb || 0)} REB · {Number(j.ast || 0)} AST</strong>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mesa-stats-table">
+              <h6>Jugadoras/es Visita</h6>
+              {(partidoAnalisisSeleccionado.equipos?.visita?.roster || []).length === 0 ? (
+                <p className="text-muted">Sin detalle individual visita.</p>
+              ) : (
+                (partidoAnalisisSeleccionado.equipos?.visita?.roster || []).slice(0, 12).map((j) => (
+                  <div key={`visita-${partidoAnalisisSeleccionado.id}-${j.id || j.dorsal || j.nombre}`} className="mesa-stats-row">
+                    <span>#{j.dorsal || '-'} {j.nombre || 'Jugador/a'}</span>
+                    <strong>{Number(j.pts || 0)} PTS · {Number(j.reb || 0)} REB · {Number(j.ast || 0)} AST</strong>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>
 
+      </>
+      )}
+
+      {moduloMesa === 'live' && (
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="#6B7280" strokeWidth={1.5} /> Línea de Tiempo (Play-by-Play)</h4>
         <div style={{ display: 'flex', gap: '10px' }} className="mb-15"><input type="text" className="form-input" placeholder="Nota táctica o scouting..." value={notaScouting} onChange={(e) => setNotaScouting(e.target.value)} /><button className="btn-electric" style={{ width: 'auto', padding: '0 20px' }} onClick={() => { if (!notaScouting) return; setPlayByPlay((prev) => [{ id: nextId(), tiempo: 'DT', texto: `📝 ${notaScouting}` }, ...prev]); setNotaScouting(''); }}>Log</button></div>
         <div className="play-by-play-box">{playByPlay.length === 0 ? <p className="text-center text-muted" style={{ fontSize: '13px', fontStyle: 'italic', margin: '20px 0' }}>Inicio de transmisión.</p> : playByPlay.map(play => (<div key={play.id} className="play-row"><span className="play-tiempo">{play.tiempo}</span><span className="play-texto">{play.texto}</span></div>))}</div>
       </div>
+      )}
     </div>
   );
 }
