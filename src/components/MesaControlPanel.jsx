@@ -45,6 +45,15 @@ const esCategoriaMenorOIgual = (categoriaJugador = '', categoriaBase = '') => {
   return subJugador <= subBase;
 };
 
+const esCategoriaInferiorDentroDeRango = (categoriaJugador = '', categoriaBase = '', niveles = 0) => {
+  const subJugador = obtenerSubCategoriaNumero(categoriaJugador);
+  const subBase = obtenerSubCategoriaNumero(categoriaBase);
+  if (subJugador == null || subBase == null) return false;
+  if (subJugador > subBase) return false;
+  const margenPermitido = Math.max(0, Number(niveles || 0)) * 2;
+  return (subBase - subJugador) <= margenPermitido;
+};
+
 const inferirRamaDesdeTexto = (valor = '') => {
   const slug = normalizarSlugLogo(valor);
   if (slug.includes('femen')) return 'Femenina';
@@ -150,6 +159,7 @@ function MesaControlPanel({
   const [competenciaLogoUrl, setCompetenciaLogoUrl] = useState('');
   const [canchaSede, setCanchaSede] = useState('');
   const [incluirCategoriasMenores, setIncluirCategoriasMenores] = useState(false);
+  const [nivelesCategoriasInferiores, setNivelesCategoriasInferiores] = useState(2);
   const [equipoLocalKey, setEquipoLocalKey] = useState('LOCAL_DEFAULT');
   const [equipoVisitaKey, setEquipoVisitaKey] = useState('VISITA_DEFAULT');
   const [clubLocalNombre, setClubLocalNombre] = useState('Centro de Cultura Física');
@@ -183,6 +193,12 @@ function MesaControlPanel({
   const [staffVisita, setStaffVisita] = useState({ entrenador: '', asistente: '', delegado: '' });
   const [cambioSalidaId, setCambioSalidaId] = useState('');
   const [cambioIngresoId, setCambioIngresoId] = useState('');
+  const [nominaLocalIds, setNominaLocalIds] = useState([]);
+  const [nominaVisitaIds, setNominaVisitaIds] = useState([]);
+  const [quintetoLocalValidado, setQuintetoLocalValidado] = useState(false);
+  const [quintetoVisitaValidado, setQuintetoVisitaValidado] = useState(false);
+  const [busquedaInclusionLocal, setBusquedaInclusionLocal] = useState('');
+  const [forzarPantallaCompletaLive, setForzarPantallaCompletaLive] = useState(true);
   const liveFullScreenRef = useRef(null);
 
   const equiposDesdePartidos = useMemo(() => {
@@ -484,7 +500,7 @@ function MesaControlPanel({
     const okRama = filtroRama === 'Todas' || coincideFiltro(j._rama, filtroRama);
     const okCategoria = filtroCategoria === 'Todas'
       || coincideFiltro(j._categoria, filtroCategoria)
-      || (incluirCategoriasMenores && esCategoriaMenorOIgual(j._categoria, filtroCategoria));
+      || (incluirCategoriasMenores && esCategoriaInferiorDentroDeRango(j._categoria, filtroCategoria, nivelesCategoriasInferiores));
     const okCompeticion = !filtroCompeticionActiva || coincideFiltro(j._competicion, filtroCompeticionActiva);
     return okRama && okCategoria && okCompeticion;
   }), [
@@ -492,6 +508,7 @@ function MesaControlPanel({
     filtroRama,
     filtroCategoria,
     incluirCategoriasMenores,
+    nivelesCategoriasInferiores,
     filtroCompeticionActiva,
   ]);
 
@@ -501,8 +518,8 @@ function MesaControlPanel({
   );
 
   const rosterLocal = useMemo(
-    () => rosterLocalCompleto.slice(0, LIMITE_JUGADORES_POR_EQUIPO),
-    [rosterLocalCompleto]
+    () => rosterLocalCompleto.filter((j) => nominaLocalIds.includes(j.id)).slice(0, LIMITE_JUGADORES_POR_EQUIPO),
+    [rosterLocalCompleto, nominaLocalIds]
   );
 
   const rosterVisitaCompleto = useMemo(
@@ -511,9 +528,36 @@ function MesaControlPanel({
   );
 
   const rosterVisita = useMemo(
-    () => rosterVisitaCompleto.slice(0, LIMITE_JUGADORES_POR_EQUIPO),
-    [rosterVisitaCompleto]
+    () => rosterVisitaCompleto.filter((j) => nominaVisitaIds.includes(j.id)).slice(0, LIMITE_JUGADORES_POR_EQUIPO),
+    [rosterVisitaCompleto, nominaVisitaIds]
   );
+
+  const candidatasInferioresLocal = useMemo(() => {
+    if (!incluirCategoriasMenores || filtroCategoria === 'Todas') return [];
+    const q = normalizarTexto(busquedaInclusionLocal).toLowerCase();
+    return rosterNormalizado
+      .filter((j) => sonEquiposCompatibles(j, equipoLocal))
+      .filter((j) => {
+        const okRama = filtroRama === 'Todas' || coincideFiltro(j._rama, filtroRama);
+        const okComp = !filtroCompeticionActiva || coincideFiltro(j._competicion, filtroCompeticionActiva);
+        const okCat = esCategoriaInferiorDentroDeRango(j._categoria, filtroCategoria, nivelesCategoriasInferiores)
+          && !coincideFiltro(j._categoria, filtroCategoria);
+        const okBusqueda = !q || normalizarTexto(j.nombre).toLowerCase().includes(q) || String(j.dorsal || '').includes(q);
+        return okRama && okComp && okCat && okBusqueda;
+      })
+      .filter((j) => !nominaLocalIds.includes(j.id))
+      .slice(0, 24);
+  }, [
+    incluirCategoriasMenores,
+    filtroCategoria,
+    busquedaInclusionLocal,
+    rosterNormalizado,
+    equipoLocal,
+    filtroRama,
+    filtroCompeticionActiva,
+    nivelesCategoriasInferiores,
+    nominaLocalIds,
+  ]);
 
   const detectarDorsalesDuplicados = (roster = []) => {
     const cuenta = new Map();
@@ -528,17 +572,35 @@ function MesaControlPanel({
   };
 
   const dorsalesDuplicadosLocal = useMemo(
-    () => detectarDorsalesDuplicados(rosterLocalCompleto),
-    [rosterLocalCompleto]
+    () => detectarDorsalesDuplicados(rosterLocal),
+    [rosterLocal]
   );
 
   const dorsalesDuplicadosVisita = useMemo(
-    () => detectarDorsalesDuplicados(rosterVisitaCompleto),
-    [rosterVisitaCompleto]
+    () => detectarDorsalesDuplicados(rosterVisita),
+    [rosterVisita]
   );
 
   useEffect(() => {
-    const habilitados = rosterLocalCompleto.filter((j) => !j._bloqueado && j.flt < 5).map((j) => j.id);
+    const disponibles = rosterLocalCompleto.map((j) => j.id);
+    setNominaLocalIds((prev) => {
+      const vigente = prev.filter((id) => disponibles.includes(id));
+      if (vigente.length > 0) return vigente.slice(0, LIMITE_JUGADORES_POR_EQUIPO);
+      return disponibles.slice(0, LIMITE_JUGADORES_POR_EQUIPO);
+    });
+  }, [rosterLocalCompleto]);
+
+  useEffect(() => {
+    const disponibles = rosterVisitaCompleto.map((j) => j.id);
+    setNominaVisitaIds((prev) => {
+      const vigente = prev.filter((id) => disponibles.includes(id));
+      if (vigente.length > 0) return vigente.slice(0, LIMITE_JUGADORES_POR_EQUIPO);
+      return disponibles.slice(0, LIMITE_JUGADORES_POR_EQUIPO);
+    });
+  }, [rosterVisitaCompleto]);
+
+  useEffect(() => {
+    const habilitados = rosterLocal.filter((j) => !j._bloqueado && j.flt < 5).map((j) => j.id);
     setQuintetoLocalIds((prev) => {
       const vigente = prev.filter((id) => habilitados.includes(id));
       const faltan = 5 - vigente.length;
@@ -546,10 +608,10 @@ function MesaControlPanel({
       const extras = habilitados.filter((id) => !vigente.includes(id)).slice(0, faltan);
       return [...vigente, ...extras].slice(0, 5);
     });
-  }, [rosterLocalCompleto]);
+  }, [rosterLocal]);
 
   useEffect(() => {
-    const habilitados = rosterVisitaCompleto.filter((j) => !j._bloqueado && j.flt < 5).map((j) => j.id);
+    const habilitados = rosterVisita.filter((j) => !j._bloqueado && j.flt < 5).map((j) => j.id);
     setQuintetoVisitaIds((prev) => {
       const vigente = prev.filter((id) => habilitados.includes(id));
       const faltan = 5 - vigente.length;
@@ -557,11 +619,11 @@ function MesaControlPanel({
       const extras = habilitados.filter((id) => !vigente.includes(id)).slice(0, faltan);
       return [...vigente, ...extras].slice(0, 5);
     });
-  }, [rosterVisitaCompleto]);
+  }, [rosterVisita]);
 
   const alternarTitular = ({ tipo, jugadorId }) => {
     const esLocal = tipo === 'local';
-    const rosterBase = esLocal ? rosterLocalCompleto : rosterVisitaCompleto;
+    const rosterBase = esLocal ? rosterLocal : rosterVisita;
     const jugador = rosterBase.find((j) => j.id === jugadorId);
     if (!jugador || jugador._bloqueado || jugador.flt >= 5) return;
 
@@ -573,19 +635,90 @@ function MesaControlPanel({
     });
   };
 
+  const alternarNomina = ({ tipo, jugadorId }) => {
+    const esLocal = tipo === 'local';
+    const setter = esLocal ? setNominaLocalIds : setNominaVisitaIds;
+    setter((prev) => {
+      if (prev.includes(jugadorId)) return prev.filter((id) => id !== jugadorId);
+      if (prev.length >= LIMITE_JUGADORES_POR_EQUIPO) return prev;
+      return [...prev, jugadorId];
+    });
+  };
+
+  const incluirDesdeCategoriasInferioresLocal = (jugadorId) => {
+    if (nominaLocalIds.includes(jugadorId)) return;
+    if (nominaLocalIds.length >= LIMITE_JUGADORES_POR_EQUIPO) {
+      alert(`La nomina local ya tiene ${LIMITE_JUGADORES_POR_EQUIPO} jugadoras/es.`);
+      return;
+    }
+    setNominaLocalIds((prev) => [...prev, jugadorId]);
+  };
+
+  const validarQuinteto = ({ tipo }) => {
+    if (tipo === 'local') {
+      if (quintetoLocalIds.length !== 5) return alert('El quinteto local debe tener 5 jugadoras/es.');
+      setQuintetoLocalValidado(true);
+      return;
+    }
+    if (modoAnalisis !== 'dos') return;
+    if (quintetoVisitaIds.length !== 5) return alert('El quinteto visita debe tener 5 jugadoras/es.');
+    setQuintetoVisitaValidado(true);
+  };
+
+  useEffect(() => {
+    setQuintetoLocalValidado(false);
+  }, [quintetoLocalIds, nominaLocalIds]);
+
+  useEffect(() => {
+    setQuintetoVisitaValidado(false);
+  }, [quintetoVisitaIds, nominaVisitaIds]);
+
+  const salirPantallaCompletaManual = async () => {
+    setForzarPantallaCompletaLive(false);
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    }
+  };
+
+  const activarPantallaCompletaForzada = async () => {
+    setForzarPantallaCompletaLive(true);
+    await cambiarVistaLivePantallaCompleta();
+  };
+
+  useEffect(() => {
+    const node = liveFullScreenRef.current;
+    if (!node || !document?.fullscreenEnabled) return undefined;
+
+    const intentarEntrar = () => {
+      if (moduloMesa === 'live' && partidoIniciado && forzarPantallaCompletaLive && !document.fullscreenElement) {
+        node.requestFullscreen().catch(() => {});
+      }
+    };
+
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        intentarEntrar();
+      }
+    };
+
+    intentarEntrar();
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, [moduloMesa, partidoIniciado, forzarPantallaCompletaLive]);
+
   const validacionLocal = useMemo(() => {
-    const total = rosterLocalCompleto.length;
+    const total = rosterLocal.length;
     return {
       total,
       minimoOk: total >= 5,
       maximoOk: total <= LIMITE_JUGADORES_POR_EQUIPO,
       dorsalesOk: dorsalesDuplicadosLocal.length === 0,
-      quintetoOk: quintetoLocalIds.length === 5,
+      quintetoOk: quintetoLocalIds.length === 5 && quintetoLocalValidado,
     };
-  }, [rosterLocalCompleto, dorsalesDuplicadosLocal, quintetoLocalIds]);
+  }, [rosterLocal, dorsalesDuplicadosLocal, quintetoLocalIds, quintetoLocalValidado]);
 
   const validacionVisita = useMemo(() => {
-    const total = rosterVisitaCompleto.length;
+    const total = rosterVisita.length;
     if (modoAnalisis !== 'dos') {
       return { total, minimoOk: true, maximoOk: true, dorsalesOk: true, quintetoOk: true };
     }
@@ -594,9 +727,9 @@ function MesaControlPanel({
       minimoOk: total >= 5,
       maximoOk: total <= LIMITE_JUGADORES_POR_EQUIPO,
       dorsalesOk: dorsalesDuplicadosVisita.length === 0,
-      quintetoOk: quintetoVisitaIds.length === 5,
+      quintetoOk: quintetoVisitaIds.length === 5 && quintetoVisitaValidado,
     };
-  }, [modoAnalisis, rosterVisitaCompleto, dorsalesDuplicadosVisita, quintetoVisitaIds]);
+  }, [modoAnalisis, rosterVisita, dorsalesDuplicadosVisita, quintetoVisitaIds, quintetoVisitaValidado]);
 
   const prepartidoValido = useMemo(
     () => validacionLocal.minimoOk
@@ -951,14 +1084,14 @@ function MesaControlPanel({
         local: {
           nombre: liveScore.equipoLocalNombre || equipoLocal?.nombre || 'Local',
           logoUrl: liveScore.equipoLocalLogoUrl || equipoLocal?.logoUrl || '',
-          roster: rosterLocalCompleto,
-          resumen: crearResumenEquipo(rosterLocalCompleto),
+          roster: rosterLocal,
+          resumen: crearResumenEquipo(rosterLocal),
         },
         visita: {
           nombre: liveScore.equipoVisitaNombre || equipoVisita?.nombre || 'Visita',
           logoUrl: liveScore.equipoVisitaLogoUrl || equipoVisita?.logoUrl || '',
-          roster: rosterVisitaCompleto,
-          resumen: crearResumenEquipo(rosterVisitaCompleto),
+          roster: rosterVisita,
+          resumen: crearResumenEquipo(rosterVisita),
         },
       },
       marcador: {
@@ -1036,6 +1169,14 @@ function MesaControlPanel({
     const creadoId = await crearPartidoPersistido();
     if (creadoId) setPartidoPersistidoId(creadoId);
     setPartidoIniciado(true);
+    setModuloMesa('live');
+    setForzarPantallaCompletaLive(true);
+    setTimeout(() => {
+      const node = liveFullScreenRef.current;
+      if (node && document?.fullscreenEnabled && !document.fullscreenElement) {
+        node.requestFullscreen().catch(() => {});
+      }
+    }, 60);
     const operadorNombre = normalizarTexto(operadoresMesa[rolOperadorActivo]) || 'Operador';
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '10:00', texto: `▶ Partido iniciado · ${operadorNombre}` }, ...prev]);
   };
@@ -1046,6 +1187,7 @@ function MesaControlPanel({
 
     const guardado = await guardarEstadisticaPartido();
     setPartidoIniciado(false);
+    setModuloMesa('analitica');
     setPartidoPersistidoId(null);
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '00:00', texto: guardado ? '■ Partido finalizado y estadística guardada' : '■ Partido finalizado (falló guardado local)' }, ...prev]);
     if (!guardado) {
@@ -1080,7 +1222,7 @@ function MesaControlPanel({
           </div>
           <div className="mesa-lab-mode-switch" style={{ gridTemplateColumns: '1fr 1fr 1fr' }} role="tablist" aria-label="Módulo de mesa">
             <button className={`mesa-mode-btn ${moduloMesa === 'prepartido' ? 'active' : ''}`} onClick={() => setModuloMesa('prepartido')}>1. Datos partido</button>
-            <button className={`mesa-mode-btn ${moduloMesa === 'live' ? 'active' : ''}`} onClick={() => setModuloMesa('live')}>2. Juego en vivo</button>
+            <button className={`mesa-mode-btn ${moduloMesa === 'live' ? 'active' : ''}`} onClick={() => setModuloMesa('live')} disabled={!partidoIniciado}>2. Juego en vivo</button>
             <button className={`mesa-mode-btn ${moduloMesa === 'analitica' ? 'active' : ''}`} onClick={() => setModuloMesa('analitica')}>3. Estadística</button>
           </div>
         </div>
@@ -1088,6 +1230,42 @@ function MesaControlPanel({
 
       {moduloMesa === 'prepartido' && (
         <>
+
+      <div className="card mb-15" style={{ borderRadius: '18px' }}>
+        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Datos de Partido y Staff</h4>
+        <div className="mesa-filtros-grid">
+          <label className="mesa-filter-item">
+            <span>Color equipo local</span>
+            <input type="color" className="form-input" value={colorLocal} onChange={(e) => setColorLocal(e.target.value)} />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Color equipo visita</span>
+            <input type="color" className="form-input" value={colorVisita} onChange={(e) => setColorVisita(e.target.value)} />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Capitán/a local</span>
+            <select className="form-input" value={capitanLocalId} onChange={(e) => setCapitanLocalId(e.target.value)}>
+              <option value="">Seleccionar</option>
+              {rosterLocal.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+            </select>
+          </label>
+          {modoAnalisis === 'dos' && (
+            <label className="mesa-filter-item">
+              <span>Capitán/a visita</span>
+              <select className="form-input" value={capitanVisitaId} onChange={(e) => setCapitanVisitaId(e.target.value)}>
+                <option value="">Seleccionar</option>
+                {rosterVisita.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="mesa-filter-item"><span>DT Local</span><input className="form-input" value={staffLocal.entrenador} onChange={(e) => setStaffLocal((prev) => ({ ...prev, entrenador: e.target.value }))} placeholder="Opcional" /></label>
+          <label className="mesa-filter-item"><span>Asistente Local</span><input className="form-input" value={staffLocal.asistente} onChange={(e) => setStaffLocal((prev) => ({ ...prev, asistente: e.target.value }))} placeholder="Opcional" /></label>
+          <label className="mesa-filter-item"><span>Delegado Local</span><input className="form-input" value={staffLocal.delegado} onChange={(e) => setStaffLocal((prev) => ({ ...prev, delegado: e.target.value }))} placeholder="Opcional" /></label>
+          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>DT Visita</span><input className="form-input" value={staffVisita.entrenador} onChange={(e) => setStaffVisita((prev) => ({ ...prev, entrenador: e.target.value }))} placeholder="Opcional" /></label>}
+          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>Asistente Visita</span><input className="form-input" value={staffVisita.asistente} onChange={(e) => setStaffVisita((prev) => ({ ...prev, asistente: e.target.value }))} placeholder="Opcional" /></label>}
+          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>Delegado Visita</span><input className="form-input" value={staffVisita.delegado} onChange={(e) => setStaffVisita((prev) => ({ ...prev, delegado: e.target.value }))} placeholder="Opcional" /></label>}
+        </div>
+      </div>
 
       <div className="mesa-filtros-grid card mb-15">
         <label className="mesa-filter-item">
@@ -1123,6 +1301,47 @@ function MesaControlPanel({
           />
         </div>
 
+        <label className="mesa-filter-item">
+          <span><FileText size={14} color="#6B7280" strokeWidth={1.5} /> Cancha / Sede</span>
+          <input
+            className="form-input"
+            list="mesa-canchas-sugeridas"
+            value={canchaSede}
+            onChange={(e) => setCanchaSede(e.target.value)}
+            placeholder="Ej: Gimnasio CCF"
+          />
+          <datalist id="mesa-canchas-sugeridas">
+            {canchasDisponibles.map((cancha) => (
+              <option key={cancha} value={cancha} />
+            ))}
+          </datalist>
+        </label>
+
+        {filtroCategoria !== 'Todas' && (
+          <>
+            <label className="mesa-filter-item" style={{ justifyContent: 'center' }}>
+              <span><Shield size={14} color="#6B7280" strokeWidth={1.5} /> Incluir categorías menores</span>
+              <input
+                type="checkbox"
+                checked={incluirCategoriasMenores}
+                onChange={(e) => setIncluirCategoriasMenores(e.target.checked)}
+                style={{ width: '18px', height: '18px' }}
+              />
+            </label>
+            {incluirCategoriasMenores && (
+              <label className="mesa-filter-item">
+                <span>Desde {filtroCategoria}: bajar hasta</span>
+                <select className="form-input" value={nivelesCategoriasInferiores} onChange={(e) => setNivelesCategoriasInferiores(Number(e.target.value))}>
+                  <option value={1}>1 categoría inferior</option>
+                  <option value={2}>2 categorías inferiores</option>
+                </select>
+              </label>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="mesa-filtros-grid card mb-15">
         <div className="mesa-filter-item">
           <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Local</span>
           <LogoPicker
@@ -1152,83 +1371,49 @@ function MesaControlPanel({
             />
           </div>
         )}
-
-        <label className="mesa-filter-item">
-          <span><FileText size={14} color="#6B7280" strokeWidth={1.5} /> Cancha / Sede</span>
-          <input
-            className="form-input"
-            list="mesa-canchas-sugeridas"
-            value={canchaSede}
-            onChange={(e) => setCanchaSede(e.target.value)}
-            placeholder="Ej: Gimnasio CCF"
-          />
-          <datalist id="mesa-canchas-sugeridas">
-            {canchasDisponibles.map((cancha) => (
-              <option key={cancha} value={cancha} />
-            ))}
-          </datalist>
-        </label>
-
-        {filtroCategoria !== 'Todas' && (
-          <label className="mesa-filter-item" style={{ justifyContent: 'center' }}>
-            <span><Shield size={14} color="#6B7280" strokeWidth={1.5} /> Incluir categorías menores</span>
-            <input
-              type="checkbox"
-              checked={incluirCategoriasMenores}
-              onChange={(e) => setIncluirCategoriasMenores(e.target.checked)}
-              style={{ width: '18px', height: '18px' }}
-            />
-          </label>
-        )}
       </div>
+
+      {incluirCategoriasMenores && filtroCategoria !== 'Todas' && (
+        <div className="card mb-15" style={{ borderRadius: '18px' }}>
+          <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="#6B7280" strokeWidth={1.5} /> Incluir jugadoras/es desde categorías inferiores</h4>
+          <input className="form-input mb-15" placeholder="Buscar por nombre o dorsal" value={busquedaInclusionLocal} onChange={(e) => setBusquedaInclusionLocal(e.target.value)} />
+          <div className="mesa-historial-list">
+            {candidatasInferioresLocal.length === 0 && <p className="text-muted">No hay candidatas/os para el rango seleccionado.</p>}
+            {candidatasInferioresLocal.map((j) => (
+              <div key={`cand-${j.id}`} className="mesa-historial-item">
+                <div>
+                  <strong>#{j.dorsal} {j.nombre}</strong>
+                  <span>{j._categoria} · {j._rama}</span>
+                </div>
+                <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => incluirDesdeCategoriasInferioresLocal(j.id)}>Incluir a nómina</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className={`card mb-15 mesa-prepartido-card ${partidoIniciado ? 'mesa-prepartido-live' : ''}`}>
         <div className="mesa-prepartido-header">
           <h4 className="form-subtitle" style={{ margin: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Validacion Prepartido</h4>
-          <div className="mesa-prepartido-actions">
-            <button
-              className={`btn-secondary ${partidoIniciado ? 'mesa-btn-live' : ''}`}
-              style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
-              onClick={confirmarInicioPartido}
-              disabled={partidoIniciado || !prepartidoValido}
-            >
-              {partidoIniciado ? 'Partido en Curso' : 'Iniciar Partido'}
-            </button>
-            <button
-              className="btn-secondary"
-              style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
-              onClick={confirmarFinalizacionPartido}
-              disabled={!partidoIniciado}
-            >
-              Finalizar Partido
-            </button>
-          </div>
         </div>
 
         <div className="mesa-validation-grid">
           <div className="mesa-validation-box">
             <h6>Local</h6>
-            <p>Jugadoras/es: {validacionLocal.total} (min 5 / max 12)</p>
-            <p>Quinteto activo: {quintetoLocalIds.length}/5</p>
+            <p>Citadas/os: {validacionLocal.total} (max 12)</p>
+            <p>Quinteto inicial: {quintetoLocalIds.length}/5 {quintetoLocalValidado ? '· Validado' : ''}</p>
             {!validacionLocal.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosLocal.join(', ')}</p>}
-          </div>
-          {modoAnalisis === 'dos' && (
-            <div className="mesa-validation-box">
-              <h6>Visita</h6>
-              <p>Jugadoras/es: {validacionVisita.total} (min 5 / max 12)</p>
-              <p>Quinteto activo: {quintetoVisitaIds.length}/5</p>
-              {!validacionVisita.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosVisita.join(', ')}</p>}
-            </div>
-          )}
-        </div>
-
-        <div className="mesa-quintetos-grid">
-          <div className="mesa-quinteto-box">
-            <h6>Quinteto Local</h6>
-            <div className="mesa-quinteto-list">
+            <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
               {rosterLocalCompleto.map((j) => (
+                <button key={`nom-local-${j.id}`} type="button" className={`mesa-quinteto-pill ${nominaLocalIds.includes(j.id) ? 'active' : ''}`} onClick={() => alternarNomina({ tipo: 'local', jugadorId: j.id })}>
+                  {nominaLocalIds.includes(j.id) ? '✓' : '+'} #{j.dorsal} {j.nombre}
+                </button>
+              ))}
+            </div>
+            <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
+              {rosterLocal.map((j) => (
                 <button
-                  key={j.id}
+                  key={`ql-${j.id}`}
                   className={`mesa-quinteto-pill ${quintetoLocalIds.includes(j.id) ? 'active' : ''} ${j._bloqueado || j.flt >= 5 ? 'locked' : ''}`}
                   onClick={() => alternarTitular({ tipo: 'local', jugadorId: j.id })}
                   disabled={j._bloqueado || j.flt >= 5}
@@ -1238,15 +1423,25 @@ function MesaControlPanel({
                 </button>
               ))}
             </div>
+            <button className="btn-secondary" style={{ width: 'auto', marginTop: '10px' }} onClick={() => validarQuinteto({ tipo: 'local' })}>Validar quinteto local</button>
           </div>
-
           {modoAnalisis === 'dos' && (
-            <div className="mesa-quinteto-box">
-              <h6>Quinteto Visita</h6>
-              <div className="mesa-quinteto-list">
+            <div className="mesa-validation-box">
+              <h6>Visita</h6>
+              <p>Citadas/os: {validacionVisita.total} (max 12)</p>
+              <p>Quinteto inicial: {quintetoVisitaIds.length}/5 {quintetoVisitaValidado ? '· Validado' : ''}</p>
+              {!validacionVisita.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosVisita.join(', ')}</p>}
+              <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
                 {rosterVisitaCompleto.map((j) => (
+                  <button key={`nom-vis-${j.id}`} type="button" className={`mesa-quinteto-pill ${nominaVisitaIds.includes(j.id) ? 'active' : ''}`} onClick={() => alternarNomina({ tipo: 'visita', jugadorId: j.id })}>
+                    {nominaVisitaIds.includes(j.id) ? '✓' : '+'} #{j.dorsal} {j.nombre}
+                  </button>
+                ))}
+              </div>
+              <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
+                {rosterVisita.map((j) => (
                   <button
-                    key={j.id}
+                    key={`qv-${j.id}`}
                     className={`mesa-quinteto-pill ${quintetoVisitaIds.includes(j.id) ? 'active' : ''} ${j._bloqueado || j.flt >= 5 ? 'locked' : ''}`}
                     onClick={() => alternarTitular({ tipo: 'visita', jugadorId: j.id })}
                     disabled={j._bloqueado || j.flt >= 5}
@@ -1256,6 +1451,7 @@ function MesaControlPanel({
                   </button>
                 ))}
               </div>
+              <button className="btn-secondary" style={{ width: 'auto', marginTop: '10px' }} onClick={() => validarQuinteto({ tipo: 'visita' })}>Validar quinteto visita</button>
             </div>
           )}
         </div>
@@ -1300,41 +1496,24 @@ function MesaControlPanel({
           <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva local', equipo: 'local' })}>Recuperación Local</button>
           <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva visita', equipo: 'visita' })}>Recuperación Visita</button>
         </div>
-      </div>
 
-      <div className="card mb-15" style={{ borderRadius: '18px' }}>
-        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Datos de Partido y Staff</h4>
-        <div className="mesa-filtros-grid">
-          <label className="mesa-filter-item">
-            <span>Color equipo local</span>
-            <input type="color" className="form-input" value={colorLocal} onChange={(e) => setColorLocal(e.target.value)} />
-          </label>
-          <label className="mesa-filter-item">
-            <span>Color equipo visita</span>
-            <input type="color" className="form-input" value={colorVisita} onChange={(e) => setColorVisita(e.target.value)} />
-          </label>
-          <label className="mesa-filter-item">
-            <span>Capitán/a local</span>
-            <select className="form-input" value={capitanLocalId} onChange={(e) => setCapitanLocalId(e.target.value)}>
-              <option value="">Seleccionar</option>
-              {rosterLocalCompleto.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
-            </select>
-          </label>
-          {modoAnalisis === 'dos' && (
-            <label className="mesa-filter-item">
-              <span>Capitán/a visita</span>
-              <select className="form-input" value={capitanVisitaId} onChange={(e) => setCapitanVisitaId(e.target.value)}>
-                <option value="">Seleccionar</option>
-                {rosterVisitaCompleto.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
-              </select>
-            </label>
-          )}
-          <label className="mesa-filter-item"><span>DT Local</span><input className="form-input" value={staffLocal.entrenador} onChange={(e) => setStaffLocal((prev) => ({ ...prev, entrenador: e.target.value }))} placeholder="Opcional" /></label>
-          <label className="mesa-filter-item"><span>Asistente Local</span><input className="form-input" value={staffLocal.asistente} onChange={(e) => setStaffLocal((prev) => ({ ...prev, asistente: e.target.value }))} placeholder="Opcional" /></label>
-          <label className="mesa-filter-item"><span>Delegado Local</span><input className="form-input" value={staffLocal.delegado} onChange={(e) => setStaffLocal((prev) => ({ ...prev, delegado: e.target.value }))} placeholder="Opcional" /></label>
-          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>DT Visita</span><input className="form-input" value={staffVisita.entrenador} onChange={(e) => setStaffVisita((prev) => ({ ...prev, entrenador: e.target.value }))} placeholder="Opcional" /></label>}
-          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>Asistente Visita</span><input className="form-input" value={staffVisita.asistente} onChange={(e) => setStaffVisita((prev) => ({ ...prev, asistente: e.target.value }))} placeholder="Opcional" /></label>}
-          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>Delegado Visita</span><input className="form-input" value={staffVisita.delegado} onChange={(e) => setStaffVisita((prev) => ({ ...prev, delegado: e.target.value }))} placeholder="Opcional" /></label>}
+        <div className="mesa-prepartido-actions" style={{ marginTop: '10px' }}>
+          <button
+            className={`btn-secondary ${partidoIniciado ? 'mesa-btn-live' : ''}`}
+            style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
+            onClick={confirmarInicioPartido}
+            disabled={partidoIniciado || !prepartidoValido}
+          >
+            {partidoIniciado ? 'Partido en Curso' : 'Iniciar Partido'}
+          </button>
+          <button
+            className="btn-secondary"
+            style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
+            onClick={confirmarFinalizacionPartido}
+            disabled={!partidoIniciado}
+          >
+            Finalizar Partido
+          </button>
         </div>
       </div>
         </>
@@ -1343,17 +1522,28 @@ function MesaControlPanel({
       {moduloMesa === 'live' && (
         <div ref={liveFullScreenRef} className="mesa-live-wrap">
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', gap: '8px' }}>
-            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={cambiarVistaLivePantallaCompleta}><Expand size={14} color="#6B7280" strokeWidth={1.5} /> Pantalla Completa Live</button>
+            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={activarPantallaCompletaForzada}><Expand size={14} color="#6B7280" strokeWidth={1.5} /> Forzar Pantalla Completa</button>
+            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={salirPantallaCompletaManual}>Salir Pantalla Completa</button>
             <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={() => setModoChromaKey(true)}><Tv size={14} color="#6B7280" strokeWidth={1.5} /> Modo Transmisión (OBS)</button>
           </div>
 
-      <div className="checkout-total-box mb-15" style={{ background: 'linear-gradient(180deg, #1C1C1E 0%, #101114 100%)', border: '2px solid rgba(0,122,255,0.2)', display: 'flex', flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', padding: '20px 10px', borderRadius: '24px', boxShadow: '0 16px 34px rgba(15,23,42,0.12)' }}>
+      {!partidoIniciado && (
+        <div className="card mb-15" style={{ borderRadius: '16px', border: '1px solid rgba(255, 159, 10, 0.45)', background: 'rgba(255, 159, 10, 0.08)' }}>
+          <strong>Juego en vivo bloqueado.</strong>
+          <p style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>Debes iniciar partido desde Operadores de Mesa en el módulo de Datos partido.</p>
+        </div>
+      )}
+
+      <div className="checkout-total-box mb-15" style={{ background: 'linear-gradient(180deg, #1C1C1E 0%, #101114 100%)', border: '2px solid rgba(0,122,255,0.2)', display: 'flex', flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', padding: '20px 10px', borderRadius: '24px', boxShadow: '0 16px 34px rgba(15,23,42,0.12)', opacity: partidoIniciado ? 1 : 0.65 }}>
         <div className="text-center" style={{ flex: 1 }}>
           <span style={{ fontSize: '12px', color: colorLocal, fontWeight: '800' }}>LOCAL {liveScore.flecha === 'LOCAL' && '◀'}</span>
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px', marginBottom: '4px' }}>
-            <LogoAvatar nombre={liveScore.equipoLocalNombre || 'Centro de Cultura Física'} logoUrl={liveScore.equipoLocalLogoUrl} size={46} borderRadius="16px" />
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '8px', marginBottom: '4px' }}>
+            {!!normalizarTexto(liveScore.equipoLocalLogoUrl) && <img src={liveScore.equipoLocalLogoUrl} alt={liveScore.equipoLocalNombre || 'Local'} style={{ width: '62px', height: '62px', objectFit: 'contain' }} />}
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ color: '#d1d5db', fontSize: '12px', fontWeight: 800 }}>{liveScore.equipoLocalNombre || 'Centro de Cultura Física'}</div>
+              <h1 style={{ fontSize: '52px', margin: 0, color: 'white', fontFamily: 'Orbitron' }}>{liveScore.ptsLocal}</h1>
+            </div>
           </div>
-          <h1 style={{ fontSize: '52px', margin: 0, color: 'white', fontFamily: 'Orbitron' }}>{liveScore.ptsLocal}</h1>
           <span style={{ fontSize: '11px', color: '#FF3B30', fontWeight: '800', display: 'block' }}>FALTAS: {liveScore.faltasLocal}</span>
           <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', marginTop: '8px' }}>
             {[...Array(3)].map((_, i) => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i < liveScore.timeoutsLocal ? '#FFD700' : '#333' }}></div>)}
@@ -1383,10 +1573,13 @@ function MesaControlPanel({
 
         <div className="text-center" style={{ flex: 1 }}>
           <span style={{ fontSize: '12px', color: colorVisita, fontWeight: '800' }}>{liveScore.flecha === 'VISITA' && '▶'} VISITA</span>
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px', marginBottom: '4px' }}>
-            <LogoAvatar nombre={liveScore.equipoVisitaNombre || 'Visitante'} logoUrl={liveScore.equipoVisitaLogoUrl} size={46} borderRadius="16px" />
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '8px', marginBottom: '4px' }}>
+            {!!normalizarTexto(liveScore.equipoVisitaLogoUrl) && <img src={liveScore.equipoVisitaLogoUrl} alt={liveScore.equipoVisitaNombre || 'Visita'} style={{ width: '62px', height: '62px', objectFit: 'contain' }} />}
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ color: '#d1d5db', fontSize: '12px', fontWeight: 800 }}>{liveScore.equipoVisitaNombre || 'Visitante'}</div>
+              <h1 style={{ fontSize: '52px', margin: 0, color: 'white', fontFamily: 'Orbitron' }}>{modoAnalisis === 'dos' ? liveScore.ptsVisita : '-'}</h1>
+            </div>
           </div>
-          <h1 style={{ fontSize: '52px', margin: 0, color: 'white', fontFamily: 'Orbitron' }}>{modoAnalisis === 'dos' ? liveScore.ptsVisita : '-'}</h1>
           <span style={{ fontSize: '11px', color: '#FF3B30', fontWeight: '800', display: 'block' }}>FALTAS: {liveScore.faltasVisita}</span>
           <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', marginTop: '8px' }}>
             {[...Array(3)].map((_, i) => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i < liveScore.timeoutsVisita ? '#FFD700' : '#333' }}></div>)}
@@ -1395,9 +1588,9 @@ function MesaControlPanel({
       </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-        <button className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsLocal: Math.max(0, liveScore.timeoutsLocal - 1) })}>TM Local</button>
-        <button className="btn-secondary" style={{ padding: '12px', fontSize: '12px', background: 'var(--azul-marino)', color: 'white' }} onClick={() => setLiveScore({ ...liveScore, flecha: liveScore.flecha === 'LOCAL' ? 'VISITA' : 'LOCAL' })}><ArrowRightLeft size={16} color="#6B7280" strokeWidth={1.5} /></button>
-        <button className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsVisita: Math.max(0, liveScore.timeoutsVisita - 1) })}>TM Visita</button>
+        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsLocal: Math.max(0, liveScore.timeoutsLocal - 1) })}>TM Local</button>
+        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', background: 'var(--azul-marino)', color: 'white' }} onClick={() => setLiveScore({ ...liveScore, flecha: liveScore.flecha === 'LOCAL' ? 'VISITA' : 'LOCAL' })}><ArrowRightLeft size={16} color="#6B7280" strokeWidth={1.5} /></button>
+        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsVisita: Math.max(0, liveScore.timeoutsVisita - 1) })}>TM Visita</button>
       </div>
 
       <div className="caja-doble-grid landscape-mode">
@@ -1450,11 +1643,11 @@ function MesaControlPanel({
             <div className="mesa-visitor-actions-grid" style={{ gridTemplateColumns: '1fr 1fr 120px' }}>
               <select className="form-input" value={cambioSalidaId} onChange={(e) => setCambioSalidaId(e.target.value)}>
                 <option value="">Sale...</option>
-                {rosterLocalCompleto.filter((j) => quintetoLocalIds.includes(j.id)).map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+                {rosterLocal.filter((j) => quintetoLocalIds.includes(j.id)).map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
               </select>
               <select className="form-input" value={cambioIngresoId} onChange={(e) => setCambioIngresoId(e.target.value)}>
                 <option value="">Entra...</option>
-                {rosterLocalCompleto.filter((j) => !quintetoLocalIds.includes(j.id)).map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+                {rosterLocal.filter((j) => !quintetoLocalIds.includes(j.id)).map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
               </select>
               <button className="btn-secondary" disabled={!partidoIniciado || !prepartidoValido || !cambioSalidaId || !cambioIngresoId} onClick={ejecutarCambioJugadorLocal}>Cambiar</button>
             </div>
