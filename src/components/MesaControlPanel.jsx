@@ -232,6 +232,7 @@ function MesaControlPanel({
   const [colorVisita, setColorVisita] = useState('#ff3b30');
   const [colorLocalDraft, setColorLocalDraft] = useState('#0a84ff');
   const [colorVisitaDraft, setColorVisitaDraft] = useState('#ff3b30');
+  const [selectorColorAbierto, setSelectorColorAbierto] = useState({ local: false, visita: false });
   const [staffLocal, setStaffLocal] = useState({ entrenador: '', asistente: '', delegado: '' });
   const [staffVisita, setStaffVisita] = useState({ entrenador: '', asistente: '', delegado: '' });
   const [cambioSalidaId, setCambioSalidaId] = useState('');
@@ -1218,6 +1219,36 @@ function MesaControlPanel({
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `${tipo}: ${detalle} · ${operadorNombre}` }, ...prev]);
   };
 
+  const confirmarColorEquipo = ({ tipo, color }) => {
+    const valor = String(color || '').trim();
+    if (!/^#[0-9A-Fa-f]{6}$/.test(valor)) return;
+    const nombreEquipo = tipo === 'local' ? 'Local' : 'Visita';
+    if (!window.confirm(`¿Confirmar color ${valor} para equipo ${nombreEquipo}?`)) return;
+    if (tipo === 'local') {
+      setColorLocal(valor);
+      setColorLocalDraft(valor);
+      setSelectorColorAbierto((prev) => ({ ...prev, local: false }));
+      return;
+    }
+    setColorVisita(valor);
+    setColorVisitaDraft(valor);
+    setSelectorColorAbierto((prev) => ({ ...prev, visita: false }));
+  };
+
+  const editarDorsalJugador = ({ tipo, jugadorId }) => {
+    const rosterBase = tipo === 'local' ? rosterLocal : rosterVisita;
+    const jugador = rosterBase.find((j) => String(j.id) === String(jugadorId));
+    if (!jugador) return;
+    const respuesta = window.prompt(`Editar dorsal para ${jugador.nombre}`, String(jugador.dorsal || ''));
+    if (respuesta == null) return;
+    const dorsal = Number(String(respuesta).trim());
+    if (!Number.isFinite(dorsal) || dorsal <= 0) {
+      alert('Ingresa un dorsal válido mayor que 0.');
+      return;
+    }
+    setRosterEquipo((prev) => prev.map((j) => (String(j.id) === String(jugador.id) ? { ...j, dorsal } : j)));
+  };
+
   const crearPartidoPersistido = async () => {
     try {
       const creado = await api.partidosLiveAPI.create({
@@ -1603,44 +1634,133 @@ function MesaControlPanel({
         <>
 
       <div className="card mb-15" style={{ borderRadius: '18px' }}>
-        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Datos de Partido y Staff</h4>
-        <div className="mesa-filtros-grid">
-          <div className="mesa-filter-item">
-            <span>Color equipo local</span>
-            <input type="color" className="form-input" value={colorLocalDraft} onChange={(e) => setColorLocalDraft(e.target.value)} />
-            <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => setColorLocal(colorLocalDraft)}>Aplicar color local</button>
-            <span style={{ textTransform: 'none', letterSpacing: 0 }}>Aplicado: <strong style={{ color: colorLocal }}>{colorLocal}</strong></span>
-            <div style={{ width: '100%', height: '10px', borderRadius: '999px', background: colorLocal }} />
-          </div>
-          <div className="mesa-filter-item">
-            <span>Color equipo visita</span>
-            <input type="color" className="form-input" value={colorVisitaDraft} onChange={(e) => setColorVisitaDraft(e.target.value)} />
-            <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => setColorVisita(colorVisitaDraft)}>Aplicar color visita</button>
-            <span style={{ textTransform: 'none', letterSpacing: 0 }}>Aplicado: <strong style={{ color: colorVisita }}>{colorVisita}</strong></span>
-            <div style={{ width: '100%', height: '10px', borderRadius: '999px', background: colorVisita }} />
-          </div>
+        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="#6B7280" strokeWidth={1.5} /> Operadores de Mesa (Trazabilidad)</h4>
+        <div className="mesa-filtros-grid" style={{ marginBottom: '10px' }}>
           <label className="mesa-filter-item">
-            <span>Capitán/a local</span>
-            <select className="form-input" value={capitanLocalId} onChange={(e) => setCapitanLocalId(e.target.value)}>
-              <option value="">Seleccionar</option>
-              {rosterLocal.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+            <span>Planillero/a</span>
+            <input className="form-input" value={operadoresMesa.planillero} onChange={(e) => setOperadoresMesa((prev) => ({ ...prev, planillero: e.target.value }))} placeholder="Nombre planillero" />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Estadístico/a</span>
+            <input className="form-input" value={operadoresMesa.estadistico} onChange={(e) => setOperadoresMesa((prev) => ({ ...prev, estadistico: e.target.value }))} placeholder="Nombre estadístico" />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Supervisor/a</span>
+            <input className="form-input" value={operadoresMesa.supervisor} onChange={(e) => setOperadoresMesa((prev) => ({ ...prev, supervisor: e.target.value }))} placeholder="Nombre supervisor" />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Rol activo para registrar</span>
+            <select className="form-input" value={rolOperadorActivo} onChange={(e) => setRolOperadorActivo(e.target.value)}>
+              <option value="planillero">Planillero/a</option>
+              <option value="estadistico">Estadístico/a</option>
+              <option value="supervisor">Supervisor/a</option>
             </select>
           </label>
+        </div>
+
+        <div className="mesa-eventos-template-grid">
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SISTEMA', detalle: 'Timeout local solicitado', equipo: 'local' })}>Timeout Local</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SISTEMA', detalle: 'Timeout visita solicitado', equipo: 'visita' })}>Timeout Visita</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SUSTITUCION', detalle: 'Cambio de quinteto local', equipo: 'local' })}>Sustitución Local</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SUSTITUCION', detalle: 'Cambio de quinteto visita', equipo: 'visita' })}>Sustitución Visita</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'LANZAMIENTO', detalle: 'Tiro fallado local', equipo: 'local' })}>Tiro Fallado Local</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'LANZAMIENTO', detalle: 'Tiro fallado visita', equipo: 'visita' })}>Tiro Fallado Visita</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva local', equipo: 'local' })}>Recuperación Local</button>
+          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva visita', equipo: 'visita' })}>Recuperación Visita</button>
+        </div>
+
+        <div className="mesa-prepartido-actions" style={{ marginTop: '10px' }}>
+          <button
+            className={`btn-secondary ${partidoIniciado ? 'mesa-btn-live' : ''}`}
+            style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
+            onClick={confirmarInicioPartido}
+            disabled={partidoIniciado || !prepartidoValido}
+          >
+            {partidoIniciado ? 'Partido en Curso' : 'Iniciar Partido'}
+          </button>
+          <button
+            className="btn-secondary"
+            style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
+            onClick={confirmarFinalizacionPartido}
+            disabled={!partidoIniciado}
+          >
+            Finalizar Partido
+          </button>
+        </div>
+      </div>
+
+      <div className="card mb-15" style={{ borderRadius: '18px' }}>
+        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Configuración de Equipos y Staff</h4>
+        <div className={`mesa-team-config-grid ${modoAnalisis === 'dos' ? 'dos-equipos' : 'uno-equipo'}`}>
+          <div className="mesa-team-config-card" style={{ borderColor: colorConAlpha(colorLocal, '99'), background: `linear-gradient(180deg, ${colorConAlpha(colorLocal, '22')} 0%, rgba(255,255,255,0.02) 65%)` }}>
+            <div className="mesa-team-config-header">
+              <strong>Equipo Local</strong>
+              <button className="mesa-color-chip" type="button" style={{ background: colorLocal }} onClick={() => setSelectorColorAbierto((prev) => ({ ...prev, local: !prev.local }))}>
+                {colorLocal}
+              </button>
+            </div>
+            {selectorColorAbierto.local && (
+              <div className="mesa-color-picker-pop">
+                <input type="color" className="form-input" value={colorLocalDraft} onChange={(e) => setColorLocalDraft(e.target.value)} />
+                <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => confirmarColorEquipo({ tipo: 'local', color: colorLocalDraft })}>Confirmar color</button>
+                <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => setSelectorColorAbierto((prev) => ({ ...prev, local: false }))}>Cancelar</button>
+              </div>
+            )}
+            <div className="mesa-filter-item">
+              <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Local</span>
+              <LogoPicker
+                nombre={clubLocalNombre}
+                onNombre={setClubLocalNombre}
+                logoUrl={clubLocalLogoUrl}
+                onLogoUrl={setClubLocalLogoUrl}
+                tipo="club"
+                placeholder="Buscar club local"
+                logoSize={30}
+                extraOptions={opcionesLogosMesa}
+              />
+            </div>
+            <div className="mesa-filtros-grid" style={{ padding: 0, marginTop: '8px' }}>
+              <label className="mesa-filter-item"><span>DT Local</span><input className="form-input" value={staffLocal.entrenador} onChange={(e) => setStaffLocal((prev) => ({ ...prev, entrenador: e.target.value }))} placeholder="Opcional" /></label>
+              <label className="mesa-filter-item"><span>Asistente Local</span><input className="form-input" value={staffLocal.asistente} onChange={(e) => setStaffLocal((prev) => ({ ...prev, asistente: e.target.value }))} placeholder="Opcional" /></label>
+              <label className="mesa-filter-item"><span>Delegado Local</span><input className="form-input" value={staffLocal.delegado} onChange={(e) => setStaffLocal((prev) => ({ ...prev, delegado: e.target.value }))} placeholder="Opcional" /></label>
+            </div>
+          </div>
+
           {modoAnalisis === 'dos' && (
-            <label className="mesa-filter-item">
-              <span>Capitán/a visita</span>
-              <select className="form-input" value={capitanVisitaId} onChange={(e) => setCapitanVisitaId(e.target.value)}>
-                <option value="">Seleccionar</option>
-                {rosterVisita.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
-              </select>
-            </label>
+            <div className="mesa-team-config-card" style={{ borderColor: colorConAlpha(colorVisita, '99'), background: `linear-gradient(180deg, ${colorConAlpha(colorVisita, '22')} 0%, rgba(255,255,255,0.02) 65%)` }}>
+              <div className="mesa-team-config-header">
+                <strong>Equipo Visita</strong>
+                <button className="mesa-color-chip" type="button" style={{ background: colorVisita }} onClick={() => setSelectorColorAbierto((prev) => ({ ...prev, visita: !prev.visita }))}>
+                  {colorVisita}
+                </button>
+              </div>
+              {selectorColorAbierto.visita && (
+                <div className="mesa-color-picker-pop">
+                  <input type="color" className="form-input" value={colorVisitaDraft} onChange={(e) => setColorVisitaDraft(e.target.value)} />
+                  <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => confirmarColorEquipo({ tipo: 'visita', color: colorVisitaDraft })}>Confirmar color</button>
+                  <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => setSelectorColorAbierto((prev) => ({ ...prev, visita: false }))}>Cancelar</button>
+                </div>
+              )}
+              <div className="mesa-filter-item">
+                <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Visita</span>
+                <LogoPicker
+                  nombre={clubVisitaNombre}
+                  onNombre={setClubVisitaNombre}
+                  logoUrl={clubVisitaLogoUrl}
+                  onLogoUrl={setClubVisitaLogoUrl}
+                  tipo="club"
+                  placeholder="Buscar club visita"
+                  logoSize={30}
+                  extraOptions={opcionesLogosMesa}
+                />
+              </div>
+              <div className="mesa-filtros-grid" style={{ padding: 0, marginTop: '8px' }}>
+                <label className="mesa-filter-item"><span>DT Visita</span><input className="form-input" value={staffVisita.entrenador} onChange={(e) => setStaffVisita((prev) => ({ ...prev, entrenador: e.target.value }))} placeholder="Opcional" /></label>
+                <label className="mesa-filter-item"><span>Asistente Visita</span><input className="form-input" value={staffVisita.asistente} onChange={(e) => setStaffVisita((prev) => ({ ...prev, asistente: e.target.value }))} placeholder="Opcional" /></label>
+                <label className="mesa-filter-item"><span>Delegado Visita</span><input className="form-input" value={staffVisita.delegado} onChange={(e) => setStaffVisita((prev) => ({ ...prev, delegado: e.target.value }))} placeholder="Opcional" /></label>
+              </div>
+            </div>
           )}
-          <label className="mesa-filter-item"><span>DT Local</span><input className="form-input" value={staffLocal.entrenador} onChange={(e) => setStaffLocal((prev) => ({ ...prev, entrenador: e.target.value }))} placeholder="Opcional" /></label>
-          <label className="mesa-filter-item"><span>Asistente Local</span><input className="form-input" value={staffLocal.asistente} onChange={(e) => setStaffLocal((prev) => ({ ...prev, asistente: e.target.value }))} placeholder="Opcional" /></label>
-          <label className="mesa-filter-item"><span>Delegado Local</span><input className="form-input" value={staffLocal.delegado} onChange={(e) => setStaffLocal((prev) => ({ ...prev, delegado: e.target.value }))} placeholder="Opcional" /></label>
-          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>DT Visita</span><input className="form-input" value={staffVisita.entrenador} onChange={(e) => setStaffVisita((prev) => ({ ...prev, entrenador: e.target.value }))} placeholder="Opcional" /></label>}
-          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>Asistente Visita</span><input className="form-input" value={staffVisita.asistente} onChange={(e) => setStaffVisita((prev) => ({ ...prev, asistente: e.target.value }))} placeholder="Opcional" /></label>}
-          {modoAnalisis === 'dos' && <label className="mesa-filter-item"><span>Delegado Visita</span><input className="form-input" value={staffVisita.delegado} onChange={(e) => setStaffVisita((prev) => ({ ...prev, delegado: e.target.value }))} placeholder="Opcional" /></label>}
         </div>
       </div>
 
@@ -1718,38 +1838,6 @@ function MesaControlPanel({
         )}
       </div>
 
-      <div className="mesa-filtros-grid card mb-15">
-        <div className="mesa-filter-item">
-          <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Local</span>
-          <LogoPicker
-            nombre={clubLocalNombre}
-            onNombre={setClubLocalNombre}
-            logoUrl={clubLocalLogoUrl}
-            onLogoUrl={setClubLocalLogoUrl}
-            tipo="club"
-            placeholder="Buscar club local"
-            logoSize={30}
-            extraOptions={opcionesLogosMesa}
-          />
-        </div>
-
-        {modoAnalisis === 'dos' && (
-          <div className="mesa-filter-item">
-            <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Visita</span>
-            <LogoPicker
-              nombre={clubVisitaNombre}
-              onNombre={setClubVisitaNombre}
-              logoUrl={clubVisitaLogoUrl}
-              onLogoUrl={setClubVisitaLogoUrl}
-              tipo="club"
-              placeholder="Buscar club visita"
-              logoSize={30}
-              extraOptions={opcionesLogosMesa}
-            />
-          </div>
-        )}
-      </div>
-
       {incluirCategoriasMenores && filtroCategoria !== 'Todas' && (
         <div className="card mb-15" style={{ borderRadius: '18px' }}>
           <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="#6B7280" strokeWidth={1.5} /> Incluir jugadoras/es desde categorías inferiores</h4>
@@ -1780,6 +1868,13 @@ function MesaControlPanel({
             <p>Citadas/os: {validacionLocal.total} (max 12)</p>
             <p>Quinteto inicial: {quintetoLocalIds.length}/5 {quintetoLocalValidado ? '· Validado' : ''}</p>
             {!validacionLocal.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosLocal.join(', ')}</p>}
+            <label className="mesa-filter-item" style={{ marginTop: '8px' }}>
+              <span>Capitán/a local</span>
+              <select className="form-input" value={capitanLocalId} onChange={(e) => setCapitanLocalId(e.target.value)}>
+                <option value="">Seleccionar</option>
+                {rosterLocal.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+              </select>
+            </label>
             <p style={{ marginTop: '8px', fontWeight: 800 }}>1) Selecciona nómina citada (hasta 12)</p>
             <div className="mesa-add-player" style={{ marginTop: '8px' }}>
               <select className="form-input" value={selectorNominaLocalId} onChange={(e) => setSelectorNominaLocalId(e.target.value)}>
@@ -1797,6 +1892,7 @@ function MesaControlPanel({
                     <span>{j._categoria} · {j._rama}</span>
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => editarDorsalJugador({ tipo: 'local', jugadorId: j.id })}>Editar dorsal</button>
                     <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => alternarNomina({ tipo: 'local', jugadorId: j.id })}>Quitar</button>
                     <button className={`btn-secondary ${quintetoLocalIds.includes(j.id) ? 'mesa-btn-live' : ''}`} style={{ width: 'auto' }} onClick={() => alternarTitular({ tipo: 'local', jugadorId: j.id })}>Quinteto inicial</button>
                   </div>
@@ -1811,6 +1907,13 @@ function MesaControlPanel({
               <p>Citadas/os: {validacionVisita.total} (max 12)</p>
               <p>Quinteto inicial: {quintetoVisitaIds.length}/5 {quintetoVisitaValidado ? '· Validado' : ''}</p>
               {!validacionVisita.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosVisita.join(', ')}</p>}
+              <label className="mesa-filter-item" style={{ marginTop: '8px' }}>
+                <span>Capitán/a visita</span>
+                <select className="form-input" value={capitanVisitaId} onChange={(e) => setCapitanVisitaId(e.target.value)}>
+                  <option value="">Seleccionar</option>
+                  {rosterVisita.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+                </select>
+              </label>
               <p style={{ marginTop: '8px', fontWeight: 800 }}>1) Selecciona nómina citada (hasta 12)</p>
               <div className="mesa-add-player" style={{ marginTop: '8px' }}>
                 <select className="form-input" value={selectorNominaVisitaId} onChange={(e) => setSelectorNominaVisitaId(e.target.value)}>
@@ -1835,6 +1938,7 @@ function MesaControlPanel({
                       <span>{j._categoria} · {j._rama}</span>
                     </div>
                     <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => editarDorsalJugador({ tipo: 'visita', jugadorId: j.id })}>Editar dorsal</button>
                       <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => alternarNomina({ tipo: 'visita', jugadorId: j.id })}>Quitar</button>
                       <button className={`btn-secondary ${quintetoVisitaIds.includes(j.id) ? 'mesa-btn-live' : ''}`} style={{ width: 'auto' }} onClick={() => alternarTitular({ tipo: 'visita', jugadorId: j.id })}>Quinteto inicial</button>
                     </div>
@@ -1851,61 +1955,6 @@ function MesaControlPanel({
         )}
       </div>
 
-      <div className="card mb-15" style={{ borderRadius: '18px' }}>
-        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="#6B7280" strokeWidth={1.5} /> Operadores de Mesa (Trazabilidad)</h4>
-        <div className="mesa-filtros-grid" style={{ marginBottom: '10px' }}>
-          <label className="mesa-filter-item">
-            <span>Planillero/a</span>
-            <input className="form-input" value={operadoresMesa.planillero} onChange={(e) => setOperadoresMesa((prev) => ({ ...prev, planillero: e.target.value }))} placeholder="Nombre planillero" />
-          </label>
-          <label className="mesa-filter-item">
-            <span>Estadístico/a</span>
-            <input className="form-input" value={operadoresMesa.estadistico} onChange={(e) => setOperadoresMesa((prev) => ({ ...prev, estadistico: e.target.value }))} placeholder="Nombre estadístico" />
-          </label>
-          <label className="mesa-filter-item">
-            <span>Supervisor/a</span>
-            <input className="form-input" value={operadoresMesa.supervisor} onChange={(e) => setOperadoresMesa((prev) => ({ ...prev, supervisor: e.target.value }))} placeholder="Nombre supervisor" />
-          </label>
-          <label className="mesa-filter-item">
-            <span>Rol activo para registrar</span>
-            <select className="form-input" value={rolOperadorActivo} onChange={(e) => setRolOperadorActivo(e.target.value)}>
-              <option value="planillero">Planillero/a</option>
-              <option value="estadistico">Estadístico/a</option>
-              <option value="supervisor">Supervisor/a</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="mesa-eventos-template-grid">
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SISTEMA', detalle: 'Timeout local solicitado', equipo: 'local' })}>Timeout Local</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SISTEMA', detalle: 'Timeout visita solicitado', equipo: 'visita' })}>Timeout Visita</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SUSTITUCION', detalle: 'Cambio de quinteto local', equipo: 'local' })}>Sustitución Local</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'SUSTITUCION', detalle: 'Cambio de quinteto visita', equipo: 'visita' })}>Sustitución Visita</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'LANZAMIENTO', detalle: 'Tiro fallado local', equipo: 'local' })}>Tiro Fallado Local</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'LANZAMIENTO', detalle: 'Tiro fallado visita', equipo: 'visita' })}>Tiro Fallado Visita</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva local', equipo: 'local' })}>Recuperación Local</button>
-          <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarEventoPlantilla({ tipo: 'DEFENSA', detalle: 'Recuperación defensiva visita', equipo: 'visita' })}>Recuperación Visita</button>
-        </div>
-
-        <div className="mesa-prepartido-actions" style={{ marginTop: '10px' }}>
-          <button
-            className={`btn-secondary ${partidoIniciado ? 'mesa-btn-live' : ''}`}
-            style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
-            onClick={confirmarInicioPartido}
-            disabled={partidoIniciado || !prepartidoValido}
-          >
-            {partidoIniciado ? 'Partido en Curso' : 'Iniciar Partido'}
-          </button>
-          <button
-            className="btn-secondary"
-            style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
-            onClick={confirmarFinalizacionPartido}
-            disabled={!partidoIniciado}
-          >
-            Finalizar Partido
-          </button>
-        </div>
-      </div>
         </>
       )}
 

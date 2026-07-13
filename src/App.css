@@ -2078,6 +2078,65 @@ button,
   gap: 8px;
 }
 
+.mesa-team-config-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.mesa-team-config-grid.uno-equipo {
+  grid-template-columns: 1fr;
+}
+
+.mesa-team-config-grid.dos-equipos {
+  grid-template-columns: 1fr 1fr;
+}
+
+.mesa-team-config-card {
+  border: 1px solid var(--borde-suave);
+  border-radius: 16px;
+  padding: 10px;
+}
+
+.mesa-team-config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.mesa-team-config-header strong {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--texto-principal);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.mesa-color-chip {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+}
+
+.mesa-color-picker-pop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.mesa-color-picker-pop .form-input {
+  max-width: 88px;
+  min-width: 88px;
+  height: 40px;
+  padding: 6px;
+}
+
 .mesa-oncourt-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2494,6 +2553,14 @@ button,
 
   .mesa-prepartido-actions {
     width: 100%;
+  }
+
+  .mesa-team-config-grid.dos-equipos {
+    grid-template-columns: 1fr;
+  }
+
+  .mesa-color-picker-pop {
+    flex-wrap: wrap;
   }
 
   .mesa-oncourt-grid {
