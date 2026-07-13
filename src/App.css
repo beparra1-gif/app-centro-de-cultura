@@ -2159,6 +2159,109 @@ button,
   border-bottom: none;
 }
 
+.mesa-prepartido-card {
+  border: 1px solid rgba(0, 122, 255, 0.22);
+  background: linear-gradient(145deg, rgba(0, 122, 255, 0.08), rgba(255, 255, 255, 0.02));
+}
+
+.mesa-prepartido-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.mesa-btn-live {
+  background: var(--verde-victoria) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+}
+
+.mesa-validation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.mesa-validation-box {
+  border: 1px solid var(--borde-suave);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.mesa-validation-box h6 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.mesa-validation-box p {
+  margin: 3px 0;
+  font-size: 12px;
+  color: var(--texto-secundario);
+}
+
+.mesa-validation-error {
+  color: var(--rojo-alerta) !important;
+  font-weight: 800;
+}
+
+.mesa-quintetos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.mesa-quinteto-box {
+  border: 1px solid var(--borde-suave);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.mesa-quinteto-box h6 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--texto-secundario);
+}
+
+.mesa-quinteto-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mesa-quinteto-pill {
+  border: 1px solid var(--borde-suave);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--texto-principal);
+  cursor: pointer;
+}
+
+.mesa-quinteto-pill.active {
+  background: rgba(52, 199, 89, 0.18);
+  border-color: rgba(52, 199, 89, 0.46);
+}
+
+.mesa-quinteto-pill.locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.roster-fiba-item.bloqueado {
+  opacity: 0.5;
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
 /* Mesa: evita tarjetas comprimidas en pantallas medianas y tablet horizontal */
 .fiba-container .caja-doble-grid.landscape-mode {
   display: grid !important;
