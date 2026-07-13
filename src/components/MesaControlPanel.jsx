@@ -29,6 +29,21 @@ const canonizarNombreEquipo = (valor = '') => {
   return normalizarSlugLogo(valor);
 };
 
+const obtenerSubCategoriaNumero = (valor = '') => {
+  const texto = String(valor || '').toUpperCase();
+  const match = texto.match(/(?:SUB|U)\s*-?\s*(\d{1,2})/);
+  if (!match) return null;
+  const numero = Number(match[1]);
+  return Number.isFinite(numero) ? numero : null;
+};
+
+const esCategoriaMenorOIgual = (categoriaJugador = '', categoriaBase = '') => {
+  const subJugador = obtenerSubCategoriaNumero(categoriaJugador);
+  const subBase = obtenerSubCategoriaNumero(categoriaBase);
+  if (subJugador == null || subBase == null) return false;
+  return subJugador <= subBase;
+};
+
 const construirOpcionesFiltro = (valores = []) => {
   const map = new Map();
   valores.forEach((valor) => {
@@ -100,7 +115,10 @@ function MesaControlPanel({
   const [modoAnalisis, setModoAnalisis] = useState('dos');
   const [filtroRama, setFiltroRama] = useState('Todas');
   const [filtroCategoria, setFiltroCategoria] = useState('Todas');
-  const [filtroCompeticion, setFiltroCompeticion] = useState('Todas');
+  const [competenciaNombre, setCompetenciaNombre] = useState('');
+  const [competenciaLogoUrl, setCompetenciaLogoUrl] = useState('');
+  const [canchaSede, setCanchaSede] = useState('');
+  const [incluirCategoriasMenores, setIncluirCategoriasMenores] = useState(false);
   const [equipoLocalKey, setEquipoLocalKey] = useState('LOCAL_DEFAULT');
   const [equipoVisitaKey, setEquipoVisitaKey] = useState('VISITA_DEFAULT');
   const [clubLocalNombre, setClubLocalNombre] = useState('Centro de Cultura Física');
@@ -229,6 +247,41 @@ function MesaControlPanel({
     ];
     return construirOpcionesFiltro(valores);
   }, [rosterNormalizado, opcionesCompeticionPartidos, equiposDesdePartidos]);
+
+  const filtroCompeticionActiva = normalizarTexto(competenciaNombre);
+
+  const opcionesLogosMesa = useMemo(() => {
+    const map = new Map();
+    const incluir = (nombre = '', logoUrl = '') => {
+      const nombreLimpio = normalizarTexto(nombre);
+      if (!nombreLimpio) return;
+      const key = normalizarSlugLogo(nombreLimpio);
+      const actual = map.get(key);
+      if (!actual || (!actual.logoUrl && normalizarTexto(logoUrl))) {
+        map.set(key, {
+          nombre: nombreLimpio,
+          logoUrl: normalizarTexto(logoUrl),
+        });
+      }
+    };
+
+    (Array.isArray(partidos) ? partidos : []).forEach((p) => {
+      incluir(p.equipoLocalNombre, p.equipoLocalLogoUrl);
+      incluir(p.nombreRival || p.equipoVisitanteNombre || p.equipoVisitaNombre, p.rivalLogoUrl || p.equipoVisitaLogoUrl || p.equipoVisitanteLogoUrl);
+      incluir(p.torneo || p.competicion || p.competencia, p.torneoLogoUrl || p.logoCompeticionUrl || '');
+    });
+
+    return Array.from(map.values());
+  }, [partidos]);
+
+  const canchasDisponibles = useMemo(() => {
+    const set = new Set();
+    (Array.isArray(partidos) ? partidos : []).forEach((p) => {
+      const cancha = normalizarTexto(p.ubicacion || p.cancha_sede || p.cancha || p.sede || '');
+      if (cancha) set.add(cancha);
+    });
+    return Array.from(set);
+  }, [partidos]);
 
   const equiposDesdeClubPicker = useMemo(() => {
     const equipos = [];
@@ -359,15 +412,34 @@ function MesaControlPanel({
       equipoLocalLogoUrl: equipoLocal.logoUrl || prev.equipoLocalLogoUrl,
       equipoVisitaNombre: modoAnalisis === 'dos' ? (equipoVisita?.nombre || prev.equipoVisitaNombre) : 'N/A',
       equipoVisitaLogoUrl: modoAnalisis === 'dos' ? (equipoVisita?.logoUrl || prev.equipoVisitaLogoUrl) : '',
+      competenciaNombre: filtroCompeticionActiva || prev.competenciaNombre || '',
+      competenciaLogoUrl: normalizarTexto(competenciaLogoUrl) || prev.competenciaLogoUrl || '',
+      canchaSede: normalizarTexto(canchaSede) || prev.canchaSede || '',
     }));
-  }, [equipoLocal, equipoVisita, modoAnalisis, setLiveScore]);
+  }, [
+    equipoLocal,
+    equipoVisita,
+    modoAnalisis,
+    setLiveScore,
+    filtroCompeticionActiva,
+    competenciaLogoUrl,
+    canchaSede,
+  ]);
 
   const rosterFiltrado = useMemo(() => rosterNormalizado.filter((j) => {
     const okRama = filtroRama === 'Todas' || coincideFiltro(j._rama, filtroRama);
-    const okCategoria = filtroCategoria === 'Todas' || coincideFiltro(j._categoria, filtroCategoria);
-    const okCompeticion = filtroCompeticion === 'Todas' || coincideFiltro(j._competicion, filtroCompeticion);
+    const okCategoria = filtroCategoria === 'Todas'
+      || coincideFiltro(j._categoria, filtroCategoria)
+      || (incluirCategoriasMenores && esCategoriaMenorOIgual(j._categoria, filtroCategoria));
+    const okCompeticion = !filtroCompeticionActiva || coincideFiltro(j._competicion, filtroCompeticionActiva);
     return okRama && okCategoria && okCompeticion;
-  }), [rosterNormalizado, filtroRama, filtroCategoria, filtroCompeticion]);
+  }), [
+    rosterNormalizado,
+    filtroRama,
+    filtroCategoria,
+    incluirCategoriasMenores,
+    filtroCompeticionActiva,
+  ]);
 
   const rosterLocalCompleto = useMemo(
     () => rosterFiltrado.filter((j) => j._equipoKey === equipoLocalKey),
@@ -574,7 +646,7 @@ function MesaControlPanel({
         dorsal,
         rama: filtroRama === 'Todas' ? (esLocal ? (equipoTarget.ramas?.[0] || 'General') : 'General') : filtroRama,
         categoria: filtroCategoria === 'Todas' ? (equipoTarget.categorias?.[0] || 'General') : filtroCategoria,
-        competicion: filtroCompeticion === 'Todas' ? (equipoTarget.competiciones?.[0] || 'Sin competencia') : filtroCompeticion,
+        competicion: filtroCompeticionActiva || (equipoTarget.competiciones?.[0] || 'Sin competencia'),
         equipo: equipoTarget.nombre,
         equipo_nombre: equipoTarget.nombre,
         logo_equipo_url: equipoTarget.logoUrl || '',
@@ -656,8 +728,15 @@ function MesaControlPanel({
       filtros: {
         rama: filtroRama,
         categoria: filtroCategoria,
-        competicion: filtroCompeticion,
+        competicion: filtroCompeticionActiva || 'Todas',
+        incluirCategoriasMenores,
+        canchaSede: normalizarTexto(canchaSede),
       },
+      competencia: {
+        nombre: filtroCompeticionActiva,
+        logoUrl: normalizarTexto(competenciaLogoUrl),
+      },
+      canchaSede: normalizarTexto(canchaSede),
       playByPlay,
     };
 
@@ -738,15 +817,27 @@ function MesaControlPanel({
           </select>
         </label>
 
-        <label className="mesa-filter-item">
-          <span><Shield size={14} color="#6B7280" strokeWidth={1.5} /> Competición</span>
-          <select className="form-input" value={filtroCompeticion} onChange={(e) => setFiltroCompeticion(e.target.value)}>
-            {opcionesCompeticion.map((op) => <option key={op} value={op}>{op}</option>)}
-          </select>
-        </label>
+        <div className="mesa-filter-item">
+          <span><Shield size={14} color="#6B7280" strokeWidth={1.5} /> Competencia / Torneo</span>
+          <LogoPicker
+            nombre={competenciaNombre}
+            onNombre={setCompetenciaNombre}
+            logoUrl={competenciaLogoUrl}
+            onLogoUrl={setCompetenciaLogoUrl}
+            tipo="torneo"
+            placeholder="Buscar competencia o torneo"
+            logoSize={30}
+            extraOptions={[
+              ...opcionesLogosMesa,
+              ...opcionesCompeticion
+                .filter((op) => op !== 'Todas')
+                .map((op) => ({ nombre: op, logoUrl: '' })),
+            ]}
+          />
+        </div>
 
         <div className="mesa-filter-item">
-          <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Local (logo automático)</span>
+          <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Local</span>
           <LogoPicker
             nombre={clubLocalNombre}
             onNombre={setClubLocalNombre}
@@ -755,12 +846,13 @@ function MesaControlPanel({
             tipo="club"
             placeholder="Buscar club local"
             logoSize={30}
+            extraOptions={opcionesLogosMesa}
           />
         </div>
 
         {modoAnalisis === 'dos' && (
           <div className="mesa-filter-item">
-            <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Visita (logo automático)</span>
+            <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Visita</span>
             <LogoPicker
               nombre={clubVisitaNombre}
               onNombre={setClubVisitaNombre}
@@ -769,8 +861,37 @@ function MesaControlPanel({
               tipo="club"
               placeholder="Buscar club visita"
               logoSize={30}
+              extraOptions={opcionesLogosMesa}
             />
           </div>
+        )}
+
+        <label className="mesa-filter-item">
+          <span><FileText size={14} color="#6B7280" strokeWidth={1.5} /> Cancha / Sede</span>
+          <input
+            className="form-input"
+            list="mesa-canchas-sugeridas"
+            value={canchaSede}
+            onChange={(e) => setCanchaSede(e.target.value)}
+            placeholder="Ej: Gimnasio CCF"
+          />
+          <datalist id="mesa-canchas-sugeridas">
+            {canchasDisponibles.map((cancha) => (
+              <option key={cancha} value={cancha} />
+            ))}
+          </datalist>
+        </label>
+
+        {filtroCategoria !== 'Todas' && (
+          <label className="mesa-filter-item" style={{ justifyContent: 'center' }}>
+            <span><Shield size={14} color="#6B7280" strokeWidth={1.5} /> Incluir categorías menores</span>
+            <input
+              type="checkbox"
+              checked={incluirCategoriasMenores}
+              onChange={(e) => setIncluirCategoriasMenores(e.target.checked)}
+              style={{ width: '18px', height: '18px' }}
+            />
+          </label>
         )}
       </div>
 
@@ -875,9 +996,24 @@ function MesaControlPanel({
         </div>
 
         <div className="text-center" style={{ flex: 1 }}>
-          <span className="mesa-competicion-chip">{filtroCompeticion === 'Todas' ? 'Competición abierta' : filtroCompeticion}</span>
+          <span className="mesa-competicion-chip">{filtroCompeticionActiva || 'Competición abierta'}</span>
+          {!!normalizarTexto(competenciaLogoUrl) && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
+              <LogoAvatar
+                nombre={filtroCompeticionActiva || 'Competencia'}
+                logoUrl={competenciaLogoUrl}
+                size={28}
+                borderRadius="999px"
+              />
+            </div>
+          )}
           <span style={{ fontSize: '16px', color: 'var(--verde-victoria)', fontWeight: '900', background: 'rgba(52,199,89,0.1)', padding: '8px 20px', borderRadius: '12px', border: '1px solid var(--verde-victoria)' }}>{liveScore.reloj}</span>
           <h4 style={{ margin: '10px 0 0 0', color: 'white', fontSize: '18px' }}>Q{liveScore.periodo}</h4>
+          {normalizarTexto(canchaSede) && (
+            <span style={{ display: 'block', marginTop: '8px', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800' }}>
+              {canchaSede}
+            </span>
+          )}
         </div>
 
         <div className="text-center" style={{ flex: 1 }}>

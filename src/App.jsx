@@ -116,6 +116,9 @@ function App() {
     equipoVisitaNombre: 'Visitante',
     equipoLocalLogoUrl: '/logos/club-logo.png',
     equipoVisitaLogoUrl: '',
+    competenciaNombre: '',
+    competenciaLogoUrl: '',
+    canchaSede: '',
   });
   const [jugadorSeleccionadoLive, setJugadorSeleccionadoLive] = useState(null);
   const [playByPlay, setPlayByPlay] = useState([]); 
@@ -586,13 +589,16 @@ function App() {
       if (Array.isArray(jugadoresRes)) {
         setJugadoresAdmin(jugadoresRes);
 
-        const nuevoRoster = jugadoresRes.slice(0, 24).map((j, idx) => ({
+        const nuevoRoster = jugadoresRes.map((j, idx) => ({
           id: idx + 1,
           rut_jugador: j.rut_jugador || `sin-rut-${idx + 1}`,
           nombre: `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''}`.trim(),
           correo_apoderado: j.correo_apoderado || '',
           rama: j.rama || 'MASCULINA',
           categoria: j.categoria || 'SUB-13',
+          equipo: j.equipo_nombre || j.club_nombre || 'Centro de Cultura Física',
+          equipo_nombre: j.equipo_nombre || j.club_nombre || 'Centro de Cultura Física',
+          equipo_logo_url: j.equipo_logo_url || j.club_logo_url || '',
           dorsal: j.numero_camiseta || idx + 1,
           año: j.año_nacimiento || 0,
           estadoAsistencia: 'pendiente',
