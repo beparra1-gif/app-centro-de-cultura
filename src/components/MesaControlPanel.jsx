@@ -39,6 +39,26 @@ const obtenerSubCategoriaNumero = (valor = '') => {
   return Number.isFinite(numero) ? numero : null;
 };
 
+const obtenerSubCategorias = (valor = '') => {
+  const texto = String(valor || '').toUpperCase();
+  const matches = Array.from(texto.matchAll(/(?:SUB|U)\s*-?\s*(\d{1,2})/g));
+  return Array.from(new Set(matches
+    .map((match) => Number(match[1]))
+    .filter((num) => Number.isFinite(num))));
+};
+
+const coincideCategoriaFiltro = (valorA = '', valorB = '') => {
+  if (coincideFiltro(valorA, valorB)) return true;
+  const catsA = obtenerSubCategorias(valorA);
+  const catsB = obtenerSubCategorias(valorB);
+  if (catsA.length > 0 && catsB.length > 0) {
+    return catsA.some((cat) => catsB.includes(cat));
+  }
+  const normA = normalizarClaveFiltro(valorA);
+  const normB = normalizarClaveFiltro(valorB);
+  return Boolean(normA && normB && (normA.includes(normB) || normB.includes(normA)));
+};
+
 const esCategoriaMenorOIgual = (categoriaJugador = '', categoriaBase = '') => {
   const subJugador = obtenerSubCategoriaNumero(categoriaJugador);
   const subBase = obtenerSubCategoriaNumero(categoriaBase);
@@ -709,7 +729,7 @@ function MesaControlPanel({
   const rosterFiltrado = useMemo(() => rosterNormalizado.filter((j) => {
     const okRama = filtroRama === 'Todas' || coincideFiltro(j._rama, filtroRama);
     const okCategoria = filtroCategoria === 'Todas'
-      || coincideFiltro(j._categoria, filtroCategoria)
+      || coincideCategoriaFiltro(j._categoria, filtroCategoria)
       || (incluirCategoriasMenores && esCategoriaInferiorDentroDeRango(j._categoria, filtroCategoria, nivelesCategoriasInferiores));
     const okCompeticion = !filtroCompeticionActiva || coincideFiltro(j._competicion, filtroCompeticionActiva);
     return okRama && okCategoria && okCompeticion;
@@ -773,7 +793,7 @@ function MesaControlPanel({
         const okRama = filtroRama === 'Todas' || coincideFiltro(j._rama, filtroRama);
         const okComp = !filtroCompeticionActiva || coincideFiltro(j._competicion, filtroCompeticionActiva);
         const okCat = esCategoriaInferiorDentroDeRango(j._categoria, filtroCategoria, nivelesCategoriasInferiores)
-          && !coincideFiltro(j._categoria, filtroCategoria);
+          && !coincideCategoriaFiltro(j._categoria, filtroCategoria);
         const okBusqueda = !q || normalizarTexto(j.nombre).toLowerCase().includes(q) || String(j.dorsal || '').includes(q);
         return okRama && okComp && okCat && okBusqueda;
       })
@@ -812,6 +832,17 @@ function MesaControlPanel({
     () => detectarDorsalesDuplicados(rosterVisita),
     [rosterVisita]
   );
+
+  const restaurarFiltrosMesa = () => {
+    setFiltroRama('Todas');
+    setFiltroCategoria('Todas');
+    setCompetenciaNombre('');
+    setCompetenciaLogoUrl('');
+    setCanchaSede('');
+    setIncluirCategoriasMenores(false);
+    setNivelesCategoriasInferiores(2);
+    setBusquedaInclusionLocal('');
+  };
 
   useEffect(() => {
     const disponibles = rosterLocalCompleto.map((j) => j.id);
@@ -1815,6 +1846,11 @@ function MesaControlPanel({
             ))}
           </datalist>
         </label>
+
+        <div className="mesa-filter-item" style={{ justifyContent: 'flex-end' }}>
+          <span>Acciones de filtro</span>
+          <button className="btn-secondary" type="button" onClick={restaurarFiltrosMesa}>Restaurar filtros</button>
+        </div>
 
         {filtroCategoria !== 'Todas' && (
           <>
