@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRightLeft, Expand, FileText, Filter, Shield, Tv, Users } from 'lucide-react';
+import { ArrowRightLeft, Download, Expand, FileText, Filter, History, Shield, Tv, Users } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import { calcularEff } from '../utils/appHelpers';
 import * as api from '../api/client';
@@ -8,6 +8,7 @@ import LogoPicker from './LogoPicker';
 import { normalizarSlugLogo } from '../utils/logoResolver';
 
 const LIMITE_JUGADORES_POR_EQUIPO = 12;
+const MESA_SESSION_KEY = 'mesa_live_session_v2';
 
 const numero = (valor) => Number(valor || 0);
 
@@ -90,6 +91,32 @@ const colorConAlpha = (hex = '#0a84ff', alpha = '22') => {
   return '#0a84ff22';
 };
 
+const construirCsv = (filas = []) => {
+  if (!Array.isArray(filas) || filas.length === 0) return '';
+  const headers = Object.keys(filas[0]);
+  const escapeCsv = (valor) => {
+    const texto = String(valor ?? '');
+    if (texto.includes(',') || texto.includes('"') || texto.includes('\n')) {
+      return `"${texto.replace(/"/g, '""')}"`;
+    }
+    return texto;
+  };
+  const body = filas.map((fila) => headers.map((h) => escapeCsv(fila[h])).join(','));
+  return [headers.join(','), ...body].join('\n');
+};
+
+const descargarTexto = (nombreArchivo, contenido, tipo = 'text/plain;charset=utf-8') => {
+  const blob = new Blob([contenido], { type: tipo });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = nombreArchivo;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+};
+
 const sonEquiposCompatibles = (jugador = {}, equipo = null) => {
   if (!equipo) return false;
   if (jugador._equipoKey && equipo.key && jugador._equipoKey === equipo.key) return true;
@@ -159,6 +186,10 @@ function MesaControlPanel({
 }) {
   const [modoAnalisis, setModoAnalisis] = useState('dos');
   const [moduloMesa, setModuloMesa] = useState('prepartido');
+  const [historialFiltroTexto, setHistorialFiltroTexto] = useState('');
+  const [historialFiltroRama, setHistorialFiltroRama] = useState('Todas');
+  const [historialFiltroCategoria, setHistorialFiltroCategoria] = useState('Todas');
+  const [sesionRecuperada, setSesionRecuperada] = useState(false);
   const [filtroRama, setFiltroRama] = useState('Todas');
   const [filtroCategoria, setFiltroCategoria] = useState('Todas');
   const [competenciaNombre, setCompetenciaNombre] = useState('');
@@ -480,6 +511,158 @@ function MesaControlPanel({
       setHistorialPartidosMesa([]);
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      const guardada = JSON.parse(window.localStorage.getItem(MESA_SESSION_KEY) || 'null');
+      if (!guardada || typeof guardada !== 'object') return;
+
+      if (guardada.modoAnalisis) setModoAnalisis(guardada.modoAnalisis);
+      if (guardada.moduloMesa) setModuloMesa(guardada.moduloMesa);
+      if (guardada.filtroRama) setFiltroRama(guardada.filtroRama);
+      if (guardada.filtroCategoria) setFiltroCategoria(guardada.filtroCategoria);
+      setCompetenciaNombre(guardada.competenciaNombre || '');
+      setCompetenciaLogoUrl(guardada.competenciaLogoUrl || '');
+      setCanchaSede(guardada.canchaSede || '');
+      setIncluirCategoriasMenores(Boolean(guardada.incluirCategoriasMenores));
+      setNivelesCategoriasInferiores(Number(guardada.nivelesCategoriasInferiores || 2));
+      setEquipoLocalKey(guardada.equipoLocalKey || 'LOCAL_DEFAULT');
+      setEquipoVisitaKey(guardada.equipoVisitaKey || 'VISITA_DEFAULT');
+      setClubLocalNombre(guardada.clubLocalNombre || 'Centro de Cultura Física');
+      setClubLocalLogoUrl(guardada.clubLocalLogoUrl || '/logos/club-logo.png');
+      setClubVisitaNombre(guardada.clubVisitaNombre || 'Visitante');
+      setClubVisitaLogoUrl(guardada.clubVisitaLogoUrl || '');
+      setPartidoIniciado(Boolean(guardada.partidoIniciado));
+      setPartidoPersistidoId(guardada.partidoPersistidoId || null);
+      setUltimoGuardadoAt(guardada.ultimoGuardadoAt || '');
+      setPartidoAnalisisId(guardada.partidoAnalisisId || null);
+      setEventosPartido(Array.isArray(guardada.eventosPartido) ? guardada.eventosPartido : []);
+      setRolOperadorActivo(guardada.rolOperadorActivo || 'planillero');
+      setOperadoresMesa(guardada.operadoresMesa || { planillero: '', estadistico: '', supervisor: '' });
+      setQuintetoLocalIds(Array.isArray(guardada.quintetoLocalIds) ? guardada.quintetoLocalIds : []);
+      setQuintetoVisitaIds(Array.isArray(guardada.quintetoVisitaIds) ? guardada.quintetoVisitaIds : []);
+      setNominaLocalIds(Array.isArray(guardada.nominaLocalIds) ? guardada.nominaLocalIds : []);
+      setNominaVisitaIds(Array.isArray(guardada.nominaVisitaIds) ? guardada.nominaVisitaIds : []);
+      setQuintetoLocalValidado(Boolean(guardada.quintetoLocalValidado));
+      setQuintetoVisitaValidado(Boolean(guardada.quintetoVisitaValidado));
+      setCapitanLocalId(guardada.capitanLocalId || '');
+      setCapitanVisitaId(guardada.capitanVisitaId || '');
+      setColorLocal(guardada.colorLocal || '#0a84ff');
+      setColorVisita(guardada.colorVisita || '#ff3b30');
+      setColorLocalDraft(guardada.colorLocalDraft || guardada.colorLocal || '#0a84ff');
+      setColorVisitaDraft(guardada.colorVisitaDraft || guardada.colorVisita || '#ff3b30');
+      setStaffLocal(guardada.staffLocal || { entrenador: '', asistente: '', delegado: '' });
+      setStaffVisita(guardada.staffVisita || { entrenador: '', asistente: '', delegado: '' });
+      setForzarPantallaCompletaLive(guardada.forzarPantallaCompletaLive !== false);
+
+      if (Array.isArray(guardada.rosterEquipo)) setRosterEquipo(guardada.rosterEquipo);
+      if (guardada.liveScore && typeof guardada.liveScore === 'object') {
+        setLiveScore((prev) => ({ ...prev, ...guardada.liveScore }));
+      }
+      if (Array.isArray(guardada.playByPlay)) setPlayByPlay(guardada.playByPlay);
+      if (typeof guardada.notaScouting === 'string') setNotaScouting(guardada.notaScouting);
+      if (guardada.jugadorSeleccionadoLive != null) setJugadorSeleccionadoLive(guardada.jugadorSeleccionadoLive);
+
+      setSesionRecuperada(true);
+    } catch {
+      // no-op: if persistence is corrupted we start from clean defaults
+    }
+  }, [setJugadorSeleccionadoLive, setLiveScore, setNotaScouting, setPlayByPlay, setRosterEquipo]);
+
+  useEffect(() => {
+    const payload = {
+      modoAnalisis,
+      moduloMesa,
+      filtroRama,
+      filtroCategoria,
+      competenciaNombre,
+      competenciaLogoUrl,
+      canchaSede,
+      incluirCategoriasMenores,
+      nivelesCategoriasInferiores,
+      equipoLocalKey,
+      equipoVisitaKey,
+      clubLocalNombre,
+      clubLocalLogoUrl,
+      clubVisitaNombre,
+      clubVisitaLogoUrl,
+      partidoIniciado,
+      partidoPersistidoId,
+      ultimoGuardadoAt,
+      partidoAnalisisId,
+      eventosPartido,
+      rolOperadorActivo,
+      operadoresMesa,
+      quintetoLocalIds,
+      quintetoVisitaIds,
+      nominaLocalIds,
+      nominaVisitaIds,
+      quintetoLocalValidado,
+      quintetoVisitaValidado,
+      capitanLocalId,
+      capitanVisitaId,
+      colorLocal,
+      colorVisita,
+      colorLocalDraft,
+      colorVisitaDraft,
+      staffLocal,
+      staffVisita,
+      forzarPantallaCompletaLive,
+      rosterEquipo,
+      liveScore,
+      playByPlay,
+      notaScouting,
+      jugadorSeleccionadoLive,
+    };
+    try {
+      window.localStorage.setItem(MESA_SESSION_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore storage quota failures
+    }
+  }, [
+    modoAnalisis,
+    moduloMesa,
+    filtroRama,
+    filtroCategoria,
+    competenciaNombre,
+    competenciaLogoUrl,
+    canchaSede,
+    incluirCategoriasMenores,
+    nivelesCategoriasInferiores,
+    equipoLocalKey,
+    equipoVisitaKey,
+    clubLocalNombre,
+    clubLocalLogoUrl,
+    clubVisitaNombre,
+    clubVisitaLogoUrl,
+    partidoIniciado,
+    partidoPersistidoId,
+    ultimoGuardadoAt,
+    partidoAnalisisId,
+    eventosPartido,
+    rolOperadorActivo,
+    operadoresMesa,
+    quintetoLocalIds,
+    quintetoVisitaIds,
+    nominaLocalIds,
+    nominaVisitaIds,
+    quintetoLocalValidado,
+    quintetoVisitaValidado,
+    capitanLocalId,
+    capitanVisitaId,
+    colorLocal,
+    colorVisita,
+    colorLocalDraft,
+    colorVisitaDraft,
+    staffLocal,
+    staffVisita,
+    forzarPantallaCompletaLive,
+    rosterEquipo,
+    liveScore,
+    playByPlay,
+    notaScouting,
+    jugadorSeleccionadoLive,
+  ]);
 
   useEffect(() => {
     if (!equipoLocal) return;
@@ -1129,7 +1312,103 @@ function MesaControlPanel({
     [historialCombinado, partidoAnalisisId]
   );
 
-  const guardarEstadisticaPartido = async () => {
+  const historialFiltrado = useMemo(() => {
+    const q = normalizarTexto(historialFiltroTexto).toLowerCase();
+    return historialCombinado.filter((p) => {
+      const okRama = historialFiltroRama === 'Todas' || coincideFiltro(p.filtros?.rama, historialFiltroRama);
+      const okCategoria = historialFiltroCategoria === 'Todas' || coincideFiltro(p.filtros?.categoria, historialFiltroCategoria);
+      const texto = `${p.equipos?.local?.nombre || ''} ${p.equipos?.visita?.nombre || ''} ${p.filtros?.competicion || ''}`.toLowerCase();
+      const okTexto = !q || texto.includes(q);
+      return okRama && okCategoria && okTexto;
+    });
+  }, [historialCombinado, historialFiltroTexto, historialFiltroRama, historialFiltroCategoria]);
+
+  const acumuladoEquipos = useMemo(() => {
+    const pj = historialFiltrado.length;
+    const victorias = historialFiltrado.filter((p) => Number(p.marcador?.ptsLocal || 0) > Number(p.marcador?.ptsVisita || 0)).length;
+    const derrotas = historialFiltrado.filter((p) => Number(p.marcador?.ptsLocal || 0) < Number(p.marcador?.ptsVisita || 0)).length;
+    const pf = historialFiltrado.reduce((acc, p) => acc + Number(p.marcador?.ptsLocal || 0), 0);
+    const pc = historialFiltrado.reduce((acc, p) => acc + Number(p.marcador?.ptsVisita || 0), 0);
+    const effLocal = historialFiltrado.reduce((acc, p) => acc + Number(p.equipos?.local?.resumen?.effTotal || 0), 0);
+    return {
+      pj,
+      victorias,
+      derrotas,
+      pf,
+      pc,
+      promedioPf: pj ? (pf / pj) : 0,
+      promedioPc: pj ? (pc / pj) : 0,
+      effLocal,
+    };
+  }, [historialFiltrado]);
+
+  const acumuladoJugadores = useMemo(() => {
+    const mapa = new Map();
+    historialFiltrado.forEach((p) => {
+      (p.equipos?.local?.roster || []).forEach((j) => {
+        const clave = `${normalizarTexto(j.nombre)}-${j.dorsal || ''}`;
+        const actual = mapa.get(clave) || {
+          nombre: normalizarTexto(j.nombre) || 'Jugador/a',
+          dorsal: j.dorsal || '-',
+          partidos: 0,
+          pts: 0,
+          reb: 0,
+          ast: 0,
+          flt: 0,
+          eff: 0,
+        };
+        actual.partidos += 1;
+        actual.pts += Number(j.pts || 0);
+        actual.reb += Number(j.reb || 0);
+        actual.ast += Number(j.ast || 0);
+        actual.flt += Number(j.flt || 0);
+        actual.eff += calcularEff(j);
+        mapa.set(clave, actual);
+      });
+    });
+    return Array.from(mapa.values()).sort((a, b) => b.eff - a.eff);
+  }, [historialFiltrado]);
+
+  const exportarHistorialCsv = () => {
+    const filas = historialFiltrado.map((p) => ({
+      fecha: p.finalizadoAt ? new Date(p.finalizadoAt).toLocaleString('es-CL') : '',
+      local: p.equipos?.local?.nombre || 'Local',
+      visita: p.equipos?.visita?.nombre || 'Visita',
+      marcador: `${p.marcador?.ptsLocal ?? 0}-${p.marcador?.ptsVisita ?? 0}`,
+      rama: p.filtros?.rama || '',
+      categoria: p.filtros?.categoria || '',
+      competencia: p.filtros?.competicion || '',
+      sede: p.canchaSede || '',
+    }));
+    const csv = construirCsv(filas);
+    if (!csv) return;
+    descargarTexto(`historial-mesa-${Date.now()}.csv`, csv, 'text/csv;charset=utf-8');
+  };
+
+  const exportarPlanillaReglamentaria = () => {
+    const filas = historialFiltrado.map((p) => ({
+      Fecha: p.finalizadoAt ? new Date(p.finalizadoAt).toLocaleDateString('es-CL') : '',
+      Hora: p.finalizadoAt ? new Date(p.finalizadoAt).toLocaleTimeString('es-CL') : '',
+      Competencia: p.filtros?.competicion || '',
+      Rama: p.filtros?.rama || '',
+      Categoria: p.filtros?.categoria || '',
+      Local: p.equipos?.local?.nombre || '',
+      Visita: p.equipos?.visita?.nombre || '',
+      PtsLocal: Number(p.marcador?.ptsLocal || 0),
+      PtsVisita: Number(p.marcador?.ptsVisita || 0),
+      FaltasLocal: Number(p.marcador?.faltasLocal || 0),
+      FaltasVisita: Number(p.marcador?.faltasVisita || 0),
+      Sede: p.canchaSede || '',
+      Planillero: p.operadores?.planillero || '',
+      Estadistico: p.operadores?.estadistico || '',
+      Supervisor: p.operadores?.supervisor || '',
+    }));
+    const csv = construirCsv(filas);
+    if (!csv) return;
+    descargarTexto(`planilla-reglamentaria-${Date.now()}.csv`, csv, 'text/csv;charset=utf-8');
+  };
+
+  const guardarEstadisticaPartido = async ({ guardarEnBaseHistorica = true } = {}) => {
     const payload = {
       id: nextId(),
       finalizadoAt: new Date().toISOString(),
@@ -1189,8 +1468,14 @@ function MesaControlPanel({
       window.localStorage.setItem(clave, JSON.stringify(siguiente));
       setHistorialPartidosMesa(siguiente);
       setUltimoGuardadoAt(new Date().toLocaleString('es-CL'));
-      if (partidoPersistidoId) {
-        await api.partidosLiveAPI.finalizarMesa(partidoPersistidoId, {
+      if (guardarEnBaseHistorica) {
+        let idPersistido = partidoPersistidoId;
+        if (!idPersistido) {
+          idPersistido = await crearPartidoPersistido();
+          if (idPersistido) setPartidoPersistidoId(idPersistido);
+        }
+        if (idPersistido) {
+          await api.partidosLiveAPI.finalizarMesa(idPersistido, {
           mesa_payload: payload,
           play_by_play_json: playByPlay,
           eventos_json: eventosPartido,
@@ -1205,8 +1490,9 @@ function MesaControlPanel({
           cancha_sede: normalizarTexto(canchaSede) || null,
           pts_local: liveScore.ptsLocal,
           pts_visitante: liveScore.ptsVisita,
-        });
-        await recargarHistorialRemoto();
+          });
+          await recargarHistorialRemoto();
+        }
       }
       return true;
     } catch {
@@ -1221,8 +1507,6 @@ function MesaControlPanel({
       return;
     }
     if (!window.confirm('¿Confirmas iniciar el partido?')) return;
-    const creadoId = await crearPartidoPersistido();
-    if (creadoId) setPartidoPersistidoId(creadoId);
     setPartidoIniciado(true);
     setModuloMesa('live');
     setForzarPantallaCompletaLive(true);
@@ -1239,12 +1523,13 @@ function MesaControlPanel({
   const confirmarFinalizacionPartido = async () => {
     if (!partidoIniciado) return;
     if (!window.confirm('¿Finalizar partido y guardar estadística?')) return;
+    const guardarHistorico = window.confirm('¿Quieres guardar este partido en la base histórica?');
 
-    const guardado = await guardarEstadisticaPartido();
+    const guardado = await guardarEstadisticaPartido({ guardarEnBaseHistorica: guardarHistorico });
     setPartidoIniciado(false);
     setModuloMesa('analitica');
     setPartidoPersistidoId(null);
-    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '00:00', texto: guardado ? '■ Partido finalizado y estadística guardada' : '■ Partido finalizado (falló guardado local)' }, ...prev]);
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '00:00', texto: guardado ? `■ Partido finalizado y ${guardarHistorico ? 'guardado en histórico' : 'guardado localmente'}` : '■ Partido finalizado (falló guardado local)' }, ...prev]);
     if (!guardado) {
       alert('Partido finalizado, pero no se pudo guardar la estadística en este dispositivo.');
     }
@@ -1275,13 +1560,21 @@ function MesaControlPanel({
             <button className={`mesa-mode-btn ${modoAnalisis === 'uno' ? 'active' : ''}`} onClick={() => setModoAnalisis('uno')}>1 Equipo</button>
             <button className={`mesa-mode-btn ${modoAnalisis === 'dos' ? 'active' : ''}`} onClick={() => setModoAnalisis('dos')}>2 Equipos</button>
           </div>
-          <div className="mesa-lab-mode-switch" style={{ gridTemplateColumns: '1fr 1fr 1fr' }} role="tablist" aria-label="Módulo de mesa">
+          <div className="mesa-lab-mode-switch" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr' }} role="tablist" aria-label="Módulo de mesa">
             <button className={`mesa-mode-btn ${moduloMesa === 'prepartido' ? 'active' : ''}`} onClick={() => setModuloMesa('prepartido')}>1. Datos partido</button>
             <button className={`mesa-mode-btn ${moduloMesa === 'live' ? 'active' : ''}`} onClick={() => setModuloMesa('live')} disabled={!partidoIniciado}>2. Juego en vivo</button>
             <button className={`mesa-mode-btn ${moduloMesa === 'analitica' ? 'active' : ''}`} onClick={() => setModuloMesa('analitica')}>3. Estadística</button>
+            <button className={`mesa-mode-btn ${moduloMesa === 'historia' ? 'active' : ''}`} onClick={() => setModuloMesa('historia')}><History size={12} color="#6B7280" strokeWidth={1.5} /> 4. Historia</button>
           </div>
         </div>
       </div>
+
+      {sesionRecuperada && (
+        <div className="card mb-15" style={{ borderRadius: '16px', border: '1px solid rgba(52,199,89,0.4)', background: 'rgba(52,199,89,0.1)' }}>
+          <strong>Sesión restaurada automáticamente.</strong>
+          <p style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>Los datos de Mesa se mantuvieron después del refresco.</p>
+        </div>
+      )}
 
       {moduloMesa === 'prepartido' && (
         <>
@@ -1294,12 +1587,14 @@ function MesaControlPanel({
             <input type="color" className="form-input" value={colorLocalDraft} onChange={(e) => setColorLocalDraft(e.target.value)} />
             <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => setColorLocal(colorLocalDraft)}>Aplicar color local</button>
             <span style={{ textTransform: 'none', letterSpacing: 0 }}>Aplicado: <strong style={{ color: colorLocal }}>{colorLocal}</strong></span>
+            <div style={{ width: '100%', height: '10px', borderRadius: '999px', background: colorLocal }} />
           </div>
           <div className="mesa-filter-item">
             <span>Color equipo visita</span>
             <input type="color" className="form-input" value={colorVisitaDraft} onChange={(e) => setColorVisitaDraft(e.target.value)} />
             <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => setColorVisita(colorVisitaDraft)}>Aplicar color visita</button>
             <span style={{ textTransform: 'none', letterSpacing: 0 }}>Aplicado: <strong style={{ color: colorVisita }}>{colorVisita}</strong></span>
+            <div style={{ width: '100%', height: '10px', borderRadius: '999px', background: colorVisita }} />
           </div>
           <label className="mesa-filter-item">
             <span>Capitán/a local</span>
@@ -1910,6 +2205,87 @@ function MesaControlPanel({
         )}
       </div>
 
+      </>
+      )}
+
+      {moduloMesa === 'historia' && (
+      <>
+      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><History size={16} color="#6B7280" strokeWidth={1.5} /> Historia de Partidos</h4>
+        <div className="mesa-filtros-grid">
+          <label className="mesa-filter-item">
+            <span>Buscar</span>
+            <input className="form-input" placeholder="Equipo, rival o competencia" value={historialFiltroTexto} onChange={(e) => setHistorialFiltroTexto(e.target.value)} />
+          </label>
+          <label className="mesa-filter-item">
+            <span>Rama</span>
+            <select className="form-input" value={historialFiltroRama} onChange={(e) => setHistorialFiltroRama(e.target.value)}>
+              {opcionesRama.map((op) => <option key={`hr-${op}`} value={op}>{op}</option>)}
+            </select>
+          </label>
+          <label className="mesa-filter-item">
+            <span>Categoría</span>
+            <select className="form-input" value={historialFiltroCategoria} onChange={(e) => setHistorialFiltroCategoria(e.target.value)}>
+              {opcionesCategoria.map((op) => <option key={`hc-${op}`} value={op}>{op}</option>)}
+            </select>
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+          <button className="btn-secondary" style={{ width: 'auto' }} onClick={exportarHistorialCsv}><Download size={14} color="#6B7280" strokeWidth={1.5} /> Exportar Historial CSV</button>
+          <button className="btn-secondary" style={{ width: 'auto' }} onClick={exportarPlanillaReglamentaria}><Download size={14} color="#6B7280" strokeWidth={1.5} /> Exportar Planilla Reglamentaria</button>
+        </div>
+      </div>
+
+      <div className="card mt-20 mesa-historial-card" style={{ borderRadius: '24px' }}>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="#6B7280" strokeWidth={1.5} /> Partidos Realizados</h4>
+        {historialFiltrado.length === 0 ? (
+          <p className="text-muted" style={{ marginBottom: 0 }}>No hay partidos para los filtros actuales.</p>
+        ) : (
+          <div className="mesa-historial-list">
+            {historialFiltrado.map((partido) => (
+              <div key={`hist-${partido.id}`} className="mesa-historial-item" onClick={() => setPartidoAnalisisId(partido.id)}>
+                <div>
+                  <strong>{partido.equipos?.local?.nombre || 'Local'} vs {partido.equipos?.visita?.nombre || 'Visita'}</strong>
+                  <span>{partido.finalizadoAt ? new Date(partido.finalizadoAt).toLocaleString('es-CL') : 'Sin fecha'} · {partido.filtros?.rama || 'Rama'} · {partido.filtros?.categoria || 'Categoria'}</span>
+                </div>
+                <div className="mesa-historial-score">
+                  <strong>{partido.marcador?.ptsLocal ?? 0} - {partido.marcador?.ptsVisita ?? 0}</strong>
+                  <span>{partido._origen === 'remoto' ? 'Base histórica' : 'Local'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Acumulado por Equipo</h4>
+        <div className="mesa-stats-grid">
+          <div className="mesa-stats-box">
+            <p>PJ: <strong>{acumuladoEquipos.pj}</strong></p>
+            <p>PG/PP: <strong>{acumuladoEquipos.victorias}</strong> / <strong>{acumuladoEquipos.derrotas}</strong></p>
+            <p>PF/PC: <strong>{acumuladoEquipos.pf}</strong> / <strong>{acumuladoEquipos.pc}</strong></p>
+            <p>Promedio PF/PC: <strong>{acumuladoEquipos.promedioPf.toFixed(1)}</strong> / <strong>{acumuladoEquipos.promedioPc.toFixed(1)}</strong></p>
+            <p>EFF total local: <strong>{acumuladoEquipos.effLocal}</strong></p>
+          </div>
+        </div>
+      </div>
+
+      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Users size={16} color="#6B7280" strokeWidth={1.5} /> Acumulado por Jugador/a</h4>
+        <div className="mesa-stats-table">
+          {acumuladoJugadores.length === 0 ? (
+            <p className="text-muted">Sin datos acumulados de jugadores.</p>
+          ) : (
+            acumuladoJugadores.slice(0, 30).map((j) => (
+              <div key={`agg-${j.nombre}-${j.dorsal}`} className="mesa-stats-row">
+                <span>#{j.dorsal} {j.nombre} · PJ {j.partidos}</span>
+                <strong>{j.pts} PTS · {j.reb} REB · {j.ast} AST · EFF {j.eff}</strong>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
       </>
       )}
 
