@@ -10,6 +10,20 @@ const LIMITE_JUGADORES_POR_EQUIPO = 12;
 const numero = (valor) => Number(valor || 0);
 
 const normalizarTexto = (valor = '') => String(valor || '').trim();
+const normalizarClaveFiltro = (valor = '') => normalizarSlugLogo(valor);
+const coincideFiltro = (valorA, valorB) => normalizarClaveFiltro(valorA) === normalizarClaveFiltro(valorB);
+
+const construirOpcionesFiltro = (valores = []) => {
+  const map = new Map();
+  valores.forEach((valor) => {
+    const limpio = normalizarTexto(valor);
+    if (!limpio) return;
+    const clave = normalizarClaveFiltro(limpio);
+    if (!clave || map.has(clave)) return;
+    map.set(clave, limpio);
+  });
+  return ['Todas', ...Array.from(map.values())];
+};
 
 const construirEquipoKey = (nombre = '', logoUrl = '') => {
   const nombreKey = normalizarSlugLogo(nombre) || 'equipo';
@@ -167,24 +181,28 @@ function MesaControlPanel({
   );
 
   const opcionesRama = useMemo(() => {
-    const valores = new Set(rosterNormalizado.map((j) => j._rama).filter(Boolean));
-    equiposDesdePartidos.forEach((e) => (e.ramas || []).forEach((rama) => valores.add(rama)));
-    return ['Todas', ...Array.from(valores)];
+    const valores = [
+      ...rosterNormalizado.map((j) => j._rama).filter(Boolean),
+      ...equiposDesdePartidos.flatMap((e) => e.ramas || []),
+    ];
+    return construirOpcionesFiltro(valores);
   }, [rosterNormalizado, equiposDesdePartidos]);
 
   const opcionesCategoria = useMemo(() => {
-    const valores = new Set(rosterNormalizado.map((j) => j._categoria).filter(Boolean));
-    equiposDesdePartidos.forEach((e) => (e.categorias || []).forEach((cat) => valores.add(cat)));
-    return ['Todas', ...Array.from(valores)];
+    const valores = [
+      ...rosterNormalizado.map((j) => j._categoria).filter(Boolean),
+      ...equiposDesdePartidos.flatMap((e) => e.categorias || []),
+    ];
+    return construirOpcionesFiltro(valores);
   }, [rosterNormalizado, equiposDesdePartidos]);
 
   const opcionesCompeticion = useMemo(() => {
-    const valores = new Set([
+    const valores = [
       ...rosterNormalizado.map((j) => j._competicion).filter(Boolean),
       ...opcionesCompeticionPartidos,
-    ]);
-    equiposDesdePartidos.forEach((e) => (e.competiciones || []).forEach((comp) => valores.add(comp)));
-    return ['Todas', ...Array.from(valores)];
+      ...equiposDesdePartidos.flatMap((e) => e.competiciones || []),
+    ];
+    return construirOpcionesFiltro(valores);
   }, [rosterNormalizado, opcionesCompeticionPartidos, equiposDesdePartidos]);
 
   const equiposDisponibles = useMemo(() => {
@@ -252,9 +270,9 @@ function MesaControlPanel({
   const equiposFiltrados = useMemo(() => {
     const texto = normalizarSlugLogo(busquedaEquipo || '');
     return equiposDisponibles.filter((equipo) => {
-      const okRama = filtroRama === 'Todas' || !equipo.ramas?.length || equipo.ramas.includes(filtroRama);
-      const okCategoria = filtroCategoria === 'Todas' || !equipo.categorias?.length || equipo.categorias.includes(filtroCategoria);
-      const okCompeticion = filtroCompeticion === 'Todas' || !equipo.competiciones?.length || equipo.competiciones.includes(filtroCompeticion);
+      const okRama = filtroRama === 'Todas' || !equipo.ramas?.length || equipo.ramas.some((rama) => coincideFiltro(rama, filtroRama));
+      const okCategoria = filtroCategoria === 'Todas' || !equipo.categorias?.length || equipo.categorias.some((categoria) => coincideFiltro(categoria, filtroCategoria));
+      const okCompeticion = filtroCompeticion === 'Todas' || !equipo.competiciones?.length || equipo.competiciones.some((competicion) => coincideFiltro(competicion, filtroCompeticion));
       const okBusqueda = !texto || normalizarSlugLogo(equipo.nombre).includes(texto);
       return okRama && okCategoria && okCompeticion && okBusqueda;
     });
@@ -284,9 +302,9 @@ function MesaControlPanel({
   }, [equipoLocal, equipoVisita, modoAnalisis, setLiveScore]);
 
   const rosterFiltrado = useMemo(() => rosterNormalizado.filter((j) => {
-    const okRama = filtroRama === 'Todas' || j._rama === filtroRama;
-    const okCategoria = filtroCategoria === 'Todas' || j._categoria === filtroCategoria;
-    const okCompeticion = filtroCompeticion === 'Todas' || j._competicion === filtroCompeticion;
+    const okRama = filtroRama === 'Todas' || coincideFiltro(j._rama, filtroRama);
+    const okCategoria = filtroCategoria === 'Todas' || coincideFiltro(j._categoria, filtroCategoria);
+    const okCompeticion = filtroCompeticion === 'Todas' || coincideFiltro(j._competicion, filtroCompeticion);
     return okRama && okCategoria && okCompeticion;
   }), [rosterNormalizado, filtroRama, filtroCategoria, filtroCompeticion]);
 

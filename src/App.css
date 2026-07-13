@@ -160,6 +160,14 @@ button,
   .noticias-grid-tablet { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
   .ios-main { padding: 20px 28px; padding-bottom: 110px; }
+
+  /* Mesa: en tablet horizontal priorizamos legibilidad sobre densidad */
+  .fiba-container .caja-doble-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .fiba-container .fiba-botones-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
   .ios-bottom-nav {
     left: 28px !important;
     right: 28px !important;
@@ -2149,6 +2157,35 @@ button,
 
 .mesa-stats-row:last-child {
   border-bottom: none;
+}
+
+/* Mesa: evita tarjetas comprimidas en pantallas medianas y tablet horizontal */
+.fiba-container .caja-doble-grid.landscape-mode {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+  align-items: start;
+}
+
+@media (max-width: 1199px) {
+  .fiba-container .checkout-total-box {
+    gap: 6px;
+    padding: 16px 8px !important;
+  }
+
+  .fiba-container .checkout-total-box h1 {
+    font-size: 44px !important;
+  }
+
+  .fiba-container .fiba-dorsal {
+    width: 36px;
+    height: 36px;
+    font-size: 15px;
+    margin-right: 10px;
+  }
+
+  .fiba-container .fiba-info strong {
+    font-size: 15px;
+  }
 }
 
 @media (max-width: 720px) {
