@@ -1949,6 +1949,115 @@ button,
 /* ==========================================
    13. MESA FIBA (MARCADOR, PLAY-BY-PLAY Y CHROMA KEY)
    ========================================= */
+.mesa-lab-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  border-radius: 24px;
+  padding: 14px;
+  background: linear-gradient(145deg, rgba(0, 122, 255, 0.08), rgba(18, 20, 27, 0.04));
+  border: 1px solid rgba(0, 122, 255, 0.22);
+}
+
+.mesa-lab-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mesa-lab-subtitle {
+  color: var(--texto-secundario);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mesa-lab-mode-switch {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  padding: 4px;
+  border: 1px solid var(--borde-suave);
+}
+
+.mesa-mode-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  background: transparent;
+  color: var(--texto-secundario);
+  cursor: pointer;
+}
+
+.mesa-mode-btn.active {
+  background: var(--azul-electrico);
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(0, 122, 255, 0.28);
+}
+
+.mesa-filtros-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  border-radius: 20px;
+  padding: 12px;
+}
+
+.mesa-filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mesa-filter-item span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--texto-secundario);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.mesa-competicion-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: #cfe7ff;
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(0, 122, 255, 0.18);
+  border: 1px solid rgba(0, 122, 255, 0.38);
+}
+
+.mesa-visitor-actions {
+  margin-top: 14px;
+  border-top: 1px dashed var(--borde-suave);
+  padding-top: 12px;
+}
+
+.mesa-visitor-actions h6 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--texto-secundario);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mesa-visitor-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
 .roster-fiba-list { display: flex; flex-direction: column; gap: 12px; max-height: 320px; overflow-y: auto; padding-right: 8px; }
 .roster-fiba-item { 
   display: flex; align-items: center; padding: 14px; border: 1px solid var(--borde-suave); 

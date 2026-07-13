@@ -1,4 +1,5 @@
-import { ArrowRightLeft, FileText, Tv } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowRightLeft, FileText, Filter, Shield, Tv, Users } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import { calcularEff } from '../utils/appHelpers';
 import LogoAvatar from './LogoAvatar';
@@ -16,12 +17,139 @@ function MesaControlPanel({
   setNotaScouting,
   modoChromaKey,
   setModoChromaKey,
+  partidos = [],
 }) {
+  const [modoAnalisis, setModoAnalisis] = useState('dos');
+  const [filtroRama, setFiltroRama] = useState('Todas');
+  const [filtroCategoria, setFiltroCategoria] = useState('Todas');
+  const [filtroCompeticion, setFiltroCompeticion] = useState('Todas');
+  const [equipoLocalKey, setEquipoLocalKey] = useState('LOCAL_DEFAULT');
+  const [equipoVisitaKey, setEquipoVisitaKey] = useState('VISITA_DEFAULT');
+
+  const normalizarTexto = (v = '') => String(v || '').trim();
+
+  const rosterNormalizado = useMemo(
+    () => (Array.isArray(rosterEquipo) ? rosterEquipo : []).map((j, idx) => {
+      const equipoNombre = normalizarTexto(
+        j.equipo_nombre || j.equipo || j.club_nombre || j.club || j.team_name || liveScore.equipoLocalNombre || 'Centro de Cultura Física'
+      );
+      const equipoLogoUrl = normalizarTexto(
+        j.equipo_logo_url || j.logo_equipo_url || j.club_logo_url || j.logo_url || ''
+      );
+      const competicion = normalizarTexto(j.competicion || j.competencia || j.torneo || 'Sin competencia');
+
+      return {
+        ...j,
+        id: j.id != null ? j.id : idx + 1,
+        _rama: normalizarTexto(j.rama || 'General'),
+        _categoria: normalizarTexto(j.categoria || 'General'),
+        _competicion: competicion,
+        _equipoKey: `${equipoNombre}::${equipoLogoUrl}`,
+        _equipoNombre: equipoNombre,
+        _equipoLogoUrl: equipoLogoUrl,
+      };
+    }),
+    [rosterEquipo, liveScore.equipoLocalNombre]
+  );
+
+  const opcionesCompeticionPartidos = useMemo(
+    () => (Array.isArray(partidos) ? partidos : [])
+      .map((p) => normalizarTexto(p.torneo || p.competicion || p.competencia || ''))
+      .filter(Boolean),
+    [partidos]
+  );
+
+  const opcionesRama = useMemo(() => {
+    const valores = new Set(rosterNormalizado.map((j) => j._rama).filter(Boolean));
+    return ['Todas', ...Array.from(valores)];
+  }, [rosterNormalizado]);
+
+  const opcionesCategoria = useMemo(() => {
+    const valores = new Set(rosterNormalizado.map((j) => j._categoria).filter(Boolean));
+    return ['Todas', ...Array.from(valores)];
+  }, [rosterNormalizado]);
+
+  const opcionesCompeticion = useMemo(() => {
+    const valores = new Set([
+      ...rosterNormalizado.map((j) => j._competicion).filter(Boolean),
+      ...opcionesCompeticionPartidos,
+    ]);
+    return ['Todas', ...Array.from(valores)];
+  }, [rosterNormalizado, opcionesCompeticionPartidos]);
+
+  const equiposDisponibles = useMemo(() => {
+    const map = new Map();
+    rosterNormalizado.forEach((j) => {
+      if (!map.has(j._equipoKey)) {
+        map.set(j._equipoKey, {
+          key: j._equipoKey,
+          nombre: j._equipoNombre,
+          logoUrl: j._equipoLogoUrl,
+        });
+      }
+    });
+
+    if (map.size === 0) {
+      map.set('LOCAL_DEFAULT', {
+        key: 'LOCAL_DEFAULT',
+        nombre: liveScore.equipoLocalNombre || 'Centro de Cultura Física',
+        logoUrl: liveScore.equipoLocalLogoUrl || '',
+      });
+      map.set('VISITA_DEFAULT', {
+        key: 'VISITA_DEFAULT',
+        nombre: liveScore.equipoVisitaNombre || 'Visitante',
+        logoUrl: liveScore.equipoVisitaLogoUrl || '',
+      });
+    }
+
+    return Array.from(map.values());
+  }, [rosterNormalizado, liveScore.equipoLocalNombre, liveScore.equipoLocalLogoUrl, liveScore.equipoVisitaNombre, liveScore.equipoVisitaLogoUrl]);
+
+  useEffect(() => {
+    if (!equiposDisponibles.find((e) => e.key === equipoLocalKey)) {
+      setEquipoLocalKey(equiposDisponibles[0]?.key || 'LOCAL_DEFAULT');
+    }
+    if (!equiposDisponibles.find((e) => e.key === equipoVisitaKey)) {
+      setEquipoVisitaKey(equiposDisponibles[1]?.key || equiposDisponibles[0]?.key || 'VISITA_DEFAULT');
+    }
+  }, [equiposDisponibles, equipoLocalKey, equipoVisitaKey]);
+
+  const equipoLocal = equiposDisponibles.find((e) => e.key === equipoLocalKey) || equiposDisponibles[0] || null;
+  const equipoVisita = equiposDisponibles.find((e) => e.key === equipoVisitaKey) || equiposDisponibles[1] || equiposDisponibles[0] || null;
+
+  useEffect(() => {
+    if (!equipoLocal) return;
+    setLiveScore((prev) => ({
+      ...prev,
+      equipoLocalNombre: equipoLocal.nombre || prev.equipoLocalNombre,
+      equipoLocalLogoUrl: equipoLocal.logoUrl || prev.equipoLocalLogoUrl,
+      equipoVisitaNombre: modoAnalisis === 'dos' ? (equipoVisita?.nombre || prev.equipoVisitaNombre) : 'N/A',
+      equipoVisitaLogoUrl: modoAnalisis === 'dos' ? (equipoVisita?.logoUrl || prev.equipoVisitaLogoUrl) : '',
+    }));
+  }, [equipoLocal, equipoVisita, modoAnalisis, setLiveScore]);
+
+  const rosterFiltrado = useMemo(() => rosterNormalizado.filter((j) => {
+    const okRama = filtroRama === 'Todas' || j._rama === filtroRama;
+    const okCategoria = filtroCategoria === 'Todas' || j._categoria === filtroCategoria;
+    const okCompeticion = filtroCompeticion === 'Todas' || j._competicion === filtroCompeticion;
+    return okRama && okCategoria && okCompeticion;
+  }), [rosterNormalizado, filtroRama, filtroCategoria, filtroCompeticion]);
+
+  const rosterLocal = useMemo(
+    () => rosterFiltrado.filter((j) => j._equipoKey === equipoLocalKey),
+    [rosterFiltrado, equipoLocalKey]
+  );
+
+  const rosterVisita = useMemo(
+    () => rosterFiltrado.filter((j) => j._equipoKey === equipoVisitaKey),
+    [rosterFiltrado, equipoVisitaKey]
+  );
+
   const ejecutarAccionFIBA = (tipo, puntos = 0) => {
     if (!jugadorSeleccionadoLive) return alert('Selecciona un jugador del Roster primero.');
     let nombreJugador = '';
 
-    setRosterEquipo(rosterEquipo.map(j => {
+    setRosterEquipo(rosterEquipo.map((j) => {
       if (j.id === jugadorSeleccionadoLive) {
         nombreJugador = `#${j.dorsal} ${j.nombre}`;
         return {
@@ -37,12 +165,26 @@ function MesaControlPanel({
       return j;
     }));
 
-    if (puntos > 0) setLiveScore(prev => ({ ...prev, ptsLocal: prev.ptsLocal + puntos }));
-    if (tipo === 'FALTA') setLiveScore(prev => ({ ...prev, faltasLocal: prev.faltasLocal + 1 }));
+    if (puntos > 0) setLiveScore((prev) => ({ ...prev, ptsLocal: prev.ptsLocal + puntos }));
+    if (tipo === 'FALTA') setLiveScore((prev) => ({ ...prev, faltasLocal: prev.faltasLocal + 1 }));
 
     const logTexto = puntos > 0 ? `${nombreJugador} anota ${puntos} pts` : `${nombreJugador} registra ${tipo}`;
-    setPlayByPlay([{ id: nextId(), tiempo: liveScore.reloj, texto: logTexto }, ...playByPlay]);
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: logTexto }, ...prev]);
     setJugadorSeleccionadoLive(null);
+  };
+
+  const registrarPuntosVisita = (puntos = 1) => {
+    if (modoAnalisis !== 'dos') return;
+    const nombreEquipo = equipoVisita?.nombre || liveScore.equipoVisitaNombre || 'Visita';
+    setLiveScore((prev) => ({ ...prev, ptsVisita: prev.ptsVisita + puntos }));
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `${nombreEquipo} anota ${puntos} pts` }, ...prev]);
+  };
+
+  const registrarFaltaVisita = () => {
+    if (modoAnalisis !== 'dos') return;
+    const nombreEquipo = equipoVisita?.nombre || liveScore.equipoVisitaNombre || 'Visita';
+    setLiveScore((prev) => ({ ...prev, faltasVisita: prev.faltasVisita + 1 }));
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `${nombreEquipo} registra FALTA` }, ...prev]);
   };
 
   if (modoChromaKey) {
@@ -60,6 +202,56 @@ function MesaControlPanel({
 
   return (
     <div className="fiba-container fade-in">
+      <div className="mesa-lab-header card mb-15">
+        <div className="mesa-lab-title-wrap">
+          <h3 className="form-subtitle" style={{ margin: 0 }}><Users size={18} color="#6B7280" strokeWidth={1.5} /> Mesa Insights</h3>
+          <span className="mesa-lab-subtitle">Analiza uno o dos equipos con filtros competitivos y control live.</span>
+        </div>
+        <div className="mesa-lab-mode-switch" role="tablist" aria-label="Modo de análisis">
+          <button className={`mesa-mode-btn ${modoAnalisis === 'uno' ? 'active' : ''}`} onClick={() => setModoAnalisis('uno')}>1 Equipo</button>
+          <button className={`mesa-mode-btn ${modoAnalisis === 'dos' ? 'active' : ''}`} onClick={() => setModoAnalisis('dos')}>2 Equipos</button>
+        </div>
+      </div>
+
+      <div className="mesa-filtros-grid card mb-15">
+        <label className="mesa-filter-item">
+          <span><Filter size={14} color="#6B7280" strokeWidth={1.5} /> Rama</span>
+          <select className="form-input" value={filtroRama} onChange={(e) => setFiltroRama(e.target.value)}>
+            {opcionesRama.map((op) => <option key={op} value={op}>{op}</option>)}
+          </select>
+        </label>
+
+        <label className="mesa-filter-item">
+          <span><Filter size={14} color="#6B7280" strokeWidth={1.5} /> Categoría</span>
+          <select className="form-input" value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
+            {opcionesCategoria.map((op) => <option key={op} value={op}>{op}</option>)}
+          </select>
+        </label>
+
+        <label className="mesa-filter-item">
+          <span><Shield size={14} color="#6B7280" strokeWidth={1.5} /> Competición</span>
+          <select className="form-input" value={filtroCompeticion} onChange={(e) => setFiltroCompeticion(e.target.value)}>
+            {opcionesCompeticion.map((op) => <option key={op} value={op}>{op}</option>)}
+          </select>
+        </label>
+
+        <label className="mesa-filter-item">
+          <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Equipo Local</span>
+          <select className="form-input" value={equipoLocalKey} onChange={(e) => setEquipoLocalKey(e.target.value)}>
+            {equiposDisponibles.map((e) => <option key={e.key} value={e.key}>{e.nombre}</option>)}
+          </select>
+        </label>
+
+        {modoAnalisis === 'dos' && (
+          <label className="mesa-filter-item">
+            <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Equipo Visita</span>
+            <select className="form-input" value={equipoVisitaKey} onChange={(e) => setEquipoVisitaKey(e.target.value)}>
+              {equiposDisponibles.map((e) => <option key={e.key} value={e.key}>{e.nombre}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
         <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={() => setModoChromaKey(true)}><Tv size={14} color="#6B7280" strokeWidth={1.5} /> Modo Transmisión (OBS)</button>
       </div>
@@ -78,6 +270,7 @@ function MesaControlPanel({
         </div>
 
         <div className="text-center" style={{ flex: 1 }}>
+          <span className="mesa-competicion-chip">{filtroCompeticion === 'Todas' ? 'Competición abierta' : filtroCompeticion}</span>
           <span style={{ fontSize: '16px', color: 'var(--verde-victoria)', fontWeight: '900', background: 'rgba(52,199,89,0.1)', padding: '8px 20px', borderRadius: '12px', border: '1px solid var(--verde-victoria)' }}>{liveScore.reloj}</span>
           <h4 style={{ margin: '10px 0 0 0', color: 'white', fontSize: '18px' }}>Q{liveScore.periodo}</h4>
         </div>
@@ -87,7 +280,7 @@ function MesaControlPanel({
           <div style={{ display: 'flex', justifyContent: 'center', marginTop: '8px', marginBottom: '4px' }}>
             <LogoAvatar nombre={liveScore.equipoVisitaNombre || 'Visitante'} logoUrl={liveScore.equipoVisitaLogoUrl} size={46} borderRadius="16px" />
           </div>
-          <h1 style={{ fontSize: '52px', margin: 0, color: 'white', fontFamily: 'Orbitron' }}>{liveScore.ptsVisita}</h1>
+          <h1 style={{ fontSize: '52px', margin: 0, color: 'white', fontFamily: 'Orbitron' }}>{modoAnalisis === 'dos' ? liveScore.ptsVisita : '-'}</h1>
           <span style={{ fontSize: '11px', color: '#FF3B30', fontWeight: '800', display: 'block' }}>FALTAS: {liveScore.faltasVisita}</span>
           <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', marginTop: '8px' }}>
             {[...Array(3)].map((_, i) => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i < liveScore.timeoutsVisita ? '#FFD700' : '#333' }}></div>)}
@@ -102,13 +295,73 @@ function MesaControlPanel({
       </div>
 
       <div className="caja-doble-grid landscape-mode">
-        <div className="card" style={{ padding: '15px', borderRadius: '24px' }}><h5 className="sub-caja-title">Roster Local</h5><div className="roster-fiba-list">{rosterEquipo.map(j => (<div key={j.id} onClick={() => setJugadorSeleccionadoLive(j.id)} className={`roster-fiba-item ${jugadorSeleccionadoLive === j.id ? 'seleccionado' : ''}`}><div className="fiba-dorsal">#{j.dorsal}</div><div className="fiba-info"><strong>{j.nombre}</strong><span>{j.pts}pts | {j.flt}F | EFF: {calcularEff(j)}</span></div></div>))}</div></div>
-        <div className="card" style={{ padding: '20px', borderRadius: '24px' }}><h5 className="sub-caja-title text-center" style={{ color: jugadorSeleccionadoLive ? 'var(--verde-victoria)' : '#FF3B30' }}>{jugadorSeleccionadoLive ? 'Control de Acciones' : 'Seleccione Jugador'}</h5><div className="fiba-botones-grid"><button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('PUNTO', 1)}>+1 TL</button><button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('PUNTO', 2)}>+2 PTS</button><button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('PUNTO', 3)}>+3 PTS</button><button className="btn-fiba st" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('REB')}>REB</button><button className="btn-fiba st" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('AST')}>AST</button><button className="btn-fiba st" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('ROBO')}>ROBO</button><button className="btn-fiba err" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('PERDIDA')}>PÉRDIDA</button><button className="btn-fiba err" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('FALTA')}>FALTA</button></div></div>
+        <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
+          <h5 className="sub-caja-title">Roster Local ({rosterLocal.length})</h5>
+          <div className="roster-fiba-list">
+            {rosterLocal.map((j) => (
+              <div key={j.id} onClick={() => setJugadorSeleccionadoLive(j.id)} className={`roster-fiba-item ${jugadorSeleccionadoLive === j.id ? 'seleccionado' : ''}`}>
+                <div className="fiba-dorsal">#{j.dorsal}</div>
+                <div className="fiba-info">
+                  <strong>{j.nombre}</strong>
+                  <span>{j.pts}pts | {j.flt}F | EFF: {calcularEff(j)}</span>
+                </div>
+              </div>
+            ))}
+            {rosterLocal.length === 0 && <p className="text-muted text-center" style={{ margin: '15px 0' }}>No hay jugadores para los filtros actuales.</p>}
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '20px', borderRadius: '24px' }}>
+          <h5 className="sub-caja-title text-center" style={{ color: jugadorSeleccionadoLive ? 'var(--verde-victoria)' : '#FF3B30' }}>
+            {jugadorSeleccionadoLive ? 'Control de Acciones' : 'Seleccione Jugador'}
+          </h5>
+
+          <div className="fiba-botones-grid">
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('PUNTO', 1)}>+1 TL</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('PUNTO', 2)}>+2 PTS</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('PUNTO', 3)}>+3 PTS</button>
+            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('REB')}>REB</button>
+            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('AST')}>AST</button>
+            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('ROBO')}>ROBO</button>
+            <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('PERDIDA')}>PÉRDIDA</button>
+            <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('FALTA')}>FALTA</button>
+          </div>
+
+          {modoAnalisis === 'dos' && (
+            <div className="mesa-visitor-actions">
+              <h6>Acciones Rápidas Visita</h6>
+              <div className="mesa-visitor-actions-grid">
+                <button className="btn-secondary" onClick={() => registrarPuntosVisita(1)}>Visita +1</button>
+                <button className="btn-secondary" onClick={() => registrarPuntosVisita(2)}>Visita +2</button>
+                <button className="btn-secondary" onClick={() => registrarPuntosVisita(3)}>Visita +3</button>
+                <button className="btn-secondary" onClick={registrarFaltaVisita}>Falta Visita</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {modoAnalisis === 'dos' && (
+          <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
+            <h5 className="sub-caja-title">Roster Visita ({rosterVisita.length})</h5>
+            <div className="roster-fiba-list">
+              {rosterVisita.map((j) => (
+                <div key={j.id} className="roster-fiba-item">
+                  <div className="fiba-dorsal">#{j.dorsal}</div>
+                  <div className="fiba-info">
+                    <strong>{j.nombre}</strong>
+                    <span>{j.pts}pts | {j.flt}F | EFF: {calcularEff(j)}</span>
+                  </div>
+                </div>
+              ))}
+              {rosterVisita.length === 0 && <p className="text-muted text-center" style={{ margin: '15px 0' }}>Sin jugadores de visita para este filtro.</p>}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="#6B7280" strokeWidth={1.5} /> Línea de Tiempo (Play-by-Play)</h4>
-        <div style={{ display: 'flex', gap: '10px' }} className="mb-15"><input type="text" className="form-input" placeholder="Nota rápida..." value={notaScouting} onChange={(e) => setNotaScouting(e.target.value)} /><button className="btn-electric" style={{ width: 'auto', padding: '0 20px' }} onClick={() => { if (!notaScouting) return; setPlayByPlay([{ id: nextId(), tiempo: 'DT', texto: `📝 ${notaScouting}` }, ...playByPlay]); setNotaScouting(''); }}>Log</button></div>
+        <div style={{ display: 'flex', gap: '10px' }} className="mb-15"><input type="text" className="form-input" placeholder="Nota táctica o scouting..." value={notaScouting} onChange={(e) => setNotaScouting(e.target.value)} /><button className="btn-electric" style={{ width: 'auto', padding: '0 20px' }} onClick={() => { if (!notaScouting) return; setPlayByPlay((prev) => [{ id: nextId(), tiempo: 'DT', texto: `📝 ${notaScouting}` }, ...prev]); setNotaScouting(''); }}>Log</button></div>
         <div className="play-by-play-box">{playByPlay.length === 0 ? <p className="text-center text-muted" style={{ fontSize: '13px', fontStyle: 'italic', margin: '20px 0' }}>Inicio de transmisión.</p> : playByPlay.map(play => (<div key={play.id} className="play-row"><span className="play-tiempo">{play.tiempo}</span><span className="play-texto">{play.texto}</span></div>))}</div>
       </div>
     </div>

@@ -2584,6 +2584,7 @@ function App() {
                 setNotaScouting={setNotaScouting}
                 modoChromaKey={modoChromaKey}
                 setModoChromaKey={setModoChromaKey}
+                partidos={partidosResumen}
               />
             )}
             {puedeVerPantalla('kiosco') && pantallaActiva === 'kiosco' && (
