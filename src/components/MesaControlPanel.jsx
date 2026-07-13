@@ -91,6 +91,10 @@ const colorConAlpha = (hex = '#0a84ff', alpha = '22') => {
   return '#0a84ff22';
 };
 
+const listasIguales = (a = [], b = []) => (
+  a.length === b.length && a.every((valor, idx) => String(valor) === String(b[idx]))
+);
+
 const construirCsv = (filas = []) => {
   if (!Array.isArray(filas) || filas.length === 0) return '';
   const headers = Object.keys(filas[0]);
@@ -812,8 +816,10 @@ function MesaControlPanel({
     const disponibles = rosterLocalCompleto.map((j) => j.id);
     setNominaLocalIds((prev) => {
       const vigente = prev.filter((id) => disponibles.includes(id));
-      if (vigente.length > 0) return vigente.slice(0, LIMITE_JUGADORES_POR_EQUIPO);
-      return disponibles.slice(0, LIMITE_JUGADORES_POR_EQUIPO);
+      const siguiente = vigente.length > 0
+        ? vigente.slice(0, LIMITE_JUGADORES_POR_EQUIPO)
+        : disponibles.slice(0, LIMITE_JUGADORES_POR_EQUIPO);
+      return listasIguales(prev, siguiente) ? prev : siguiente;
     });
   }, [rosterLocalCompleto]);
 
@@ -821,8 +827,10 @@ function MesaControlPanel({
     const disponibles = rosterVisitaCompleto.map((j) => j.id);
     setNominaVisitaIds((prev) => {
       const vigente = prev.filter((id) => disponibles.includes(id));
-      if (vigente.length > 0) return vigente.slice(0, LIMITE_JUGADORES_POR_EQUIPO);
-      return disponibles.slice(0, LIMITE_JUGADORES_POR_EQUIPO);
+      const siguiente = vigente.length > 0
+        ? vigente.slice(0, LIMITE_JUGADORES_POR_EQUIPO)
+        : disponibles.slice(0, LIMITE_JUGADORES_POR_EQUIPO);
+      return listasIguales(prev, siguiente) ? prev : siguiente;
     });
   }, [rosterVisitaCompleto]);
 
@@ -902,12 +910,12 @@ function MesaControlPanel({
   };
 
   useEffect(() => {
-    setQuintetoLocalValidado(false);
-  }, [quintetoLocalIds, nominaLocalIds]);
+    if (!partidoIniciado) setQuintetoLocalValidado(false);
+  }, [quintetoLocalIds, nominaLocalIds, partidoIniciado]);
 
   useEffect(() => {
-    setQuintetoVisitaValidado(false);
-  }, [quintetoVisitaIds, nominaVisitaIds]);
+    if (!partidoIniciado) setQuintetoVisitaValidado(false);
+  }, [quintetoVisitaIds, nominaVisitaIds, partidoIniciado]);
 
   const salirPantallaCompletaManual = async () => {
     setForzarPantallaCompletaLive(false);
@@ -980,17 +988,23 @@ function MesaControlPanel({
   );
 
   useEffect(() => {
-    if (!prepartidoValido && partidoIniciado) {
-      setPartidoIniciado(false);
-    }
-  }, [prepartidoValido, partidoIniciado]);
-
-  useEffect(() => {
     if (!jugadorSeleccionadoLive) return;
-    if (!rosterLocal.some((j) => j.id === jugadorSeleccionadoLive)) {
+    if (!rosterLocal.some((j) => j.id === jugadorSeleccionadoLive) || !quintetoLocalIds.includes(jugadorSeleccionadoLive)) {
       setJugadorSeleccionadoLive(null);
     }
-  }, [jugadorSeleccionadoLive, rosterLocal, setJugadorSeleccionadoLive]);
+  }, [jugadorSeleccionadoLive, quintetoLocalIds, rosterLocal, setJugadorSeleccionadoLive]);
+
+  const quintetoLocalEnCancha = useMemo(() => {
+    const mapa = new Map(rosterLocal.map((j) => [String(j.id), j]));
+    return quintetoLocalIds
+      .map((id) => mapa.get(String(id)))
+      .filter(Boolean);
+  }, [rosterLocal, quintetoLocalIds]);
+
+  const bancoLocal = useMemo(
+    () => rosterLocal.filter((j) => !quintetoLocalIds.includes(j.id)),
+    [rosterLocal, quintetoLocalIds]
+  );
 
   const registrarEventoJuego = ({ tipo, detalle, equipo = 'local', jugadorId = null, valor = 0 }) => {
     const operadorNombre = normalizarTexto(operadoresMesa[rolOperadorActivo]) || 'Operador sin nombre';
@@ -1014,7 +1028,7 @@ function MesaControlPanel({
   };
 
   const ejecutarCambioJugadorLocal = () => {
-    if (!partidoIniciado || !prepartidoValido) return;
+    if (!partidoIniciado) return;
     const salida = rosterLocalCompleto.find((j) => String(j.id) === String(cambioSalidaId));
     const ingreso = rosterLocalCompleto.find((j) => String(j.id) === String(cambioIngresoId));
     if (!salida || !ingreso) return;
@@ -1041,7 +1055,7 @@ function MesaControlPanel({
   };
 
   const ejecutarAccionFIBA = (tipo, puntos = 0) => {
-    if (!partidoIniciado || !prepartidoValido) return alert('Valida y comienza el partido antes de capturar eventos.');
+    if (!partidoIniciado) return alert('Valida y comienza el partido antes de capturar eventos.');
     if (!jugadorSeleccionadoLive) return alert('Selecciona un jugador del Roster primero.');
     if (!quintetoLocalIds.includes(jugadorSeleccionadoLive)) {
       return alert('La accion solo se permite para jugadoras/es titulares en cancha.');
@@ -1154,7 +1168,7 @@ function MesaControlPanel({
   };
 
   const registrarPuntosVisita = (puntos = 1) => {
-    if (!partidoIniciado || !prepartidoValido) return;
+    if (!partidoIniciado) return;
     if (modoAnalisis !== 'dos') return;
     const nombreEquipo = equipoVisita?.nombre || liveScore.equipoVisitaNombre || 'Visita';
     setLiveScore((prev) => ({ ...prev, ptsVisita: prev.ptsVisita + puntos }));
@@ -1164,7 +1178,7 @@ function MesaControlPanel({
   };
 
   const registrarFaltaVisita = () => {
-    if (!partidoIniciado || !prepartidoValido) return;
+    if (!partidoIniciado) return;
     if (modoAnalisis !== 'dos') return;
     const nombreEquipo = equipoVisita?.nombre || liveScore.equipoVisitaNombre || 'Visita';
     setLiveScore((prev) => ({ ...prev, faltasVisita: prev.faltasVisita + 1 }));
@@ -1187,7 +1201,7 @@ function MesaControlPanel({
   const resumenVisita = useMemo(() => crearResumenEquipo(rosterVisita), [rosterVisita]);
 
   const registrarEventoPlantilla = ({ tipo, detalle, equipo = 'local' }) => {
-    if (!partidoIniciado || !prepartidoValido) return;
+    if (!partidoIniciado) return;
     const operadorNombre = normalizarTexto(operadoresMesa[rolOperadorActivo]) || 'Operador sin nombre';
     const evento = {
       id: nextId(),
@@ -1971,25 +1985,52 @@ function MesaControlPanel({
 
       <div className="caja-doble-grid landscape-mode">
         <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
-          <h5 className="sub-caja-title">Roster Local ({rosterLocal.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
-          <div className="roster-fiba-list">
-            {rosterLocal.map((j) => (
-              <div
-                key={j.id}
+          <h5 className="sub-caja-title">En Cancha (5) · Local</h5>
+          <div className="mesa-oncourt-grid">
+            {quintetoLocalEnCancha.map((j) => (
+              <button
+                key={`cancha-${j.id}`}
+                type="button"
                 onClick={() => {
                   if (j._bloqueado || j.flt >= 5) return;
                   setJugadorSeleccionadoLive(j.id);
+                  setCambioSalidaId(j.id);
                 }}
-                className={`roster-fiba-item ${jugadorSeleccionadoLive === j.id ? 'seleccionado' : ''} ${j._bloqueado || j.flt >= 5 ? 'bloqueado' : ''}`}
+                className={`mesa-oncourt-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.flt >= 5 ? 'bloqueado' : ''}`}
+                style={{
+                  borderColor: jugadorSeleccionadoLive === j.id ? colorConAlpha(colorLocal, 'CC') : colorConAlpha(colorLocal, '55'),
+                  background: jugadorSeleccionadoLive === j.id ? colorConAlpha(colorLocal, '28') : 'rgba(255,255,255,0.03)',
+                }}
               >
-                <div className="fiba-dorsal">#{j.dorsal}</div>
-                <div className="fiba-info">
-                  <strong>{j.nombre}</strong>
-                  <span>{j.pts}pts | {j.flt}F | EFF: {calcularEff(j)}</span>
-                </div>
+                <span className="mesa-oncourt-dorsal" style={{ background: colorLocal }}>#{j.dorsal}</span>
+                <strong>{j.nombre}</strong>
+                <span>{j.pts} pts | {j.flt} F | EFF {calcularEff(j)}</span>
+              </button>
+            ))}
+            {Array.from({ length: Math.max(0, 5 - quintetoLocalEnCancha.length) }).map((_, idx) => (
+              <div key={`vacante-${idx}`} className="mesa-oncourt-btn mesa-oncourt-empty">
+                <span className="mesa-oncourt-dorsal">--</span>
+                <strong>Vacante</strong>
+                <span>Completa quinteto</span>
               </div>
             ))}
-            {rosterLocal.length === 0 && <p className="text-muted text-center" style={{ margin: '15px 0' }}>No hay jugadores para los filtros actuales.</p>}
+          </div>
+
+          <h6 className="sub-caja-title" style={{ marginTop: '14px', fontSize: '12px' }}>Banco Local ({bancoLocal.length})</h6>
+          <div className="mesa-banco-grid">
+            {bancoLocal.map((j) => (
+              <button
+                key={`banca-${j.id}`}
+                type="button"
+                className={`mesa-banco-btn ${cambioIngresoId === j.id ? 'selected' : ''}`}
+                onClick={() => setCambioIngresoId(j.id)}
+                title="Seleccionar para ingreso"
+              >
+                <span className="mesa-banco-dorsal">#{j.dorsal}</span>
+                <span className="mesa-banco-nombre">{j.nombre}</span>
+              </button>
+            ))}
+            {bancoLocal.length === 0 && <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es de banca para cambios.</p>}
           </div>
           <div className="mesa-add-player mt-10">
             <input className="form-input" placeholder="Nombre jugadora/or" value={nuevoNombreLocal} onChange={(e) => setNuevoNombreLocal(e.target.value)} />
@@ -2004,14 +2045,14 @@ function MesaControlPanel({
           </h5>
 
           <div className="fiba-botones-grid">
-            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive} onClick={() => ejecutarAccionFIBA('PUNTO', 1)}>+1 TL</button>
-            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !prepartidoValido} onClick={() => ejecutarAccionFIBA('PUNTO', 2)}>+2 PTS</button>
-            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !prepartidoValido} onClick={() => ejecutarAccionFIBA('PUNTO', 3)}>+3 PTS</button>
-            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !prepartidoValido} onClick={() => ejecutarAccionFIBA('REB')}>REB</button>
-            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !prepartidoValido} onClick={() => ejecutarAccionFIBA('AST')}>AST</button>
-            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !prepartidoValido} onClick={() => ejecutarAccionFIBA('ROBO')}>ROBO</button>
-            <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !prepartidoValido} onClick={() => ejecutarAccionFIBA('PERDIDA')}>PÉRDIDA</button>
-            <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !prepartidoValido} onClick={() => ejecutarAccionFIBA('FALTA')}>FALTA</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', 1)}>+1 TL</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', 2)}>+2 PTS</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', 3)}>+3 PTS</button>
+            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('REB')}>REB</button>
+            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('AST')}>AST</button>
+            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('ROBO')}>ROBO</button>
+            <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PERDIDA')}>PÉRDIDA</button>
+            <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('FALTA')}>FALTA</button>
           </div>
 
           <div className="mesa-visitor-actions">
@@ -2019,13 +2060,13 @@ function MesaControlPanel({
             <div className="mesa-visitor-actions-grid" style={{ gridTemplateColumns: '1fr 1fr 120px' }}>
               <select className="form-input" value={cambioSalidaId} onChange={(e) => setCambioSalidaId(e.target.value)}>
                 <option value="">Sale...</option>
-                {rosterLocal.filter((j) => quintetoLocalIds.includes(j.id)).map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+                {quintetoLocalEnCancha.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
               </select>
               <select className="form-input" value={cambioIngresoId} onChange={(e) => setCambioIngresoId(e.target.value)}>
                 <option value="">Entra...</option>
-                {rosterLocal.filter((j) => !quintetoLocalIds.includes(j.id)).map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+                {bancoLocal.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
               </select>
-              <button className="btn-secondary" disabled={!partidoIniciado || !prepartidoValido || !cambioSalidaId || !cambioIngresoId} onClick={ejecutarCambioJugadorLocal}>Cambiar</button>
+              <button className="btn-secondary" disabled={!partidoIniciado || !cambioSalidaId || !cambioIngresoId} onClick={ejecutarCambioJugadorLocal}>Cambiar</button>
             </div>
           </div>
 
@@ -2033,10 +2074,10 @@ function MesaControlPanel({
             <div className="mesa-visitor-actions">
               <h6>Acciones Rápidas Visita</h6>
               <div className="mesa-visitor-actions-grid">
-                <button className="btn-secondary" disabled={!partidoIniciado || !prepartidoValido} onClick={() => registrarPuntosVisita(1)}>Visita +1</button>
-                <button className="btn-secondary" disabled={!partidoIniciado || !prepartidoValido} onClick={() => registrarPuntosVisita(2)}>Visita +2</button>
-                <button className="btn-secondary" disabled={!partidoIniciado || !prepartidoValido} onClick={() => registrarPuntosVisita(3)}>Visita +3</button>
-                <button className="btn-secondary" disabled={!partidoIniciado || !prepartidoValido} onClick={registrarFaltaVisita}>Falta Visita</button>
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(1)}>Visita +1</button>
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(2)}>Visita +2</button>
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(3)}>Visita +3</button>
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={registrarFaltaVisita}>Falta Visita</button>
               </div>
             </div>
           )}
