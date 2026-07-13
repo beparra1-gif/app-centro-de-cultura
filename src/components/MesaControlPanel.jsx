@@ -157,6 +157,36 @@ const sonEquiposCompatibles = (jugador = {}, equipo = null) => {
   return nombreJugador.includes(nombreEquipo) || nombreEquipo.includes(nombreJugador);
 };
 
+const resolverEquipoSeleccionado = ({ equipos = [], key = '', nombre = '', logoUrl = '', evitarKey = '' }) => {
+  if (!Array.isArray(equipos) || equipos.length === 0) return null;
+
+  const keyNormalizada = normalizarTexto(key);
+  if (keyNormalizada) {
+    const porKey = equipos.find((equipo) => equipo.key === keyNormalizada);
+    if (porKey) return porKey;
+  }
+
+  const keyConstruida = construirEquipoKey(nombre, logoUrl);
+  if (normalizarTexto(nombre)) {
+    const porKeyConstruida = equipos.find((equipo) => equipo.key === keyConstruida);
+    if (porKeyConstruida) return porKeyConstruida;
+
+    const canonNombre = canonizarNombreEquipo(nombre);
+    const porCanon = equipos.find((equipo) => (equipo._canon || canonizarNombreEquipo(equipo.nombre || '')) === canonNombre);
+    if (porCanon) return porCanon;
+
+    const nombreNormalizado = normalizarClaveFiltro(nombre);
+    const porNombre = equipos.find((equipo) => {
+      const candidato = normalizarClaveFiltro(equipo.nombre || '');
+      return candidato && nombreNormalizado && (candidato.includes(nombreNormalizado) || nombreNormalizado.includes(candidato));
+    });
+    if (porNombre) return porNombre;
+  }
+
+  const alternativa = equipos.find((equipo) => !evitarKey || equipo.key !== evitarKey);
+  return alternativa || equipos[0] || null;
+};
+
 const crearResumenEquipo = (jugadores = []) => {
   const base = {
     jugadores: jugadores.length,
@@ -524,9 +554,31 @@ function MesaControlPanel({
     }
   }, [clubVisitaNombre, clubVisitaLogoUrl, equipoVisitaKey, modoAnalisis]);
 
-  const equipoLocal = equiposDisponibles.find((e) => e.key === equipoLocalKey) || equiposDisponibles[0] || null;
-  const equipoVisita = equiposDisponibles.find((e) => e.key === equipoVisitaKey) || equiposDisponibles[1] || equiposDisponibles[0] || null;
+  const equipoLocal = resolverEquipoSeleccionado({
+    equipos: equiposDisponibles,
+    key: equipoLocalKey,
+    nombre: clubLocalNombre,
+    logoUrl: clubLocalLogoUrl,
+  });
+  const equipoVisita = resolverEquipoSeleccionado({
+    equipos: equiposDisponibles,
+    key: equipoVisitaKey,
+    nombre: clubVisitaNombre,
+    logoUrl: clubVisitaLogoUrl,
+    evitarKey: equipoLocal?.key || '',
+  });
   const visitaEsNuestroClub = useMemo(() => esNuestroClub(clubVisitaNombre), [clubVisitaNombre]);
+
+  useEffect(() => {
+    if (!equipoLocal?.key || equipoLocal.key === equipoLocalKey) return;
+    setEquipoLocalKey(equipoLocal.key);
+  }, [equipoLocal, equipoLocalKey]);
+
+  useEffect(() => {
+    if (modoAnalisis !== 'dos') return;
+    if (!equipoVisita?.key || equipoVisita.key === equipoVisitaKey) return;
+    setEquipoVisitaKey(equipoVisita.key);
+  }, [equipoVisita, equipoVisitaKey, modoAnalisis]);
 
   useEffect(() => {
     try {
