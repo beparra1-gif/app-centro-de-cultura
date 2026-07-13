@@ -2188,6 +2188,13 @@ button,
   border-color: transparent !important;
 }
 
+.mesa-prepartido-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .mesa-validation-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -2217,6 +2224,13 @@ button,
 .mesa-validation-error {
   color: var(--rojo-alerta) !important;
   font-weight: 800;
+}
+
+.mesa-save-info {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--texto-secundario);
+  font-weight: 700;
 }
 
 .mesa-quintetos-grid {
@@ -2304,6 +2318,62 @@ button,
 @media (max-width: 720px) {
   .mesa-add-player {
     grid-template-columns: 1fr;
+  }
+
+  .mesa-prepartido-actions {
+    width: 100%;
+  }
+}
+
+/* Tablet landscape y pantallas medianas: evita sidebar lateral y mantiene nav inferior */
+@media (min-width: 1200px) and (max-width: 1366px), (min-width: 1200px) and (pointer: coarse) and (hover: none) {
+  .ios-app-container {
+    display: flex !important;
+    grid-template-columns: none !important;
+    grid-template-rows: none !important;
+  }
+
+  .ios-header {
+    grid-column: auto !important;
+    grid-row: auto !important;
+  }
+
+  .ios-main {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    padding: 20px 22px !important;
+    padding-bottom: 108px !important;
+  }
+
+  .ios-bottom-nav {
+    position: fixed !important;
+    left: 24px !important;
+    right: 24px !important;
+    bottom: 16px !important;
+    height: auto !important;
+    width: auto !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 6px !important;
+    padding: 10px 14px !important;
+    border-right: none !important;
+    border-top: 1px solid var(--borde-suave) !important;
+    border-radius: 28px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22) !important;
+  }
+
+  .nav-item {
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: center !important;
+    min-width: 70px;
+    padding: 8px 6px !important;
+    border-radius: 14px !important;
+    font-size: 10px !important;
+    gap: 4px !important;
   }
 }
 

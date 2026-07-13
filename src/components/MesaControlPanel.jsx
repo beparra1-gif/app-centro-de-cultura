@@ -89,6 +89,7 @@ function MesaControlPanel({
   const [equipoLocalKey, setEquipoLocalKey] = useState('LOCAL_DEFAULT');
   const [equipoVisitaKey, setEquipoVisitaKey] = useState('VISITA_DEFAULT');
   const [partidoIniciado, setPartidoIniciado] = useState(false);
+  const [ultimoGuardadoAt, setUltimoGuardadoAt] = useState('');
   const [quintetoLocalIds, setQuintetoLocalIds] = useState([]);
   const [quintetoVisitaIds, setQuintetoVisitaIds] = useState([]);
   const [nuevoNombreLocal, setNuevoNombreLocal] = useState('');
@@ -570,6 +571,75 @@ function MesaControlPanel({
   const resumenLocal = useMemo(() => crearResumenEquipo(rosterLocal), [rosterLocal]);
   const resumenVisita = useMemo(() => crearResumenEquipo(rosterVisita), [rosterVisita]);
 
+  const guardarEstadisticaPartido = () => {
+    const payload = {
+      id: nextId(),
+      finalizadoAt: new Date().toISOString(),
+      equipos: {
+        local: {
+          nombre: liveScore.equipoLocalNombre || equipoLocal?.nombre || 'Local',
+          logoUrl: liveScore.equipoLocalLogoUrl || equipoLocal?.logoUrl || '',
+          roster: rosterLocalCompleto,
+          resumen: crearResumenEquipo(rosterLocalCompleto),
+        },
+        visita: {
+          nombre: liveScore.equipoVisitaNombre || equipoVisita?.nombre || 'Visita',
+          logoUrl: liveScore.equipoVisitaLogoUrl || equipoVisita?.logoUrl || '',
+          roster: rosterVisitaCompleto,
+          resumen: crearResumenEquipo(rosterVisitaCompleto),
+        },
+      },
+      marcador: {
+        ptsLocal: liveScore.ptsLocal,
+        ptsVisita: liveScore.ptsVisita,
+        faltasLocal: liveScore.faltasLocal,
+        faltasVisita: liveScore.faltasVisita,
+        periodo: liveScore.periodo,
+        reloj: liveScore.reloj,
+      },
+      filtros: {
+        rama: filtroRama,
+        categoria: filtroCategoria,
+        competicion: filtroCompeticion,
+      },
+      playByPlay,
+    };
+
+    try {
+      const clave = 'mesa_partidos_guardados';
+      const actual = JSON.parse(window.localStorage.getItem(clave) || '[]');
+      const siguiente = [...actual, payload].slice(-30);
+      window.localStorage.setItem(clave, JSON.stringify(siguiente));
+      setUltimoGuardadoAt(new Date().toLocaleString('es-CL'));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const confirmarInicioPartido = () => {
+    if (partidoIniciado) return;
+    if (!prepartidoValido) {
+      alert('Corrige las validaciones prepartido antes de iniciar.');
+      return;
+    }
+    if (!window.confirm('¿Confirmas iniciar el partido?')) return;
+    setPartidoIniciado(true);
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '10:00', texto: '▶ Partido iniciado' }, ...prev]);
+  };
+
+  const confirmarFinalizacionPartido = () => {
+    if (!partidoIniciado) return;
+    if (!window.confirm('¿Finalizar partido y guardar estadística?')) return;
+
+    const guardado = guardarEstadisticaPartido();
+    setPartidoIniciado(false);
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '00:00', texto: guardado ? '■ Partido finalizado y estadística guardada' : '■ Partido finalizado (falló guardado local)' }, ...prev]);
+    if (!guardado) {
+      alert('Partido finalizado, pero no se pudo guardar la estadística en este dispositivo.');
+    }
+  };
+
   if (modoChromaKey) {
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#00FF00', zIndex: 99999, display: 'flex', alignItems: 'flex-end', padding: '50px' }}>
@@ -667,23 +737,24 @@ function MesaControlPanel({
       <div className="card mb-15 mesa-prepartido-card">
         <div className="mesa-prepartido-header">
           <h4 className="form-subtitle" style={{ margin: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Validacion Prepartido</h4>
-          <button
-            className={`btn-secondary ${partidoIniciado ? 'mesa-btn-live' : ''}`}
-            style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
-            onClick={() => {
-              if (partidoIniciado) {
-                setPartidoIniciado(false);
-                return;
-              }
-              if (!prepartidoValido) {
-                alert('Corrige las validaciones prepartido antes de iniciar.');
-                return;
-              }
-              setPartidoIniciado(true);
-            }}
-          >
-            {partidoIniciado ? 'Partido en Curso' : 'Iniciar Partido'}
-          </button>
+          <div className="mesa-prepartido-actions">
+            <button
+              className={`btn-secondary ${partidoIniciado ? 'mesa-btn-live' : ''}`}
+              style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
+              onClick={confirmarInicioPartido}
+              disabled={partidoIniciado || !prepartidoValido}
+            >
+              {partidoIniciado ? 'Partido en Curso' : 'Iniciar Partido'}
+            </button>
+            <button
+              className="btn-secondary"
+              style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
+              onClick={confirmarFinalizacionPartido}
+              disabled={!partidoIniciado}
+            >
+              Finalizar Partido
+            </button>
+          </div>
         </div>
 
         <div className="mesa-validation-grid">
@@ -740,6 +811,10 @@ function MesaControlPanel({
             </div>
           )}
         </div>
+
+        {ultimoGuardadoAt && (
+          <p className="mesa-save-info">Ultima estadistica guardada: {ultimoGuardadoAt}</p>
+        )}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
