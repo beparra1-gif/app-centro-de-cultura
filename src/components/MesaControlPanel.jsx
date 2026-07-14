@@ -1426,6 +1426,11 @@ function MesaControlPanel({
       .filter(Boolean);
   }, [rosterVisita, quintetoVisitaIds]);
 
+  const bancoVisita = useMemo(
+    () => rosterVisita.filter((j) => !quintetoVisitaIds.includes(j.id)),
+    [rosterVisita, quintetoVisitaIds]
+  );
+
   const jugadorCambioObligatorio = useMemo(
     () => rosterLocalCompleto.find((j) => String(j.id) === String(cambioObligatorioJugadorId)) || null,
     [rosterLocalCompleto, cambioObligatorioJugadorId]
@@ -2857,70 +2862,79 @@ function MesaControlPanel({
       )}
 
       <div className="caja-doble-grid landscape-mode">
-        <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
-          <h5 className="sub-caja-title">En Cancha (5) · Local</h5>
-          <div className="mesa-oncourt-grid mesa-oncourt-grid-two-cols">
-            {quintetoLocalEnCancha.map((j) => (
-              <div key={`cancha-${j.id}`} className="mesa-oncourt-player-card">
-                <button
-                  type="button"
-                  title={`#${j.dorsal} ${j.nombre}`}
-                  onClick={() => {
-                    if (j._bloqueado || j.flt >= 5) return;
-                    setJugadorSeleccionadoLive(j.id);
-                    setCambioSalidaId(j.id);
-                  }}
-                  className={`mesa-oncourt-btn mesa-oncourt-main-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.flt >= 5 ? 'bloqueado' : ''}`}
-                  style={{
-                    borderColor: jugadorSeleccionadoLive === j.id ? colorConAlpha(colorLocal, 'CC') : colorConAlpha(colorLocal, '55'),
-                    background: jugadorSeleccionadoLive === j.id ? colorConAlpha(colorLocal, '28') : colorConAlpha(colorLocal, '14'),
-                  }}
-                >
-                  <span className="mesa-oncourt-dorsal" style={{ background: colorLocal, color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
-                </button>
-                <div className="mesa-oncourt-cambio-row">
-                  <select
-                    className="form-input"
-                    value={cambioIngresoPorSalida[j.id] || ''}
-                    onChange={(e) => setCambioIngresoPorSalida((prev) => ({ ...prev, [j.id]: e.target.value }))}
-                    disabled={!partidoIniciado || j._bloqueado || j.flt >= 5 || bancoLocal.length === 0}
-                  >
-                    <option value="">Entra...</option>
-                    {bancoLocal.filter((b) => !b._bloqueado && numero(b.flt) < 5).map((b) => (
-                      <option key={`ingreso-${j.id}-${b.id}`} value={b.id}>#{b.dorsal}</option>
-                    ))}
-                  </select>
-                  <button
-                    className="btn-secondary"
-                    disabled={!partidoIniciado || !cambioIngresoPorSalida[j.id] || j._bloqueado || j.flt >= 5}
-                    onClick={() => ejecutarCambioJugadorLocal(j.id, cambioIngresoPorSalida[j.id])}
-                  >
-                    Cambiar
-                  </button>
-                </div>
+        <div className="card mesa-team-card" style={{ padding: '15px', borderRadius: '24px' }}>
+          <h5 className="sub-caja-title">Roster Local ({rosterLocal.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
+          <div className="mesa-team-split-grid">
+            <div className="mesa-team-col mesa-team-col-interior">
+              <h6 className="sub-caja-title" style={{ marginTop: 0, fontSize: '12px' }}>En Cancha (5) · Local</h6>
+              <div className="mesa-oncourt-grid mesa-oncourt-grid-two-cols">
+                {quintetoLocalEnCancha.map((j) => (
+                  <div key={`cancha-${j.id}`} className="mesa-oncourt-player-card">
+                    <button
+                      type="button"
+                      title={`#${j.dorsal} ${j.nombre}`}
+                      onClick={() => {
+                        if (j._bloqueado || j.flt >= 5) return;
+                        setJugadorSeleccionadoLive(j.id);
+                        setCambioSalidaId(j.id);
+                      }}
+                      className={`mesa-oncourt-btn mesa-oncourt-main-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.flt >= 5 ? 'bloqueado' : ''}`}
+                      style={{
+                        borderColor: colorLocal,
+                        background: colorLocal,
+                        color: colorTextoContraste(colorLocal),
+                      }}
+                    >
+                      <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
+                    </button>
+                    <div className="mesa-oncourt-cambio-row">
+                      <select
+                        className="form-input"
+                        value={cambioIngresoPorSalida[j.id] || ''}
+                        onChange={(e) => setCambioIngresoPorSalida((prev) => ({ ...prev, [j.id]: e.target.value }))}
+                        disabled={!partidoIniciado || j._bloqueado || j.flt >= 5 || bancoLocal.length === 0}
+                      >
+                        <option value="">Entra...</option>
+                        {bancoLocal.filter((b) => !b._bloqueado && numero(b.flt) < 5).map((b) => (
+                          <option key={`ingreso-${j.id}-${b.id}`} value={b.id}>#{b.dorsal}</option>
+                        ))}
+                      </select>
+                      <button
+                        className="btn-secondary"
+                        disabled={!partidoIniciado || !cambioIngresoPorSalida[j.id] || j._bloqueado || j.flt >= 5}
+                        onClick={() => ejecutarCambioJugadorLocal(j.id, cambioIngresoPorSalida[j.id])}
+                      >
+                        Cambiar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {Array.from({ length: Math.max(0, 5 - quintetoLocalEnCancha.length) }).map((_, idx) => (
+                  <div key={`vacante-${idx}`} className="mesa-oncourt-btn mesa-oncourt-empty" style={{ borderColor: colorConAlpha(colorLocal, '88'), background: colorConAlpha(colorLocal, '22') }}>
+                    <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>--</span>
+                  </div>
+                ))}
               </div>
-            ))}
-            {Array.from({ length: Math.max(0, 5 - quintetoLocalEnCancha.length) }).map((_, idx) => (
-              <div key={`vacante-${idx}`} className="mesa-oncourt-btn mesa-oncourt-empty">
-                <span className="mesa-oncourt-dorsal">--</span>
-              </div>
-            ))}
-          </div>
+            </div>
 
-          <h6 className="sub-caja-title" style={{ marginTop: '14px', fontSize: '12px' }}>Banco Local ({bancoLocal.length})</h6>
-          <div className="mesa-banco-grid">
-            {bancoLocal.map((j) => (
-              <button
-                key={`banca-${j.id}`}
-                type="button"
-                className={`mesa-banco-btn ${cambioIngresoId === j.id ? 'selected' : ''}`}
-                onClick={() => setCambioIngresoId(j.id)}
-                title="Seleccionar para ingreso"
-              >
-                <span className="mesa-banco-dorsal" style={{ background: colorLocal, color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
-              </button>
-            ))}
-            {bancoLocal.length === 0 && <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es de banca para cambios.</p>}
+            <div className="mesa-team-col mesa-team-col-exterior">
+              <h6 className="sub-caja-title" style={{ marginTop: 0, fontSize: '12px' }}>Banco Local ({bancoLocal.length})</h6>
+              <div className="mesa-banco-grid">
+                {bancoLocal.map((j) => (
+                  <button
+                    key={`banca-${j.id}`}
+                    type="button"
+                    className={`mesa-banco-btn ${cambioIngresoId === j.id ? 'selected' : ''}`}
+                    onClick={() => setCambioIngresoId(j.id)}
+                    title="Seleccionar para ingreso"
+                    style={{ borderColor: colorLocal, background: colorLocal, color: colorTextoContraste(colorLocal) }}
+                  >
+                    <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
+                  </button>
+                ))}
+                {bancoLocal.length === 0 && <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es de banca.</p>}
+              </div>
+            </div>
           </div>
           <div className="mesa-add-player mt-10">
             <input className="form-input" placeholder="Nombre jugadora/or" value={nuevoNombreLocal} onChange={(e) => setNuevoNombreLocal(e.target.value)} />
@@ -2928,6 +2942,64 @@ function MesaControlPanel({
             <button className="btn-secondary" onClick={() => agregarJugadorManual({ tipo: 'local' })}>Añadir Local</button>
           </div>
         </div>
+
+        {modoAnalisis === 'dos' && (
+          <div className="card mesa-team-card" style={{ padding: '15px', borderRadius: '24px' }}>
+            <h5 className="sub-caja-title">Roster Visita ({rosterVisita.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
+            <div className="mesa-team-split-grid">
+              <div className="mesa-team-col mesa-team-col-interior">
+                <h6 className="sub-caja-title" style={{ marginTop: 0, fontSize: '12px' }}>En Cancha (5) · Visita</h6>
+                <div className="mesa-oncourt-grid mesa-oncourt-grid-two-cols">
+                  {quintetoVisitaEnCancha.map((j) => (
+                    <button
+                      key={`cancha-visita-${j.id}`}
+                      type="button"
+                      title={`#${j.dorsal} ${j.nombre}`}
+                      className={`mesa-oncourt-btn mesa-oncourt-main-btn ${String(jugadorVisitaSeleccionadoId) === String(j.id) ? 'selected' : ''}`}
+                      onClick={() => setJugadorVisitaSeleccionadoId(j.id)}
+                      style={{
+                        borderColor: colorVisita,
+                        background: colorVisita,
+                        color: colorTextoContraste(colorVisita),
+                      }}
+                    >
+                      <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: colorTextoContraste(colorVisita) }}>#{j.dorsal}</span>
+                    </button>
+                  ))}
+                  {Array.from({ length: Math.max(0, 5 - quintetoVisitaEnCancha.length) }).map((_, idx) => (
+                    <div key={`vacante-visita-${idx}`} className="mesa-oncourt-btn mesa-oncourt-empty" style={{ borderColor: colorConAlpha(colorVisita, '88'), background: colorConAlpha(colorVisita, '22') }}>
+                      <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: colorTextoContraste(colorVisita) }}>--</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mesa-team-col mesa-team-col-exterior">
+                <h6 className="sub-caja-title" style={{ marginTop: 0, fontSize: '12px' }}>Banco Visita ({bancoVisita.length})</h6>
+                <div className="mesa-banco-grid">
+                  {bancoVisita.map((j) => (
+                    <button
+                      key={`banca-visita-${j.id}`}
+                      type="button"
+                      className={`mesa-banco-btn ${String(jugadorVisitaSeleccionadoId) === String(j.id) ? 'selected' : ''}`}
+                      onClick={() => setJugadorVisitaSeleccionadoId(j.id)}
+                      title="Seleccionar jugadora/o visita"
+                      style={{ borderColor: colorVisita, background: colorVisita, color: colorTextoContraste(colorVisita) }}
+                    >
+                      <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorVisita) }}>#{j.dorsal}</span>
+                    </button>
+                  ))}
+                  {bancoVisita.length === 0 && <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es de banca.</p>}
+                </div>
+              </div>
+            </div>
+            <div className="mesa-add-player mt-10">
+              <input className="form-input" placeholder="Nombre jugadora/or" value={nuevoNombreVisita} onChange={(e) => setNuevoNombreVisita(e.target.value)} />
+              <input className="form-input" placeholder="Dorsal" value={nuevoDorsalVisita} onChange={(e) => setNuevoDorsalVisita(e.target.value)} />
+              <button className="btn-secondary" onClick={() => agregarJugadorManual({ tipo: 'visita' })}>Añadir Visita</button>
+            </div>
+          </div>
+        )}
 
         <div className="card" style={{ padding: '20px', borderRadius: '24px' }}>
           <div className="mesa-control-tiempo-card">
@@ -2994,28 +3066,6 @@ function MesaControlPanel({
           )}
         </div>
 
-        {modoAnalisis === 'dos' && (
-          <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
-            <h5 className="sub-caja-title">Roster Visita ({rosterVisita.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
-            <div className="roster-fiba-list">
-              {rosterVisita.map((j) => (
-                <div key={j.id} className="roster-fiba-item">
-                  <div className="fiba-dorsal">#{j.dorsal}</div>
-                  <div className="fiba-info">
-                    <strong>{j.nombre}</strong>
-                    <span>{j.pts}pts | {j.flt}F | EFF: {calcularEff(j)}</span>
-                  </div>
-                </div>
-              ))}
-              {rosterVisita.length === 0 && <p className="text-muted text-center" style={{ margin: '15px 0' }}>Sin jugadores de visita para este filtro.</p>}
-            </div>
-            <div className="mesa-add-player mt-10">
-              <input className="form-input" placeholder="Nombre jugadora/or" value={nuevoNombreVisita} onChange={(e) => setNuevoNombreVisita(e.target.value)} />
-              <input className="form-input" placeholder="Dorsal" value={nuevoDorsalVisita} onChange={(e) => setNuevoDorsalVisita(e.target.value)} />
-              <button className="btn-secondary" onClick={() => agregarJugadorManual({ tipo: 'visita' })}>Añadir Visita</button>
-            </div>
-          </div>
-        )}
       </div>
         </div>
       )}
