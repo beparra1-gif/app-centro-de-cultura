@@ -194,6 +194,217 @@ const descargarTexto = (nombreArchivo, contenido, tipo = 'text/plain;charset=utf
   URL.revokeObjectURL(url);
 };
 
+const escapeHtml = (valor = '') => String(valor ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const construirHtmlPlanillaFiba = (partido = null) => {
+  const local = partido?.equipos?.local || {};
+  const visita = partido?.equipos?.visita || {};
+  const rosterLocal = Array.isArray(local.roster) ? local.roster : [];
+  const rosterVisita = Array.isArray(visita.roster) ? visita.roster : [];
+  const marcador = partido?.marcador || {};
+  const fecha = partido?.finalizadoAt ? new Date(partido.finalizadoAt) : null;
+
+  const filasRoster = (roster = []) => roster.map((j) => `
+    <tr>
+      <td>${escapeHtml(j.dorsal ?? '')}</td>
+      <td>${escapeHtml(j.nombre || '')}</td>
+      <td>${Number(j.pts || 0)}</td>
+      <td>${Number(j.reb || 0)}</td>
+      <td>${Number(j.ast || 0)}</td>
+      <td>${Number(j.flt || 0)}</td>
+      <td>${Number(j.ftm || 0)}/${Number(j.fta || 0)}</td>
+      <td>${formatoPct(Number(j.ftm || 0), Number(j.fta || 0))}</td>
+    </tr>
+  `).join('');
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Planilla FIBA - ${escapeHtml(local.nombre || 'Local')} vs ${escapeHtml(visita.nombre || 'Visita')}</title>
+  <style>
+    :root {
+      --fiba-blue: #0c2340;
+      --fiba-orange: #f58220;
+      --line: #d1d5db;
+      --text: #111827;
+    }
+    @page { size: A4 portrait; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background: #fff;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .sheet {
+      border: 2px solid var(--fiba-blue);
+      padding: 10px;
+    }
+    .header {
+      border: 2px solid var(--fiba-blue);
+      background: var(--fiba-blue);
+      color: #fff;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 900;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      background: var(--fiba-orange);
+      color: #111;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 900;
+    }
+    .meta {
+      margin-top: 8px;
+      border: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .meta div {
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 6px;
+      font-size: 12px;
+    }
+    .meta div:nth-child(4n) { border-right: none; }
+    .score {
+      margin-top: 8px;
+      border: 2px solid var(--fiba-blue);
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      text-align: center;
+      font-weight: 900;
+    }
+    .score .team {
+      padding: 8px;
+      font-size: 13px;
+    }
+    .score .pts {
+      padding: 8px 14px;
+      border-left: 2px solid var(--fiba-blue);
+      border-right: 2px solid var(--fiba-blue);
+      font-size: 22px;
+      background: #f8fafc;
+    }
+    .section {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+    }
+    .section h3 {
+      margin: 0;
+      background: #f3f4f6;
+      border-bottom: 1px solid var(--line);
+      padding: 6px 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .02em;
+      color: var(--fiba-blue);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 4px 5px;
+      text-align: center;
+    }
+    th {
+      background: #eef2ff;
+      color: var(--fiba-blue);
+      font-weight: 900;
+    }
+    td:nth-child(2), th:nth-child(2) { text-align: left; }
+    .signatures {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .sig {
+      border-top: 1px solid #111;
+      padding-top: 4px;
+      font-size: 11px;
+      text-align: center;
+      min-height: 34px;
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="header">
+      <div class="brand">Planilla Oficial de Juego <span class="badge">FIBA Style</span></div>
+      <div>${escapeHtml(partido?.filtros?.competicion || 'Competencia')}</div>
+    </div>
+
+    <div class="meta">
+      <div><strong>Fecha:</strong> ${escapeHtml(fecha ? fecha.toLocaleDateString('es-CL') : '')}</div>
+      <div><strong>Hora:</strong> ${escapeHtml(fecha ? fecha.toLocaleTimeString('es-CL') : '')}</div>
+      <div><strong>Rama:</strong> ${escapeHtml(partido?.filtros?.rama || '')}</div>
+      <div><strong>Categoría:</strong> ${escapeHtml(partido?.filtros?.categoria || '')}</div>
+      <div><strong>Sede:</strong> ${escapeHtml(partido?.canchaSede || '')}</div>
+      <div><strong>Período final:</strong> ${escapeHtml(etiquetaPeriodo(marcador.periodo || 1))}</div>
+      <div><strong>Planillero:</strong> ${escapeHtml(partido?.operadores?.planillero || '')}</div>
+      <div><strong>Estadístico:</strong> ${escapeHtml(partido?.operadores?.estadistico || '')}</div>
+    </div>
+
+    <div class="score">
+      <div class="team">${escapeHtml(local.nombre || 'Local')}</div>
+      <div class="pts">${Number(marcador.ptsLocal || 0)} - ${Number(marcador.ptsVisita || 0)}</div>
+      <div class="team">${escapeHtml(visita.nombre || 'Visita')}</div>
+    </div>
+
+    <div class="section">
+      <h3>Ficha Técnica Local</h3>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Jugador/a</th><th>PTS</th><th>REB</th><th>AST</th><th>F</th><th>TL</th><th>TL%</th></tr>
+        </thead>
+        <tbody>${filasRoster(rosterLocal) || '<tr><td colspan="8">Sin datos</td></tr>'}</tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h3>Ficha Técnica Visita</h3>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Jugador/a</th><th>PTS</th><th>REB</th><th>AST</th><th>F</th><th>TL</th><th>TL%</th></tr>
+        </thead>
+        <tbody>${filasRoster(rosterVisita) || '<tr><td colspan="8">Sin datos</td></tr>'}</tbody>
+      </table>
+    </div>
+
+    <div class="signatures">
+      <div class="sig">Firma Planillero/a</div>
+      <div class="sig">Firma Estadístico/a</div>
+      <div class="sig">Firma Supervisor/a</div>
+    </div>
+  </div>
+</body>
+</html>`;
+};
+
 const sonEquiposCompatibles = (jugador = {}, equipo = null) => {
   if (!equipo) return false;
   if (jugador._equipoKey && equipo.key && jugador._equipoKey === equipo.key) return true;
@@ -1991,6 +2202,26 @@ function MesaControlPanel({
       nombreArchivo = `${esLocal ? 'ficha-tecnica-local' : 'ficha-tecnica-visita'}-${Date.now()}.csv`;
     }
 
+    if (tipoFichaTecnicaExport === 'planilla_fiba_impresion') {
+      if (!partidoBase) {
+        alert('Selecciona un partido en el historial para imprimir la planilla FIBA.');
+        return;
+      }
+      const html = construirHtmlPlanillaFiba(partidoBase);
+      const popup = window.open('', '_blank');
+      if (!popup) {
+        descargarTexto(`planilla-fiba-impresion-${Date.now()}.html`, html, 'text/html;charset=utf-8');
+        alert('No se pudo abrir la ventana de impresión. Se descargó el archivo HTML para imprimir.');
+        return;
+      }
+      popup.document.open();
+      popup.document.write(html);
+      popup.document.close();
+      popup.focus();
+      setTimeout(() => popup.print(), 350);
+      return;
+    }
+
     const csv = construirCsv(filas);
     if (!csv) return;
     descargarTexto(nombreArchivo, csv, 'text/csv;charset=utf-8');
@@ -3031,6 +3262,7 @@ function MesaControlPanel({
               <option value="ficha_tecnica_partido">Ficha técnica oficial del partido seleccionado</option>
               <option value="ficha_tecnica_local">Ficha técnica individual Local (partido seleccionado)</option>
               <option value="ficha_tecnica_visita">Ficha técnica individual Visita (partido seleccionado)</option>
+              <option value="planilla_fiba_impresion">Planilla FIBA imprimible (partido seleccionado)</option>
             </select>
           </label>
         </div>
