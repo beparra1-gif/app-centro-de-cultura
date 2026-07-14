@@ -11,6 +11,30 @@ const LIMITE_JUGADORES_POR_EQUIPO = 12;
 const MESA_SESSION_KEY = 'mesa_live_session_v2';
 
 const numero = (valor) => Number(valor || 0);
+const limitar = (valor, min, max) => Math.max(min, Math.min(max, valor));
+
+const relojASegundos = (reloj = '10:00') => {
+  const match = String(reloj || '10:00').match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return 600;
+  const minutos = Number(match[1]);
+  const segundos = Number(match[2]);
+  if (!Number.isFinite(minutos) || !Number.isFinite(segundos)) return 600;
+  return Math.max(0, (minutos * 60) + segundos);
+};
+
+const segundosAReloj = (total = 0) => {
+  const seguros = Math.max(0, Number(total || 0));
+  const minutos = Math.floor(seguros / 60);
+  const segundos = seguros % 60;
+  return `${String(minutos).padStart(2, '0')}:${String(segundos).padStart(2, '0')}`;
+};
+
+const formatoPct = (convertidos = 0, intentos = 0) => {
+  const att = Number(intentos || 0);
+  const made = Number(convertidos || 0);
+  if (!att) return '0.0%';
+  return `${((made / att) * 100).toFixed(1)}%`;
+};
 
 const normalizarTexto = (valor = '') => String(valor || '').trim();
 const normalizarClaveFiltro = (valor = '') => normalizarSlugLogo(valor);
@@ -198,6 +222,12 @@ const crearResumenEquipo = (jugadores = []) => {
     flt: 0,
     to: 0,
     effTotal: 0,
+    ftm: 0,
+    fta: 0,
+    fg2m: 0,
+    fg2a: 0,
+    fg3m: 0,
+    fg3a: 0,
   };
 
   return jugadores.reduce((acc, j) => {
@@ -219,6 +249,12 @@ const crearResumenEquipo = (jugadores = []) => {
       flt: acc.flt + numero(j.flt),
       to: acc.to + numero(j.to),
       effTotal: acc.effTotal + eff,
+      ftm: acc.ftm + numero(j.ftm),
+      fta: acc.fta + numero(j.fta),
+      fg2m: acc.fg2m + numero(j.fg2m),
+      fg2a: acc.fg2a + numero(j.fg2a),
+      fg3m: acc.fg3m + numero(j.fg3m),
+      fg3a: acc.fg3a + numero(j.fg3a),
     };
   }, base);
 };
@@ -297,6 +333,8 @@ function MesaControlPanel({
   const [selectorNominaLocalId, setSelectorNominaLocalId] = useState('');
   const [selectorNominaVisitaId, setSelectorNominaVisitaId] = useState('');
   const [forzarPantallaCompletaLive, setForzarPantallaCompletaLive] = useState(true);
+  const [cronometroActivo, setCronometroActivo] = useState(false);
+  const [cambioObligatorioJugadorId, setCambioObligatorioJugadorId] = useState(null);
   const liveFullScreenRef = useRef(null);
 
   const equiposDesdePartidos = useMemo(() => {
@@ -634,6 +672,8 @@ function MesaControlPanel({
       setStaffLocal(guardada.staffLocal || { entrenador: '', asistente: '', delegado: '' });
       setStaffVisita(guardada.staffVisita || { entrenador: '', asistente: '', delegado: '' });
       setForzarPantallaCompletaLive(guardada.forzarPantallaCompletaLive !== false);
+      setCronometroActivo(Boolean(guardada.cronometroActivo));
+      setCambioObligatorioJugadorId(guardada.cambioObligatorioJugadorId || null);
 
       if (Array.isArray(guardada.rosterEquipo)) setRosterEquipo(guardada.rosterEquipo);
       if (guardada.liveScore && typeof guardada.liveScore === 'object') {
@@ -691,6 +731,8 @@ function MesaControlPanel({
       staffLocal,
       staffVisita,
       forzarPantallaCompletaLive,
+      cronometroActivo,
+      cambioObligatorioJugadorId,
       rosterEquipo,
       liveScore,
       playByPlay,
@@ -743,6 +785,8 @@ function MesaControlPanel({
     staffLocal,
     staffVisita,
     forzarPantallaCompletaLive,
+    cronometroActivo,
+    cambioObligatorioJugadorId,
     rosterEquipo,
     liveScore,
     playByPlay,
@@ -1003,6 +1047,7 @@ function MesaControlPanel({
 
   const salirPantallaCompletaManual = async () => {
     setForzarPantallaCompletaLive(false);
+    setCronometroActivo(false);
     if (document.fullscreenElement) {
       await document.exitFullscreen();
     }
@@ -1029,10 +1074,48 @@ function MesaControlPanel({
       }
     };
 
+    const onVisibility = () => {
+      if (!document.hidden) {
+        intentarEntrar();
+      }
+    };
+
     intentarEntrar();
     document.addEventListener('fullscreenchange', onFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [moduloMesa, partidoIniciado, forzarPantallaCompletaLive]);
+
+  useEffect(() => {
+    if (!partidoIniciado || !cronometroActivo) return undefined;
+    const timer = window.setInterval(() => {
+      setLiveScore((prev) => {
+        const total = relojASegundos(prev.reloj || '10:00');
+        if (total <= 0) return prev;
+        const siguiente = total - 1;
+        return { ...prev, reloj: segundosAReloj(siguiente) };
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [partidoIniciado, cronometroActivo, setLiveScore]);
+
+  useEffect(() => {
+    if (relojASegundos(liveScore.reloj || '00:00') > 0) return;
+    if (!cronometroActivo) return;
+    setCronometroActivo(false);
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: '00:00', texto: '⏱ Fin de periodo por reloj.' }, ...prev]);
+  }, [liveScore.reloj, cronometroActivo, setPlayByPlay]);
+
+  const cambiarModuloProtegido = (destino) => {
+    if (forzarPantallaCompletaLive && moduloMesa === 'live' && destino !== 'live') {
+      alert('Debes usar "Salir Pantalla Completa" para abandonar el modo forzado.');
+      return;
+    }
+    setModuloMesa(destino);
+  };
 
   const validacionLocal = useMemo(() => {
     const total = rosterLocal.length;
@@ -1117,6 +1200,9 @@ function MesaControlPanel({
     const ingreso = rosterLocalCompleto.find((j) => String(j.id) === String(cambioIngresoId));
     if (!salida || !ingreso) return;
     if (!quintetoLocalIds.includes(salida.id)) return alert('La jugadora/o de salida debe estar en cancha.');
+    if (cambioObligatorioJugadorId && String(cambioObligatorioJugadorId) !== String(salida.id)) {
+      return alert('Debes sacar primero a la jugadora/o que llegó a 5 faltas.');
+    }
     if (quintetoLocalIds.includes(ingreso.id)) return alert('La jugadora/o de ingreso ya está en cancha.');
     if (ingreso._bloqueado || ingreso.flt >= 5) return alert('La jugadora/o de ingreso está bloqueada/o.');
 
@@ -1124,6 +1210,9 @@ function MesaControlPanel({
     const detalle = `Cambio Local: sale #${salida.dorsal} ${salida.nombre}, entra #${ingreso.dorsal} ${ingreso.nombre}`;
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `🔁 ${detalle}` }, ...prev]);
     registrarEventoJuego({ tipo: 'CAMBIO', detalle, equipo: 'local', jugadorId: ingreso.id, valor: 0 });
+    if (cambioObligatorioJugadorId && String(cambioObligatorioJugadorId) === String(salida.id)) {
+      setCambioObligatorioJugadorId(null);
+    }
     setCambioSalidaId('');
     setCambioIngresoId('');
   };
@@ -1138,14 +1227,26 @@ function MesaControlPanel({
     await node.requestFullscreen();
   };
 
-  const ejecutarAccionFIBA = (tipo, puntos = 0) => {
+  const ejecutarAccionFIBA = (tipo, payload = {}) => {
     if (!partidoIniciado) return alert('Valida y comienza el partido antes de capturar eventos.');
     if (!jugadorSeleccionadoLive) return alert('Selecciona un jugador del Roster primero.');
+    if (cambioObligatorioJugadorId && String(cambioObligatorioJugadorId) !== String(jugadorSeleccionadoLive)) {
+      return alert('Hay un cambio obligatorio pendiente por 5 faltas. Debes resolverlo antes de continuar.');
+    }
     if (!quintetoLocalIds.includes(jugadorSeleccionadoLive)) {
       return alert('La accion solo se permite para jugadoras/es titulares en cancha.');
     }
     let nombreJugador = '';
     let expulsionNombre = '';
+    let puntosAnotados = 0;
+    let detalleAccion = '';
+
+    const tirosLibresIntentados = limitar(Number(payload.tirosLibresIntentados || 0), 0, 3);
+    const tirosLibresConvertidos = limitar(Number(payload.tirosLibresConvertidos || 0), 0, tirosLibresIntentados);
+    const es2Pts = tipo === 'PUNTO' && Number(payload.puntos || 0) === 2;
+    const es3Pts = tipo === 'PUNTO' && Number(payload.puntos || 0) === 3;
+    const puntosBase = tipo === 'PUNTO' ? Number(payload.puntos || 0) : 0;
+    puntosAnotados = puntosBase + tirosLibresConvertidos;
 
     setRosterEquipo((prev) => prev.map((j) => {
       if (j.id === jugadorSeleccionadoLive) {
@@ -1153,14 +1254,28 @@ function MesaControlPanel({
         const nuevoFlt = tipo === 'FALTA' ? numero(j.flt) + 1 : numero(j.flt);
         const expulsado = nuevoFlt >= 5;
         if (expulsado) expulsionNombre = `${nombreJugador}`;
+
+        const ftmActual = numero(j.ftm);
+        const ftaActual = numero(j.fta);
+        const fg2mActual = numero(j.fg2m);
+        const fg2aActual = numero(j.fg2a);
+        const fg3mActual = numero(j.fg3m);
+        const fg3aActual = numero(j.fg3a);
+
         return {
           ...j,
-          pts: numero(j.pts) + puntos,
+          pts: numero(j.pts) + puntosAnotados,
           reb: tipo === 'REB' ? numero(j.reb) + 1 : numero(j.reb),
           ast: tipo === 'AST' ? numero(j.ast) + 1 : numero(j.ast),
           stl: tipo === 'ROBO' ? numero(j.stl) + 1 : numero(j.stl),
           flt: nuevoFlt,
           to: tipo === 'PERDIDA' ? numero(j.to) + 1 : numero(j.to),
+          ftm: ftmActual + tirosLibresConvertidos,
+          fta: ftaActual + tirosLibresIntentados,
+          fg2m: fg2mActual + (es2Pts ? 1 : 0),
+          fg2a: fg2aActual + (es2Pts ? 1 : 0),
+          fg3m: fg3mActual + (es3Pts ? 1 : 0),
+          fg3a: fg3aActual + (es3Pts ? 1 : 0),
           expulsado,
           _expulsado: expulsado,
         };
@@ -1168,17 +1283,32 @@ function MesaControlPanel({
       return j;
     }));
 
-    if (puntos > 0) setLiveScore((prev) => ({ ...prev, ptsLocal: prev.ptsLocal + puntos }));
+    if (puntosAnotados > 0) setLiveScore((prev) => ({ ...prev, ptsLocal: prev.ptsLocal + puntosAnotados }));
     if (tipo === 'FALTA') setLiveScore((prev) => ({ ...prev, faltasLocal: prev.faltasLocal + 1 }));
 
-    const logTexto = puntos > 0 ? `${nombreJugador} anota ${puntos} pts` : `${nombreJugador} registra ${tipo}`;
+    if (tipo === 'PUNTO') {
+      if (puntosBase === 1) {
+        detalleAccion = `${nombreJugador} TL ${tirosLibresConvertidos}/${Math.max(1, tirosLibresIntentados || 1)}`;
+      } else if (tirosLibresIntentados > 0) {
+        detalleAccion = `${nombreJugador} anota ${puntosBase} pts + TL ${tirosLibresConvertidos}/${tirosLibresIntentados}`;
+      } else {
+        detalleAccion = `${nombreJugador} anota ${puntosBase} pts`;
+      }
+    } else if (tipo === 'FALTA') {
+      detalleAccion = `${nombreJugador} comete FALTA (${numero(payload.faltaNumero || 0) || ''})`.replace(/\s\(\)/, '');
+    } else {
+      detalleAccion = `${nombreJugador} registra ${tipo}`;
+    }
+
+    const logTexto = detalleAccion;
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: logTexto }, ...prev]);
-    registrarEventoJuego({ tipo, detalle: logTexto, equipo: 'local', jugadorId: jugadorSeleccionadoLive, valor: puntos });
+    registrarEventoJuego({ tipo, detalle: logTexto, equipo: 'local', jugadorId: jugadorSeleccionadoLive, valor: puntosAnotados });
     if (expulsionNombre) {
       setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `⚠ ${expulsionNombre} llega a 5 faltas y debe salir.` }, ...prev]);
-      setQuintetoLocalIds((prev) => prev.filter((id) => id !== jugadorSeleccionadoLive));
+      setCambioObligatorioJugadorId(jugadorSeleccionadoLive);
+      alert(`${expulsionNombre} llegó a 5 faltas. Cambio obligatorio inmediato.`);
     }
-    setJugadorSeleccionadoLive(null);
+    if (!expulsionNombre) setJugadorSeleccionadoLive(null);
   };
 
   const agregarJugadorManual = ({ tipo }) => {
@@ -1664,7 +1794,11 @@ function MesaControlPanel({
 
     const guardado = await guardarEstadisticaPartido({ guardarEnBaseHistorica: guardarHistorico });
     setPartidoIniciado(false);
-    setModuloMesa('analitica');
+    if (forzarPantallaCompletaLive) {
+      alert('Partido finalizado. Usa "Salir Pantalla Completa" para cambiar de módulo.');
+    } else {
+      setModuloMesa('analitica');
+    }
     setPartidoPersistidoId(null);
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '00:00', texto: guardado ? `■ Partido finalizado y ${guardarHistorico ? 'guardado en histórico' : 'guardado localmente'}` : '■ Partido finalizado (falló guardado local)' }, ...prev]);
     if (!guardado) {
@@ -1698,10 +1832,10 @@ function MesaControlPanel({
             <button className={`mesa-mode-btn ${modoAnalisis === 'dos' ? 'active' : ''}`} onClick={() => setModoAnalisis('dos')}>2 Equipos</button>
           </div>
           <div className="mesa-lab-mode-switch" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr' }} role="tablist" aria-label="Módulo de mesa">
-            <button className={`mesa-mode-btn ${moduloMesa === 'prepartido' ? 'active' : ''}`} onClick={() => setModuloMesa('prepartido')}>1. Datos partido</button>
-            <button className={`mesa-mode-btn ${moduloMesa === 'live' ? 'active' : ''}`} onClick={() => setModuloMesa('live')} disabled={!partidoIniciado}>2. Juego en vivo</button>
-            <button className={`mesa-mode-btn ${moduloMesa === 'analitica' ? 'active' : ''}`} onClick={() => setModuloMesa('analitica')}>3. Estadística</button>
-            <button className={`mesa-mode-btn ${moduloMesa === 'historia' ? 'active' : ''}`} onClick={() => setModuloMesa('historia')}><History size={12} color="#6B7280" strokeWidth={1.5} /> 4. Historia</button>
+            <button className={`mesa-mode-btn ${moduloMesa === 'prepartido' ? 'active' : ''}`} onClick={() => cambiarModuloProtegido('prepartido')}>1. Datos partido</button>
+            <button className={`mesa-mode-btn ${moduloMesa === 'live' ? 'active' : ''}`} onClick={() => cambiarModuloProtegido('live')} disabled={!partidoIniciado}>2. Juego en vivo</button>
+            <button className={`mesa-mode-btn ${moduloMesa === 'analitica' ? 'active' : ''}`} onClick={() => cambiarModuloProtegido('analitica')}>3. Estadística</button>
+            <button className={`mesa-mode-btn ${moduloMesa === 'historia' ? 'active' : ''}`} onClick={() => cambiarModuloProtegido('historia')}><History size={12} color="#6B7280" strokeWidth={1.5} /> 4. Historia</button>
           </div>
         </div>
       </div>
@@ -2122,6 +2256,21 @@ function MesaControlPanel({
         <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsVisita: Math.max(0, liveScore.timeoutsVisita - 1) })}>TM Visita</button>
       </div>
 
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => setCronometroActivo((v) => !v)}>{cronometroActivo ? 'Pausar reloj' : 'Iniciar reloj'}</button>
+        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => setLiveScore((prev) => ({ ...prev, reloj: segundosAReloj(relojASegundos(prev.reloj) + 60) }))}>+1:00</button>
+        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => setLiveScore((prev) => ({ ...prev, reloj: segundosAReloj(Math.max(0, relojASegundos(prev.reloj) - 60)) }))}>-1:00</button>
+        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => setLiveScore((prev) => ({ ...prev, periodo: Math.max(1, Number(prev.periodo || 1) - 1), reloj: '10:00' }))}>Periodo -</button>
+        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => setLiveScore((prev) => ({ ...prev, periodo: Number(prev.periodo || 1) + 1, reloj: '10:00' }))}>Periodo +</button>
+      </div>
+
+      {cambioObligatorioJugadorId && (
+        <div className="card mb-15" style={{ borderRadius: '14px', border: '1px solid rgba(255,59,48,0.5)', background: 'rgba(255,59,48,0.09)' }}>
+          <strong>⚠ Cambio obligatorio pendiente por 5 faltas.</strong>
+          <p style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>Selecciona la jugadora/o de salida y una de banca, luego presiona Cambiar.</p>
+        </div>
+      )}
+
       <div className="caja-doble-grid landscape-mode">
         <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
           <h5 className="sub-caja-title">En Cancha (5) · Local</h5>
@@ -2181,14 +2330,17 @@ function MesaControlPanel({
           </h5>
 
           <div className="fiba-botones-grid">
-            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', 1)}>+1 TL</button>
-            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', 2)}>+2 PTS</button>
-            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', 3)}>+3 PTS</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', { puntos: 1, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 })}>TL 1/1</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', { puntos: 2 })}>+2 PTS</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', { puntos: 3 })}>+3 PTS</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 2 })}>2 TL (2/2)</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 })}>2+1 (conv.)</button>
+            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 3 })}>3 TL (falta triple)</button>
             <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('REB')}>REB</button>
             <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('AST')}>AST</button>
             <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('ROBO')}>ROBO</button>
             <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PERDIDA')}>PÉRDIDA</button>
-            <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('FALTA')}>FALTA</button>
+            <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('FALTA', { faltaNumero: 1 })}>FALTA</button>
           </div>
 
           <div className="mesa-visitor-actions">
@@ -2254,12 +2406,16 @@ function MesaControlPanel({
             <h6>{equipoLocal?.nombre || 'Local'}</h6>
             <p>EFF Equipo: <strong>{resumenLocal.effTotal}</strong> | Promedio: <strong>{resumenLocal.jugadores ? (resumenLocal.effTotal / resumenLocal.jugadores).toFixed(1) : '0.0'}</strong></p>
             <p>PTS: {resumenLocal.pts} | REB: {resumenLocal.reb} | AST: {resumenLocal.ast} | STL: {resumenLocal.stl}</p>
+            <p>TL: {resumenLocal.ftm}/{resumenLocal.fta} ({formatoPct(resumenLocal.ftm, resumenLocal.fta)})</p>
+            <p>T2: {resumenLocal.fg2m}/{resumenLocal.fg2a} ({formatoPct(resumenLocal.fg2m, resumenLocal.fg2a)}) · T3: {resumenLocal.fg3m}/{resumenLocal.fg3a} ({formatoPct(resumenLocal.fg3m, resumenLocal.fg3a)})</p>
           </div>
           {modoAnalisis === 'dos' && (
             <div className="mesa-stats-box">
               <h6>{equipoVisita?.nombre || 'Visita'}</h6>
               <p>EFF Equipo: <strong>{resumenVisita.effTotal}</strong> | Promedio: <strong>{resumenVisita.jugadores ? (resumenVisita.effTotal / resumenVisita.jugadores).toFixed(1) : '0.0'}</strong></p>
               <p>PTS: {resumenVisita.pts} | REB: {resumenVisita.reb} | AST: {resumenVisita.ast} | STL: {resumenVisita.stl}</p>
+              <p>TL: {resumenVisita.ftm}/{resumenVisita.fta} ({formatoPct(resumenVisita.ftm, resumenVisita.fta)})</p>
+              <p>T2: {resumenVisita.fg2m}/{resumenVisita.fg2a} ({formatoPct(resumenVisita.fg2m, resumenVisita.fg2a)}) · T3: {resumenVisita.fg3m}/{resumenVisita.fg3a} ({formatoPct(resumenVisita.fg3m, resumenVisita.fg3a)})</p>
             </div>
           )}
         </div>
@@ -2368,7 +2524,7 @@ function MesaControlPanel({
                 (partidoAnalisisSeleccionado.equipos?.local?.roster || []).slice(0, 12).map((j) => (
                   <div key={`local-${partidoAnalisisSeleccionado.id}-${j.id || j.dorsal || j.nombre}`} className="mesa-stats-row">
                     <span>#{j.dorsal || '-'} {j.nombre || 'Jugador/a'}</span>
-                    <strong>{Number(j.pts || 0)} PTS · {Number(j.reb || 0)} REB · {Number(j.ast || 0)} AST</strong>
+                    <strong>{Number(j.pts || 0)} PTS · {Number(j.reb || 0)} REB · {Number(j.ast || 0)} AST · TL {Number(j.ftm || 0)}/{Number(j.fta || 0)} ({formatoPct(Number(j.ftm || 0), Number(j.fta || 0))})</strong>
                   </div>
                 ))
               )}
@@ -2382,7 +2538,7 @@ function MesaControlPanel({
                 (partidoAnalisisSeleccionado.equipos?.visita?.roster || []).slice(0, 12).map((j) => (
                   <div key={`visita-${partidoAnalisisSeleccionado.id}-${j.id || j.dorsal || j.nombre}`} className="mesa-stats-row">
                     <span>#{j.dorsal || '-'} {j.nombre || 'Jugador/a'}</span>
-                    <strong>{Number(j.pts || 0)} PTS · {Number(j.reb || 0)} REB · {Number(j.ast || 0)} AST</strong>
+                    <strong>{Number(j.pts || 0)} PTS · {Number(j.reb || 0)} REB · {Number(j.ast || 0)} AST · TL {Number(j.ftm || 0)}/{Number(j.fta || 0)} ({formatoPct(Number(j.ftm || 0), Number(j.fta || 0))})</strong>
                   </div>
                 ))
               )}
