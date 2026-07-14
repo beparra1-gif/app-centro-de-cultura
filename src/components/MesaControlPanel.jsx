@@ -29,18 +29,24 @@ const segundosAReloj = (total = 0) => {
   return `${String(minutos).padStart(2, '0')}:${String(segundos).padStart(2, '0')}`;
 };
 
-const relojAInstantePartido = (periodo = 1, reloj = '10:00') => {
-  const q = Math.max(1, Number(periodo || 1));
-  const segundosRestantes = relojASegundos(reloj || '10:00');
-  return ((q - 1) * 600) + (600 - segundosRestantes);
-};
- const etiquetaPeriodo = (periodo = 1) => {
+const etiquetaPeriodo = (periodo = 1) => {
    const p = Math.max(1, Number(periodo || 1));
    if (p <= 4) return `Q${p}`;
    return `OT${p - 4}`;
  };
 
  const relojInicialPeriodo = (periodo = 1) => (Number(periodo || 1) > 4 ? '05:00' : '10:00');
+
+const duracionPeriodoSegundos = (periodo = 1) => (Number(periodo || 1) > 4 ? 300 : 600);
+
+const instantePartidoSegundos = (periodo = 1, reloj = '') => {
+  const p = Math.max(1, Number(periodo || 1));
+  const relojInicial = relojInicialPeriodo(p);
+  const segundosRestantes = relojASegundos(reloj || relojInicial);
+  let acumulado = 0;
+  for (let i = 1; i < p; i += 1) acumulado += duracionPeriodoSegundos(i);
+  return acumulado + (duracionPeriodoSegundos(p) - segundosRestantes);
+};
 
 const formatoPct = (convertidos = 0, intentos = 0) => {
   const att = Number(intentos || 0);
@@ -1609,11 +1615,11 @@ function MesaControlPanel({
 
   const alertasRiesgoLive = useMemo(() => {
     if (!partidoIniciado) return [];
-    const ahora = relojAInstantePartido(liveScore.periodo || 1, liveScore.reloj || '10:00');
+    const ahora = instantePartidoSegundos(liveScore.periodo || 1, liveScore.reloj || relojInicialPeriodo(liveScore.periodo || 1));
     const ventanaInicio = Math.max(0, ahora - 120);
     const eventosRecientes = eventosPartido.filter((evento) => {
       if (!evento?.jugadorId || evento.equipo === 'visita') return false;
-      const instante = relojAInstantePartido(evento.periodo || 1, evento.reloj || '10:00');
+      const instante = instantePartidoSegundos(evento.periodo || 1, evento.reloj || relojInicialPeriodo(evento.periodo || 1));
       return instante >= ventanaInicio && instante <= ahora;
     });
 
