@@ -308,6 +308,7 @@ function MesaControlPanel({
   const [historialFiltroTexto, setHistorialFiltroTexto] = useState('');
   const [historialFiltroRama, setHistorialFiltroRama] = useState('Todas');
   const [historialFiltroCategoria, setHistorialFiltroCategoria] = useState('Todas');
+  const [tipoFichaTecnicaExport, setTipoFichaTecnicaExport] = useState('planilla_resumen_oficial');
   const [sesionRecuperada, setSesionRecuperada] = useState(false);
   const [filtroRama, setFiltroRama] = useState('Todas');
   const [filtroCategoria, setFiltroCategoria] = useState('Todas');
@@ -1900,26 +1901,99 @@ function MesaControlPanel({
   };
 
   const exportarPlanillaReglamentaria = () => {
-    const filas = historialFiltrado.map((p) => ({
-      Fecha: p.finalizadoAt ? new Date(p.finalizadoAt).toLocaleDateString('es-CL') : '',
-      Hora: p.finalizadoAt ? new Date(p.finalizadoAt).toLocaleTimeString('es-CL') : '',
-      Competencia: p.filtros?.competicion || '',
-      Rama: p.filtros?.rama || '',
-      Categoria: p.filtros?.categoria || '',
-      Local: p.equipos?.local?.nombre || '',
-      Visita: p.equipos?.visita?.nombre || '',
-      PtsLocal: Number(p.marcador?.ptsLocal || 0),
-      PtsVisita: Number(p.marcador?.ptsVisita || 0),
-      FaltasLocal: Number(p.marcador?.faltasLocal || 0),
-      FaltasVisita: Number(p.marcador?.faltasVisita || 0),
-      Sede: p.canchaSede || '',
-      Planillero: p.operadores?.planillero || '',
-      Estadistico: p.operadores?.estadistico || '',
-      Supervisor: p.operadores?.supervisor || '',
-    }));
+    const partidoBase = partidoAnalisisSeleccionado || historialFiltrado[0] || null;
+    let filas = [];
+    let nombreArchivo = `planilla-reglamentaria-${Date.now()}.csv`;
+
+    if (tipoFichaTecnicaExport === 'planilla_resumen_oficial') {
+      filas = historialFiltrado.map((p) => ({
+        Fecha: p.finalizadoAt ? new Date(p.finalizadoAt).toLocaleDateString('es-CL') : '',
+        Hora: p.finalizadoAt ? new Date(p.finalizadoAt).toLocaleTimeString('es-CL') : '',
+        Competencia: p.filtros?.competicion || '',
+        Rama: p.filtros?.rama || '',
+        Categoria: p.filtros?.categoria || '',
+        Local: p.equipos?.local?.nombre || '',
+        Visita: p.equipos?.visita?.nombre || '',
+        PtsLocal: Number(p.marcador?.ptsLocal || 0),
+        PtsVisita: Number(p.marcador?.ptsVisita || 0),
+        FaltasLocal: Number(p.marcador?.faltasLocal || 0),
+        FaltasVisita: Number(p.marcador?.faltasVisita || 0),
+        Sede: p.canchaSede || '',
+        Planillero: p.operadores?.planillero || '',
+        Estadistico: p.operadores?.estadistico || '',
+        Supervisor: p.operadores?.supervisor || '',
+      }));
+      nombreArchivo = `planilla-oficial-resumen-${Date.now()}.csv`;
+    }
+
+    if (tipoFichaTecnicaExport === 'ficha_tecnica_partido') {
+      if (!partidoBase) {
+        alert('Selecciona un partido en el historial para exportar la ficha técnica del partido.');
+        return;
+      }
+      filas = [
+        { Campo: 'Fecha', Valor: partidoBase.finalizadoAt ? new Date(partidoBase.finalizadoAt).toLocaleDateString('es-CL') : '' },
+        { Campo: 'Hora', Valor: partidoBase.finalizadoAt ? new Date(partidoBase.finalizadoAt).toLocaleTimeString('es-CL') : '' },
+        { Campo: 'Competencia', Valor: partidoBase.filtros?.competicion || '' },
+        { Campo: 'Rama', Valor: partidoBase.filtros?.rama || '' },
+        { Campo: 'Categoria', Valor: partidoBase.filtros?.categoria || '' },
+        { Campo: 'Sede', Valor: partidoBase.canchaSede || '' },
+        { Campo: 'Equipo Local', Valor: partidoBase.equipos?.local?.nombre || 'Local' },
+        { Campo: 'Equipo Visita', Valor: partidoBase.equipos?.visita?.nombre || 'Visita' },
+        { Campo: 'Marcador', Valor: `${partidoBase.marcador?.ptsLocal ?? 0}-${partidoBase.marcador?.ptsVisita ?? 0}` },
+        { Campo: 'Faltas Local', Valor: Number(partidoBase.marcador?.faltasLocal || 0) },
+        { Campo: 'Faltas Visita', Valor: Number(partidoBase.marcador?.faltasVisita || 0) },
+        { Campo: 'Periodo Final', Valor: etiquetaPeriodo(partidoBase.marcador?.periodo || 1) },
+        { Campo: 'Planillero', Valor: partidoBase.operadores?.planillero || '' },
+        { Campo: 'Estadistico', Valor: partidoBase.operadores?.estadistico || '' },
+        { Campo: 'Supervisor', Valor: partidoBase.operadores?.supervisor || '' },
+        { Campo: 'Eventos Registrados', Valor: Array.isArray(partidoBase.eventos) ? partidoBase.eventos.length : 0 },
+      ];
+      nombreArchivo = `ficha-tecnica-partido-${Date.now()}.csv`;
+    }
+
+    if (tipoFichaTecnicaExport === 'ficha_tecnica_local' || tipoFichaTecnicaExport === 'ficha_tecnica_visita') {
+      if (!partidoBase) {
+        alert('Selecciona un partido en el historial para exportar la ficha técnica individual.');
+        return;
+      }
+      const esLocal = tipoFichaTecnicaExport === 'ficha_tecnica_local';
+      const roster = esLocal ? (partidoBase.equipos?.local?.roster || []) : (partidoBase.equipos?.visita?.roster || []);
+      const nombreEquipo = esLocal ? (partidoBase.equipos?.local?.nombre || 'Local') : (partidoBase.equipos?.visita?.nombre || 'Visita');
+      const rival = esLocal ? (partidoBase.equipos?.visita?.nombre || 'Visita') : (partidoBase.equipos?.local?.nombre || 'Local');
+
+      filas = roster.map((j) => ({
+        Fecha: partidoBase.finalizadoAt ? new Date(partidoBase.finalizadoAt).toLocaleDateString('es-CL') : '',
+        Competencia: partidoBase.filtros?.competicion || '',
+        Rama: partidoBase.filtros?.rama || '',
+        Categoria: partidoBase.filtros?.categoria || '',
+        Equipo: nombreEquipo,
+        Rival: rival,
+        Dorsal: j.dorsal ?? '',
+        Jugador: j.nombre || '',
+        PTS: Number(j.pts || 0),
+        REB: Number(j.reb || 0),
+        AST: Number(j.ast || 0),
+        STL: Number(j.stl || 0),
+        TO: Number(j.to || 0),
+        FLT: Number(j.flt || 0),
+        FTM: Number(j.ftm || 0),
+        FTA: Number(j.fta || 0),
+        'FT%': formatoPct(Number(j.ftm || 0), Number(j.fta || 0)),
+        FG2M: Number(j.fg2m || 0),
+        FG2A: Number(j.fg2a || 0),
+        'FG2%': formatoPct(Number(j.fg2m || 0), Number(j.fg2a || 0)),
+        FG3M: Number(j.fg3m || 0),
+        FG3A: Number(j.fg3a || 0),
+        'FG3%': formatoPct(Number(j.fg3m || 0), Number(j.fg3a || 0)),
+        EFF: calcularEff(j),
+      }));
+      nombreArchivo = `${esLocal ? 'ficha-tecnica-local' : 'ficha-tecnica-visita'}-${Date.now()}.csv`;
+    }
+
     const csv = construirCsv(filas);
     if (!csv) return;
-    descargarTexto(`planilla-reglamentaria-${Date.now()}.csv`, csv, 'text/csv;charset=utf-8');
+    descargarTexto(nombreArchivo, csv, 'text/csv;charset=utf-8');
   };
 
   const guardarEstadisticaPartido = async ({ guardarEnBaseHistorica = true } = {}) => {
@@ -2949,9 +3023,20 @@ function MesaControlPanel({
             </select>
           </label>
         </div>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+        <div className="mesa-filtros-grid" style={{ marginTop: '10px' }}>
+          <label className="mesa-filter-item">
+            <span>Tipo de ficha técnica oficial</span>
+            <select className="form-input" value={tipoFichaTecnicaExport} onChange={(e) => setTipoFichaTecnicaExport(e.target.value)}>
+              <option value="planilla_resumen_oficial">Planilla oficial resumen (lote)</option>
+              <option value="ficha_tecnica_partido">Ficha técnica oficial del partido seleccionado</option>
+              <option value="ficha_tecnica_local">Ficha técnica individual Local (partido seleccionado)</option>
+              <option value="ficha_tecnica_visita">Ficha técnica individual Visita (partido seleccionado)</option>
+            </select>
+          </label>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
           <button className="btn-secondary" style={{ width: 'auto' }} onClick={exportarHistorialCsv}><Download size={14} color="#6B7280" strokeWidth={1.5} /> Exportar Historial CSV</button>
-          <button className="btn-secondary" style={{ width: 'auto' }} onClick={exportarPlanillaReglamentaria}><Download size={14} color="#6B7280" strokeWidth={1.5} /> Exportar Planilla Reglamentaria</button>
+          <button className="btn-secondary" style={{ width: 'auto' }} onClick={exportarPlanillaReglamentaria}><Download size={14} color="#6B7280" strokeWidth={1.5} /> Exportar Planilla/Ficha Oficial</button>
         </div>
       </div>
 
