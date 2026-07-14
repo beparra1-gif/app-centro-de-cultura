@@ -2715,6 +2715,36 @@ button,
 .play-tiempo { font-weight: 900; color: var(--azul-electrico); min-width: 55px; font-family: 'Orbitron', monospace; }
 .play-texto { color: var(--texto-principal); font-weight: 800; }
 
+.play-row.play-row-neutral {
+  border-left: 4px solid rgba(120, 126, 140, 0.35);
+  padding-left: 10px;
+  background: rgba(120, 126, 140, 0.05);
+}
+
+.play-row.play-row-puntos {
+  border-left: 4px solid rgba(52, 199, 89, 0.75);
+  padding-left: 10px;
+  background: rgba(52, 199, 89, 0.1);
+}
+
+.play-row.play-row-alerta {
+  border-left: 4px solid rgba(255, 59, 48, 0.8);
+  padding-left: 10px;
+  background: rgba(255, 59, 48, 0.1);
+}
+
+.play-row.play-row-defensa {
+  border-left: 4px solid rgba(255, 149, 0, 0.8);
+  padding-left: 10px;
+  background: rgba(255, 149, 0, 0.1);
+}
+
+.play-row.play-row-control {
+  border-left: 4px solid rgba(0, 122, 255, 0.8);
+  padding-left: 10px;
+  background: rgba(0, 122, 255, 0.08);
+}
+
 /* ==========================================
    14. SUPER ADMIN (MATRIX, RADIAL PROGRESS Y AUDITORÍA)
    ========================================= */

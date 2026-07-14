@@ -1974,6 +1974,15 @@ function MesaControlPanel({
     }
   };
 
+  const claseSeveridadPlay = (play = {}) => {
+    const texto = String(play?.texto || '').toUpperCase();
+    if (texto.includes('⚠') || texto.includes('FALTA') || texto.includes('PERDIDA') || texto.includes('PÉRDIDA')) return 'play-row-alerta';
+    if (texto.includes('TL') || texto.includes('2+1') || texto.includes('ANOTA') || texto.includes('PUNTO') || texto.includes('+')) return 'play-row-puntos';
+    if (texto.includes('REB') || texto.includes('ROBO') || texto.includes('AST') || texto.includes('CAMBIO') || texto.includes('🔁')) return 'play-row-defensa';
+    if (texto.includes('PERIODO') || texto.includes('RELOJ') || texto.includes('⏱') || texto.includes('🧭')) return 'play-row-control';
+    return 'play-row-neutral';
+  };
+
   const confirmarInicioPartido = async () => {
     if (partidoIniciado) return;
     if (!prepartidoValido) {
@@ -2940,7 +2949,7 @@ function MesaControlPanel({
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="#6B7280" strokeWidth={1.5} /> Línea de Tiempo (Play-by-Play)</h4>
         <div style={{ display: 'flex', gap: '10px' }} className="mb-15"><input type="text" className="form-input" placeholder="Nota táctica o scouting..." value={notaScouting} onChange={(e) => setNotaScouting(e.target.value)} /><button className="btn-electric" style={{ width: 'auto', padding: '0 20px' }} onClick={() => { if (!notaScouting) return; setPlayByPlay((prev) => [{ id: nextId(), tiempo: 'DT', texto: `📝 ${notaScouting}` }, ...prev]); setNotaScouting(''); }}>Log</button></div>
-        <div className="play-by-play-box">{playByPlay.length === 0 ? <p className="text-center text-muted" style={{ fontSize: '13px', fontStyle: 'italic', margin: '20px 0' }}>Inicio de transmisión.</p> : playByPlay.map(play => (<div key={play.id} className="play-row"><span className="play-tiempo">{play.tiempo}</span><span className="play-texto">{play.texto}</span></div>))}</div>
+        <div className="play-by-play-box">{playByPlay.length === 0 ? <p className="text-center text-muted" style={{ fontSize: '13px', fontStyle: 'italic', margin: '20px 0' }}>Inicio de transmisión.</p> : playByPlay.map(play => (<div key={play.id} className={`play-row ${claseSeveridadPlay(play)}`}><span className="play-tiempo">{play.tiempo}</span><span className="play-texto">{play.texto}</span></div>))}</div>
       </div>
       )}
     </div>
