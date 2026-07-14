@@ -335,6 +335,7 @@ function MesaControlPanel({
   const [forzarPantallaCompletaLive, setForzarPantallaCompletaLive] = useState(true);
   const [cronometroActivo, setCronometroActivo] = useState(false);
   const [cambioObligatorioJugadorId, setCambioObligatorioJugadorId] = useState(null);
+  const [jugadorAnalisisId, setJugadorAnalisisId] = useState('');
   const liveFullScreenRef = useRef(null);
 
   const equiposDesdePartidos = useMemo(() => {
@@ -1190,6 +1191,7 @@ function MesaControlPanel({
       operadorRol: rolOperadorActivo,
       operadorNombre,
       createdAt: new Date().toISOString(),
+      quintetoLocalSnapshot: [...quintetoLocalIds],
     };
     setEventosPartido((prev) => [evento, ...prev].slice(0, 400));
   };
@@ -1225,6 +1227,41 @@ function MesaControlPanel({
       return;
     }
     await node.requestFullscreen();
+  };
+
+  const alternarCronometro = () => {
+    if (!partidoIniciado) return;
+    const siguiente = !cronometroActivo;
+    setCronometroActivo(siguiente);
+    const detalle = siguiente ? '⏱ Reloj iniciado' : '⏸ Reloj pausado';
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalle }, ...prev]);
+    registrarEventoJuego({ tipo: 'RELOJ', detalle, equipo: 'local' });
+  };
+
+  const ajustarRelojLive = (deltaSegundos = 0) => {
+    if (!partidoIniciado) return;
+    let relojFinal = liveScore.reloj || '10:00';
+    setLiveScore((prev) => {
+      const actual = relojASegundos(prev.reloj || '10:00');
+      const siguiente = limitar(actual + Number(deltaSegundos || 0), 0, 60 * 20);
+      relojFinal = segundosAReloj(siguiente);
+      return { ...prev, reloj: relojFinal };
+    });
+    const detalle = `⏱ Ajuste de reloj ${deltaSegundos > 0 ? '+' : ''}${deltaSegundos}s → ${relojFinal}`;
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalle }, ...prev]);
+    registrarEventoJuego({ tipo: 'RELOJ', detalle, equipo: 'local' });
+  };
+
+  const cambiarPeriodoLive = (delta = 1) => {
+    if (!partidoIniciado) return;
+    let periodoFinal = Number(liveScore.periodo || 1);
+    setLiveScore((prev) => {
+      periodoFinal = Math.max(1, Number(prev.periodo || 1) + Number(delta || 0));
+      return { ...prev, periodo: periodoFinal, reloj: '10:00' };
+    });
+    const detalle = `🧭 Cambio de periodo → Q${periodoFinal}`;
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalle }, ...prev]);
+    registrarEventoJuego({ tipo: 'PERIODO', detalle, equipo: 'local' });
   };
 
   const ejecutarAccionFIBA = (tipo, payload = {}) => {
@@ -1413,6 +1450,65 @@ function MesaControlPanel({
 
   const resumenLocal = useMemo(() => crearResumenEquipo(rosterLocal), [rosterLocal]);
   const resumenVisita = useMemo(() => crearResumenEquipo(rosterVisita), [rosterVisita]);
+
+  const analisisPorPeriodo = useMemo(() => {
+    const mapa = new Map();
+    eventosPartido.forEach((evento) => {
+      const q = Number(evento.periodo || 1);
+      const actual = mapa.get(q) || { periodo: q, ptsLocal: 0, ptsVisita: 0, faltasLocal: 0, faltasVisita: 0, eventos: 0 };
+      actual.eventos += 1;
+      if (evento.tipo === 'PUNTO') {
+        if (evento.equipo === 'visita') actual.ptsVisita += Number(evento.valor || 0);
+        else actual.ptsLocal += Number(evento.valor || 0);
+      }
+      if (evento.tipo === 'FALTA') {
+        if (evento.equipo === 'visita') actual.faltasVisita += 1;
+        else actual.faltasLocal += 1;
+      }
+      mapa.set(q, actual);
+    });
+    return Array.from(mapa.values()).sort((a, b) => a.periodo - b.periodo);
+  }, [eventosPartido]);
+
+  const analisisClutch = useMemo(() => {
+    const clutch = eventosPartido.filter((evento) => Number(evento.periodo || 0) >= 4 && relojASegundos(evento.reloj || '10:00') <= 120);
+    const localPts = clutch.filter((e) => e.tipo === 'PUNTO' && e.equipo !== 'visita').reduce((acc, e) => acc + Number(e.valor || 0), 0);
+    const visitaPts = clutch.filter((e) => e.tipo === 'PUNTO' && e.equipo === 'visita').reduce((acc, e) => acc + Number(e.valor || 0), 0);
+    const faltasLocalClutch = clutch.filter((e) => e.tipo === 'FALTA' && e.equipo !== 'visita').length;
+    const faltasVisitaClutch = clutch.filter((e) => e.tipo === 'FALTA' && e.equipo === 'visita').length;
+    return {
+      eventos: clutch.length,
+      localPts,
+      visitaPts,
+      diferencial: localPts - visitaPts,
+      faltasLocalClutch,
+      faltasVisitaClutch,
+    };
+  }, [eventosPartido]);
+
+  const impactoQuintetos = useMemo(() => {
+    const mapa = new Map();
+    eventosPartido.forEach((evento) => {
+      if (!Array.isArray(evento.quintetoLocalSnapshot) || evento.quintetoLocalSnapshot.length === 0) return;
+      const key = evento.quintetoLocalSnapshot.map((id) => String(id)).sort().join('|');
+      const actual = mapa.get(key) || { key, eventos: 0, puntos: 0, faltas: 0 };
+      actual.eventos += 1;
+      if (evento.tipo === 'PUNTO' && evento.equipo !== 'visita') actual.puntos += Number(evento.valor || 0);
+      if (evento.tipo === 'FALTA' && evento.equipo !== 'visita') actual.faltas += 1;
+      mapa.set(key, actual);
+    });
+    return Array.from(mapa.values()).sort((a, b) => b.puntos - a.puntos).slice(0, 5);
+  }, [eventosPartido]);
+
+  const jugadoresAnaliticaLocal = useMemo(
+    () => [...rosterLocal].sort((a, b) => calcularEff(b) - calcularEff(a)),
+    [rosterLocal]
+  );
+
+  const jugadorAnalisisSeleccionado = useMemo(() => {
+    if (!jugadorAnalisisId) return jugadoresAnaliticaLocal[0] || null;
+    return jugadoresAnaliticaLocal.find((j) => String(j.id) === String(jugadorAnalisisId)) || jugadoresAnaliticaLocal[0] || null;
+  }, [jugadorAnalisisId, jugadoresAnaliticaLocal]);
 
   const registrarEventoPlantilla = ({ tipo, detalle, equipo = 'local' }) => {
     if (!partidoIniciado) return;
@@ -2257,17 +2353,17 @@ function MesaControlPanel({
       </div>
 
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => setCronometroActivo((v) => !v)}>{cronometroActivo ? 'Pausar reloj' : 'Iniciar reloj'}</button>
-        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => setLiveScore((prev) => ({ ...prev, reloj: segundosAReloj(relojASegundos(prev.reloj) + 60) }))}>+1:00</button>
-        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => setLiveScore((prev) => ({ ...prev, reloj: segundosAReloj(Math.max(0, relojASegundos(prev.reloj) - 60)) }))}>-1:00</button>
-        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => setLiveScore((prev) => ({ ...prev, periodo: Math.max(1, Number(prev.periodo || 1) - 1), reloj: '10:00' }))}>Periodo -</button>
-        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => setLiveScore((prev) => ({ ...prev, periodo: Number(prev.periodo || 1) + 1, reloj: '10:00' }))}>Periodo +</button>
+        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={alternarCronometro}>{cronometroActivo ? 'Pausar reloj' : 'Iniciar reloj'}</button>
+        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => ajustarRelojLive(60)}>+1:00</button>
+        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => ajustarRelojLive(-60)}>-1:00</button>
+        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => cambiarPeriodoLive(-1)}>Periodo -</button>
+        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => cambiarPeriodoLive(1)}>Periodo +</button>
       </div>
 
       {cambioObligatorioJugadorId && (
         <div className="card mb-15" style={{ borderRadius: '14px', border: '1px solid rgba(255,59,48,0.5)', background: 'rgba(255,59,48,0.09)' }}>
           <strong>⚠ Cambio obligatorio pendiente por 5 faltas.</strong>
-          <p style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>Selecciona la jugadora/o de salida y una de banca, luego presiona Cambiar.</p>
+          <p style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>Selecciona la jugadora/o de salida (5 faltas) y una de banca, luego presiona Cambiar.</p>
         </div>
       )}
 
@@ -2450,6 +2546,65 @@ function MesaControlPanel({
               )}
             </div>
           )}
+        </div>
+
+        <div className="mesa-stats-tables" style={{ marginTop: '10px' }}>
+          <div className="mesa-stats-table">
+            <h6>Vista Individual Detallada (Local)</h6>
+            <label className="mesa-filter-item" style={{ marginBottom: '10px' }}>
+              <span>Seleccionar jugadora/or</span>
+              <select className="form-input" value={jugadorAnalisisId} onChange={(e) => setJugadorAnalisisId(e.target.value)}>
+                {jugadoresAnaliticaLocal.map((j) => <option key={`ana-j-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
+              </select>
+            </label>
+            {jugadorAnalisisSeleccionado ? (
+              <>
+                <div className="mesa-stats-row"><span>EFF</span><strong>{calcularEff(jugadorAnalisisSeleccionado)}</strong></div>
+                <div className="mesa-stats-row"><span>PTS / REB / AST / STL / TO</span><strong>{Number(jugadorAnalisisSeleccionado.pts || 0)} / {Number(jugadorAnalisisSeleccionado.reb || 0)} / {Number(jugadorAnalisisSeleccionado.ast || 0)} / {Number(jugadorAnalisisSeleccionado.stl || 0)} / {Number(jugadorAnalisisSeleccionado.to || 0)}</strong></div>
+                <div className="mesa-stats-row"><span>TL</span><strong>{Number(jugadorAnalisisSeleccionado.ftm || 0)}/{Number(jugadorAnalisisSeleccionado.fta || 0)} ({formatoPct(Number(jugadorAnalisisSeleccionado.ftm || 0), Number(jugadorAnalisisSeleccionado.fta || 0))})</strong></div>
+                <div className="mesa-stats-row"><span>T2</span><strong>{Number(jugadorAnalisisSeleccionado.fg2m || 0)}/{Number(jugadorAnalisisSeleccionado.fg2a || 0)} ({formatoPct(Number(jugadorAnalisisSeleccionado.fg2m || 0), Number(jugadorAnalisisSeleccionado.fg2a || 0))})</strong></div>
+                <div className="mesa-stats-row"><span>T3</span><strong>{Number(jugadorAnalisisSeleccionado.fg3m || 0)}/{Number(jugadorAnalisisSeleccionado.fg3a || 0)} ({formatoPct(Number(jugadorAnalisisSeleccionado.fg3m || 0), Number(jugadorAnalisisSeleccionado.fg3a || 0))})</strong></div>
+              </>
+            ) : (
+              <p className="text-muted">Sin jugadoras/es locales en análisis.</p>
+            )}
+          </div>
+
+          <div className="mesa-stats-table">
+            <h6>Tendencia por Período (actual)</h6>
+            {analisisPorPeriodo.length === 0 ? (
+              <p className="text-muted">Aún no hay eventos por período.</p>
+            ) : (
+              analisisPorPeriodo.map((q) => (
+                <div key={`periodo-${q.periodo}`} className="mesa-stats-row">
+                  <span>Q{q.periodo} · Ev {q.eventos} · Faltas {q.faltasLocal}/{q.faltasVisita}</span>
+                  <strong>{q.ptsLocal} - {q.ptsVisita}</strong>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="mesa-stats-table">
+            <h6>Clutch (Q4+, últimos 2:00)</h6>
+            <div className="mesa-stats-row"><span>Eventos clutch</span><strong>{analisisClutch.eventos}</strong></div>
+            <div className="mesa-stats-row"><span>Puntos Local / Visita</span><strong>{analisisClutch.localPts} / {analisisClutch.visitaPts}</strong></div>
+            <div className="mesa-stats-row"><span>Diferencial clutch</span><strong>{analisisClutch.diferencial > 0 ? '+' : ''}{analisisClutch.diferencial}</strong></div>
+            <div className="mesa-stats-row"><span>Faltas clutch L/V</span><strong>{analisisClutch.faltasLocalClutch} / {analisisClutch.faltasVisitaClutch}</strong></div>
+          </div>
+
+          <div className="mesa-stats-table">
+            <h6>Impacto de Quintetos (top)</h6>
+            {impactoQuintetos.length === 0 ? (
+              <p className="text-muted">Aún no hay datos de quintetos.</p>
+            ) : (
+              impactoQuintetos.map((item, idx) => (
+                <div key={`lineup-${item.key}-${idx}`} className="mesa-stats-row">
+                  <span>#{idx + 1} · Ev {item.eventos} · F {item.faltas}</span>
+                  <strong>{item.puntos} pts</strong>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
 
