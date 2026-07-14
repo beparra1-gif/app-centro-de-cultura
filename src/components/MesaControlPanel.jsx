@@ -34,6 +34,13 @@ const relojAInstantePartido = (periodo = 1, reloj = '10:00') => {
   const segundosRestantes = relojASegundos(reloj || '10:00');
   return ((q - 1) * 600) + (600 - segundosRestantes);
 };
+ const etiquetaPeriodo = (periodo = 1) => {
+   const p = Math.max(1, Number(periodo || 1));
+   if (p <= 4) return `Q${p}`;
+   return `OT${p - 4}`;
+ };
+
+ const relojInicialPeriodo = (periodo = 1) => (Number(periodo || 1) > 4 ? '05:00' : '10:00');
 
 const formatoPct = (convertidos = 0, intentos = 0) => {
   const att = Number(intentos || 0);
@@ -339,6 +346,7 @@ function MesaControlPanel({
   const [staffVisita, setStaffVisita] = useState({ entrenador: '', asistente: '', delegado: '' });
   const [cambioSalidaId, setCambioSalidaId] = useState('');
   const [cambioIngresoId, setCambioIngresoId] = useState('');
+  const [cambioIngresoPorSalida, setCambioIngresoPorSalida] = useState({});
   const [nominaLocalIds, setNominaLocalIds] = useState([]);
   const [nominaVisitaIds, setNominaVisitaIds] = useState([]);
   const [quintetoLocalValidado, setQuintetoLocalValidado] = useState(false);
@@ -1227,10 +1235,12 @@ function MesaControlPanel({
     setEventosPartido((prev) => [evento, ...prev].slice(0, 400));
   };
 
-  const ejecutarCambioJugadorLocal = () => {
+  const ejecutarCambioJugadorLocal = (salidaIdManual, ingresoIdManual) => {
     if (!partidoIniciado) return;
-    const salida = rosterLocalCompleto.find((j) => String(j.id) === String(cambioSalidaId));
-    const ingreso = rosterLocalCompleto.find((j) => String(j.id) === String(cambioIngresoId));
+    const salidaIdObjetivo = String(salidaIdManual ?? cambioSalidaId ?? '');
+    const ingresoIdObjetivo = String(ingresoIdManual ?? cambioIngresoId ?? '');
+    const salida = rosterLocalCompleto.find((j) => String(j.id) === salidaIdObjetivo);
+    const ingreso = rosterLocalCompleto.find((j) => String(j.id) === ingresoIdObjetivo);
     if (!salida || !ingreso) return;
     if (!quintetoLocalIds.includes(salida.id)) return alert('La jugadora/o de salida debe estar en cancha.');
     if (cambioObligatorioJugadorId && String(cambioObligatorioJugadorId) !== String(salida.id)) {
@@ -1246,6 +1256,11 @@ function MesaControlPanel({
     if (cambioObligatorioJugadorId && String(cambioObligatorioJugadorId) === String(salida.id)) {
       setCambioObligatorioJugadorId(null);
     }
+    setCambioIngresoPorSalida((prev) => {
+      const next = { ...prev };
+      delete next[String(salida.id)];
+      return next;
+    });
     setCambioSalidaId('');
     setCambioIngresoId('');
   };
@@ -1308,9 +1323,9 @@ function MesaControlPanel({
     let periodoFinal = Number(liveScore.periodo || 1);
     setLiveScore((prev) => {
       periodoFinal = Math.max(1, Number(prev.periodo || 1) + Number(delta || 0));
-      return { ...prev, periodo: periodoFinal, reloj: '10:00' };
+      return { ...prev, periodo: periodoFinal, reloj: relojInicialPeriodo(periodoFinal) };
     });
-    const detalle = `🧭 Cambio de periodo → Q${periodoFinal}`;
+    const detalle = `🧭 Cambio de periodo → ${etiquetaPeriodo(periodoFinal)}`;
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalle }, ...prev]);
     registrarEventoJuego({ tipo: 'PERIODO', detalle, equipo: 'local' });
   };
@@ -2046,7 +2061,7 @@ function MesaControlPanel({
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#00FF00', zIndex: 99999, display: 'flex', alignItems: 'flex-end', padding: '50px' }}>
         <div style={{ background: '#1C1C1E', border: '3px solid #333', borderRadius: '15px', padding: '20px 40px', display: 'flex', gap: '40px', alignItems: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
           <div className="text-center"><span style={{ color: '#aaa', fontSize: '14px', fontWeight: 'bold' }}>LOCAL {liveScore.flecha === 'LOCAL' && '◀'}</span><h1 style={{ color: 'white', margin: 0, fontSize: '60px', fontFamily: 'Orbitron' }}>{liveScore.ptsLocal}</h1><span style={{ color: '#FF3B30', fontSize: '12px', fontWeight: 'bold' }}>FALTAS: {liveScore.faltasLocal}</span></div>
-          <div className="text-center"><span style={{ background: '#333', color: '#00FF00', padding: '10px 20px', borderRadius: '10px', fontSize: '24px', fontWeight: '900', fontFamily: 'Orbitron' }}>{liveScore.reloj}</span><h3 style={{ color: 'white', margin: '10px 0 0 0' }}>Q{liveScore.periodo}</h3></div>
+          <div className="text-center"><span style={{ background: '#333', color: '#00FF00', padding: '10px 20px', borderRadius: '10px', fontSize: '24px', fontWeight: '900', fontFamily: 'Orbitron' }}>{liveScore.reloj}</span><h3 style={{ color: 'white', margin: '10px 0 0 0' }}>{etiquetaPeriodo(liveScore.periodo)}</h3></div>
           <div className="text-center"><span style={{ color: '#aaa', fontSize: '14px', fontWeight: 'bold' }}>{liveScore.flecha === 'VISITA' && '▶'} VISITA</span><h1 style={{ color: 'white', margin: 0, fontSize: '60px', fontFamily: 'Orbitron' }}>{liveScore.ptsVisita}</h1><span style={{ color: '#FF3B30', fontSize: '12px', fontWeight: 'bold' }}>FALTAS: {liveScore.faltasVisita}</span></div>
           <button style={{ position: 'absolute', top: '10px', right: '10px', background: 'black', color: 'white', border: 'none', padding: '10px', borderRadius: '999px', cursor: 'pointer', opacity: 0.2 }} onClick={() => setModoChromaKey(false)}>Cerrar Modo TV</button>
         </div>
@@ -2461,7 +2476,7 @@ function MesaControlPanel({
             </div>
           )}
           <span style={{ fontSize: '16px', color: 'var(--verde-victoria)', fontWeight: '900', background: 'rgba(52,199,89,0.1)', padding: '8px 20px', borderRadius: '12px', border: '1px solid var(--verde-victoria)' }}>{liveScore.reloj}</span>
-          <h4 style={{ margin: '10px 0 0 0', color: 'white', fontSize: '18px' }}>Q{liveScore.periodo}</h4>
+          <h4 style={{ margin: '10px 0 0 0', color: 'white', fontSize: '18px' }}>{etiquetaPeriodo(liveScore.periodo)}</h4>
           {normalizarTexto(canchaSede) && (
             <span style={{ display: 'block', marginTop: '8px', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800' }}>
               {canchaSede}
@@ -2489,14 +2504,6 @@ function MesaControlPanel({
         <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsLocal: Math.max(0, liveScore.timeoutsLocal - 1) })}>TM Local</button>
         <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', background: 'var(--azul-marino)', color: 'white' }} onClick={() => setLiveScore({ ...liveScore, flecha: liveScore.flecha === 'LOCAL' ? 'VISITA' : 'LOCAL' })}><ArrowRightLeft size={16} color="#6B7280" strokeWidth={1.5} /></button>
         <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsVisita: Math.max(0, liveScore.timeoutsVisita - 1) })}>TM Visita</button>
-      </div>
-
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={alternarCronometro}>{cronometroActivo ? 'Pausar reloj' : 'Iniciar reloj'}</button>
-        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => ajustarRelojLive(60)}>+1:00</button>
-        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => ajustarRelojLive(-60)}>-1:00</button>
-        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => cambiarPeriodoLive(-1)}>Periodo -</button>
-        <button className="btn-secondary" style={{ width: 'auto' }} disabled={!partidoIniciado} onClick={() => cambiarPeriodoLive(1)}>Periodo +</button>
       </div>
 
       {cambioObligatorioJugadorId && (
@@ -2541,25 +2548,46 @@ function MesaControlPanel({
       <div className="caja-doble-grid landscape-mode">
         <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
           <h5 className="sub-caja-title">En Cancha (5) · Local</h5>
-          <div className="mesa-oncourt-grid">
+          <div className="mesa-oncourt-grid mesa-oncourt-grid-two-cols">
             {quintetoLocalEnCancha.map((j) => (
-              <button
-                key={`cancha-${j.id}`}
-                type="button"
-                title={`#${j.dorsal} ${j.nombre}`}
-                onClick={() => {
-                  if (j._bloqueado || j.flt >= 5) return;
-                  setJugadorSeleccionadoLive(j.id);
-                  setCambioSalidaId(j.id);
-                }}
-                className={`mesa-oncourt-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.flt >= 5 ? 'bloqueado' : ''}`}
-                style={{
-                  borderColor: jugadorSeleccionadoLive === j.id ? colorConAlpha(colorLocal, 'CC') : colorConAlpha(colorLocal, '55'),
-                  background: jugadorSeleccionadoLive === j.id ? colorConAlpha(colorLocal, '28') : 'rgba(255,255,255,0.03)',
-                }}
-              >
-                <span className="mesa-oncourt-dorsal" style={{ background: colorLocal, color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
-              </button>
+              <div key={`cancha-${j.id}`} className="mesa-oncourt-player-card">
+                <button
+                  type="button"
+                  title={`#${j.dorsal} ${j.nombre}`}
+                  onClick={() => {
+                    if (j._bloqueado || j.flt >= 5) return;
+                    setJugadorSeleccionadoLive(j.id);
+                    setCambioSalidaId(j.id);
+                  }}
+                  className={`mesa-oncourt-btn mesa-oncourt-main-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.flt >= 5 ? 'bloqueado' : ''}`}
+                  style={{
+                    borderColor: jugadorSeleccionadoLive === j.id ? colorConAlpha(colorLocal, 'CC') : colorConAlpha(colorLocal, '55'),
+                    background: jugadorSeleccionadoLive === j.id ? colorConAlpha(colorLocal, '28') : colorConAlpha(colorLocal, '14'),
+                  }}
+                >
+                  <span className="mesa-oncourt-dorsal" style={{ background: colorLocal, color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
+                </button>
+                <div className="mesa-oncourt-cambio-row">
+                  <select
+                    className="form-input"
+                    value={cambioIngresoPorSalida[j.id] || ''}
+                    onChange={(e) => setCambioIngresoPorSalida((prev) => ({ ...prev, [j.id]: e.target.value }))}
+                    disabled={!partidoIniciado || j._bloqueado || j.flt >= 5 || bancoLocal.length === 0}
+                  >
+                    <option value="">Entra...</option>
+                    {bancoLocal.filter((b) => !b._bloqueado && numero(b.flt) < 5).map((b) => (
+                      <option key={`ingreso-${j.id}-${b.id}`} value={b.id}>#{b.dorsal}</option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn-secondary"
+                    disabled={!partidoIniciado || !cambioIngresoPorSalida[j.id] || j._bloqueado || j.flt >= 5}
+                    onClick={() => ejecutarCambioJugadorLocal(j.id, cambioIngresoPorSalida[j.id])}
+                  >
+                    Cambiar
+                  </button>
+                </div>
+              </div>
             ))}
             {Array.from({ length: Math.max(0, 5 - quintetoLocalEnCancha.length) }).map((_, idx) => (
               <div key={`vacante-${idx}`} className="mesa-oncourt-btn mesa-oncourt-empty">
@@ -2591,6 +2619,18 @@ function MesaControlPanel({
         </div>
 
         <div className="card" style={{ padding: '20px', borderRadius: '24px' }}>
+          <div className="mesa-control-tiempo-card">
+            <h6>Control de Partido</h6>
+            <div className="mesa-control-tiempo-meta">{etiquetaPeriodo(liveScore.periodo)} · {liveScore.reloj}</div>
+            <div className="mesa-control-tiempo-grid">
+              <button className="btn-secondary" disabled={!partidoIniciado} onClick={alternarCronometro}>{cronometroActivo ? 'Pausar reloj' : 'Iniciar reloj'}</button>
+              <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => ajustarRelojLive(60)}>+1:00</button>
+              <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => ajustarRelojLive(-60)}>-1:00</button>
+              <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => cambiarPeriodoLive(-1)}>Periodo -</button>
+              <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => cambiarPeriodoLive(1)}>Periodo +</button>
+            </div>
+          </div>
+
           <h5 className="sub-caja-title text-center" style={{ color: jugadorSeleccionadoLive ? 'var(--verde-victoria)' : '#FF3B30' }}>
             {jugadorSeleccionadoLive ? 'Control de Acciones' : 'Seleccione Jugador'}
           </h5>
@@ -2623,21 +2663,6 @@ function MesaControlPanel({
               </div>
             </div>
           )}
-
-          <div className="mesa-visitor-actions">
-            <h6>Cambio de Jugador Local</h6>
-            <div className="mesa-visitor-actions-grid" style={{ gridTemplateColumns: '1fr 1fr 120px' }}>
-              <select className="form-input" value={cambioSalidaId} onChange={(e) => setCambioSalidaId(e.target.value)}>
-                <option value="">Sale...</option>
-                {quintetoLocalEnCancha.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
-              </select>
-              <select className="form-input" value={cambioIngresoId} onChange={(e) => setCambioIngresoId(e.target.value)}>
-                <option value="">Entra...</option>
-                {bancoLocal.map((j) => <option key={j.id} value={j.id}>#{j.dorsal} {j.nombre}</option>)}
-              </select>
-              <button className="btn-secondary" disabled={!partidoIniciado || !cambioSalidaId || !cambioIngresoId} onClick={ejecutarCambioJugadorLocal}>Cambiar</button>
-            </div>
-          </div>
 
           {modoAnalisis === 'dos' && (
             <div className="mesa-visitor-actions">
@@ -2768,7 +2793,7 @@ function MesaControlPanel({
             ) : (
               analisisPorPeriodo.map((q) => (
                 <div key={`periodo-${q.periodo}`} className="mesa-stats-row">
-                  <span>Q{q.periodo} · Ev {q.eventos} · Faltas {q.faltasLocal}/{q.faltasVisita}</span>
+                  <span>{etiquetaPeriodo(q.periodo)} · Ev {q.eventos} · Faltas {q.faltasLocal}/{q.faltasVisita}</span>
                   <strong>{q.ptsLocal} - {q.ptsVisita}</strong>
                 </div>
               ))
