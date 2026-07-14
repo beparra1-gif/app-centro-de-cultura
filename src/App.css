@@ -2148,8 +2148,8 @@ button,
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  min-height: 84px;
-  padding: 10px 8px;
+  min-height: 82px;
+  padding: 12px 10px;
   border-radius: 16px;
   border: 1px solid var(--borde-suave);
   background: rgba(255, 255, 255, 0.03);
@@ -2160,7 +2160,7 @@ button,
 }
 
 .mesa-oncourt-btn:hover {
-  transform: translateY(-1px);
+  transform: translateY(-1px) scale(1.01);
   box-shadow: 0 8px 16px rgba(0, 122, 255, 0.12);
 }
 
@@ -2182,15 +2182,16 @@ button,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 66px;
-  height: 46px;
+  min-width: 110px;
+  height: 52px;
   border-radius: 999px;
   padding: 0 16px;
-  font-size: 21px;
+  font-size: 1.5rem;
   font-weight: 900;
   color: #fff;
   background: var(--azul-electrico);
   font-family: 'Orbitron', monospace;
+  letter-spacing: .02em;
 }
 
 .mesa-cambio-obligatorio-overlay {
@@ -2231,20 +2232,21 @@ button,
 
 .mesa-banco-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
 }
 
 .mesa-banco-btn {
   display: flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 0;
   border: 1px solid var(--borde-suave);
   border-radius: 12px;
   background: var(--fondo-input);
   color: var(--texto-principal);
   min-height: 42px;
-  padding: 6px 8px;
+  padding: 8px 4px;
   cursor: pointer;
 }
 
@@ -2257,22 +2259,48 @@ button,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 34px;
-  height: 24px;
-  padding: 0 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0;
   border-radius: 999px;
   background: var(--azul-marino);
   color: #fff;
-  font-size: 11px;
+  font-size: 1.1rem;
   font-weight: 900;
+  letter-spacing: .01em;
 }
 
 .mesa-banco-nombre {
-  font-size: 12px;
+  display: none;
+}
+
+.mesa-tl-options-panel {
+  margin-top: 10px;
+  border: 1px solid #dbe3f0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
+  padding: 10px;
+}
+
+.mesa-tl-options-panel h6 {
+  margin: 0 0 8px 0;
+  font-size: .95rem;
+  color: #1e3a8a;
   font-weight: 800;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.mesa-tl-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.mesa-tl-options-grid .btn-secondary {
+  width: 100%;
+  margin: 0;
+  font-size: .83rem;
+  font-weight: 800;
+  padding: 8px 6px;
 }
 
 .mesa-team-preview {
