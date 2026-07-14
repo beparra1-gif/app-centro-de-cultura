@@ -17,6 +17,7 @@ import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
 import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
 import ApiStatusBanner from './components/ApiStatusBanner';
+import { cuentasDemo } from './data/demoAccounts';
 import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
@@ -918,6 +919,28 @@ function App() {
         iniciarSesionFinal(perfilDetectado, usuarioDetectado);
       }
     } catch (error) {
+      const rutIngresado = String(rutInput || '').trim().toLowerCase();
+      const passIngresada = String(passInput || '').trim();
+      const cuentaDemo = (cuentasDemo || []).find((cuenta) => {
+        const rutDemo = String(cuenta?.rut || '').trim().toLowerCase();
+        const correoDemo = String(cuenta?.correo || '').trim().toLowerCase();
+        const passDemo = String(cuenta?.password || '').trim();
+        return passDemo === passIngresada && (rutDemo === rutIngresado || correoDemo === rutIngresado);
+      });
+
+      const esEntornoLocal = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      if (esEntornoLocal && cuentaDemo) {
+        iniciarSesionFinal(cuentaDemo.perfil, {
+          id: `demo-${cuentaDemo.perfil}`,
+          nombre: cuentaDemo.etiqueta || cuentaDemo.perfil,
+          correo: cuentaDemo.correo || '',
+          rut: cuentaDemo.rut || '',
+          rol: cuentaDemo.perfil,
+          perfil_principal: cuentaDemo.perfil,
+          access_profiles: [cuentaDemo.perfil],
+        });
+        return;
+      }
       alert(error.message || 'No se pudo iniciar sesión. Revisa RUT y contraseña.');
     }
   };

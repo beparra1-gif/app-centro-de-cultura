@@ -2861,8 +2861,8 @@ function MesaControlPanel({
         </div>
       )}
 
-      <div className="caja-doble-grid landscape-mode">
-        <div className="card mesa-team-card" style={{ padding: '15px', borderRadius: '24px' }}>
+      <div className="caja-doble-grid landscape-mode mesa-live-layout-grid">
+        <div className="card mesa-team-card mesa-live-zone-local" style={{ padding: '15px', borderRadius: '24px' }}>
           <h5 className="sub-caja-title">Roster Local ({rosterLocal.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
           <div className="mesa-team-split-grid">
             <div className="mesa-team-col mesa-team-col-interior">
@@ -2944,7 +2944,7 @@ function MesaControlPanel({
         </div>
 
         {modoAnalisis === 'dos' && (
-          <div className="card mesa-team-card" style={{ padding: '15px', borderRadius: '24px' }}>
+          <div className="card mesa-team-card mesa-live-zone-visit" style={{ padding: '15px', borderRadius: '24px' }}>
             <h5 className="sub-caja-title">Roster Visita ({rosterVisita.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
             <div className="mesa-team-split-grid">
               <div className="mesa-team-col mesa-team-col-interior">
@@ -3001,7 +3001,7 @@ function MesaControlPanel({
           </div>
         )}
 
-        <div className="card" style={{ padding: '20px', borderRadius: '24px' }}>
+        <div className="card mesa-live-zone-center" style={{ padding: '20px', borderRadius: '24px' }}>
           <div className="mesa-control-tiempo-card">
             <h6>Control de Partido</h6>
             <div className="mesa-control-tiempo-meta">{etiquetaPeriodo(liveScore.periodo)} · {liveScore.reloj}</div>

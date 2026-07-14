@@ -2150,26 +2150,48 @@ button,
 
 .mesa-team-card {
   border: 1px solid var(--borde-suave);
+  background: linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.02) 100%);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.10);
 }
 
 .mesa-team-split-grid {
   display: grid;
-  grid-template-columns: 1fr 0.95fr;
+  grid-template-columns: minmax(0, 1.08fr) minmax(96px, 0.72fr);
   gap: 12px;
+  align-items: start;
 }
 
 .mesa-team-col {
   border: 1px solid var(--borde-suave);
-  border-radius: 14px;
-  padding: 10px;
+  border-radius: 18px;
+  padding: 12px;
 }
 
 .mesa-team-col-interior {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .mesa-team-col-exterior {
-  background: rgba(255, 255, 255, 0.015);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.mesa-live-layout-grid {
+  display: grid !important;
+  grid-template-columns: minmax(300px, 1fr) minmax(320px, 0.92fr) minmax(300px, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.mesa-live-zone-local {
+  grid-column: 1;
+}
+
+.mesa-live-zone-center {
+  grid-column: 2;
+}
+
+.mesa-live-zone-visit {
+  grid-column: 3;
 }
 
 .mesa-oncourt-player-card {
@@ -2197,6 +2219,7 @@ button,
   width: 100%;
   border-width: 2px;
   box-shadow: none;
+  border-radius: 18px;
 }
 
 .mesa-oncourt-btn:hover {
@@ -2242,6 +2265,7 @@ button,
   height: auto;
   padding: 0;
   font-size: 1.45rem;
+  letter-spacing: 0.01em;
 }
 
 .mesa-oncourt-cambio-row {
@@ -2254,6 +2278,10 @@ button,
 .mesa-oncourt-cambio-row .btn-secondary {
   margin: 0;
   width: 100%;
+}
+
+.mesa-oncourt-cambio-row .btn-secondary {
+  min-height: 40px;
 }
 
 .mesa-cambio-obligatorio-overlay {
@@ -2303,12 +2331,12 @@ button,
   align-items: center;
   justify-content: center;
   gap: 0;
-  border: 1px solid var(--borde-suave);
-  border-radius: 12px;
+  border: 1px solid transparent;
+  border-radius: 16px;
   background: var(--fondo-input);
   color: var(--texto-principal);
-  min-height: 42px;
-  padding: 8px 4px;
+  min-height: 48px;
+  padding: 10px 6px;
   cursor: pointer;
 }
 
@@ -2335,6 +2363,10 @@ button,
 .mesa-banco-dorsal-flat {
   background: transparent !important;
   box-shadow: none !important;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  font-size: 1.2rem;
 }
 
 .mesa-banco-nombre {
@@ -2372,9 +2404,9 @@ button,
 
 .mesa-control-tiempo-card {
   margin-bottom: 12px;
-  padding: 10px;
+  padding: 12px;
   border: 1px solid var(--borde-suave);
-  border-radius: 14px;
+  border-radius: 18px;
   background: rgba(0, 122, 255, 0.06);
 }
 
@@ -2405,6 +2437,14 @@ button,
 .mesa-control-tiempo-grid .btn-secondary {
   width: 100%;
   margin: 0;
+}
+
+.mesa-live-zone-center .fiba-botones-grid {
+  margin-top: 10px;
+}
+
+.mesa-live-zone-center .mesa-visitor-actions {
+  margin-top: 14px;
 }
 
 .mesa-team-preview {
@@ -2684,6 +2724,45 @@ button,
   align-items: start;
 }
 
+@media (min-width: 768px) and (max-width: 1199px) {
+  .fiba-container .mesa-live-layout-grid {
+    grid-template-columns: minmax(280px, 1fr) minmax(300px, 0.95fr) minmax(280px, 1fr) !important;
+    gap: 12px;
+  }
+
+  .fiba-container .mesa-live-zone-local,
+  .fiba-container .mesa-live-zone-center,
+  .fiba-container .mesa-live-zone-visit {
+    min-width: 0;
+  }
+
+  .fiba-container .mesa-team-split-grid {
+    grid-template-columns: minmax(0, 1fr) 96px;
+    gap: 10px;
+  }
+
+  .fiba-container .mesa-oncourt-grid-two-cols {
+    gap: 10px;
+  }
+
+  .fiba-container .mesa-oncourt-btn {
+    min-height: 74px;
+    padding: 10px 8px;
+  }
+
+  .fiba-container .mesa-oncourt-dorsal-flat {
+    font-size: 1.28rem;
+  }
+
+  .fiba-container .mesa-banco-btn {
+    min-height: 44px;
+  }
+
+  .fiba-container .mesa-control-tiempo-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 @media (max-width: 1199px) {
   .fiba-container .checkout-total-box {
     gap: 6px;
@@ -2739,6 +2818,16 @@ button,
 
   .mesa-color-picker-pop {
     flex-wrap: wrap;
+  }
+
+  .mesa-live-layout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mesa-live-zone-local,
+  .mesa-live-zone-center,
+  .mesa-live-zone-visit {
+    grid-column: auto;
   }
 
   .mesa-oncourt-grid {
