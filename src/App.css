@@ -2140,7 +2140,7 @@ button,
 .mesa-oncourt-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 
 .mesa-oncourt-btn {
@@ -2148,9 +2148,9 @@ button,
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  min-height: 62px;
-  padding: 8px 6px;
-  border-radius: 14px;
+  min-height: 84px;
+  padding: 10px 8px;
+  border-radius: 16px;
   border: 1px solid var(--borde-suave);
   background: rgba(255, 255, 255, 0.03);
   color: var(--texto-principal);
@@ -2182,15 +2182,35 @@ button,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 50px;
-  height: 34px;
+  min-width: 66px;
+  height: 46px;
   border-radius: 999px;
-  padding: 0 12px;
-  font-size: 15px;
+  padding: 0 16px;
+  font-size: 21px;
   font-weight: 900;
   color: #fff;
   background: var(--azul-electrico);
   font-family: 'Orbitron', monospace;
+}
+
+.mesa-cambio-obligatorio-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 14, 22, 0.66);
+  backdrop-filter: blur(2px);
+}
+
+.mesa-cambio-obligatorio-card {
+  width: min(560px, calc(100vw - 24px));
+  border-radius: 18px;
+  border: 1px solid rgba(255, 59, 48, 0.42);
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(255,248,248,0.97) 100%);
+  padding: 16px;
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.2);
 }
 
 .mesa-oncourt-btn strong {
@@ -2598,7 +2618,13 @@ button,
   }
 
   .mesa-oncourt-btn {
-    min-height: 58px;
+    min-height: 74px;
+  }
+
+  .mesa-oncourt-dorsal {
+    min-width: 58px;
+    height: 42px;
+    font-size: 18px;
   }
 }
 

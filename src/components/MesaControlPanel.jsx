@@ -341,6 +341,8 @@ function MesaControlPanel({
   const [forzarPantallaCompletaLive, setForzarPantallaCompletaLive] = useState(true);
   const [cronometroActivo, setCronometroActivo] = useState(false);
   const [cambioObligatorioJugadorId, setCambioObligatorioJugadorId] = useState(null);
+  const [mostrarModalCambioObligatorio, setMostrarModalCambioObligatorio] = useState(false);
+  const [jugadorVisitaSeleccionadoId, setJugadorVisitaSeleccionadoId] = useState('');
   const [jugadorAnalisisId, setJugadorAnalisisId] = useState('');
   const liveFullScreenRef = useRef(null);
 
@@ -1180,6 +1182,18 @@ function MesaControlPanel({
     [rosterLocal, quintetoLocalIds]
   );
 
+  const quintetoVisitaEnCancha = useMemo(() => {
+    const mapa = new Map(rosterVisita.map((j) => [String(j.id), j]));
+    return quintetoVisitaIds
+      .map((id) => mapa.get(String(id)))
+      .filter(Boolean);
+  }, [rosterVisita, quintetoVisitaIds]);
+
+  const jugadorCambioObligatorio = useMemo(
+    () => rosterLocalCompleto.find((j) => String(j.id) === String(cambioObligatorioJugadorId)) || null,
+    [rosterLocalCompleto, cambioObligatorioJugadorId]
+  );
+
   const registrarEventoJuego = ({ tipo, detalle, equipo = 'local', jugadorId = null, valor = 0 }) => {
     const operadorNombre = normalizarTexto(operadoresMesa[rolOperadorActivo]) || 'Operador sin nombre';
     const rosterBase = equipo === 'visita' ? rosterVisitaCompleto : rosterLocalCompleto;
@@ -1224,6 +1238,20 @@ function MesaControlPanel({
     setCambioSalidaId('');
     setCambioIngresoId('');
   };
+
+  const confirmarCambioObligatorio = () => {
+    if (!cambioSalidaId || !cambioIngresoId) {
+      alert('Selecciona quién sale y quién entra para confirmar el cambio obligatorio.');
+      return;
+    }
+    ejecutarCambioJugadorLocal();
+  };
+
+  useEffect(() => {
+    if (cambioObligatorioJugadorId) return;
+    if (!mostrarModalCambioObligatorio) return;
+    setMostrarModalCambioObligatorio(false);
+  }, [cambioObligatorioJugadorId, mostrarModalCambioObligatorio]);
 
   const cambiarVistaLivePantallaCompleta = async () => {
     const node = liveFullScreenRef.current;
@@ -1349,6 +1377,10 @@ function MesaControlPanel({
     if (expulsionNombre) {
       setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `⚠ ${expulsionNombre} llega a 5 faltas y debe salir.` }, ...prev]);
       setCambioObligatorioJugadorId(jugadorSeleccionadoLive);
+      setCambioSalidaId(String(jugadorSeleccionadoLive));
+      const primerIngresoValido = bancoLocal.find((j) => !j._bloqueado && numero(j.flt) < 5);
+      setCambioIngresoId(primerIngresoValido ? String(primerIngresoValido.id) : '');
+      setMostrarModalCambioObligatorio(true);
       alert(`${expulsionNombre} llegó a 5 faltas. Cambio obligatorio inmediato.`);
     }
     if (!expulsionNombre) setJugadorSeleccionadoLive(null);
@@ -1424,24 +1456,30 @@ function MesaControlPanel({
     }
   };
 
-  const registrarPuntosVisita = (puntos = 1) => {
+  const registrarPuntosVisita = (puntos = 1, jugadorId = '') => {
     if (!partidoIniciado) return;
     if (modoAnalisis !== 'dos') return;
     const nombreEquipo = equipoVisita?.nombre || liveScore.equipoVisitaNombre || 'Visita';
+    const rosterBase = quintetoVisitaEnCancha.length > 0 ? quintetoVisitaEnCancha : rosterVisita;
+    const jugador = rosterBase.find((j) => String(j.id) === String(jugadorId)) || null;
+    const actor = jugador ? `#${jugador.dorsal} ${jugador.nombre}` : nombreEquipo;
     setLiveScore((prev) => ({ ...prev, ptsVisita: prev.ptsVisita + puntos }));
-    const detalle = `${nombreEquipo} anota ${puntos} pts`;
+    const detalle = `${actor} anota ${puntos} pts (${nombreEquipo})`;
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalle }, ...prev]);
-    registrarEventoJuego({ tipo: 'PUNTO', detalle, equipo: 'visita', valor: puntos });
+    registrarEventoJuego({ tipo: 'PUNTO', detalle, equipo: 'visita', jugadorId: jugador?.id || null, valor: puntos });
   };
 
-  const registrarFaltaVisita = () => {
+  const registrarFaltaVisita = (jugadorId = '') => {
     if (!partidoIniciado) return;
     if (modoAnalisis !== 'dos') return;
     const nombreEquipo = equipoVisita?.nombre || liveScore.equipoVisitaNombre || 'Visita';
+    const rosterBase = quintetoVisitaEnCancha.length > 0 ? quintetoVisitaEnCancha : rosterVisita;
+    const jugador = rosterBase.find((j) => String(j.id) === String(jugadorId)) || null;
+    const actor = jugador ? `#${jugador.dorsal} ${jugador.nombre}` : nombreEquipo;
     setLiveScore((prev) => ({ ...prev, faltasVisita: prev.faltasVisita + 1 }));
-    const detalle = `${nombreEquipo} registra FALTA`;
+    const detalle = `${actor} comete FALTA (${nombreEquipo})`;
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalle }, ...prev]);
-    registrarEventoJuego({ tipo: 'FALTA', detalle, equipo: 'visita' });
+    registrarEventoJuego({ tipo: 'FALTA', detalle, equipo: 'visita', jugadorId: jugador?.id || null });
   };
 
   const topEficienciaLocal = useMemo(
@@ -2449,6 +2487,30 @@ function MesaControlPanel({
         </div>
       )}
 
+      {mostrarModalCambioObligatorio && jugadorCambioObligatorio && (
+        <div className="mesa-cambio-obligatorio-overlay">
+          <div className="mesa-cambio-obligatorio-card">
+            <h5 style={{ margin: 0, color: '#FF3B30' }}>Cambio Obligatorio</h5>
+            <p style={{ margin: '8px 0 0 0' }}>
+              #{jugadorCambioObligatorio.dorsal} {jugadorCambioObligatorio.nombre} acumula 5 faltas y debe salir.
+            </p>
+            <label className="mesa-filter-item" style={{ marginTop: '8px' }}>
+              <span>Jugadora/o que reemplaza</span>
+              <select className="form-input" value={cambioIngresoId} onChange={(e) => setCambioIngresoId(e.target.value)}>
+                <option value="">Seleccionar ingreso...</option>
+                {bancoLocal.filter((j) => !j._bloqueado && numero(j.flt) < 5).map((j) => (
+                  <option key={`reemplazo-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
+                ))}
+              </select>
+            </label>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' }}>
+              <button className="btn-secondary" style={{ width: 'auto' }} onClick={confirmarCambioObligatorio}>Confirmar cambio</button>
+              <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => setMostrarModalCambioObligatorio(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="caja-doble-grid landscape-mode">
         <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
           <h5 className="sub-caja-title">En Cancha (5) · Local</h5>
@@ -2539,11 +2601,17 @@ function MesaControlPanel({
           {modoAnalisis === 'dos' && (
             <div className="mesa-visitor-actions">
               <h6>Acciones Rápidas Visita</h6>
+              <select className="form-input" style={{ marginBottom: '8px' }} value={jugadorVisitaSeleccionadoId} onChange={(e) => setJugadorVisitaSeleccionadoId(e.target.value)}>
+                <option value="">Seleccionar jugadora/or visita...</option>
+                {(quintetoVisitaEnCancha.length > 0 ? quintetoVisitaEnCancha : rosterVisita).map((j) => (
+                  <option key={`sel-vis-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
+                ))}
+              </select>
               <div className="mesa-visitor-actions-grid">
-                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(1)}>Visita +1</button>
-                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(2)}>Visita +2</button>
-                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(3)}>Visita +3</button>
-                <button className="btn-secondary" disabled={!partidoIniciado} onClick={registrarFaltaVisita}>Falta Visita</button>
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(1, jugadorVisitaSeleccionadoId)}>Visita +1</button>
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(2, jugadorVisitaSeleccionadoId)}>Visita +2</button>
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(3, jugadorVisitaSeleccionadoId)}>Visita +3</button>
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarFaltaVisita(jugadorVisitaSeleccionadoId)}>Falta Visita</button>
               </div>
             </div>
           )}
