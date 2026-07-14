@@ -29,6 +29,12 @@ const segundosAReloj = (total = 0) => {
   return `${String(minutos).padStart(2, '0')}:${String(segundos).padStart(2, '0')}`;
 };
 
+const relojAInstantePartido = (periodo = 1, reloj = '10:00') => {
+  const q = Math.max(1, Number(periodo || 1));
+  const segundosRestantes = relojASegundos(reloj || '10:00');
+  return ((q - 1) * 600) + (600 - segundosRestantes);
+};
+
 const formatoPct = (convertidos = 0, intentos = 0) => {
   const att = Number(intentos || 0);
   const made = Number(convertidos || 0);
@@ -1491,14 +1497,80 @@ function MesaControlPanel({
     eventosPartido.forEach((evento) => {
       if (!Array.isArray(evento.quintetoLocalSnapshot) || evento.quintetoLocalSnapshot.length === 0) return;
       const key = evento.quintetoLocalSnapshot.map((id) => String(id)).sort().join('|');
-      const actual = mapa.get(key) || { key, eventos: 0, puntos: 0, faltas: 0 };
+      const actual = mapa.get(key) || {
+        key,
+        eventos: 0,
+        puntos: 0,
+        faltas: 0,
+        puntosContra: 0,
+        posesionesFor: 0,
+        posesionesAgainst: 0,
+      };
       actual.eventos += 1;
-      if (evento.tipo === 'PUNTO' && evento.equipo !== 'visita') actual.puntos += Number(evento.valor || 0);
+      if (evento.tipo === 'PUNTO' && evento.equipo !== 'visita') {
+        actual.puntos += Number(evento.valor || 0);
+        actual.posesionesFor += 1;
+      }
+      if (evento.tipo === 'PUNTO' && evento.equipo === 'visita') {
+        actual.puntosContra += Number(evento.valor || 0);
+        actual.posesionesAgainst += 1;
+      }
       if (evento.tipo === 'FALTA' && evento.equipo !== 'visita') actual.faltas += 1;
+      if (evento.tipo === 'PERDIDA' && evento.equipo !== 'visita') actual.posesionesFor += 1;
+      if (evento.tipo === 'PERDIDA' && evento.equipo === 'visita') actual.posesionesAgainst += 1;
       mapa.set(key, actual);
     });
-    return Array.from(mapa.values()).sort((a, b) => b.puntos - a.puntos).slice(0, 5);
+    return Array.from(mapa.values())
+      .map((item) => {
+        const ortg = item.posesionesFor > 0 ? ((item.puntos / item.posesionesFor) * 100) : 0;
+        const drtg = item.posesionesAgainst > 0 ? ((item.puntosContra / item.posesionesAgainst) * 100) : 0;
+        return {
+          ...item,
+          ortg,
+          drtg,
+          netRating: ortg - drtg,
+        };
+      })
+      .sort((a, b) => b.netRating - a.netRating)
+      .slice(0, 5);
   }, [eventosPartido]);
+
+  const alertasRiesgoLive = useMemo(() => {
+    if (!partidoIniciado) return [];
+    const ahora = relojAInstantePartido(liveScore.periodo || 1, liveScore.reloj || '10:00');
+    const ventanaInicio = Math.max(0, ahora - 120);
+    const eventosRecientes = eventosPartido.filter((evento) => {
+      if (!evento?.jugadorId || evento.equipo === 'visita') return false;
+      const instante = relojAInstantePartido(evento.periodo || 1, evento.reloj || '10:00');
+      return instante >= ventanaInicio && instante <= ahora;
+    });
+
+    const cargaRecientePorJugador = new Map();
+    eventosRecientes.forEach((evento) => {
+      const key = String(evento.jugadorId);
+      cargaRecientePorJugador.set(key, (cargaRecientePorJugador.get(key) || 0) + 1);
+    });
+
+    const alertas = [];
+    rosterLocal.forEach((jugador) => {
+      const cargaReciente = cargaRecientePorJugador.get(String(jugador.id)) || 0;
+      if (numero(jugador.flt) >= 4) {
+        alertas.push({
+          tipo: 'faltas',
+          severidad: numero(jugador.flt) >= 5 ? 'critica' : 'alta',
+          texto: `⚠ #${jugador.dorsal} ${jugador.nombre} con ${numero(jugador.flt)} faltas.`,
+        });
+      }
+      if (quintetoLocalIds.includes(jugador.id) && cargaReciente >= 4) {
+        alertas.push({
+          tipo: 'fatiga',
+          severidad: 'media',
+          texto: `⏱ Alta carga reciente: #${jugador.dorsal} ${jugador.nombre} (${cargaReciente} acciones en 2:00).`,
+        });
+      }
+    });
+    return alertas;
+  }, [partidoIniciado, liveScore.periodo, liveScore.reloj, eventosPartido, rosterLocal, quintetoLocalIds]);
 
   const jugadoresAnaliticaLocal = useMemo(
     () => [...rosterLocal].sort((a, b) => calcularEff(b) - calcularEff(a)),
@@ -1523,6 +1595,7 @@ function MesaControlPanel({
       operadorRol: rolOperadorActivo,
       operadorNombre,
       createdAt: new Date().toISOString(),
+      quintetoLocalSnapshot: [...quintetoLocalIds],
     };
     setEventosPartido((prev) => [evento, ...prev].slice(0, 300));
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `${tipo}: ${detalle} · ${operadorNombre}` }, ...prev]);
@@ -2367,6 +2440,15 @@ function MesaControlPanel({
         </div>
       )}
 
+      {alertasRiesgoLive.length > 0 && (
+        <div className="card mb-15" style={{ borderRadius: '14px', border: '1px solid rgba(255,149,0,0.5)', background: 'rgba(255,149,0,0.08)' }}>
+          <strong>Alertas automáticas en vivo</strong>
+          {alertasRiesgoLive.slice(0, 5).map((alerta, idx) => (
+            <p key={`alerta-live-${idx}`} style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>{alerta.texto}</p>
+          ))}
+        </div>
+      )}
+
       <div className="caja-doble-grid landscape-mode">
         <div className="card" style={{ padding: '15px', borderRadius: '24px' }}>
           <h5 className="sub-caja-title">En Cancha (5) · Local</h5>
@@ -2599,8 +2681,8 @@ function MesaControlPanel({
             ) : (
               impactoQuintetos.map((item, idx) => (
                 <div key={`lineup-${item.key}-${idx}`} className="mesa-stats-row">
-                  <span>#{idx + 1} · Ev {item.eventos} · F {item.faltas}</span>
-                  <strong>{item.puntos} pts</strong>
+                  <span>#{idx + 1} · Ev {item.eventos} · F {item.faltas} · PF/PC {item.puntos}/{item.puntosContra}</span>
+                  <strong>ORtg {item.ortg.toFixed(1)} · DRtg {item.drtg.toFixed(1)} · Net {item.netRating > 0 ? '+' : ''}{item.netRating.toFixed(1)}</strong>
                 </div>
               ))
             )}
