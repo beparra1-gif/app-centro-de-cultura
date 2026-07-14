@@ -2130,6 +2130,7 @@ function MesaControlPanel({
               <button
                 key={`cancha-${j.id}`}
                 type="button"
+                title={`#${j.dorsal} ${j.nombre}`}
                 onClick={() => {
                   if (j._bloqueado || j.flt >= 5) return;
                   setJugadorSeleccionadoLive(j.id);
@@ -2142,15 +2143,11 @@ function MesaControlPanel({
                 }}
               >
                 <span className="mesa-oncourt-dorsal" style={{ background: colorLocal }}>#{j.dorsal}</span>
-                <strong>{j.nombre}</strong>
-                <span>{j.pts} pts | {j.flt} F | EFF {calcularEff(j)}</span>
               </button>
             ))}
             {Array.from({ length: Math.max(0, 5 - quintetoLocalEnCancha.length) }).map((_, idx) => (
               <div key={`vacante-${idx}`} className="mesa-oncourt-btn mesa-oncourt-empty">
                 <span className="mesa-oncourt-dorsal">--</span>
-                <strong>Vacante</strong>
-                <span>Completa quinteto</span>
               </div>
             ))}
           </div>
