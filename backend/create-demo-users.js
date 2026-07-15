@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 require('dotenv').config();
+const { hashPassword } = require('./security/auth');
 
 const rawDatabaseUrl = String(process.env.DATABASE_URL || '');
 const safeDatabaseUrl = rawDatabaseUrl.includes('sslmode=require')
@@ -90,6 +91,7 @@ const cuentasDemo = [
 async function run() {
   try {
     for (const cuenta of cuentasDemo) {
+      const passwordHash = await hashPassword(cuenta.password);
       await pool.query(
         `INSERT INTO cuentas (
           correo, rut, password, nombres, apellido_paterno, rol, estado,
@@ -107,7 +109,7 @@ async function run() {
         [
           cuenta.correo,
           cuenta.rut,
-          cuenta.password,
+          passwordHash,
           cuenta.nombres,
           cuenta.apellido_paterno,
           cuenta.rol,

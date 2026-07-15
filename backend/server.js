@@ -14,6 +14,18 @@ const cron = require('node-cron');
 const { runImportFromSheets } = require('./import-google-sheets');
 const { createSheetsSyncManager } = require('./google-sheets-sync');
 const { createSheetsWebhookSyncManager } = require('./google-sheets-webhook-sync');
+const rateLimit = require('express-rate-limit');
+const {
+  hashPassword,
+  verifyPassword,
+  signToken,
+  authenticate,
+  requireRole,
+  requireModule,
+  requireAnyModule,
+  requireOwnerIdOrModule,
+  stripFieldsUnlessModule,
+} = require('./security/auth');
 
 const app = express();
 let isSheetsSyncRunning = false;
@@ -59,6 +71,7 @@ const getBackupConfig = () => {
   const manifestPath = resolveRuntimePath(String(process.env.BACKUP_MANIFEST_PATH || path.join(backupDir, 'backup-manifest.json')));
   const cronExpr = String(process.env.BACKUP_CRON || '0 */6 * * *').trim();
   const keepDays = Number(process.env.BACKUP_KEEP_DAYS || 7);
+  const keepMaxFiles = Number(process.env.BACKUP_KEEP_MAX_FILES || 48);
   const runOnStart = String(process.env.BACKUP_RUN_ON_START || 'true').toLowerCase() === 'true';
   const enabled = String(process.env.BACKUP_ENABLED || 'true').toLowerCase() === 'true';
   const allowJsonFallback = String(process.env.BACKUP_ALLOW_JSON_FALLBACK || 'true').toLowerCase() === 'true';
@@ -69,6 +82,7 @@ const getBackupConfig = () => {
     manifestPath,
     cronExpr,
     keepDays: Number.isFinite(keepDays) && keepDays > 0 ? keepDays : 7,
+    keepMaxFiles: Number.isFinite(keepMaxFiles) && keepMaxFiles > 0 ? keepMaxFiles : 48,
     runOnStart,
     allowJsonFallback,
   };
@@ -176,10 +190,16 @@ const writeBackupManifest = ({ manifestPath, payload }) => {
   fs.writeFileSync(manifestPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 };
 
-const cleanupOldBackups = ({ backupDir, keepDays }) => {
-  if (!fs.existsSync(backupDir)) return 0;
+const cleanupOldBackups = ({ backupDir, manifestPath, keepDays, keepMaxFiles }) => {
+  if (!fs.existsSync(backupDir)) {
+    return { totalRemoved: 0, removedByAge: 0, removedByCount: 0 };
+  }
+
   const thresholdMs = Date.now() - keepDays * 24 * 60 * 60 * 1000;
-  let removed = 0;
+  const manifestName = path.basename(manifestPath || '');
+  let removedByAge = 0;
+  let removedByCount = 0;
+  const retainedFiles = [];
 
   for (const name of fs.readdirSync(backupDir)) {
     const fullPath = path.join(backupDir, name);
@@ -187,16 +207,38 @@ const cleanupOldBackups = ({ backupDir, keepDays }) => {
       const stat = fs.statSync(fullPath);
       if (!stat.isFile()) continue;
       if (!/\.(sql|dump|backup|bak|gz|json)$/i.test(name)) continue;
+      if (manifestName && name === manifestName) continue;
       if (stat.mtimeMs < thresholdMs) {
         fs.unlinkSync(fullPath);
-        removed += 1;
+        removedByAge += 1;
+        continue;
       }
+
+      retainedFiles.push({ fullPath, stat });
     } catch {
       // Ignorar archivos bloqueados o removidos concurrentemente.
     }
   }
 
-  return removed;
+  if (keepMaxFiles > 0 && retainedFiles.length > keepMaxFiles) {
+    retainedFiles
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs)
+      .slice(keepMaxFiles)
+      .forEach(({ fullPath }) => {
+        try {
+          fs.unlinkSync(fullPath);
+          removedByCount += 1;
+        } catch {
+          // Ignorar archivos bloqueados o removidos concurrentemente.
+        }
+      });
+  }
+
+  return {
+    totalRemoved: removedByAge + removedByCount,
+    removedByAge,
+    removedByCount,
+  };
 };
 
 const runPgDumpBackup = async ({ databaseUrl, outputFile }) => {
@@ -288,7 +330,12 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
     }
 
     const stat = fs.statSync(outputPath);
-    const removedFiles = cleanupOldBackups({ backupDir: cfg.backupDir, keepDays: cfg.keepDays });
+    const removedFiles = cleanupOldBackups({
+      backupDir: cfg.backupDir,
+      manifestPath: cfg.manifestPath,
+      keepDays: cfg.keepDays,
+      keepMaxFiles: cfg.keepMaxFiles,
+    });
     let upload = null;
 
     try {
@@ -318,7 +365,10 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
       trigger,
       sizeBytes: stat.size,
       keepDays: cfg.keepDays,
-      cleanedOldFiles: removedFiles,
+      keepMaxFiles: cfg.keepMaxFiles,
+      cleanedOldFiles: removedFiles.totalRemoved,
+      cleanedOldFilesByAge: removedFiles.removedByAge,
+      cleanedOldFilesByCount: removedFiles.removedByCount,
       upload,
       status: 'ok',
     };
@@ -405,7 +455,7 @@ const scheduleAutomaticBackups = () => {
     }
   });
 
-  console.log(`[BACKUP] Programado con cron '${cfg.cronExpr}' (retención ${cfg.keepDays} días).`);
+  console.log(`[BACKUP] Programado con cron '${cfg.cronExpr}' (retención ${cfg.keepDays} días, máximo ${cfg.keepMaxFiles} archivos).`);
 
   if (cfg.runOnStart) {
     runDatabaseBackup({ trigger: 'startup' })
@@ -480,7 +530,18 @@ const normalizarRolSistema = (rol = '') => {
   return raw;
 };
 
+// Preferir el actor verificado por JWT (req.actor, seteado por el middleware
+// authenticate); los headers x-user-* solo quedan como respaldo informativo
+// para trazabilidad en rutas sin sesión (no deben usarse para autorizar).
 const obtenerActorRequest = (req) => {
+  if (req.actor) {
+    return {
+      id: req.actor.id == null ? null : String(req.actor.id).trim(),
+      rut: normalizarRut(String(req.actor.rut || '')),
+      rol: req.actor.rol,
+    };
+  }
+
   const idHeader = req.headers['x-user-id'];
   const rutHeader = req.headers['x-user-rut'];
   const rolHeader = req.headers['x-user-role'];
@@ -490,15 +551,6 @@ const obtenerActorRequest = (req) => {
     rut: normalizarRut(String(rutHeader || '')),
     rol: normalizarRolSistema(rolHeader),
   };
-};
-
-const exigirSuperAdmin = (req, res) => {
-  const actor = obtenerActorRequest(req);
-  if (actor.rol !== 'super_admin') {
-    res.status(403).json({ error: 'Solo super admin puede ejecutar esta acción.' });
-    return null;
-  }
-  return actor;
 };
 
 const quoteIdent = (ident = '') => `"${String(ident || '').replace(/"/g, '""')}"`;
@@ -576,12 +628,24 @@ const normalizarEstadoPagoMensualidad = (estado) => {
 };
 
 // ========== MIDDLEWARE ==========
+const DEV_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+const configuredFrontendUrl = normalizeEnvValue(process.env.FRONTEND_URL || '');
+const allowedOrigins = new Set([...DEV_ORIGINS, ...(configuredFrontendUrl ? [configuredFrontendUrl] : [])]);
+
 app.use(cors({
-  origin: '*', // Permitir todos en desarrollo
+  origin: (origin, callback) => {
+    // Sin header Origin (curl, health checks del propio server) o allowlisted: permitir.
+    if (!origin || allowedOrigins.has(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Origen no permitido por CORS.'));
+  },
   credentials: false
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// 15mb: /api/pagos* acepta comprobantes de pago como base64 en el body JSON
+// (PagoForm.jsx no comprime ni limita el archivo antes de enviarlo).
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ limit: '15mb', extended: true }));
 
 app.use((req, res, next) => {
   const shouldTrack = MUTATING_METHODS.has(String(req.method || '').toUpperCase());
@@ -681,7 +745,7 @@ const uploadLogoMemoria = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-app.post('/api/assets/logos', uploadLogo.single('archivo'), (req, res) => {
+app.post('/api/assets/logos', authenticate, requireModule('admin_dashboard'), uploadLogo.single('archivo'), (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'Debes seleccionar un archivo de logo.' });
     return;
@@ -713,7 +777,7 @@ app.get('/api/assets/logos/list', (req, res) => {
   }
 });
 
-app.delete('/api/assets/logos/:filename', (req, res) => {
+app.delete('/api/assets/logos/:filename', authenticate, requireModule('admin_dashboard'), (req, res) => {
   try {
     const rawFilename = decodeURIComponent(String(req.params.filename || '')).trim();
     const safeFilename = path.basename(rawFilename);
@@ -799,6 +863,12 @@ const formatearRut = (rut = '') => {
   return `${cuerpo}-${dv}`;
 };
 
+const omitPassword = (cuenta = {}) => {
+  const resto = { ...cuenta };
+  delete resto.password;
+  return resto;
+};
+
 const construirCorreoPlaceholderDesdeRut = (rutNormalizado = '') => {
   const limpio = String(rutNormalizado || '').trim().toLowerCase();
   return `${limpio || 'sin-rut'}@actualizar.local`;
@@ -837,6 +907,7 @@ const obtenerCuentaPorRutNormalizado = async (rutNormalizado) => {
 
 const provisionarCuentaJugadorSiCorresponde = async ({ rutNormalizado, password }) => {
   if (String(password || '') !== '12345') return null;
+  const passwordHashDefault = await hashPassword('12345');
 
   const jugadorRes = await pool.query(
     `SELECT rut_jugador, nombres, apellido_paterno, estado
@@ -867,11 +938,11 @@ const provisionarCuentaJugadorSiCorresponde = async ({ rutNormalizado, password 
            rol = COALESCE(rol, 'jugador'),
            perfil_principal = COALESCE(perfil_principal, 'jugador'),
            estado = COALESCE(estado, 'activo'),
-           password = CASE WHEN COALESCE(NULLIF(password, ''), '') = '' THEN '12345' ELSE password END,
+           password = CASE WHEN COALESCE(NULLIF(password, ''), '') = '' THEN $4 ELSE password END,
            forzar_clave = CASE WHEN COALESCE(NULLIF(password, ''), '') = '' THEN true ELSE COALESCE(forzar_clave, false) END,
            updated_at = NOW()
        WHERE id = $3`,
-      [jugador.nombres || null, jugador.apellido_paterno || null, existente.id]
+      [jugador.nombres || null, jugador.apellido_paterno || null, existente.id, passwordHashDefault]
     );
     return await obtenerCuentaPorRutNormalizado(rutNormalizado);
   }
@@ -883,7 +954,7 @@ const provisionarCuentaJugadorSiCorresponde = async ({ rutNormalizado, password 
       ) VALUES (
         $1, $2, $3, $4, $5, 'jugador', 'jugador', 'activo', true, false
       )`,
-      [correoPlaceholder, rutFormateado, '12345', jugador.nombres || null, jugador.apellido_paterno || null]
+      [correoPlaceholder, rutFormateado, passwordHashDefault, jugador.nombres || null, jugador.apellido_paterno || null]
     );
   } else {
     await pool.query(
@@ -892,7 +963,7 @@ const provisionarCuentaJugadorSiCorresponde = async ({ rutNormalizado, password 
       ) VALUES (
         $1, $2, $3, $4, $5, 'jugador', 'jugador', 'activo', true
       )`,
-      [correoPlaceholder, rutFormateado, '12345', jugador.nombres || null, jugador.apellido_paterno || null]
+      [correoPlaceholder, rutFormateado, passwordHashDefault, jugador.nombres || null, jugador.apellido_paterno || null]
     );
   }
 
@@ -1157,7 +1228,7 @@ const obtenerDetalleCalidadDatos = async () => {
     const campos = [];
     if (!String(jugador.nombres || '').trim()) campos.push('nombres');
     if (!String(jugador.rut_jugador || '').trim()) campos.push('rut_jugador');
-    if (Boolean(jugador.rut_invalido)) campos.push('rut_valido');
+    if (jugador.rut_invalido) campos.push('rut_valido');
     if (!String(jugador.rama || '').trim()) campos.push('rama');
     if (!String(jugador.categoria || '').trim()) campos.push('categoria');
 
@@ -1251,6 +1322,7 @@ const ensureSuperAdminAccount = async () => {
   }
 
   const rutFmt = formatearRut(rut);
+  const passwordHash = await hashPassword(password);
 
   await pool.query(
     `INSERT INTO cuentas (
@@ -1266,7 +1338,7 @@ const ensureSuperAdminAccount = async () => {
       rol = 'super_admin',
       estado = 'activo',
       updated_at = NOW()`,
-    [email, rutFmt, password, nombres, apellido]
+    [email, rutFmt, passwordHash, nombres, apellido]
   );
 
   console.log(`🔐 Super admin asegurado: ${email} (${rutFmt})`);
@@ -1368,7 +1440,7 @@ const ensureLogoAssetsTable = async () => {
   console.log('🖼️ Tabla logo_assets verificada');
 };
 
-app.post('/api/logo-assets', uploadLogoMemoria.single('archivo'), async (req, res) => {
+app.post('/api/logo-assets', authenticate, requireModule('admin_dashboard'), uploadLogoMemoria.single('archivo'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Debes seleccionar un archivo de logo.' });
@@ -1463,7 +1535,7 @@ app.get('/api/logo-assets/file/:filename', async (req, res) => {
   }
 });
 
-app.delete('/api/logo-assets/:filename', async (req, res) => {
+app.delete('/api/logo-assets/:filename', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   try {
     const rawFilename = decodeURIComponent(String(req.params.filename || '')).trim();
     const safeFilename = path.basename(rawFilename);
@@ -1997,7 +2069,15 @@ app.post('/api/admin/sync-sheets/webhook-flush', async (req, res) => {
 // ==========================================
 // AUTH: LOGIN BÁSICO POR RUT/PASSWORD
 // ==========================================
-app.post('/api/auth/login', async (req, res) => {
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' },
+});
+
+app.post('/api/auth/login', authRateLimiter, async (req, res) => {
   const { rut, password } = req.body;
 
   if (!rut || !password) {
@@ -2025,25 +2105,37 @@ app.post('/api/auth/login', async (req, res) => {
     const esJugador = rolDb === 'jugador';
 
     if (!String(cuenta.password || '').trim() && esJugador && String(password || '') === '12345') {
+      const passwordHashDefault = await hashPassword('12345');
       await pool.query(
         `UPDATE cuentas
-         SET password = '12345',
+         SET password = $2,
              forzar_clave = true,
              updated_at = NOW()
          WHERE id = $1`,
-        [cuenta.id]
+        [cuenta.id, passwordHashDefault]
       );
       cuentaFinal = await obtenerCuentaPorRutNormalizado(rutNormalizado);
     }
 
-    if (!cuentaFinal.password || String(cuentaFinal.password) !== String(password)) {
+    const { valid, needsRehash } = await verifyPassword(password, cuentaFinal.password);
+    if (!valid) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
+    if (needsRehash) {
+      const passwordHash = await hashPassword(password);
+      await pool.query(
+        `UPDATE cuentas SET password = $1, updated_at = NOW() WHERE id = $2`,
+        [passwordHash, cuentaFinal.id]
+      );
+    }
+
     const rolSistema = rolDb === 'super_admin' || rolDb === 'superadmin' ? 'super_admin' : rolDb || 'jugador';
+    const token = signToken({ id: cuentaFinal.id, rut: formatearRut(cuentaFinal.rut), rol: rolSistema });
 
     res.json({
       ok: true,
+      token,
       user: {
         id: cuentaFinal.id,
         nombre: `${cuentaFinal.nombres || ''} ${cuentaFinal.apellido_paterno || ''}`.trim() || cuentaFinal.correo,
@@ -2064,7 +2156,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/change-password', async (req, res) => {
+app.post('/api/auth/change-password', authRateLimiter, async (req, res) => {
   const { rut, currentPassword, newPassword } = req.body;
 
   if (!rut || !newPassword) {
@@ -2091,17 +2183,19 @@ app.post('/api/auth/change-password', async (req, res) => {
     }
 
     const cuenta = result.rows[0];
-    if (!cuenta.password || String(cuenta.password) !== String(currentPassword || '')) {
+    const { valid } = await verifyPassword(currentPassword, cuenta.password);
+    if (!valid) {
       return res.status(401).json({ error: 'La contraseña actual no coincide.' });
     }
 
+    const nuevaClaveHash = await hashPassword(nuevaClave);
     await pool.query(
       `UPDATE cuentas
        SET password = $1,
            forzar_clave = false,
            updated_at = NOW()
        WHERE id = $2`,
-      [nuevaClave, cuenta.id]
+      [nuevaClaveHash, cuenta.id]
     );
 
     return res.json({ ok: true, message: 'Contraseña actualizada correctamente.' });
@@ -2146,7 +2240,7 @@ app.get('/api/comunicaciones/:id', async (req, res) => {
 });
 
 // POST: Crear comunicación
-app.post('/api/comunicaciones', async (req, res) => {
+app.post('/api/comunicaciones', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const { titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia } = req.body;
   try {
     const result = await pool.query(
@@ -2163,7 +2257,7 @@ app.post('/api/comunicaciones', async (req, res) => {
 });
 
 // PUT: Actualizar comunicación
-app.put('/api/comunicaciones/:id', async (req, res) => {
+app.put('/api/comunicaciones/:id', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const { titulo, cuerpo_texto, urgencia } = req.body;
   try {
     const result = await pool.query(
@@ -2180,7 +2274,7 @@ app.put('/api/comunicaciones/:id', async (req, res) => {
 });
 
 // DELETE: Eliminar comunicación
-app.delete('/api/comunicaciones/:id', async (req, res) => {
+app.delete('/api/comunicaciones/:id', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   try {
     await pool.query('DELETE FROM comunicaciones WHERE id = $1', [req.params.id]);
     res.json({ message: 'Comunicación eliminada' });
@@ -2209,7 +2303,7 @@ app.get('/api/comunicaciones/:comId/comentarios', async (req, res) => {
 });
 
 // POST: Crear comentario
-app.post('/api/comunicaciones/:comId/comentarios', async (req, res) => {
+app.post('/api/comunicaciones/:comId/comentarios', authenticate, requireModule('comunicaciones'), async (req, res) => {
   const { usuario_id, texto, parent_id } = req.body;
   try {
     const result = await pool.query(
@@ -2226,7 +2320,7 @@ app.post('/api/comunicaciones/:comId/comentarios', async (req, res) => {
 });
 
 // PUT: Like comentario
-app.put('/api/comentarios/:comentId/like', async (req, res) => {
+app.put('/api/comentarios/:comentId/like', authenticate, requireModule('comunicaciones'), async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE comentarios 
@@ -2246,7 +2340,7 @@ app.put('/api/comentarios/:comentId/like', async (req, res) => {
 // ==========================================
 
 // GET: Pagos por usuario
-app.get('/api/pagos/usuario/:usuarioId', async (req, res) => {
+app.get('/api/pagos/usuario/:usuarioId', authenticate, requireOwnerIdOrModule('usuarioId', 'validacion_pagos'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM pagos 
@@ -2261,7 +2355,7 @@ app.get('/api/pagos/usuario/:usuarioId', async (req, res) => {
 });
 
 // GET: Todos los pagos (admin)
-app.get('/api/pagos', async (req, res) => {
+app.get('/api/pagos', authenticate, requireModule('validacion_pagos'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT p.*, u.nombre 
@@ -2276,7 +2370,7 @@ app.get('/api/pagos', async (req, res) => {
 });
 
 // POST: Crear pago
-app.post('/api/pagos', async (req, res) => {
+app.post('/api/pagos', authenticate, requireModule('validacion_pagos'), async (req, res) => {
   const { usuario_id, monto, tipo, estado, comprobante } = req.body;
   const client = await pool.connect();
   try {
@@ -2356,7 +2450,7 @@ app.post('/api/pagos', async (req, res) => {
 });
 
 // PUT: Validar pago (admin)
-app.put('/api/pagos/:pagoId/validar', async (req, res) => {
+app.put('/api/pagos/:pagoId/validar', authenticate, requireModule('validacion_pagos'), async (req, res) => {
   const { estado } = req.body;
   try {
     const result = await pool.query(
@@ -2377,7 +2471,7 @@ app.put('/api/pagos/:pagoId/validar', async (req, res) => {
 // ==========================================
 
 // GET: Todos los usuarios
-app.get('/api/usuarios', async (req, res) => {
+app.get('/api/usuarios', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, nombre, email, telefono, rol, activo, created_at 
@@ -2391,7 +2485,7 @@ app.get('/api/usuarios', async (req, res) => {
 });
 
 // GET: Usuario por ID
-app.get('/api/usuarios/:id', async (req, res) => {
+app.get('/api/usuarios/:id', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT id, nombre, email, telefono, rol, activo FROM usuarios WHERE id = $1',
@@ -2404,7 +2498,7 @@ app.get('/api/usuarios/:id', async (req, res) => {
 });
 
 // POST: Crear usuario
-app.post('/api/usuarios', async (req, res) => {
+app.post('/api/usuarios', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const { nombre, email, telefono, rol } = req.body;
   try {
     const result = await pool.query(
@@ -2424,14 +2518,14 @@ app.post('/api/usuarios', async (req, res) => {
 // ==========================================
 
 // GET: Todas las cuentas
-app.get('/api/cuentas', async (req, res) => {
+app.get('/api/cuentas', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM cuentas ORDER BY apellido_paterno ASC, nombres ASC`
     );
 
     const cuentas = result.rows.map((cuenta) => ({
-      ...cuenta,
+      ...omitPassword(cuenta),
       rut: cuenta.rut ? formatearRut(cuenta.rut) : cuenta.rut,
       campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
     }));
@@ -2443,12 +2537,12 @@ app.get('/api/cuentas', async (req, res) => {
 });
 
 // GET: Cuentas con información incompleta
-app.get('/api/cuentas/incompletas', async (req, res) => {
+app.get('/api/cuentas/incompletas', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM cuentas ORDER BY updated_at DESC');
     const incompletas = result.rows
       .map((cuenta) => ({
-        ...cuenta,
+        ...omitPassword(cuenta),
         rut: cuenta.rut ? formatearRut(cuenta.rut) : cuenta.rut,
         campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
       }))
@@ -2461,7 +2555,7 @@ app.get('/api/cuentas/incompletas', async (req, res) => {
 });
 
 // GET: Cuenta por ID
-app.get('/api/cuentas/:id', async (req, res) => {
+app.get('/api/cuentas/:id', authenticate, requireOwnerIdOrModule('id', 'admin_dashboard'), async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM cuentas WHERE id = $1', [req.params.id]);
     if (result.rows.length === 0) {
@@ -2470,7 +2564,7 @@ app.get('/api/cuentas/:id', async (req, res) => {
 
     const cuenta = result.rows[0];
     res.json({
-      ...cuenta,
+      ...omitPassword(cuenta),
       rut: cuenta.rut ? formatearRut(cuenta.rut) : cuenta.rut,
       campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
     });
@@ -2480,7 +2574,7 @@ app.get('/api/cuentas/:id', async (req, res) => {
 });
 
 // POST: Crear cuenta
-app.post('/api/cuentas', async (req, res) => {
+app.post('/api/cuentas', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const {
     correo,
     rut,
@@ -2532,6 +2626,7 @@ app.post('/api/cuentas', async (req, res) => {
   try {
     const rutNormalizado = formatearRut(rut);
     const logoPerfilUrl = foto_perfil_url || logo_url || null;
+    const passwordHash = password ? await hashPassword(password) : null;
     const result = await pool.query(
       `INSERT INTO cuentas (
         correo, rut, password, nombres, apellido_paterno, apellido_materno,
@@ -2548,7 +2643,7 @@ app.post('/api/cuentas', async (req, res) => {
       [
         correo,
         rutNormalizado,
-        password || null,
+        passwordHash,
         nombres || null,
         apellido_paterno || null,
         apellido_materno || null,
@@ -2587,7 +2682,7 @@ app.post('/api/cuentas', async (req, res) => {
 
     const cuenta = result.rows[0];
     res.json({
-      ...cuenta,
+      ...omitPassword(cuenta),
       campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
     });
   } catch (err) {
@@ -2599,7 +2694,19 @@ app.post('/api/cuentas', async (req, res) => {
 });
 
 // PUT: Actualizar cuenta
-app.put('/api/cuentas/:id', async (req, res) => {
+const CAMPOS_CUENTA_SOLO_ADMIN = [
+  'rol', 'perfil_principal', 'cargo_directiva', 'socio_admin', 'aprobado_superadmin',
+  'acceso_nivel', 'utm_valor_referencia', 'monto_mensual_base', 'monto_mensual_override',
+  'condiciones_pago', 'fecha_corte_utm', 'permisos_override', 'forzar_clave', 'estado',
+  'autorizacion_imagen', 'dia_pago_acordado', 'es_socio', 'fecha_ingreso_socio',
+];
+
+app.put(
+  '/api/cuentas/:id',
+  authenticate,
+  requireOwnerIdOrModule('id', 'admin_dashboard'),
+  stripFieldsUnlessModule(CAMPOS_CUENTA_SOLO_ADMIN, 'admin_dashboard'),
+  async (req, res) => {
   const {
     correo,
     rut,
@@ -2647,6 +2754,7 @@ app.put('/api/cuentas/:id', async (req, res) => {
   try {
     const rutNormalizado = rut ? formatearRut(rut) : null;
     const logoPerfilUrl = foto_perfil_url || logo_url || null;
+    const passwordHash = password ? await hashPassword(password) : null;
     const result = await pool.query(
       `UPDATE cuentas SET
         correo = COALESCE($1, correo),
@@ -2691,7 +2799,7 @@ app.put('/api/cuentas/:id', async (req, res) => {
       [
         correo || null,
         rutNormalizado,
-        password || null,
+        passwordHash,
         nombres || null,
         apellido_paterno || null,
         apellido_materno || null,
@@ -2735,7 +2843,7 @@ app.put('/api/cuentas/:id', async (req, res) => {
 
     const cuenta = result.rows[0];
     res.json({
-      ...cuenta,
+      ...omitPassword(cuenta),
       campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
     });
   } catch (err) {
@@ -2747,9 +2855,8 @@ app.put('/api/cuentas/:id', async (req, res) => {
 });
 
 // DELETE: Borrar cuenta definitivamente (solo super admin)
-app.delete('/api/cuentas/:id', async (req, res) => {
-  const actor = exigirSuperAdmin(req, res);
-  if (!actor) return;
+app.delete('/api/cuentas/:id', authenticate, requireRole('super_admin'), async (req, res) => {
+  const actor = req.actor;
 
   const idCuenta = Number.parseInt(String(req.params.id || ''), 10);
   if (!Number.isFinite(idCuenta) || idCuenta <= 0) {
@@ -2781,7 +2888,7 @@ app.delete('/api/cuentas/:id', async (req, res) => {
     }
 
     const rutCuentaNormalizado = normalizarRut(cuenta.rut || '');
-    if ((actor.id && String(actor.id) === String(cuenta.id)) || (actor.rut && actor.rut === rutCuentaNormalizado)) {
+    if ((actor.id && String(actor.id) === String(cuenta.id)) || (actor.rut && normalizarRut(actor.rut) === rutCuentaNormalizado)) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'No puedes borrar tu propia cuenta.' });
     }
@@ -2824,7 +2931,7 @@ app.delete('/api/cuentas/:id', async (req, res) => {
 // ==========================================
 
 // GET: Contactos WhatsApp
-app.get('/api/whatsapp/contactos', async (req, res) => {
+app.get('/api/whatsapp/contactos', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM contactos_whatsapp WHERE activo = true ORDER BY nombre ASC'
@@ -2836,7 +2943,7 @@ app.get('/api/whatsapp/contactos', async (req, res) => {
 });
 
 // POST: Agregar contacto WhatsApp
-app.post('/api/whatsapp/contactos', async (req, res) => {
+app.post('/api/whatsapp/contactos', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const { nombre, numero } = req.body;
   try {
     const result = await pool.query(
@@ -2856,7 +2963,7 @@ app.post('/api/whatsapp/contactos', async (req, res) => {
 });
 
 // DELETE: Eliminar contacto WhatsApp
-app.delete('/api/whatsapp/contactos/:id', async (req, res) => {
+app.delete('/api/whatsapp/contactos/:id', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   try {
     await pool.query(
       'UPDATE contactos_whatsapp SET activo = false WHERE id = $1',
@@ -2869,7 +2976,7 @@ app.delete('/api/whatsapp/contactos/:id', async (req, res) => {
 });
 
 // POST: Enviar mensaje WhatsApp (simulado)
-app.post('/api/whatsapp/enviar', async (req, res) => {
+app.post('/api/whatsapp/enviar', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const { numero, mensaje, tipo } = req.body;
   try {
     // Guardar en historial
@@ -2899,7 +3006,7 @@ app.post('/api/whatsapp/enviar', async (req, res) => {
 // ==========================================
 
 // GET: Reportes de engagement
-app.get('/api/reportes/engagement', async (req, res) => {
+app.get('/api/reportes/engagement', authenticate, requireModule('reportes'), async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
@@ -2915,7 +3022,7 @@ app.get('/api/reportes/engagement', async (req, res) => {
 });
 
 // GET: Top comunicaciones
-app.get('/api/reportes/top-comunicaciones', async (req, res) => {
+app.get('/api/reportes/top-comunicaciones', authenticate, requireModule('reportes'), async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
@@ -2950,7 +3057,7 @@ app.get('/api/encuestas', async (req, res) => {
 });
 
 // POST: Crear encuesta
-app.post('/api/encuestas', async (req, res) => {
+app.post('/api/encuestas', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const { pregunta, opciones } = req.body;
   try {
     const result = await pool.query(
@@ -2966,7 +3073,7 @@ app.post('/api/encuestas', async (req, res) => {
 });
 
 // PUT: Votar en encuesta
-app.put('/api/encuestas/:encuestaId/votar', async (req, res) => {
+app.put('/api/encuestas/:encuestaId/votar', authenticate, requireModule('comunicaciones'), async (req, res) => {
   const { opcion } = req.body;
   try {
     const encuesta = await pool.query('SELECT votos FROM encuestas WHERE id = $1', [req.params.encuestaId]);
@@ -3007,7 +3114,10 @@ cron.schedule('0 3 * * 0', async () => {
 // ==========================================
 
 // GET: Todos los jugadores
-app.get('/api/jugadores', async (req, res) => {
+// Sin gate de módulo: casi todos los roles reales (jugador/apoderado vía
+// bootstrap para resolver su propio pupilo, staff, mesa para el roster en
+// vivo, admin) necesitan esta lista hoy. Solo se exige sesión válida.
+app.get('/api/jugadores', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM jugadores ORDER BY apellido_paterno ASC`
@@ -3019,7 +3129,7 @@ app.get('/api/jugadores', async (req, res) => {
 });
 
 // GET: Jugador por RUT
-app.get('/api/jugadores/:rut', async (req, res) => {
+app.get('/api/jugadores/:rut', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM jugadores WHERE rut_jugador = $1',
@@ -3032,7 +3142,7 @@ app.get('/api/jugadores/:rut', async (req, res) => {
 });
 
 // POST: Crear jugador
-app.post('/api/jugadores', async (req, res) => {
+app.post('/api/jugadores', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const {
     rut_jugador,
     nombres,
@@ -3066,7 +3176,7 @@ app.post('/api/jugadores', async (req, res) => {
 });
 
 // PUT: Actualizar jugador por RUT
-app.put('/api/jugadores/:rut', async (req, res) => {
+app.put('/api/jugadores/:rut', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const {
     correo_apoderado,
     correo_jugador,
@@ -3215,16 +3325,15 @@ app.put('/api/jugadores/:rut', async (req, res) => {
 });
 
 // DELETE: Borrar jugador definitivamente (solo super admin)
-app.delete('/api/jugadores/:rut', async (req, res) => {
-  const actor = exigirSuperAdmin(req, res);
-  if (!actor) return;
+app.delete('/api/jugadores/:rut', authenticate, requireRole('super_admin'), async (req, res) => {
+  const actor = req.actor;
 
   const rutObjetivoNormalizado = normalizarRut(req.params.rut || '');
   if (!rutObjetivoNormalizado) {
     return res.status(400).json({ error: 'RUT de jugador inválido.' });
   }
 
-  if (actor.rut && actor.rut === rutObjetivoNormalizado) {
+  if (actor.rut && normalizarRut(actor.rut) === rutObjetivoNormalizado) {
     return res.status(400).json({ error: 'No puedes borrar tu propio registro por RUT.' });
   }
 
@@ -3323,7 +3432,7 @@ app.delete('/api/jugadores/:rut', async (req, res) => {
 // ==========================================
 
 // GET: Todos los pagos de mensualidades
-app.get('/api/pagos-mensualidades', async (req, res) => {
+app.get('/api/pagos-mensualidades', authenticate, async (req, res) => {
   try {
     const incluirLegacy = ['1', 'true', 'yes', 'si'].includes(String(req.query.includeLegacy || '').trim().toLowerCase());
     const whereLegacy = incluirLegacy
@@ -3350,7 +3459,7 @@ app.get('/api/pagos-mensualidades', async (req, res) => {
 });
 
 // POST: Crear pago de mensualidad
-app.post('/api/pagos-mensualidades', async (req, res) => {
+app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'validacion_pagos', 'admin_dashboard'), async (req, res) => {
   const {
     rut_jugador,
     rut_pagos,
@@ -3425,7 +3534,7 @@ app.post('/api/pagos-mensualidades', async (req, res) => {
 });
 
 // PUT: Validar pago de mensualidad (admin)
-app.put('/api/pagos-mensualidades/:id/validar', async (req, res) => {
+app.put('/api/pagos-mensualidades/:id/validar', authenticate, requireModule('validacion_pagos'), async (req, res) => {
   const { estado_pago } = req.body;
   try {
     const result = await pool.query(
@@ -3442,7 +3551,7 @@ app.put('/api/pagos-mensualidades/:id/validar', async (req, res) => {
 });
 
 // GET: Obtener pago específico por ID
-app.get('/api/pagos-mensualidades/:id', async (req, res) => {
+app.get('/api/pagos-mensualidades/:id', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT pm.*, j.nombres, j.apellido_paterno
@@ -3461,7 +3570,7 @@ app.get('/api/pagos-mensualidades/:id', async (req, res) => {
 });
 
 // PUT: Actualizar pago de mensualidad (edición completa)
-app.put('/api/pagos-mensualidades/:id', async (req, res) => {
+app.put('/api/pagos-mensualidades/:id', authenticate, requireAnyModule('validacion_pagos', 'admin_dashboard'), async (req, res) => {
   const {
     rut_jugador,
     rut_pagos,
@@ -3507,7 +3616,7 @@ app.put('/api/pagos-mensualidades/:id', async (req, res) => {
 // ==========================================
 
 // GET: Todas las convocatorias
-app.get('/api/convocatorias', async (req, res) => {
+app.get('/api/convocatorias', authenticate, requireModule('citaciones'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM convocatorias ORDER BY dia_partido DESC, hora_citacion ASC`
@@ -3519,7 +3628,7 @@ app.get('/api/convocatorias', async (req, res) => {
 });
 
 // POST: Crear convocatoria
-app.post('/api/convocatorias', async (req, res) => {
+app.post('/api/convocatorias', authenticate, requireModule('citaciones'), async (req, res) => {
   const { rama, categoria, competencia, dia_partido, hora_citacion, hora_partido, lugar, entrenador } = req.body;
   try {
     const result = await pool.query(
@@ -3540,7 +3649,7 @@ app.post('/api/convocatorias', async (req, res) => {
 // ==========================================
 
 // GET: Todos los eventos
-app.get('/api/eventos', async (req, res) => {
+app.get('/api/eventos', authenticate, requireModule('citaciones'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM eventos ORDER BY fecha DESC, hora ASC`
@@ -3552,7 +3661,7 @@ app.get('/api/eventos', async (req, res) => {
 });
 
 // POST: Crear evento
-app.post('/api/eventos', async (req, res) => {
+app.post('/api/eventos', authenticate, requireModule('citaciones'), async (req, res) => {
   const { fecha, hora, titulo, lugar, descripcion } = req.body;
   try {
     const result = await pool.query(
@@ -3572,7 +3681,7 @@ app.post('/api/eventos', async (req, res) => {
 // ==========================================
 
 // GET: Asistencia
-app.get('/api/asistencia', async (req, res) => {
+app.get('/api/asistencia', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT a.*, j.nombres, j.apellido_paterno
@@ -3587,7 +3696,7 @@ app.get('/api/asistencia', async (req, res) => {
 });
 
 // POST: Registrar asistencia
-app.post('/api/asistencia', async (req, res) => {
+app.post('/api/asistencia', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
   const { fecha, rama, categoria, rut_jugador, estado_asistencia, observacion, entrenador_cargo } = req.body;
   try {
     const result = await pool.query(
@@ -3676,7 +3785,7 @@ app.get('/api/partidos-live/historial', async (req, res) => {
 });
 
 // POST: Crear partido
-app.post('/api/partidos-live', async (req, res) => {
+app.post('/api/partidos-live', authenticate, requireModule('scoreboard_live'), async (req, res) => {
   const {
     fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante,
     rut_planillero, estado_juego,
@@ -3713,7 +3822,7 @@ app.post('/api/partidos-live', async (req, res) => {
 });
 
 // PUT: Actualizar marcador
-app.put('/api/partidos-live/:id', async (req, res) => {
+app.put('/api/partidos-live/:id', authenticate, requireModule('scoreboard_live'), async (req, res) => {
   const {
     pts_local,
     pts_visitante,
@@ -3781,7 +3890,7 @@ app.put('/api/partidos-live/:id', async (req, res) => {
 });
 
 // POST: Finalizar partido desde mesa avanzada (persistencia historica + trazabilidad)
-app.post('/api/partidos-live/:id/finalizar-mesa', async (req, res) => {
+app.post('/api/partidos-live/:id/finalizar-mesa', authenticate, requireModule('scoreboard_live'), async (req, res) => {
   const {
     mesa_payload,
     play_by_play_json,
@@ -3840,7 +3949,7 @@ app.post('/api/partidos-live/:id/finalizar-mesa', async (req, res) => {
 });
 
 // DELETE: Eliminar un partido
-app.delete('/api/partidos-live/:id', async (req, res) => {
+app.delete('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard'), async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -3896,7 +4005,7 @@ app.get('/api/estadisticas/partido/:partidoId', async (req, res) => {
 });
 
 // POST: Crear estadística
-app.post('/api/estadisticas', async (req, res) => {
+app.post('/api/estadisticas', authenticate, requireModule('scoreboard_live'), async (req, res) => {
   const { id_partido, rut_jugador, puntos, rebotes, asistencias, robos, tapones, faltas_cometidas, porcentaje_efectividad } = req.body;
   try {
     const result = await pool.query(
@@ -3916,7 +4025,7 @@ app.post('/api/estadisticas', async (req, res) => {
 // ==========================================
 
 // GET: Evaluaciones de un jugador
-app.get('/api/evaluaciones/jugador/:rut', async (req, res) => {
+app.get('/api/evaluaciones/jugador/:rut', authenticate, requireAnyModule('evaluacion_staff', 'jugador'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM evaluaciones WHERE rut_jugador = $1 ORDER BY fecha_evaluacion DESC`,
@@ -3929,7 +4038,7 @@ app.get('/api/evaluaciones/jugador/:rut', async (req, res) => {
 });
 
 // POST: Crear evaluación
-app.post('/api/evaluaciones', async (req, res) => {
+app.post('/api/evaluaciones', authenticate, requireModule('evaluacion_staff'), async (req, res) => {
   const { rut_jugador, evaluador_rut, tipo_evaluacion, puntaje_tecnica, puntaje_actitud, puntaje_condicion, puntaje_mental, comentarios } = req.body;
   try {
     const result = await pool.query(
@@ -3949,7 +4058,7 @@ app.post('/api/evaluaciones', async (req, res) => {
 // ==========================================
 
 // GET: Puntos de un jugador
-app.get('/api/gamificacion/:rut', async (req, res) => {
+app.get('/api/gamificacion/:rut', authenticate, requireModule('jugador'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM gamificacion_puntos WHERE rut_jugador = $1 ORDER BY fecha_logro DESC`,
@@ -3962,7 +4071,7 @@ app.get('/api/gamificacion/:rut', async (req, res) => {
 });
 
 // POST: Crear logro/puntos
-app.post('/api/gamificacion', async (req, res) => {
+app.post('/api/gamificacion', authenticate, requireAnyModule('evaluacion_staff', 'scoreboard_live', 'admin_dashboard'), async (req, res) => {
   const { rut_jugador, tipo_logro, puntos_obtenidos, descripcion } = req.body;
   try {
     const result = await pool.query(
@@ -3982,7 +4091,7 @@ app.post('/api/gamificacion', async (req, res) => {
 // ==========================================
 
 // GET: Marcas de un jugador
-app.get('/api/marcas/:rut', async (req, res) => {
+app.get('/api/marcas/:rut', authenticate, requireModule('jugador'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM marcas_tiempo WHERE rut_jugador = $1 ORDER BY fecha_marca DESC`,
@@ -3995,7 +4104,7 @@ app.get('/api/marcas/:rut', async (req, res) => {
 });
 
 // POST: Registrar marca
-app.post('/api/marcas', async (req, res) => {
+app.post('/api/marcas', authenticate, requireAnyModule('evaluacion_staff', 'scoreboard_live', 'admin_dashboard'), async (req, res) => {
   const { rut_jugador, categoria, tipo_marca, valor_marca, unidad } = req.body;
   try {
     const result = await pool.query(
@@ -4028,7 +4137,7 @@ app.get('/api/resultados/partido/:partidoId', async (req, res) => {
 });
 
 // POST: Crear resultado
-app.post('/api/resultados', async (req, res) => {
+app.post('/api/resultados', authenticate, requireModule('scoreboard_live'), async (req, res) => {
   const { id_partido, equipo_ganador, puntos_local, puntos_visitante, validado_por } = req.body;
   try {
     const diferencia = Math.abs(puntos_local - puntos_visitante);
@@ -4049,7 +4158,7 @@ app.post('/api/resultados', async (req, res) => {
 // ==========================================
 
 // GET: Todas las preguntas
-app.get('/api/quiz', async (req, res) => {
+app.get('/api/quiz', authenticate, requireModule('academia'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM quiz_preguntas WHERE activo = true ORDER BY dificultad ASC`
@@ -4061,7 +4170,7 @@ app.get('/api/quiz', async (req, res) => {
 });
 
 // POST: Crear pregunta
-app.post('/api/quiz', async (req, res) => {
+app.post('/api/quiz', authenticate, requireModule('academia'), async (req, res) => {
   const { titulo, tipo_quiz, rama, pregunta, opciones_json, respuesta_correcta, dificultad } = req.body;
   try {
     const result = await pool.query(
@@ -4081,7 +4190,7 @@ app.post('/api/quiz', async (req, res) => {
 // ==========================================
 
 // GET: Tácticas de un partido
-app.get('/api/pizarra/partido/:partidoId', async (req, res) => {
+app.get('/api/pizarra/partido/:partidoId', authenticate, requireModule('scoreboard_live'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM pizarra_tactica WHERE id_partido = $1 ORDER BY fecha_tactica DESC`,
@@ -4094,7 +4203,7 @@ app.get('/api/pizarra/partido/:partidoId', async (req, res) => {
 });
 
 // POST: Crear táctica
-app.post('/api/pizarra', async (req, res) => {
+app.post('/api/pizarra', authenticate, requireModule('scoreboard_live'), async (req, res) => {
   const { id_partido, entrenador_rut, nombre_tactica, descripcion, formacion, zona_defensa, zona_ataque } = req.body;
   try {
     const result = await pool.query(
@@ -4114,7 +4223,7 @@ app.post('/api/pizarra', async (req, res) => {
 // ==========================================
 
 // GET: Pagos migrados
-app.get('/api/migracion-pagos', async (req, res) => {
+app.get('/api/migracion-pagos', authenticate, requireModule('validacion_pagos'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM migracion_pagos ORDER BY fecha_migracion DESC`
@@ -4126,7 +4235,7 @@ app.get('/api/migracion-pagos', async (req, res) => {
 });
 
 // POST: Crear registro de migración
-app.post('/api/migracion-pagos', async (req, res) => {
+app.post('/api/migracion-pagos', authenticate, requireModule('validacion_pagos'), async (req, res) => {
   const { rut_jugador, nombre_jugador, mes_pago, año_pago, monto_pago, estado_pago, metodo_pago } = req.body;
   try {
     const result = await pool.query(
@@ -4146,7 +4255,7 @@ app.post('/api/migracion-pagos', async (req, res) => {
 // ==========================================
 
 // GET: Jugadores en visita/prueba
-app.get('/api/jugadores-visita', async (req, res) => {
+app.get('/api/jugadores-visita', authenticate, requireModule('invitados'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM jugadores_visita ORDER BY fecha_visita DESC`
@@ -4158,7 +4267,7 @@ app.get('/api/jugadores-visita', async (req, res) => {
 });
 
 // POST: Registrar jugador en visita
-app.post('/api/jugadores-visita', async (req, res) => {
+app.post('/api/jugadores-visita', authenticate, requireModule('invitados'), async (req, res) => {
   const {
     rut_visita,
     nombres,
@@ -4201,7 +4310,7 @@ app.post('/api/jugadores-visita', async (req, res) => {
 });
 
 // PUT: Actualizar resultado de prueba
-app.put('/api/jugadores-visita/:id', async (req, res) => {
+app.put('/api/jugadores-visita/:id', authenticate, requireModule('invitados'), async (req, res) => {
   const { prueba_realizada, resultado_prueba, reclutado, observaciones, club_logo_url, foto_jugador } = req.body;
   try {
     const columnasVisita = await obtenerColumnasTabla('jugadores_visita');
@@ -4241,7 +4350,7 @@ app.put('/api/jugadores-visita/:id', async (req, res) => {
 // 24. ENDPOINTS: AUDITORIA (FASE 3)
 // ==========================================
 
-app.get('/api/auditoria', async (req, res) => {
+app.get('/api/auditoria', authenticate, requireModule('auditoria'), async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM auditoria ORDER BY fecha_accion DESC LIMIT 100`);
     res.json(result.rows);
@@ -4254,7 +4363,7 @@ app.get('/api/auditoria', async (req, res) => {
 // 25. ENDPOINTS: STAFF (FASE 3)
 // ==========================================
 
-app.get('/api/staff', async (req, res) => {
+app.get('/api/staff', authenticate, requireAnyModule('admin_dashboard', 'asistencia_staff'), async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM staff WHERE activo = true ORDER BY apellido_paterno ASC`);
     res.json(result.rows);
@@ -4263,7 +4372,7 @@ app.get('/api/staff', async (req, res) => {
   }
 });
 
-app.post('/api/staff', async (req, res) => {
+app.post('/api/staff', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const { rut_staff, nombres, apellido_paterno, apellido_materno, cargo, rama, email, telefono } = req.body;
   try {
     const result = await pool.query(
@@ -4282,7 +4391,7 @@ app.post('/api/staff', async (req, res) => {
 // 26. ENDPOINTS: TORNEOS (FASE 3)
 // ==========================================
 
-app.get('/api/torneos', async (req, res) => {
+app.get('/api/torneos', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM torneos ORDER BY fecha_inicio DESC`);
     res.json(result.rows);
@@ -4291,7 +4400,7 @@ app.get('/api/torneos', async (req, res) => {
   }
 });
 
-app.post('/api/torneos', async (req, res) => {
+app.post('/api/torneos', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const { nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato } = req.body;
   try {
     const result = await pool.query(
@@ -4310,7 +4419,7 @@ app.post('/api/torneos', async (req, res) => {
 // 27. ENDPOINTS: CAJA EVENTO (FASE 3)
 // ==========================================
 
-app.get('/api/caja-evento/:eventoId', async (req, res) => {
+app.get('/api/caja-evento/:eventoId', authenticate, requireModule('kiosco'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM caja_evento_kiosco WHERE id_evento = $1 ORDER BY fecha_movimiento DESC`,
@@ -4322,7 +4431,7 @@ app.get('/api/caja-evento/:eventoId', async (req, res) => {
   }
 });
 
-app.post('/api/caja-evento', async (req, res) => {
+app.post('/api/caja-evento', authenticate, requireModule('kiosco'), async (req, res) => {
   const { id_evento, tipo_movimiento, concepto, monto_ingreso, monto_egreso, metodo_pago, responsable } = req.body;
   try {
     const result = await pool.query(
@@ -4341,7 +4450,7 @@ app.post('/api/caja-evento', async (req, res) => {
 // 28. ENDPOINTS: INVENTARIO (FASE 3)
 // ==========================================
 
-app.get('/api/inventario', async (req, res) => {
+app.get('/api/inventario', authenticate, requireAnyModule('kiosco', 'inventario'), async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM catalogo_inventario ORDER BY nombre_articulo ASC`);
     res.json(result.rows);
@@ -4350,7 +4459,7 @@ app.get('/api/inventario', async (req, res) => {
   }
 });
 
-app.post('/api/inventario', async (req, res) => {
+app.post('/api/inventario', authenticate, requireAnyModule('kiosco', 'inventario'), async (req, res) => {
   const { codigo_articulo, nombre_articulo, categoria, cantidad_total, precio_unitario, ubicacion, proveedor } = req.body;
   try {
     const result = await pool.query(
@@ -4369,7 +4478,7 @@ app.post('/api/inventario', async (req, res) => {
 // 29. ENDPOINTS: EGRESOS (FASE 3)
 // ==========================================
 
-app.get('/api/egresos', async (req, res) => {
+app.get('/api/egresos', authenticate, requireModule('kiosco'), async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM egresos ORDER BY fecha_egreso DESC`);
     res.json(result.rows);
@@ -4378,7 +4487,7 @@ app.get('/api/egresos', async (req, res) => {
   }
 });
 
-app.post('/api/egresos', async (req, res) => {
+app.post('/api/egresos', authenticate, requireModule('kiosco'), async (req, res) => {
   const { concepto, categoria, monto_egreso, responsable, observaciones } = req.body;
   try {
     const result = await pool.query(
@@ -4397,7 +4506,7 @@ app.post('/api/egresos', async (req, res) => {
 // 30. ENDPOINTS: CLUBES (FASE 3)
 // ==========================================
 
-app.get('/api/clubes', async (req, res) => {
+app.get('/api/clubes', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard'), async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM clubes WHERE activo = true ORDER BY nombre_club ASC`);
     res.json(result.rows);
@@ -4406,7 +4515,7 @@ app.get('/api/clubes', async (req, res) => {
   }
 });
 
-app.post('/api/clubes', async (req, res) => {
+app.post('/api/clubes', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard'), async (req, res) => {
   const { nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club } = req.body;
   try {
     const result = await pool.query(
@@ -4425,7 +4534,7 @@ app.post('/api/clubes', async (req, res) => {
 // 31. ENDPOINTS: LESIONES (FASE 3)
 // ==========================================
 
-app.get('/api/lesiones', async (req, res) => {
+app.get('/api/lesiones', authenticate, requireAnyModule('evaluacion_staff', 'asistencia_staff'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT l.*, j.nombres, j.apellido_paterno
@@ -4439,7 +4548,7 @@ app.get('/api/lesiones', async (req, res) => {
   }
 });
 
-app.post('/api/lesiones', async (req, res) => {
+app.post('/api/lesiones', authenticate, requireAnyModule('evaluacion_staff', 'asistencia_staff'), async (req, res) => {
   const { rut_jugador, tipo_lesion, descripcion, fecha_recuperacion_estimada, medico_tratante } = req.body;
   try {
     const result = await pool.query(
@@ -4458,7 +4567,7 @@ app.post('/api/lesiones', async (req, res) => {
 // 32. ENDPOINTS: DISCIPLINA (FASE 3)
 // ==========================================
 
-app.get('/api/disciplina', async (req, res) => {
+app.get('/api/disciplina', authenticate, requireAnyModule('evaluacion_staff', 'asistencia_staff'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT d.*, j.nombres, j.apellido_paterno
@@ -4472,7 +4581,7 @@ app.get('/api/disciplina', async (req, res) => {
   }
 });
 
-app.post('/api/disciplina', async (req, res) => {
+app.post('/api/disciplina', authenticate, requireAnyModule('evaluacion_staff', 'asistencia_staff'), async (req, res) => {
   const { rut_jugador, tipo_sancion, razon_sancion, duracion_dias, multa_aplicada, aplicada_por } = req.body;
   try {
     const result = await pool.query(
@@ -4491,7 +4600,7 @@ app.post('/api/disciplina', async (req, res) => {
 // 33. ENDPOINTS: ENTRENAMIENTOS (FASE 3)
 // ==========================================
 
-app.get('/api/entrenamientos', async (req, res) => {
+app.get('/api/entrenamientos', authenticate, requireAnyModule('asistencia_staff', 'evaluacion_staff', 'academia'), async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM entrenamientos ORDER BY fecha_entrenamiento DESC`);
     res.json(result.rows);
@@ -4500,7 +4609,7 @@ app.get('/api/entrenamientos', async (req, res) => {
   }
 });
 
-app.post('/api/entrenamientos', async (req, res) => {
+app.post('/api/entrenamientos', authenticate, requireAnyModule('asistencia_staff', 'evaluacion_staff'), async (req, res) => {
   const { rama, categoria, fecha_entrenamiento, hora_inicio, hora_fin, lugar, entrenador_a_cargo, tema_entrenamiento, capacidad } = req.body;
   try {
     const result = await pool.query(
@@ -4519,7 +4628,7 @@ app.post('/api/entrenamientos', async (req, res) => {
 // 34. ENDPOINTS: ENCUESTAS RESPUESTAS (FASE 3)
 // ==========================================
 
-app.get('/api/encuestas/:encuestaId/respuestas', async (req, res) => {
+app.get('/api/encuestas/:encuestaId/respuestas', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM encuestas_respuestas WHERE id_encuesta = $1 ORDER BY fecha_respuesta DESC`,
@@ -4531,7 +4640,7 @@ app.get('/api/encuestas/:encuestaId/respuestas', async (req, res) => {
   }
 });
 
-app.post('/api/encuestas/:encuestaId/respuesta', async (req, res) => {
+app.post('/api/encuestas/:encuestaId/respuesta', authenticate, requireModule('comunicaciones'), async (req, res) => {
   const { rut_respondente, opcion_seleccionada, comentario_adicional } = req.body;
   try {
     const result = await pool.query(
@@ -4550,7 +4659,7 @@ app.post('/api/encuestas/:encuestaId/respuesta', async (req, res) => {
 // 35. ENDPOINTS: ASISTENCIA EVENTOS DETALLE (FASE 3)
 // ==========================================
 
-app.get('/api/asistencia-eventos/:eventoId', async (req, res) => {
+app.get('/api/asistencia-eventos/:eventoId', authenticate, requireModule('citaciones'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM asistencia_eventos_detalle WHERE id_evento = $1 ORDER BY fecha_confirmacion DESC`,
@@ -4562,7 +4671,7 @@ app.get('/api/asistencia-eventos/:eventoId', async (req, res) => {
   }
 });
 
-app.post('/api/asistencia-eventos', async (req, res) => {
+app.post('/api/asistencia-eventos', authenticate, requireModule('citaciones'), async (req, res) => {
   const { id_evento, rut_persona, tipo_persona, estado_confirmacion, transporte_requerido } = req.body;
   try {
     const result = await pool.query(

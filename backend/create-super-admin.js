@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 require('dotenv').config();
+const { hashPassword } = require('./security/auth');
 
 const rawDatabaseUrl = String(process.env.DATABASE_URL || '');
 const safeDatabaseUrl = rawDatabaseUrl.includes('sslmode=require')
@@ -76,10 +77,11 @@ async function run() {
   `;
 
   try {
+    const passwordHash = await hashPassword(SUPER_ADMIN_PASSWORD);
     const result = await pool.query(query, [
       SUPER_ADMIN_EMAIL,
       rutFmt,
-      SUPER_ADMIN_PASSWORD,
+      passwordHash,
       SUPER_ADMIN_NOMBRES,
       SUPER_ADMIN_APELLIDO,
     ]);

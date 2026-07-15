@@ -18,6 +18,45 @@ const resolveApiBaseUrl = () => {
 const API_BASE_URL = resolveApiBaseUrl();
 export const API_BASE_URL_CONFIG = API_BASE_URL;
 
+// Token de sesión (JWT) — App.jsx lo setea tras login y lo restaura al
+// rehidratar la sesión guardada; se envía como Authorization en cada llamada.
+let authToken = null;
+export const setAuthToken = (token) => {
+  authToken = token || null;
+};
+export const getAuthToken = () => authToken;
+
+// App.jsx registra un handler para reaccionar a una sesión vencida/ inválida
+// (401) en cualquier llamada, sin que cada componente tenga que chequearlo.
+let onUnauthorized = null;
+export const setUnauthorizedHandler = (handler) => {
+  onUnauthorized = typeof handler === 'function' ? handler : null;
+};
+
+// Login y change-password devuelven 401 como respuesta de negocio normal
+// (credenciales/clave actual incorrecta), no como sesión vencida — no deben
+// disparar el logout automático.
+const AUTH_ENDPOINTS_SIN_AUTOLOGOUT = ['/auth/login', '/auth/change-password'];
+
+const apiFetch = async (url, options = {}) => {
+  const teniaToken = Boolean(authToken);
+  const headers = { ...(options.headers || {}) };
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  }
+  const response = await fetch(url, { ...options, headers });
+
+  // Solo forzar logout si había un token real que el servidor rechazó
+  // (sesión vencida/inválida). Roles sin token propio (visita/demo local)
+  // reciben 401 esperado en endpoints protegidos y no deben ser expulsados.
+  const esEndpointAuth = AUTH_ENDPOINTS_SIN_AUTOLOGOUT.some((path) => url.includes(path));
+  if (response.status === 401 && teniaToken && !esEndpointAuth && onUnauthorized) {
+    onUnauthorized();
+  }
+
+  return response;
+};
+
 const normalizarRut = (rut = '') => String(rut).replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 
 const construirHeadersActor = (actor = null) => {
@@ -49,6 +88,7 @@ const handleResponse = async (response) => {
     } catch {
       message = `Error ${response.status}: ${response.statusText || 'Respuesta no válida'}`;
     }
+
     throw new Error(message);
   }
   return response.json();
@@ -59,19 +99,19 @@ const handleResponse = async (response) => {
 export const comunicacionesAPI = {
   // Obtener todas
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/comunicaciones`);
+    const response = await apiFetch(`${API_BASE_URL}/comunicaciones`);
     return handleResponse(response);
   },
 
   // Obtener una
   getById: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/comunicaciones/${id}`);
+    const response = await apiFetch(`${API_BASE_URL}/comunicaciones/${id}`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (data) => {
-    const response = await fetch(`${API_BASE_URL}/comunicaciones`, {
+    const response = await apiFetch(`${API_BASE_URL}/comunicaciones`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -81,7 +121,7 @@ export const comunicacionesAPI = {
 
   // Actualizar
   update: async (id, data) => {
-    const response = await fetch(`${API_BASE_URL}/comunicaciones/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/comunicaciones/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -91,7 +131,7 @@ export const comunicacionesAPI = {
 
   // Eliminar
   delete: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/comunicaciones/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/comunicaciones/${id}`, {
       method: 'DELETE'
     });
     return handleResponse(response);
@@ -103,13 +143,13 @@ export const comunicacionesAPI = {
 export const comentariosAPI = {
   // Obtener comentarios de una comunicación
   getByComId: async (comId) => {
-    const response = await fetch(`${API_BASE_URL}/comunicaciones/${comId}/comentarios`);
+    const response = await apiFetch(`${API_BASE_URL}/comunicaciones/${comId}/comentarios`);
     return handleResponse(response);
   },
 
   // Crear comentario
   create: async (comId, data) => {
-    const response = await fetch(`${API_BASE_URL}/comunicaciones/${comId}/comentarios`, {
+    const response = await apiFetch(`${API_BASE_URL}/comunicaciones/${comId}/comentarios`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -119,7 +159,7 @@ export const comentariosAPI = {
 
   // Like
   like: async (comentId) => {
-    const response = await fetch(`${API_BASE_URL}/comentarios/${comentId}/like`, {
+    const response = await apiFetch(`${API_BASE_URL}/comentarios/${comentId}/like`, {
       method: 'PUT'
     });
     return handleResponse(response);
@@ -131,19 +171,19 @@ export const comentariosAPI = {
 export const pagosAPI = {
   // Obtener todos
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/pagos`);
+    const response = await apiFetch(`${API_BASE_URL}/pagos`);
     return handleResponse(response);
   },
 
   // Obtener por usuario
   getByUsuario: async (usuarioId) => {
-    const response = await fetch(`${API_BASE_URL}/pagos/usuario/${usuarioId}`);
+    const response = await apiFetch(`${API_BASE_URL}/pagos/usuario/${usuarioId}`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (data) => {
-    const response = await fetch(`${API_BASE_URL}/pagos`, {
+    const response = await apiFetch(`${API_BASE_URL}/pagos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -153,7 +193,7 @@ export const pagosAPI = {
 
   // Validar (admin)
   validar: async (pagoId, estado) => {
-    const response = await fetch(`${API_BASE_URL}/pagos/${pagoId}/validar`, {
+    const response = await apiFetch(`${API_BASE_URL}/pagos/${pagoId}/validar`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ estado })
@@ -167,19 +207,19 @@ export const pagosAPI = {
 export const usuariosAPI = {
   // Obtener todos
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/usuarios`);
+    const response = await apiFetch(`${API_BASE_URL}/usuarios`);
     return handleResponse(response);
   },
 
   // Obtener uno
   getById: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/usuarios/${id}`);
+    const response = await apiFetch(`${API_BASE_URL}/usuarios/${id}`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (data) => {
-    const response = await fetch(`${API_BASE_URL}/usuarios`, {
+    const response = await apiFetch(`${API_BASE_URL}/usuarios`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -191,75 +231,22 @@ export const usuariosAPI = {
 // ========== AUTH ==========
 
 export const authAPI = {
+  // El auto-aprovisionamiento de cuentas jugador con clave '12345' ya lo
+  // resuelve el propio backend dentro de POST /api/auth/login
+  // (provisionarCuentaJugadorSiCorresponde en server.js) — no se necesita
+  // reintento ni fallback aquí.
   login: async (rut, password) => {
     const payload = { rut, password };
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    const response = await apiFetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-
-    if (response.ok) {
-      return response.json();
-    }
-
-    // Fallback for production schema drifts: if player login with 12345 fails, create minimal account and retry once.
-    if (response.status === 401 && String(password || '') === '12345') {
-      try {
-        const jugadoresResponse = await fetch(`${API_BASE_URL}/jugadores`);
-        if (!jugadoresResponse.ok) {
-          return handleResponse(response);
-        }
-
-        const jugadores = await jugadoresResponse.json();
-        const rutBuscado = normalizarRut(rut);
-        const jugador = Array.isArray(jugadores)
-          ? jugadores.find((item) => normalizarRut(item?.rut_jugador) === rutBuscado)
-          : null;
-
-        if (!jugador || String(jugador.estado || 'ACTIVO').toUpperCase() === 'BAJA') {
-          return handleResponse(response);
-        }
-
-        const createPayload = {
-          correo: `${rutBuscado.toLowerCase() || 'sin-rut'}@actualizar.local`,
-          rut,
-          password: '12345',
-          nombres: jugador.nombres || null,
-          apellido_paterno: jugador.apellido_paterno || null,
-          rol: 'jugador',
-          perfil_principal: 'jugador',
-          estado: 'activo',
-          forzar_clave: true,
-          requiere_foto_perfil: false,
-        };
-
-        const createResponse = await fetch(`${API_BASE_URL}/cuentas`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(createPayload)
-        });
-
-        if (!createResponse.ok && createResponse.status !== 409) {
-          return handleResponse(response);
-        }
-
-        const retryResponse = await fetch(`${API_BASE_URL}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        return handleResponse(retryResponse);
-      } catch {
-        return handleResponse(response);
-      }
-    }
-
     return handleResponse(response);
   },
 
   changePassword: async ({ rut, currentPassword, newPassword }) => {
-    const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+    const response = await apiFetch(`${API_BASE_URL}/auth/change-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rut, currentPassword, newPassword })
@@ -273,19 +260,19 @@ export const authAPI = {
 export const cuentasAPI = {
   // Obtener todas
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/cuentas`);
+    const response = await apiFetch(`${API_BASE_URL}/cuentas`);
     return handleResponse(response);
   },
 
   // Obtener incompletas
   getIncompletas: async () => {
-    const response = await fetch(`${API_BASE_URL}/cuentas/incompletas`);
+    const response = await apiFetch(`${API_BASE_URL}/cuentas/incompletas`);
     return handleResponse(response);
   },
 
   // Obtener por ID
   getById: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/cuentas/${id}`);
+    const response = await apiFetch(`${API_BASE_URL}/cuentas/${id}`);
     return handleResponse(response);
   },
 
@@ -295,7 +282,7 @@ export const cuentasAPI = {
     if (Object.prototype.hasOwnProperty.call(payload, 'logo_url')) {
       delete payload.logo_url;
     }
-    const response = await fetch(`${API_BASE_URL}/cuentas`, {
+    const response = await apiFetch(`${API_BASE_URL}/cuentas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -309,7 +296,7 @@ export const cuentasAPI = {
     if (Object.prototype.hasOwnProperty.call(payload, 'logo_url')) {
       delete payload.logo_url;
     }
-    const response = await fetch(`${API_BASE_URL}/cuentas/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/cuentas/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -319,7 +306,7 @@ export const cuentasAPI = {
 
   // Eliminar definitivamente (solo super admin)
   delete: async (id, actor = null) => {
-    const response = await fetch(`${API_BASE_URL}/cuentas/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/cuentas/${id}`, {
       method: 'DELETE',
       headers: {
         ...construirHeadersActor(actor),
@@ -354,13 +341,13 @@ export const validarRutChileno = (rut = '') => {
 export const whatsappAPI = {
   // Obtener contactos
   getContactos: async () => {
-    const response = await fetch(`${API_BASE_URL}/whatsapp/contactos`);
+    const response = await apiFetch(`${API_BASE_URL}/whatsapp/contactos`);
     return handleResponse(response);
   },
 
   // Agregar contacto
   agregarContacto: async (nombre, numero) => {
-    const response = await fetch(`${API_BASE_URL}/whatsapp/contactos`, {
+    const response = await apiFetch(`${API_BASE_URL}/whatsapp/contactos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nombre, numero })
@@ -370,7 +357,7 @@ export const whatsappAPI = {
 
   // Eliminar contacto
   eliminarContacto: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/whatsapp/contactos/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/whatsapp/contactos/${id}`, {
       method: 'DELETE'
     });
     return handleResponse(response);
@@ -378,7 +365,7 @@ export const whatsappAPI = {
 
   // Enviar mensaje
   enviarMensaje: async (numero, mensaje, tipo) => {
-    const response = await fetch(`${API_BASE_URL}/whatsapp/enviar`, {
+    const response = await apiFetch(`${API_BASE_URL}/whatsapp/enviar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ numero, mensaje, tipo })
@@ -392,13 +379,13 @@ export const whatsappAPI = {
 export const reportesAPI = {
   // Engagement
   getEngagement: async () => {
-    const response = await fetch(`${API_BASE_URL}/reportes/engagement`);
+    const response = await apiFetch(`${API_BASE_URL}/reportes/engagement`);
     return handleResponse(response);
   },
 
   // Top comunicaciones
   getTopComunicaciones: async () => {
-    const response = await fetch(`${API_BASE_URL}/reportes/top-comunicaciones`);
+    const response = await apiFetch(`${API_BASE_URL}/reportes/top-comunicaciones`);
     return handleResponse(response);
   }
 };
@@ -408,13 +395,13 @@ export const reportesAPI = {
 export const encuestasAPI = {
   // Obtener todas
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/encuestas`);
+    const response = await apiFetch(`${API_BASE_URL}/encuestas`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (pregunta, opciones) => {
-    const response = await fetch(`${API_BASE_URL}/encuestas`, {
+    const response = await apiFetch(`${API_BASE_URL}/encuestas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pregunta, opciones })
@@ -424,7 +411,7 @@ export const encuestasAPI = {
 
   // Votar
   votar: async (encuestaId, opcion) => {
-    const response = await fetch(`${API_BASE_URL}/encuestas/${encuestaId}/votar`, {
+    const response = await apiFetch(`${API_BASE_URL}/encuestas/${encuestaId}/votar`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ opcion })
@@ -437,7 +424,7 @@ export const encuestasAPI = {
 
 export const healthCheck = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const response = await apiFetch(`${API_BASE_URL}/health`);
     return response.ok;
   } catch {
     return false;
@@ -446,7 +433,7 @@ export const healthCheck = async () => {
 
 export const adminAPI = {
   getSyncStatus: async (token) => {
-    const response = await fetch(`${API_BASE_URL}/admin/sync-sheets/status`, {
+    const response = await apiFetch(`${API_BASE_URL}/admin/sync-sheets/status`, {
       headers: {
         'x-sync-token': token,
       },
@@ -455,7 +442,7 @@ export const adminAPI = {
   },
 
   getOpsStatus: async (token) => {
-    const response = await fetch(`${API_BASE_URL}/admin/ops-status`, {
+    const response = await apiFetch(`${API_BASE_URL}/admin/ops-status`, {
       headers: {
         'x-sync-token': token,
       },
@@ -464,7 +451,7 @@ export const adminAPI = {
   },
 
   getBackupStatus: async (token) => {
-    const response = await fetch(`${API_BASE_URL}/admin/backup-status`, {
+    const response = await apiFetch(`${API_BASE_URL}/admin/backup-status`, {
       headers: {
         'x-sync-token': token,
       },
@@ -473,7 +460,7 @@ export const adminAPI = {
   },
 
   runBackupNow: async (token) => {
-    const response = await fetch(`${API_BASE_URL}/admin/backup-run`, {
+    const response = await apiFetch(`${API_BASE_URL}/admin/backup-run`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -484,7 +471,7 @@ export const adminAPI = {
   },
 
   syncSheets: async (token) => {
-    const response = await fetch(`${API_BASE_URL}/admin/sync-sheets`, {
+    const response = await apiFetch(`${API_BASE_URL}/admin/sync-sheets`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -495,7 +482,7 @@ export const adminAPI = {
   },
 
   getDataQualityDetails: async (token) => {
-    const response = await fetch(`${API_BASE_URL}/admin/data-quality/details`, {
+    const response = await apiFetch(`${API_BASE_URL}/admin/data-quality/details`, {
       headers: {
         'x-sync-token': token,
       },
@@ -504,7 +491,7 @@ export const adminAPI = {
   },
 
   getJugadoresRutConflicts: async (token) => {
-    const response = await fetch(`${API_BASE_URL}/admin/jugadores-rut-conflicts`, {
+    const response = await apiFetch(`${API_BASE_URL}/admin/jugadores-rut-conflicts`, {
       headers: {
         'x-sync-token': token,
       },
@@ -513,7 +500,7 @@ export const adminAPI = {
   },
 
   resolveJugadoresRutConflict: async (token, payload) => {
-    const response = await fetch(`${API_BASE_URL}/admin/jugadores-rut-conflicts/resolve`, {
+    const response = await apiFetch(`${API_BASE_URL}/admin/jugadores-rut-conflicts/resolve`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -530,19 +517,19 @@ export const adminAPI = {
 export const jugadoresAPI = {
   // Obtener todos
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/jugadores`);
+    const response = await apiFetch(`${API_BASE_URL}/jugadores`);
     return handleResponse(response);
   },
 
   // Obtener por RUT
   getByRut: async (rut) => {
-    const response = await fetch(`${API_BASE_URL}/jugadores/${rut}`);
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/jugadores`, {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -552,7 +539,7 @@ export const jugadoresAPI = {
 
   // Actualizar por RUT
   update: async (rut, datos) => {
-    const response = await fetch(`${API_BASE_URL}/jugadores/${rut}`, {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -562,7 +549,7 @@ export const jugadoresAPI = {
 
   // Eliminar definitivamente (solo super admin)
   delete: async (rut, actor = null) => {
-    const response = await fetch(`${API_BASE_URL}/jugadores/${rut}`, {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}`, {
       method: 'DELETE',
       headers: {
         ...construirHeadersActor(actor),
@@ -577,19 +564,19 @@ export const jugadoresAPI = {
 export const pagosMensualidadesAPI = {
   // Obtener todos
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/pagos-mensualidades`);
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades`);
     return handleResponse(response);
   },
 
   // Obtener por ID
   getById: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/pagos-mensualidades/${id}`);
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/${id}`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/pagos-mensualidades`, {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -599,7 +586,7 @@ export const pagosMensualidadesAPI = {
 
   // Actualizar
   update: async (id, datos) => {
-    const response = await fetch(`${API_BASE_URL}/pagos-mensualidades/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -609,7 +596,7 @@ export const pagosMensualidadesAPI = {
 
   // Validar pago
   validar: async (id, estado) => {
-    const response = await fetch(`${API_BASE_URL}/pagos-mensualidades/${id}/validar`, {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/${id}/validar`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ estado_pago: estado })
@@ -623,13 +610,13 @@ export const pagosMensualidadesAPI = {
 export const convocatoriasAPI = {
   // Obtener todas
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/convocatorias`);
+    const response = await apiFetch(`${API_BASE_URL}/convocatorias`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/convocatorias`, {
+    const response = await apiFetch(`${API_BASE_URL}/convocatorias`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -643,13 +630,13 @@ export const convocatoriasAPI = {
 export const eventosAPI = {
   // Obtener todos
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/eventos`);
+    const response = await apiFetch(`${API_BASE_URL}/eventos`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/eventos`, {
+    const response = await apiFetch(`${API_BASE_URL}/eventos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -663,13 +650,13 @@ export const eventosAPI = {
 export const asistenciaAPI = {
   // Obtener todas
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/asistencia`);
+    const response = await apiFetch(`${API_BASE_URL}/asistencia`);
     return handleResponse(response);
   },
 
   // Registrar
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/asistencia`, {
+    const response = await apiFetch(`${API_BASE_URL}/asistencia`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -683,13 +670,13 @@ export const asistenciaAPI = {
 export const partidosLiveAPI = {
   // Obtener todos
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/partidos-live`);
+    const response = await apiFetch(`${API_BASE_URL}/partidos-live`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/partidos-live`, {
+    const response = await apiFetch(`${API_BASE_URL}/partidos-live`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -699,7 +686,7 @@ export const partidosLiveAPI = {
 
   // Actualizar marcador
   updateScore: async (id, datos) => {
-    const response = await fetch(`${API_BASE_URL}/partidos-live/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/partidos-live/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -709,7 +696,7 @@ export const partidosLiveAPI = {
 
   // Actualizar partido completo
   update: async (id, datos) => {
-    const response = await fetch(`${API_BASE_URL}/partidos-live/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/partidos-live/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -719,7 +706,7 @@ export const partidosLiveAPI = {
 
   // Borrar
   delete: async (id) => {
-    const response = await fetch(`${API_BASE_URL}/partidos-live/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/partidos-live/${id}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -736,13 +723,13 @@ export const partidosLiveAPI = {
       params.set(k, text);
     });
     const suffix = params.toString() ? `?${params.toString()}` : '';
-    const response = await fetch(`${API_BASE_URL}/partidos-live/historial${suffix}`);
+    const response = await apiFetch(`${API_BASE_URL}/partidos-live/historial${suffix}`);
     return handleResponse(response);
   },
 
   // Finalizar partido con payload completo de mesa
   finalizarMesa: async (id, datos) => {
-    const response = await fetch(`${API_BASE_URL}/partidos-live/${id}/finalizar-mesa`, {
+    const response = await apiFetch(`${API_BASE_URL}/partidos-live/${id}/finalizar-mesa`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos),
@@ -756,13 +743,13 @@ export const partidosLiveAPI = {
 export const estadisticasAPI = {
   // Obtener de un partido
   getByPartido: async (partidoId) => {
-    const response = await fetch(`${API_BASE_URL}/estadisticas/partido/${partidoId}`);
+    const response = await apiFetch(`${API_BASE_URL}/estadisticas/partido/${partidoId}`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/estadisticas`, {
+    const response = await apiFetch(`${API_BASE_URL}/estadisticas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -776,13 +763,13 @@ export const estadisticasAPI = {
 export const evaluacionesAPI = {
   // Obtener de un jugador
   getByJugador: async (rut) => {
-    const response = await fetch(`${API_BASE_URL}/evaluaciones/jugador/${rut}`);
+    const response = await apiFetch(`${API_BASE_URL}/evaluaciones/jugador/${rut}`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/evaluaciones`, {
+    const response = await apiFetch(`${API_BASE_URL}/evaluaciones`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -796,13 +783,13 @@ export const evaluacionesAPI = {
 export const gamificacionAPI = {
   // Obtener de un jugador
   getByJugador: async (rut) => {
-    const response = await fetch(`${API_BASE_URL}/gamificacion/${rut}`);
+    const response = await apiFetch(`${API_BASE_URL}/gamificacion/${rut}`);
     return handleResponse(response);
   },
 
   // Crear logro
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/gamificacion`, {
+    const response = await apiFetch(`${API_BASE_URL}/gamificacion`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -816,13 +803,13 @@ export const gamificacionAPI = {
 export const marcasAPI = {
   // Obtener de un jugador
   getByJugador: async (rut) => {
-    const response = await fetch(`${API_BASE_URL}/marcas/${rut}`);
+    const response = await apiFetch(`${API_BASE_URL}/marcas/${rut}`);
     return handleResponse(response);
   },
 
   // Registrar marca
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/marcas`, {
+    const response = await apiFetch(`${API_BASE_URL}/marcas`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -836,13 +823,13 @@ export const marcasAPI = {
 export const resultadosAPI = {
   // Obtener de un partido
   getByPartido: async (partidoId) => {
-    const response = await fetch(`${API_BASE_URL}/resultados/partido/${partidoId}`);
+    const response = await apiFetch(`${API_BASE_URL}/resultados/partido/${partidoId}`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/resultados`, {
+    const response = await apiFetch(`${API_BASE_URL}/resultados`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -856,13 +843,13 @@ export const resultadosAPI = {
 export const quizAPI = {
   // Obtener todas
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/quiz`);
+    const response = await apiFetch(`${API_BASE_URL}/quiz`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/quiz`, {
+    const response = await apiFetch(`${API_BASE_URL}/quiz`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -876,13 +863,13 @@ export const quizAPI = {
 export const pizarraAPI = {
   // Obtener de un partido
   getByPartido: async (partidoId) => {
-    const response = await fetch(`${API_BASE_URL}/pizarra/partido/${partidoId}`);
+    const response = await apiFetch(`${API_BASE_URL}/pizarra/partido/${partidoId}`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/pizarra`, {
+    const response = await apiFetch(`${API_BASE_URL}/pizarra`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -896,13 +883,13 @@ export const pizarraAPI = {
 export const migracionPagosAPI = {
   // Obtener todos
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/migracion-pagos`);
+    const response = await apiFetch(`${API_BASE_URL}/migracion-pagos`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/migracion-pagos`, {
+    const response = await apiFetch(`${API_BASE_URL}/migracion-pagos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -916,13 +903,13 @@ export const migracionPagosAPI = {
 export const jugadoresVisitaAPI = {
   // Obtener todos
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/jugadores-visita`);
+    const response = await apiFetch(`${API_BASE_URL}/jugadores-visita`);
     return handleResponse(response);
   },
 
   // Crear
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/jugadores-visita`, {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores-visita`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -932,7 +919,7 @@ export const jugadoresVisitaAPI = {
 
   // Actualizar
   update: async (id, datos) => {
-    const response = await fetch(`${API_BASE_URL}/jugadores-visita/${id}`, {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores-visita/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -945,7 +932,7 @@ export const jugadoresVisitaAPI = {
 
 export const auditoriaAPI = {
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/auditoria`);
+    const response = await apiFetch(`${API_BASE_URL}/auditoria`);
     return handleResponse(response);
   }
 };
@@ -954,11 +941,11 @@ export const auditoriaAPI = {
 
 export const staffAPI = {
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/staff`);
+    const response = await apiFetch(`${API_BASE_URL}/staff`);
     return handleResponse(response);
   },
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/staff`, {
+    const response = await apiFetch(`${API_BASE_URL}/staff`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -971,11 +958,11 @@ export const staffAPI = {
 
 export const torneosAPI = {
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/torneos`);
+    const response = await apiFetch(`${API_BASE_URL}/torneos`);
     return handleResponse(response);
   },
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/torneos`, {
+    const response = await apiFetch(`${API_BASE_URL}/torneos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -991,6 +978,9 @@ export const assetsAPI = {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API_BASE_URL}/logo-assets`);
+      if (authToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+      }
 
       if (typeof onProgress === 'function') {
         xhr.upload.onprogress = (event) => {
@@ -1001,7 +991,7 @@ export const assetsAPI = {
       }
 
       xhr.onload = () => {
-        let payload = null;
+        let payload;
         try {
           payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
         } catch {
@@ -1024,13 +1014,13 @@ export const assetsAPI = {
   },
 
   listLogos: async () => {
-    const response = await fetch(`${API_BASE_URL}/logo-assets/list`);
+    const response = await apiFetch(`${API_BASE_URL}/logo-assets/list`);
     return handleResponse(response);
   },
 
   deleteLogo: async (filename) => {
     const safeFilename = encodeURIComponent(String(filename || '').trim());
-    const response = await fetch(`${API_BASE_URL}/logo-assets/${safeFilename}`, {
+    const response = await apiFetch(`${API_BASE_URL}/logo-assets/${safeFilename}`, {
       method: 'DELETE',
     });
     return handleResponse(response);
@@ -1041,11 +1031,11 @@ export const assetsAPI = {
 
 export const cajaEventoAPI = {
   getByEvento: async (eventoId) => {
-    const response = await fetch(`${API_BASE_URL}/caja-evento/${eventoId}`);
+    const response = await apiFetch(`${API_BASE_URL}/caja-evento/${eventoId}`);
     return handleResponse(response);
   },
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/caja-evento`, {
+    const response = await apiFetch(`${API_BASE_URL}/caja-evento`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -1058,11 +1048,11 @@ export const cajaEventoAPI = {
 
 export const inventarioAPI = {
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/inventario`);
+    const response = await apiFetch(`${API_BASE_URL}/inventario`);
     return handleResponse(response);
   },
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/inventario`, {
+    const response = await apiFetch(`${API_BASE_URL}/inventario`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -1075,11 +1065,11 @@ export const inventarioAPI = {
 
 export const egresosAPI = {
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/egresos`);
+    const response = await apiFetch(`${API_BASE_URL}/egresos`);
     return handleResponse(response);
   },
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/egresos`, {
+    const response = await apiFetch(`${API_BASE_URL}/egresos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -1092,11 +1082,11 @@ export const egresosAPI = {
 
 export const clubesAPI = {
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/clubes`);
+    const response = await apiFetch(`${API_BASE_URL}/clubes`);
     return handleResponse(response);
   },
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/clubes`, {
+    const response = await apiFetch(`${API_BASE_URL}/clubes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -1109,11 +1099,11 @@ export const clubesAPI = {
 
 export const lesionesAPI = {
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/lesiones`);
+    const response = await apiFetch(`${API_BASE_URL}/lesiones`);
     return handleResponse(response);
   },
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/lesiones`, {
+    const response = await apiFetch(`${API_BASE_URL}/lesiones`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -1126,11 +1116,11 @@ export const lesionesAPI = {
 
 export const disciplinaAPI = {
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/disciplina`);
+    const response = await apiFetch(`${API_BASE_URL}/disciplina`);
     return handleResponse(response);
   },
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/disciplina`, {
+    const response = await apiFetch(`${API_BASE_URL}/disciplina`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -1143,11 +1133,11 @@ export const disciplinaAPI = {
 
 export const entrenamientosAPI = {
   getAll: async () => {
-    const response = await fetch(`${API_BASE_URL}/entrenamientos`);
+    const response = await apiFetch(`${API_BASE_URL}/entrenamientos`);
     return handleResponse(response);
   },
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/entrenamientos`, {
+    const response = await apiFetch(`${API_BASE_URL}/entrenamientos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -1160,11 +1150,11 @@ export const entrenamientosAPI = {
 
 export const encuestasRespuestasAPI = {
   getByEncuesta: async (encuestaId) => {
-    const response = await fetch(`${API_BASE_URL}/encuestas/${encuestaId}/respuestas`);
+    const response = await apiFetch(`${API_BASE_URL}/encuestas/${encuestaId}/respuestas`);
     return handleResponse(response);
   },
   create: async (encuestaId, datos) => {
-    const response = await fetch(`${API_BASE_URL}/encuestas/${encuestaId}/respuesta`, {
+    const response = await apiFetch(`${API_BASE_URL}/encuestas/${encuestaId}/respuesta`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -1177,11 +1167,11 @@ export const encuestasRespuestasAPI = {
 
 export const asistenciaEventosAPI = {
   getByEvento: async (eventoId) => {
-    const response = await fetch(`${API_BASE_URL}/asistencia-eventos/${eventoId}`);
+    const response = await apiFetch(`${API_BASE_URL}/asistencia-eventos/${eventoId}`);
     return handleResponse(response);
   },
   create: async (datos) => {
-    const response = await fetch(`${API_BASE_URL}/asistencia-eventos`, {
+    const response = await apiFetch(`${API_BASE_URL}/asistencia-eventos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)

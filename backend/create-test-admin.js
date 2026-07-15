@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 require('dotenv').config();
+const { hashPassword } = require('./security/auth');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
@@ -7,9 +8,10 @@ const pool = new Pool({
 
 (async () => {
   try {
+    const passwordHash = await hashPassword('123456');
     const result = await pool.query(
       'INSERT INTO cuentas (correo, rut, password, nombres, rol, estado) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING RETURNING id',
-      ['admin@test.local', '11111111-1', '123456', 'Admin Prueba', 'super_admin', 'activo']
+      ['admin@test.local', '11111111-1', passwordHash, 'Admin Prueba', 'super_admin', 'activo']
     );
     
     if (result.rows.length > 0) {

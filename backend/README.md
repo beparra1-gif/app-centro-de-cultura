@@ -278,6 +278,7 @@ BACKUP_MAX_AGE_HOURS=36
 BACKUP_ENABLED=true
 BACKUP_CRON=0 */6 * * *
 BACKUP_KEEP_DAYS=7
+BACKUP_KEEP_MAX_FILES=48
 BACKUP_RUN_ON_START=true
 BACKUP_ALLOW_JSON_FALLBACK=true
 
@@ -293,6 +294,7 @@ BACKUP_S3_SECRET_ACCESS_KEY=...
 ```
 
 Si configuras ambas opciones, el backend prioriza BACKUP_MANIFEST_PATH.
+Además de la retención por días, `BACKUP_KEEP_MAX_FILES` limita cuántos archivos locales conserva la carpeta para evitar acumulaciones grandes en disco.
 El backend intenta usar `pg_dump`; si no existe en runtime y `BACKUP_ALLOW_JSON_FALLBACK=true`, genera respaldo JSON como contingencia.
 Si `BACKUP_UPLOAD_ENABLED=true`, cada backup se sube al bucket configurado y se verifica con `HeadObject`.
 Si además `BACKUP_UPLOAD_REQUIRED=true`, un fallo de subida marca el backup como error.

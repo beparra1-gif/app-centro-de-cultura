@@ -1,5 +1,6 @@
-﻿const { Pool } = require('pg');
+const { Pool } = require('pg');
 require('dotenv').config();
+const { hashPassword } = require('./security/auth');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
@@ -13,22 +14,23 @@ async function insertTestAdmin() {
       console.log('✓ Test admin already exists');
       process.exit(0);
     }
-    
+
+    const passwordHash = await hashPassword('123456');
     const result = await pool.query(
-      \INSERT INTO cuentas (correo, rut, password, nombres, rol, estado) 
-       VALUES (\, \, \, \, \, \)
+      `INSERT INTO cuentas (correo, rut, password, nombres, rol, estado)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (correo) DO NOTHING
-       RETURNING id, correo, rol\,
+       RETURNING id, correo, rol`,
       [
         'admin@test.local',
-        '11111111-1', 
-        '123456',
+        '11111111-1',
+        passwordHash,
         'Test Admin',
         'super_admin',
         'activo'
       ]
     );
-    
+
     if (result.rows.length > 0) {
       console.log('✓ Test admin created:', result.rows[0]);
     } else {

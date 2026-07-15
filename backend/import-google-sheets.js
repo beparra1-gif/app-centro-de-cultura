@@ -455,7 +455,7 @@ async function runImportFromSheets(options = {}) {
   const incrementalOnly = options.incrementalOnly !== false;
   const client = await pool.connect();
   const summary = [];
-  let qualitySummary = null;
+  let qualitySummary;
 
   try {
     logger.log('Iniciando importacion completa desde Google Sheets a PostgreSQL...');
