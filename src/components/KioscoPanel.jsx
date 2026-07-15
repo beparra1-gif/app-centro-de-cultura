@@ -189,6 +189,15 @@ function KioscoPanel({ nombreResponsable = '' }) {
     }
   };
 
+  const abrirModalPago = (tipo) => {
+    if (!turno) {
+      showToast({ message: 'Abre la caja antes de cobrar (nombre, fecha y monto inicial).', type: 'error' });
+      setVista('caja');
+      return;
+    }
+    setModalPago(tipo);
+  };
+
   const registrarVentasCarrito = async (metodoPago) => {
     let sEK = 0;
     let sTK = 0;
@@ -274,6 +283,11 @@ function KioscoPanel({ nombreResponsable = '' }) {
   };
 
   const pagarFiado = async (fiado, metodo) => {
+    if (!turno) {
+      showToast({ message: 'Abre la caja antes de registrar pagos (nombre, fecha y monto inicial).', type: 'error' });
+      setVista('caja');
+      return;
+    }
     const etiqueta = metodo === 'efectivo' ? 'EFECTIVO' : 'TRANSFERENCIA';
     if (!(await confirmAction({ title: 'Confirmar pago', message: `¿Deuda de ${fiado.nombre} ($${Number(fiado.monto_total).toLocaleString('es-CL')}) cancelada por ${etiqueta}?` }))) {
       return;
@@ -494,28 +508,19 @@ function KioscoPanel({ nombreResponsable = '' }) {
     return <div className="fade-in text-center" style={{ padding: '60px 20px' }}><p className="text-muted">Cargando kiosco...</p></div>;
   }
 
-  if (!turno) {
-    return (
-      <div className="fade-in text-center" style={{ padding: '40px 20px 120px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '100vh', boxSizing: 'border-box' }}>
-        <div className="escudo-club-login" style={{ background: '#FF9500', color: 'white' }}><Lock size={40} /></div>
-        <h2 style={{ color: 'var(--texto-principal)', marginBottom: '8px' }}>Caja Bloqueada</h2>
-        <p style={{ color: 'var(--texto-secundario)', maxWidth: '420px', margin: '0 auto 18px auto' }}>Completa los datos de apertura de turno para habilitar ventas.</p>
-        <div className="card" style={{ textAlign: 'left', borderRadius: '24px', maxWidth: '520px', margin: '0 auto' }}>
-          <div className="input-group mb-10"><label style={{ fontSize: '12px', fontWeight: '800' }}>Responsable de Turno</label><input type="text" className="form-input" value={formApertura.responsable} onChange={(e) => setFormApertura({ ...formApertura, responsable: e.target.value })} placeholder="Ej: María Tesorera" /></div>
-          <div className="input-group mb-10"><label style={{ fontSize: '12px', fontWeight: '800' }}>Fecha de Caja</label><input type="date" className="form-input" value={formApertura.dia} onChange={(e) => setFormApertura({ ...formApertura, dia: e.target.value })} /></div>
-          <div className="input-group mb-15"><label style={{ fontSize: '12px', fontWeight: '800' }}>Sencillo Inicial (CLP)</label><input type="number" className="form-input" value={formApertura.montoInicial} onChange={(e) => setFormApertura({ ...formApertura, montoInicial: e.target.value })} placeholder="Ej: 20000" /></div>
-          <button className="btn-electric" disabled={!formApertura.responsable || !formApertura.dia || !formApertura.montoInicial} onClick={abrirTurno}>DESBLOQUEAR SISTEMA</button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="kiosco-container fade-in kiosco-shell">
-      <div className="staff-header-info mb-15 kiosco-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', padding: '16px 18px', borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
-        <div><h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)', fontSize: '15px' }}>Caja Activa: {String(turno.dia).slice(0, 10)}</h4><span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}><User size={12} /> {turno.responsable} | <Ticket size={12} /> Ticket: #{ticketActual.toString().padStart(3, '0')}</span></div>
-        <button className="btn-pill btn-danger" onClick={abrirModalCierre}>Cerrar Turno</button>
-      </div>
+      {turno ? (
+        <div className="staff-header-info mb-15 kiosco-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', padding: '16px 18px', borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
+          <div><h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)', fontSize: '15px' }}>Caja Activa: {String(turno.dia).slice(0, 10)}</h4><span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}><User size={12} /> {turno.responsable} | <Ticket size={12} /> Ticket: #{ticketActual.toString().padStart(3, '0')}</span></div>
+          <button className="btn-pill btn-danger" onClick={abrirModalCierre}>Cerrar Turno</button>
+        </div>
+      ) : (
+        <div className="staff-header-info mb-15 kiosco-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', padding: '16px 18px', borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
+          <div><h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)', fontSize: '15px' }}>Kiosco POS</h4><span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Lock size={12} /> Caja sin abrir</span></div>
+          <button className="btn-pill" style={{ background: '#FF9500', color: 'white' }} onClick={() => setVista('caja')}>Abrir Caja</button>
+        </div>
+      )}
 
       {modalPago === 'efectivo' && (
         <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: '24px' }}><h3 style={{ fontWeight: '900' }}>Cobro Efectivo</h3><p>Total: <strong style={{ fontSize: '22px' }}>${totalCarrito.toLocaleString('es-CL')}</strong></p><div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }} className="mb-15"><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibido(totalCarrito)}>Exacto</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibido(5000)}>$5.000</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibido(10000)}>$10.000</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibido(20000)}>$20.000</button></div><input type="number" className="form-input" placeholder="¿Con cuánto paga?" value={montoRecibido} onChange={(e) => setMontoRecibido(e.target.value)} />{Number(montoRecibido) >= totalCarrito && (<div className="vuelto-display">VUELTO: ${(Number(montoRecibido) - totalCarrito).toLocaleString('es-CL')}</div>)}<div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPago(null)}>Atrás</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #34C759 0%, #28A745 100%)' }} onClick={() => { if (Number(montoRecibido) < totalCarrito) { showToast({ message: 'Falta dinero.', type: 'error' }); return; } finalizarDespachoPOS('efectivo'); }}>Cobrar</button></div></div></div>
@@ -657,9 +662,9 @@ function KioscoPanel({ nombreResponsable = '' }) {
                 ))}
                 <div className="cart-total-row mt-15"><span>TOTAL A PAGAR</span><h2>${totalCarrito.toLocaleString('es-CL')}</h2></div>
                 <div className="cart-pay-buttons mt-15">
-                  <button className="btn-pago efectivo" onClick={() => setModalPago('efectivo')}><Banknote size={16} /> Efectivo</button>
-                  <button className="btn-pago transferencia" onClick={() => setModalPago('transferencia')}><Smartphone size={16} /> Transfer</button>
-                  <button className="btn-pago" style={{ background: '#FF9500' }} onClick={() => setModalPago('fiado')}><NotebookPen size={16} /> Fiado</button>
+                  <button className="btn-pago efectivo" onClick={() => abrirModalPago('efectivo')}><Banknote size={16} /> Efectivo</button>
+                  <button className="btn-pago transferencia" onClick={() => abrirModalPago('transferencia')}><Smartphone size={16} /> Transfer</button>
+                  <button className="btn-pago" style={{ background: '#FF9500' }} onClick={() => abrirModalPago('fiado')}><NotebookPen size={16} /> Fiado</button>
                 </div>
               </div>
             )}
@@ -667,7 +672,21 @@ function KioscoPanel({ nombreResponsable = '' }) {
         </div>
       )}
 
-      {vista === 'caja' && (
+      {vista === 'caja' && !turno && (
+        <div className="fade-in">
+          <div className="card mb-15" style={{ background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.3)', borderRadius: '18px' }}>
+            <span style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontWeight: '800', color: '#b36200', fontSize: '13px' }}><AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '1px' }} /> Para ocupar la caja debes abrirla primero con nombre de responsable, fecha y monto inicial.</span>
+          </div>
+          <div className="card" style={{ textAlign: 'left', borderRadius: '24px' }}>
+            <div className="input-group mb-10"><label style={{ fontSize: '12px', fontWeight: '800' }}>Responsable de Turno</label><input type="text" className="form-input" value={formApertura.responsable} onChange={(e) => setFormApertura({ ...formApertura, responsable: e.target.value })} placeholder="Ej: María Tesorera" /></div>
+            <div className="input-group mb-10"><label style={{ fontSize: '12px', fontWeight: '800' }}>Fecha de Caja</label><input type="date" className="form-input" value={formApertura.dia} onChange={(e) => setFormApertura({ ...formApertura, dia: e.target.value })} /></div>
+            <div className="input-group mb-15"><label style={{ fontSize: '12px', fontWeight: '800' }}>Sencillo Inicial (CLP)</label><input type="number" className="form-input" value={formApertura.montoInicial} onChange={(e) => setFormApertura({ ...formApertura, montoInicial: e.target.value })} placeholder="Ej: 20000" /></div>
+            <button className="btn-electric" disabled={!formApertura.responsable || !formApertura.dia || !formApertura.montoInicial} onClick={abrirTurno}>ABRIR CAJA</button>
+          </div>
+        </div>
+      )}
+
+      {vista === 'caja' && turno && (
         <div className="fade-in">
           <div className="checkout-total-box"><span style={{ color: 'rgba(255,255,255,0.7)' }}>Efectivo Físico Neto en Caja</span><h2 style={{ color: 'white', textShadow: 'none' }}>${cajaNetaFinal.toLocaleString('es-CL')}</h2><span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>Apertura: ${Number(turno.monto_inicial).toLocaleString('es-CL')}</span></div>
           <div className="caja-doble-grid mt-15">
