@@ -515,6 +515,11 @@ const RESOURCE_TABLE_MAP = {
   'caja-evento': 'caja_evento_kiosco',
   inventario: 'catalogo_inventario',
   egresos: 'egresos',
+  'kiosco-productos': 'kiosco_productos',
+  'kiosco-turnos': 'kiosco_turnos',
+  'kiosco-ventas': 'kiosco_ventas',
+  'kiosco-fiados': 'kiosco_fiados',
+  'kiosco-egresos': 'kiosco_egresos',
   clubes: 'clubes',
   lesiones: 'lesiones',
   disciplina: 'disciplina',
@@ -1438,6 +1443,103 @@ const ensureLogoAssetsTable = async () => {
     )
   `);
   console.log('🖼️ Tabla logo_assets verificada');
+};
+
+// Kiosco POS: el módulo vivía 100% en memoria del navegador (sin backend detrás),
+// por lo que turnos, fiados y ventas se perdían al recargar o cerrar sesión.
+// Estas tablas le dan persistencia real: catálogo de productos, turnos de caja
+// (apertura/cierre con firma), ventas línea a línea (base real de la analítica,
+// sin los números de muestra que traía el mock del frontend), cuentas pendientes
+// con su historial de cargos/pagos, y egresos ligados a cada turno.
+const ensureKioscoTables = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kiosco_productos (
+      id SERIAL PRIMARY KEY,
+      nombre VARCHAR(255) NOT NULL,
+      emoji VARCHAR(10) DEFAULT '📦',
+      categoria VARCHAR(100) DEFAULT 'General',
+      costo NUMERIC(10,2) DEFAULT 0,
+      precio NUMERIC(10,2) NOT NULL DEFAULT 0,
+      stock INTEGER NOT NULL DEFAULT 0,
+      activo BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kiosco_turnos (
+      id SERIAL PRIMARY KEY,
+      responsable VARCHAR(255) NOT NULL,
+      dia DATE NOT NULL,
+      monto_inicial NUMERIC(10,2) NOT NULL DEFAULT 0,
+      estado VARCHAR(20) NOT NULL DEFAULT 'abierto',
+      fecha_apertura TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      fecha_cierre TIMESTAMP,
+      ticket_final INTEGER DEFAULT 0,
+      total_efectivo_ventas NUMERIC(10,2) DEFAULT 0,
+      total_transferencia_ventas NUMERIC(10,2) DEFAULT 0,
+      total_egresos NUMERIC(10,2) DEFAULT 0,
+      total_pendientes NUMERIC(10,2) DEFAULT 0,
+      caja_neta_final NUMERIC(10,2) DEFAULT 0,
+      firma_base64 TEXT,
+      cerrado_por VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kiosco_ventas (
+      id SERIAL PRIMARY KEY,
+      turno_id INTEGER REFERENCES kiosco_turnos(id) ON DELETE SET NULL,
+      ticket_numero INTEGER,
+      producto_id INTEGER,
+      producto_nombre VARCHAR(255) NOT NULL,
+      cantidad INTEGER NOT NULL,
+      precio_unitario NUMERIC(10,2) NOT NULL,
+      subtotal NUMERIC(10,2) NOT NULL,
+      metodo_pago VARCHAR(20) NOT NULL,
+      fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kiosco_fiados (
+      id SERIAL PRIMARY KEY,
+      nombre VARCHAR(255) NOT NULL,
+      detalle TEXT,
+      monto_total NUMERIC(10,2) NOT NULL DEFAULT 0,
+      estado VARCHAR(20) NOT NULL DEFAULT 'abierto',
+      fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      fecha_ultimo_movimiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kiosco_fiados_movimientos (
+      id SERIAL PRIMARY KEY,
+      fiado_id INTEGER NOT NULL REFERENCES kiosco_fiados(id) ON DELETE CASCADE,
+      tipo VARCHAR(20) NOT NULL,
+      monto NUMERIC(10,2) NOT NULL,
+      metodo_pago VARCHAR(20),
+      turno_id INTEGER REFERENCES kiosco_turnos(id) ON DELETE SET NULL,
+      ticket_numero INTEGER,
+      detalle TEXT,
+      fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kiosco_egresos (
+      id SERIAL PRIMARY KEY,
+      turno_id INTEGER REFERENCES kiosco_turnos(id) ON DELETE SET NULL,
+      descripcion VARCHAR(255) NOT NULL,
+      monto NUMERIC(10,2) NOT NULL,
+      fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  console.log('🛒 Tablas de kiosco POS verificadas');
 };
 
 app.post('/api/logo-assets', authenticate, requireModule('admin_dashboard'), uploadLogoMemoria.single('archivo'), async (req, res) => {
@@ -4503,6 +4605,381 @@ app.post('/api/egresos', authenticate, requireModule('kiosco'), async (req, res)
 });
 
 // ==========================================
+// 29B. ENDPOINTS: KIOSCO POS (persistencia real de turnos/ventas/fiados)
+// ==========================================
+
+app.get('/api/kiosco-productos', authenticate, requireModule('kiosco'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM kiosco_productos WHERE activo = true ORDER BY nombre ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/kiosco-productos', authenticate, requireModule('kiosco'), async (req, res) => {
+  const { nombre, emoji, categoria, costo, precio, stock } = req.body;
+  if (!nombre || precio == null) {
+    return res.status(400).json({ error: 'Nombre y precio son obligatorios.' });
+  }
+  try {
+    const result = await pool.query(
+      `INSERT INTO kiosco_productos (nombre, emoji, categoria, costo, precio, stock)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [nombre, emoji || '📦', categoria || 'General', costo || 0, precio, stock || 0]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/kiosco-productos/:id', authenticate, requireModule('kiosco'), async (req, res) => {
+  const camposPermitidos = ['nombre', 'emoji', 'categoria', 'costo', 'precio', 'stock', 'activo'];
+  const columnas = [];
+  const valores = [];
+  camposPermitidos.forEach((campo) => {
+    if (req.body[campo] !== undefined) {
+      columnas.push(`${campo} = $${columnas.length + 1}`);
+      valores.push(req.body[campo]);
+    }
+  });
+  if (columnas.length === 0) {
+    return res.status(400).json({ error: 'No hay campos para actualizar.' });
+  }
+  valores.push(req.params.id);
+  try {
+    const result = await pool.query(
+      `UPDATE kiosco_productos SET ${columnas.join(', ')}, updated_at = NOW() WHERE id = $${valores.length} RETURNING *`,
+      valores
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/kiosco-turnos/actual', authenticate, requireModule('kiosco'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM kiosco_turnos WHERE estado = 'abierto' ORDER BY fecha_apertura DESC LIMIT 1`
+    );
+    res.json(result.rows[0] || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/kiosco-turnos', authenticate, requireModule('kiosco'), async (req, res) => {
+  const { desde, hasta, estado } = req.query;
+  try {
+    const condiciones = [];
+    const valores = [];
+    if (estado) {
+      valores.push(estado);
+      condiciones.push(`estado = $${valores.length}`);
+    }
+    if (desde) {
+      valores.push(desde);
+      condiciones.push(`dia >= $${valores.length}`);
+    }
+    if (hasta) {
+      valores.push(hasta);
+      condiciones.push(`dia <= $${valores.length}`);
+    }
+    const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
+    const result = await pool.query(
+      `SELECT * FROM kiosco_turnos ${where} ORDER BY fecha_apertura DESC LIMIT 200`,
+      valores
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/kiosco-turnos', authenticate, requireModule('kiosco'), async (req, res) => {
+  const { responsable, dia, monto_inicial } = req.body;
+  if (!responsable || !dia) {
+    return res.status(400).json({ error: 'Responsable y día son obligatorios.' });
+  }
+  try {
+    const abierto = await pool.query(`SELECT id FROM kiosco_turnos WHERE estado = 'abierto' LIMIT 1`);
+    if (abierto.rows.length > 0) {
+      return res.status(409).json({ error: 'Ya hay un turno abierto. Ciérralo antes de abrir uno nuevo.' });
+    }
+    const result = await pool.query(
+      `INSERT INTO kiosco_turnos (responsable, dia, monto_inicial, estado)
+       VALUES ($1, $2, $3, 'abierto')
+       RETURNING *`,
+      [responsable, dia, monto_inicial || 0]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/kiosco-turnos/:id/cerrar', authenticate, requireModule('kiosco'), async (req, res) => {
+  const {
+    total_efectivo_ventas,
+    total_transferencia_ventas,
+    total_egresos,
+    total_pendientes,
+    caja_neta_final,
+    firma_base64,
+    cerrado_por,
+    ticket_final,
+  } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE kiosco_turnos SET
+         estado = 'cerrado',
+         fecha_cierre = NOW(),
+         total_efectivo_ventas = $1,
+         total_transferencia_ventas = $2,
+         total_egresos = $3,
+         total_pendientes = $4,
+         caja_neta_final = $5,
+         firma_base64 = $6,
+         cerrado_por = $7,
+         ticket_final = $8
+       WHERE id = $9 AND estado = 'abierto'
+       RETURNING *`,
+      [
+        total_efectivo_ventas || 0,
+        total_transferencia_ventas || 0,
+        total_egresos || 0,
+        total_pendientes || 0,
+        caja_neta_final || 0,
+        firma_base64 || null,
+        cerrado_por || null,
+        ticket_final || 0,
+        req.params.id,
+      ]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Turno no encontrado o ya estaba cerrado.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/kiosco-ventas', authenticate, requireModule('kiosco'), async (req, res) => {
+  const { turno_id, desde, hasta } = req.query;
+  try {
+    const condiciones = [];
+    const valores = [];
+    if (turno_id) {
+      valores.push(turno_id);
+      condiciones.push(`turno_id = $${valores.length}`);
+    }
+    if (desde) {
+      valores.push(desde);
+      condiciones.push(`fecha >= $${valores.length}`);
+    }
+    if (hasta) {
+      valores.push(`${hasta} 23:59:59`);
+      condiciones.push(`fecha <= $${valores.length}`);
+    }
+    const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
+    const result = await pool.query(
+      `SELECT * FROM kiosco_ventas ${where} ORDER BY fecha DESC LIMIT 2000`,
+      valores
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/kiosco-ventas', authenticate, requireModule('kiosco'), async (req, res) => {
+  const { turno_id, ticket_numero, producto_id, producto_nombre, cantidad, precio_unitario, subtotal, metodo_pago } = req.body;
+  if (!producto_nombre || !cantidad || !metodo_pago) {
+    return res.status(400).json({ error: 'Producto, cantidad y método de pago son obligatorios.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    if (producto_id) {
+      const stockActual = await client.query('SELECT stock FROM kiosco_productos WHERE id = $1 FOR UPDATE', [producto_id]);
+      const stockDisponible = Number(stockActual.rows[0]?.stock ?? 0);
+      if (stockActual.rows.length > 0 && stockDisponible < cantidad) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `Stock insuficiente: quedan ${stockDisponible} unidades.` });
+      }
+      await client.query('UPDATE kiosco_productos SET stock = GREATEST(0, stock - $1), updated_at = NOW() WHERE id = $2', [cantidad, producto_id]);
+    }
+
+    const venta = await client.query(
+      `INSERT INTO kiosco_ventas (turno_id, ticket_numero, producto_id, producto_nombre, cantidad, precio_unitario, subtotal, metodo_pago)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [turno_id || null, ticket_numero || null, producto_id || null, producto_nombre, cantidad, precio_unitario || 0, subtotal || 0, metodo_pago]
+    );
+
+    await client.query('COMMIT');
+    res.json(venta.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/kiosco-ventas', authenticate, requireModule('kiosco'), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM kiosco_ventas');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/kiosco-fiados', authenticate, requireModule('kiosco'), async (req, res) => {
+  const { estado } = req.query;
+  try {
+    const where = estado ? `WHERE estado = $1` : '';
+    const result = await pool.query(
+      `SELECT * FROM kiosco_fiados ${where} ORDER BY fecha_ultimo_movimiento DESC LIMIT 500`,
+      estado ? [estado] : []
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/kiosco-fiados/cargo', authenticate, requireModule('kiosco'), async (req, res) => {
+  const { fiado_id, nombre, detalle, monto, turno_id, ticket_numero } = req.body;
+  if (!monto || Number(monto) <= 0) {
+    return res.status(400).json({ error: 'El monto debe ser mayor a 0.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    let fiado;
+
+    if (fiado_id) {
+      const actualizado = await client.query(
+        `UPDATE kiosco_fiados SET monto_total = monto_total + $1, estado = 'abierto', fecha_ultimo_movimiento = NOW()
+         WHERE id = $2 RETURNING *`,
+        [monto, fiado_id]
+      );
+      if (actualizado.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Cuenta pendiente no encontrada.' });
+      }
+      fiado = actualizado.rows[0];
+    } else {
+      if (!nombre) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'El nombre es obligatorio para una cuenta nueva.' });
+      }
+      const creado = await client.query(
+        `INSERT INTO kiosco_fiados (nombre, detalle, monto_total, estado)
+         VALUES ($1, $2, $3, 'abierto')
+         RETURNING *`,
+        [nombre, detalle || '', monto]
+      );
+      fiado = creado.rows[0];
+    }
+
+    await client.query(
+      `INSERT INTO kiosco_fiados_movimientos (fiado_id, tipo, monto, turno_id, ticket_numero)
+       VALUES ($1, 'cargo', $2, $3, $4)`,
+      [fiado.id, monto, turno_id || null, ticket_numero || null]
+    );
+
+    await client.query('COMMIT');
+    res.json(fiado);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/kiosco-fiados/:id/pago', authenticate, requireModule('kiosco'), async (req, res) => {
+  const { monto, metodo_pago, turno_id } = req.body;
+  if (!monto || Number(monto) <= 0) {
+    return res.status(400).json({ error: 'El monto debe ser mayor a 0.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const actual = await client.query('SELECT * FROM kiosco_fiados WHERE id = $1 FOR UPDATE', [req.params.id]);
+    if (actual.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cuenta pendiente no encontrada.' });
+    }
+    const nuevoMonto = Math.max(0, Number(actual.rows[0].monto_total) - Number(monto));
+    const actualizado = await client.query(
+      `UPDATE kiosco_fiados SET monto_total = $1, estado = $2, fecha_ultimo_movimiento = NOW()
+       WHERE id = $3 RETURNING *`,
+      [nuevoMonto, nuevoMonto <= 0 ? 'pagado' : 'abierto', req.params.id]
+    );
+
+    await client.query(
+      `INSERT INTO kiosco_fiados_movimientos (fiado_id, tipo, monto, metodo_pago, turno_id)
+       VALUES ($1, 'pago', $2, $3, $4)`,
+      [req.params.id, monto, metodo_pago || 'efectivo', turno_id || null]
+    );
+
+    await client.query('COMMIT');
+    res.json(actualizado.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/kiosco-egresos', authenticate, requireModule('kiosco'), async (req, res) => {
+  const { turno_id } = req.query;
+  try {
+    const where = turno_id ? `WHERE turno_id = $1` : '';
+    const result = await pool.query(
+      `SELECT * FROM kiosco_egresos ${where} ORDER BY fecha DESC LIMIT 500`,
+      turno_id ? [turno_id] : []
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/kiosco-egresos', authenticate, requireModule('kiosco'), async (req, res) => {
+  const { turno_id, descripcion, monto } = req.body;
+  if (!descripcion || !monto) {
+    return res.status(400).json({ error: 'Descripción y monto son obligatorios.' });
+  }
+  try {
+    const result = await pool.query(
+      `INSERT INTO kiosco_egresos (turno_id, descripcion, monto)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [turno_id || null, descripcion, monto]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // 30. ENDPOINTS: CLUBES (FASE 3)
 // ==========================================
 
@@ -4729,6 +5206,10 @@ app.listen(PORT, () => {
 
   ensureLogoAssetsTable().catch((error) => {
     console.error('❌ Error verificando tabla logo_assets:', error.message);
+  });
+
+  ensureKioscoTables().catch((error) => {
+    console.error('❌ Error verificando tablas de kiosco:', error.message);
   });
 
   ensureSuperAdminAccount().catch((error) => {

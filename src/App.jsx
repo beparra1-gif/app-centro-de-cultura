@@ -26,7 +26,6 @@ import {
   getUTMLastDayPreviousMonth,
   getColorUrgencia,
 } from './utils/appHelpers';
-import { productosKioscoBase } from './data/productosBase';
 import {
   MODULOS_ACCESO,
   obtenerPermisosEfectivos,
@@ -210,29 +209,8 @@ function App() {
     explicacion: 'Cuando el staff publique un quiz, aparecerá aquí.',
   });
 
-  // --- ESTADOS: KIOSCO POS, INVENTARIO Y CAJA (PREMIUM) ---
-  const [cajaAbierta, setCajaAbierta] = useState(false);
-  const [datosCaja, setDatosCaja] = useState({ dia: '', responsable: '', montoInicial: '' });
-  const [vistaKiosco, setVistaKiosco] = useState('pos');
-  const [inventarioProductos, setInventarioProductos] = useState(productosKioscoBase);
-  const [carritoKiosco, setCarritoKiosco] = useState([]);
-  const [modalPagoPOS, setModalPagoPOS] = useState(null); 
-  const [montoRecibidoEfectivo, setMontoRecibidoEfectivo] = useState('');
-  
-  const [fiadosLista, setFiadosLista] = useState([]);
-  const [nombreFiado, setNombreFiado] = useState('');
-  const [detalleFiado, setDetalleFiado] = useState('');
-  
-  const [cajaEfectivoKiosco, setCajaEfectivoKiosco] = useState(0);
-  const [cajaTransferKiosco, setCajaTransferKiosco] = useState(0);
-  const [cajaEfectivoEntradas, setCajaEfectivoEntradas] = useState(0);
-  const [cajaTransferEntradas, setCajaTransferEntradas] = useState(0);
-  const [ticketCounter, setTicketCounter] = useState(1);
-  
-  const [egresosLista, setEgresosLista] = useState([]);
-  const [historialCierres, setHistorialCierres] = useState([]);
-  const [gastoRegistro, setGastoRegistro] = useState({ desc: '', monto: ''});
-  const [nuevoProducto, setNuevoProducto] = useState({ nombre: '', costo: '', precio: '', categoria: 'Bebida' });
+  // Kiosco POS: el panel ahora es autocontenido (fetch propio a /api/kiosco-*),
+  // ver src/components/KioscoPanel.jsx — ya no vive acá como estado prop-drilled.
 
   // --- ESTADOS: SUPER ADMIN (MODO DIOS) ---
   const [vistaAdmin, setVistaAdmin] = useState('dashboard');
@@ -1923,19 +1901,6 @@ function App() {
       });
     }
     
-    // Alerta 3: Stock crítico en kiosco
-    const stockCritico = inventarioProductos.filter(p => p.stock < 5);
-    if (stockCritico.length > 0) {
-      nuevasAlertas.push({
-        id: nextId(),
-        tipo: 'stock',
-        titulo: 'Stock Crítico',
-        descripcion: `${stockCritico.length} productos con stock bajo`,
-        urgencia: 'Alta',
-        timestamp: new Date()
-      });
-    }
-    
     // Alerta 4: Usuarios inactivos
     nuevasAlertas.push({
       id: nextId(),
@@ -2665,42 +2630,7 @@ function App() {
             )}
             {puedeVerPantalla('kiosco') && pantallaActiva === 'kiosco' && (
               <KioscoPanel
-                cajaAbierta={cajaAbierta}
-                setCajaAbierta={setCajaAbierta}
-                datosCaja={datosCaja}
-                setDatosCaja={setDatosCaja}
-                vistaKiosco={vistaKiosco}
-                setVistaKiosco={setVistaKiosco}
-                inventarioProductos={inventarioProductos}
-                setInventarioProductos={setInventarioProductos}
-                carritoKiosco={carritoKiosco}
-                setCarritoKiosco={setCarritoKiosco}
-                modalPagoPOS={modalPagoPOS}
-                setModalPagoPOS={setModalPagoPOS}
-                montoRecibidoEfectivo={montoRecibidoEfectivo}
-                setMontoRecibidoEfectivo={setMontoRecibidoEfectivo}
-                fiadosLista={fiadosLista}
-                setFiadosLista={setFiadosLista}
-                nombreFiado={nombreFiado}
-                setNombreFiado={setNombreFiado}
-                detalleFiado={detalleFiado}
-                setDetalleFiado={setDetalleFiado}
-                cajaEfectivoKiosco={cajaEfectivoKiosco}
-                setCajaEfectivoKiosco={setCajaEfectivoKiosco}
-                cajaTransferKiosco={cajaTransferKiosco}
-                setCajaTransferKiosco={setCajaTransferKiosco}
-                cajaEfectivoEntradas={cajaEfectivoEntradas}
-                setCajaEfectivoEntradas={setCajaEfectivoEntradas}
-                cajaTransferEntradas={cajaTransferEntradas}
-                setCajaTransferEntradas={setCajaTransferEntradas}
-                ticketCounter={ticketCounter}
-                setTicketCounter={setTicketCounter}
-                egresosLista={egresosLista}
-                setEgresosLista={setEgresosLista}
-                gastoRegistro={gastoRegistro}
-                setGastoRegistro={setGastoRegistro}
-                nuevoProducto={nuevoProducto}
-                setNuevoProducto={setNuevoProducto}
+                nombreResponsable={usuarioAutenticado?.nombres || usuarioAutenticado?.nombre || ''}
               />
             )}
             {puedeVerPantalla('admin_dashboard') && pantallaActiva === 'admin_dashboard' && (

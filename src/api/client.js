@@ -1179,3 +1179,116 @@ export const asistenciaEventosAPI = {
     return handleResponse(response);
   }
 };
+
+// ========== KIOSCO POS ==========
+
+const buildQuery = (params = {}) => {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '');
+  if (entries.length === 0) return '';
+  return `?${new URLSearchParams(entries).toString()}`;
+};
+
+export const kioscoAPI = {
+  productos: {
+    getAll: async () => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-productos`);
+      return handleResponse(response);
+    },
+    create: async (datos) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-productos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      return handleResponse(response);
+    },
+    update: async (id, datos) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-productos/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      return handleResponse(response);
+    },
+  },
+  turnos: {
+    getActual: async () => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-turnos/actual`);
+      return handleResponse(response);
+    },
+    getAll: async (filtros = {}) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-turnos${buildQuery(filtros)}`);
+      return handleResponse(response);
+    },
+    abrir: async (datos) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-turnos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      return handleResponse(response);
+    },
+    cerrar: async (id, datos) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-turnos/${id}/cerrar`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      return handleResponse(response);
+    },
+  },
+  ventas: {
+    getAll: async (filtros = {}) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-ventas${buildQuery(filtros)}`);
+      return handleResponse(response);
+    },
+    create: async (datos) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-ventas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      return handleResponse(response);
+    },
+    resetAll: async () => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-ventas`, { method: 'DELETE' });
+      return handleResponse(response);
+    },
+  },
+  fiados: {
+    getAll: async (filtros = {}) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-fiados${buildQuery(filtros)}`);
+      return handleResponse(response);
+    },
+    cargo: async (datos) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-fiados/cargo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      return handleResponse(response);
+    },
+    pago: async (id, datos) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-fiados/${id}/pago`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      return handleResponse(response);
+    },
+  },
+  egresos: {
+    getAll: async (filtros = {}) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-egresos${buildQuery(filtros)}`);
+      return handleResponse(response);
+    },
+    create: async (datos) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-egresos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      return handleResponse(response);
+    },
+  },
+};
