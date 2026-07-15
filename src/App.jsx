@@ -393,14 +393,23 @@ function App() {
         // Para SuperAdmin, no verificar expiración - mantener sesión indefinidamente
         if (sesion?.rol && sesion?.usuario) {
           const rolNormalizado = resolverRolPrincipal(sesion.rol, sesion.usuario);
-          setRolUsuario(rolNormalizado);
-          setUsuarioAutenticado({
-            ...sesion.usuario,
-            rol: resolverRolPrincipal(sesion.usuario?.rol || rolNormalizado, sesion.usuario),
-          });
-          setPantallaActiva(sesion.pantallaActiva || (rolNormalizado === 'super_admin' ? 'admin_dashboard' : 'comunicaciones'));
-          setSesionToken(sesion.token || null);
-          api.setAuthToken(sesion.token || null);
+
+          // Una sesión de un rol autenticado (no invitado) sin token es una sesión
+          // corrupta/vieja (p. ej. guardada antes de un fix de login): sin token todos
+          // los fetches protegidos devuelven 401 en silencio y la app queda "logueada"
+          // pero sin poder traer ningún dato. Se descarta en vez de restaurarla.
+          if (rolNormalizado !== 'visita' && !sesion.token) {
+            window.localStorage.removeItem(SESSION_STORAGE_KEY);
+          } else {
+            setRolUsuario(rolNormalizado);
+            setUsuarioAutenticado({
+              ...sesion.usuario,
+              rol: resolverRolPrincipal(sesion.usuario?.rol || rolNormalizado, sesion.usuario),
+            });
+            setPantallaActiva(sesion.pantallaActiva || (rolNormalizado === 'super_admin' ? 'admin_dashboard' : 'comunicaciones'));
+            setSesionToken(sesion.token || null);
+            api.setAuthToken(sesion.token || null);
+          }
         }
       }
     } catch {
