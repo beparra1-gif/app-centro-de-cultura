@@ -1,4 +1,4 @@
-import { Camera, ChevronRight, HeartPulse, Lock, User } from 'lucide-react';
+import { ChevronRight, HeartPulse, Lock, User } from 'lucide-react';
 
 function OnboardingModal({
   onboardingProgress,
@@ -37,18 +37,22 @@ function OnboardingModal({
         {onboardingStep === 1 && (
           <div className="step-content">
             <h3 style={{ fontWeight: '900' }}><Lock size={20} color="var(--azul-marino)" /> Clave de Seguridad</h3>
-            <p>Debes cambiar tu contraseña inicial (12345) por una personal y segura para continuar.</p>
+            <p>Debes cambiar tu contraseña inicial por una personal y segura para continuar.</p>
+            <label htmlFor="onboarding-password-nueva" className="form-label mt-10">Nueva contraseña</label>
             <input
+              id="onboarding-password-nueva"
               type="password"
               placeholder="Nueva contraseña"
-              className="form-input mt-10"
+              className="form-input"
               value={onboardingPassword}
               onChange={(e) => setOnboardingPassword(e.target.value)}
             />
+            <label htmlFor="onboarding-password-repetir" className="form-label mt-10">Repetir contraseña</label>
             <input
+              id="onboarding-password-repetir"
               type="password"
               placeholder="Repetir contraseña"
-              className="form-input mt-10"
+              className="form-input"
               value={onboardingPasswordConfirm}
               onChange={(e) => setOnboardingPasswordConfirm(e.target.value)}
             />
@@ -62,21 +66,25 @@ function OnboardingModal({
 
             {Object.keys(labelCampo).map((campo) => (
               muestraCampo(campo) ? (
-                <input
-                  key={campo}
-                  type="text"
-                  placeholder={labelCampo[campo]}
-                  className="form-input mt-10"
-                  value={onboardingPerfilDraft?.[campo] || ''}
-                  onChange={(e) => setOnboardingPerfilDraft((prev) => ({ ...prev, [campo]: e.target.value }))}
-                />
+                <div key={campo} className="mt-10">
+                  <label htmlFor={`onboarding-campo-${campo}`} className="form-label">{labelCampo[campo]}</label>
+                  <input
+                    id={`onboarding-campo-${campo}`}
+                    type="text"
+                    placeholder={labelCampo[campo]}
+                    className="form-input"
+                    value={onboardingPerfilDraft?.[campo] || ''}
+                    onChange={(e) => setOnboardingPerfilDraft((prev) => ({ ...prev, [campo]: e.target.value }))}
+                  />
+                </div>
               ) : null
             ))}
 
             <div className="foto-upload-box mt-10" style={{ borderRadius: '22px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <User size={40} color="var(--texto-secundario)" />
-              <span>Foto de perfil (opcional). Puedes subirla ahora o despues.</span>
+              <label htmlFor="onboarding-foto-perfil">Foto de perfil (opcional). Puedes subirla ahora o despues.</label>
               <input
+                id="onboarding-foto-perfil"
                 type="file"
                 className="form-input"
                 accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"

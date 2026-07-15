@@ -1,3 +1,6 @@
+import { MessageCircle, X, Send, History, Users, Check } from 'lucide-react';
+import { showToast } from '../utils/toast';
+
 function WhatsAppPanel({
   mostrarWhatsAppPanel,
   setMostrarWhatsAppPanel,
@@ -19,14 +22,14 @@ function WhatsAppPanel({
   return (
     <div className="floating-panel whatsapp-panel" style={{ position: 'fixed', top: '90px', right: '15px', width: '380px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', borderRadius: '24px', boxShadow: '0 18px 44px rgba(0,0,0,0.18)', zIndex: 997, padding: '20px', maxHeight: '80vh', overflowY: 'auto', animation: 'slideInRight 0.4s ease', border: '1px solid rgba(255,255,255,0.72)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--texto-principal)' }}>💬 WhatsApp</h4>
-        <button onClick={() => setMostrarWhatsAppPanel(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', fontSize: '20px', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px' }}>✕</button>
+        <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--texto-principal)', display: 'flex', alignItems: 'center', gap: '6px' }}><MessageCircle size={17} /> WhatsApp</h4>
+        <button onClick={() => setMostrarWhatsAppPanel(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
       </div>
 
       <div style={{ display: 'flex', gap: '6px', marginBottom: '15px', borderBottom: '1px solid var(--borde-suave)', paddingBottom: '12px', flexWrap: 'wrap' }}>
-        <button onClick={() => setMostrarWhatsAppPanel('enviar')} style={{ flex: 1, padding: '8px 10px', borderRadius: '14px', background: 'rgba(52,199,89,0.16)', color: '#1F9D55', fontSize: '11px', fontWeight: '800', border: '1px solid rgba(52,199,89,0.25)', cursor: 'pointer' }}>📤 Enviar</button>
-        <button onClick={() => setMostrarHistorialWA(true)} style={{ flex: 1, padding: '8px 10px', borderRadius: '14px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800', border: '1px solid rgba(0,122,255,0.16)', cursor: 'pointer' }}>📜 Historial</button>
-        <button onClick={() => setMostrarWhatsAppPanel('contactos')} style={{ flex: 1, padding: '8px 10px', borderRadius: '14px', background: 'rgba(255,159,64,0.1)', color: '#D97706', fontSize: '11px', fontWeight: '800', border: '1px solid rgba(255,159,64,0.18)', cursor: 'pointer' }}>👥 Contactos</button>
+        <button onClick={() => setMostrarWhatsAppPanel('enviar')} style={{ flex: 1, padding: '8px 10px', borderRadius: '14px', background: 'rgba(52,199,89,0.16)', color: '#1F9D55', fontSize: '11px', fontWeight: '800', border: '1px solid rgba(52,199,89,0.25)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Send size={12} /> Enviar</button>
+        <button onClick={() => setMostrarHistorialWA(true)} style={{ flex: 1, padding: '8px 10px', borderRadius: '14px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800', border: '1px solid rgba(0,122,255,0.16)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><History size={12} /> Historial</button>
+        <button onClick={() => setMostrarWhatsAppPanel('contactos')} style={{ flex: 1, padding: '8px 10px', borderRadius: '14px', background: 'rgba(255,159,64,0.1)', color: '#D97706', fontSize: '11px', fontWeight: '800', border: '1px solid rgba(255,159,64,0.18)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Users size={12} /> Contactos</button>
       </div>
 
       {mostrarWhatsAppPanel === 'enviar' && (
@@ -48,10 +51,10 @@ function WhatsAppPanel({
           <div>
             <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-principal)', display: 'block', marginBottom: '4px' }}>Tipo de Mensaje</label>
             <select value={templateMensaje} onChange={e => setTemplateMensaje(e.target.value)} className="form-input" style={{ width: '100%', fontSize: '12px', borderRadius: '14px' }}>
-              <option value="alerta">🚨 Alerta Crítica</option>
-              <option value="pago">💳 Confirmación Pago</option>
-              <option value="confirmacion">✅ Confirmación General</option>
-              <option value="general">📝 Personalizado</option>
+              <option value="alerta">Alerta Crítica</option>
+              <option value="pago">Confirmación Pago</option>
+              <option value="confirmacion">Confirmación General</option>
+              <option value="general">Personalizado</option>
             </select>
           </div>
 
@@ -71,7 +74,7 @@ function WhatsAppPanel({
           <button
             onClick={() => {
               if (!phoneNumberToValidate) {
-                alert('Selecciona un destinatario');
+                showToast({ message: 'Selecciona un destinatario', type: 'error' });
                 return;
               }
               enviarPorWhatsApp(phoneNumberToValidate, obtenerTemplateWhatsApp(templateMensaje, { alertas: 2, monto: 45000, fecha: '09/07/2026' }), templateMensaje);
@@ -79,9 +82,9 @@ function WhatsAppPanel({
               setMensajeCustomWA('');
               setMostrarWhatsAppPanel(false);
             }}
-            style={{ padding: '10px', borderRadius: '14px', border: 'none', background: 'linear-gradient(180deg, #34C759 0%, #1F9D55 100%)', color: 'white', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+            style={{ padding: '10px', borderRadius: '14px', border: 'none', background: 'linear-gradient(180deg, #34C759 0%, #1F9D55 100%)', color: 'white', fontSize: '12px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
           >
-            ✓ Enviar por WhatsApp
+            <Check size={14} /> Enviar por WhatsApp
           </button>
         </div>
       )}
@@ -101,9 +104,9 @@ function WhatsAppPanel({
               <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', background: 'rgba(0,0,0,0.02)', borderRadius: '16px', marginBottom: '6px', fontSize: '11px' }}>
                 <div>
                   <p style={{ margin: '0 0 2px 0', fontWeight: '700', color: 'var(--texto-principal)' }}>{c.nombre}</p>
-                  <p style={{ margin: 0, fontSize: '10px', color: 'var(--texto-secundario)' }}>{c.numero}</p>
+                  <p style={{ margin: 0, fontSize: '11px', color: 'var(--texto-secundario)' }}>{c.numero}</p>
                 </div>
-                <button onClick={() => eliminarContactoWhatsApp(c.id)} style={{ background: 'rgba(255,59,48,0.16)', border: '1px solid rgba(255,59,48,0.18)', color: '#FF3B30', padding: '6px 10px', borderRadius: '999px', fontSize: '10px', fontWeight: '800', cursor: 'pointer' }}>Eliminar</button>
+                <button onClick={() => eliminarContactoWhatsApp(c.id)} style={{ background: 'rgba(255,59,48,0.16)', border: '1px solid rgba(255,59,48,0.18)', color: 'var(--rojo-alerta)', padding: '6px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}>Eliminar</button>
               </div>
             ))}
           </div>

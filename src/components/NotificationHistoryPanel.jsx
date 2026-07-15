@@ -1,3 +1,5 @@
+import { X } from 'lucide-react';
+
 function NotificationHistoryPanel({
   historialNotificaciones,
   filtroReporteFecha,
@@ -15,7 +17,7 @@ function NotificationHistoryPanel({
     <div style={{ position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '500px', maxHeight: '600px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', borderRadius: '24px', boxShadow: '0 18px 44px rgba(15,23,42,0.18)', zIndex: 999, padding: '20px', border: '1px solid rgba(255,255,255,0.72)', overflowY: 'auto', backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h4 style={{ margin: 0, color: 'var(--texto-heading)', fontSize: '16px', fontWeight: '700' }}>Historial de Notificaciones</h4>
-        <button onClick={() => setMostrarHistorialNotif(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', fontSize: '20px', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px' }}>✕</button>
+        <button onClick={() => setMostrarHistorialNotif(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
       </div>
 
       <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
@@ -34,7 +36,7 @@ function NotificationHistoryPanel({
             <div key={notif.id} style={{ background: 'rgba(0,0,0,0.02)', padding: '12px', borderRadius: '16px', borderLeft: '4px solid var(--azul-electrico)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
                 <span style={{ fontWeight: '700', fontSize: '13px', color: 'var(--texto-principal)' }}>{notif.titulo}</span>
-                <span style={{ fontSize: '10px', color: 'var(--texto-secundario)' }}>{notif.timestamp.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
+                <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{notif.timestamp.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
               <p style={{ margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.3' }}>{notif.descripcion}</p>
             </div>

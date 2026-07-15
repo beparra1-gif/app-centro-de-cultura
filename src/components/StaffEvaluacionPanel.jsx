@@ -1,5 +1,6 @@
 import { FileText, Save } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
+import { showToast } from '../utils/toast';
 
 function StaffEvaluacionPanel({
   evalTiro,
@@ -80,7 +81,7 @@ function StaffEvaluacionPanel({
           <textarea className="form-input" rows="3" placeholder="Ej: Aumentar el % de tiros libres." value={notasEvaluacion.metas} onChange={(e) => setNotasEvaluacion({ ...notasEvaluacion, metas: e.target.value })}></textarea>
         </div>
 
-        <button className="btn-electric" onClick={() => alert('Evaluación guardada. Se ha enviado la alerta al Apoderado para firmar el Acuse de Recibo.')}>
+        <button className="btn-electric" onClick={() => showToast({ message: 'Evaluación guardada. Se ha enviado la alerta al Apoderado para firmar el Acuse de Recibo.', type: 'success' })}>
           <Save size={18} /> Emitir Evaluación Formal
         </button>
       </div>

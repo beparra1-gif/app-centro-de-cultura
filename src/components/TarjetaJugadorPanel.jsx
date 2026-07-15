@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Download, Mars, QrCode, ShieldCheck, Shirt, Target, Trophy, User, Venus, X } from 'lucide-react';
+import { BadgeCheck, Download, Mars, QrCode, ShieldCheck, Shirt, Trophy, User, Venus, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer } from 'recharts';
 import PupiloSelector from './PupiloSelector';
 import * as api from '../api/client';
+import { showToast } from '../utils/toast';
 
 const EXPORT_WIDTH = 750;
 const EXPORT_HEIGHT = 1050;
@@ -15,10 +16,6 @@ function TarjetaJugadorPanel({
   pupilosDisponibles,
   rolUsuario,
 }) {
-  if (!pupiloActivo) {
-    return <div className="player-screen-shell">Cargando tarjeta del jugador...</div>;
-  }
-
   const cardRef = useRef(null);
   const cardFrontExportRef = useRef(null);
   const cardBackRef = useRef(null);
@@ -54,6 +51,10 @@ function TarjetaJugadorPanel({
       cancelled = true;
     };
   }, [pupiloActivo?.rut, rolUsuario]);
+
+  if (!pupiloActivo) {
+    return <div className="player-screen-shell">Cargando tarjeta del jugador...</div>;
+  }
 
   const xpActual = Number(pupiloActivo.xp ?? pupiloActivo.xp_total ?? 0);
   const nivelBase = Number(pupiloActivo.nivel ?? pupiloActivo.nivel_actual ?? 1) || 1;
@@ -258,8 +259,8 @@ function TarjetaJugadorPanel({
       const canvas = await capturarRefExport(refObjetivo);
       const image = canvas.toDataURL('image/png');
       descargarDataUrl(image, `tarjeta-coleccion-${sufijo}-${String(nombreDisplay || 'jugador').toLowerCase()}.png`);
-    } catch (error) {
-      alert('No se pudo descargar la tarjeta en este momento.');
+    } catch {
+      showToast({ message: 'No se pudo descargar la tarjeta en este momento.', type: 'error' });
     }
   };
 
@@ -286,16 +287,16 @@ function TarjetaJugadorPanel({
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '8px' }}>
-                <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-                  <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Asistencia</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px', color: 'var(--verde-victoria)' }}>{pupiloActivo.asistencia || 'N/A'}</strong>
+                <div className="stat-box">
+                  <span className="stat-label">Asistencia</span>
+                  <strong className="stat-value" style={{ color: 'var(--verde-victoria)' }}>{pupiloActivo.asistencia || 'N/A'}</strong>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-                  <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Estado</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px', color: '#00C7BE' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
+                <div className="stat-box">
+                  <span className="stat-label">Estado</span>
+                  <strong className="stat-value" style={{ color: '#00C7BE' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-                  <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Validacion</span>
+                <div className="stat-box">
+                  <span className="stat-label">Validacion</span>
                   <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '4px', fontSize: '13px', color: 'var(--verde-victoria)' }}><ShieldCheck size={14} /> Ficha habilitada</strong>
                 </div>
               </div>
@@ -358,7 +359,7 @@ function TarjetaJugadorPanel({
                 )}
               </div>
               <div style={{ minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: '10px', fontWeight: '800', letterSpacing: '0.7px', textTransform: 'uppercase', opacity: 0.8 }}>Club</span>
+                <span style={{ display: 'block', fontSize: '11px', fontWeight: '800', letterSpacing: '0.7px', textTransform: 'uppercase', opacity: 0.8 }}>Club</span>
                 <strong style={{ display: 'block', fontSize: '13px', fontWeight: '900', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clubNombre}</strong>
               </div>
             </div>
@@ -387,7 +388,7 @@ function TarjetaJugadorPanel({
               ) : (
                 <div style={{ width: '100%', height: '100%', borderRadius: '14px', background: 'rgba(255,255,255,0.18)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                   {esFemenino ? <Venus size={30} /> : <Mars size={30} />}
-                  <span style={{ fontSize: '10px', fontWeight: '800', opacity: 0.9 }}>SIN FOTO</span>
+                  <span style={{ fontSize: '11px', fontWeight: '800', opacity: 0.9 }}>SIN FOTO</span>
                 </div>
               )}
             </div>
@@ -400,29 +401,29 @@ function TarjetaJugadorPanel({
           gap: '10px',
           marginTop: '16px'
         }}>
-          <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
-            <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Posición</span>
-            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rolUsuario === 'visita' ? 'N/A' : pupiloActivo.posicion}</strong>
+          <div className="stat-box">
+            <span className="stat-label">Posición</span>
+            <strong className="stat-value">{rolUsuario === 'visita' ? 'N/A' : pupiloActivo.posicion}</strong>
           </div>
-          <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
-            <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Nivel</span>
-            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</strong>
+          <div className="stat-box">
+            <span className="stat-label">Nivel</span>
+            <strong className="stat-value">{rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</strong>
           </div>
-          <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
-            <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Estado</span>
-            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
+          <div className="stat-box">
+            <span className="stat-label">Estado</span>
+            <strong className="stat-value">{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
           </div>
-          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-            <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Estatura</span>
-            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{pupiloActivo.estatura || 'N/A'}</strong>
+          <div className="stat-box">
+            <span className="stat-label">Estatura</span>
+            <strong className="stat-value">{pupiloActivo.estatura || 'N/A'}</strong>
           </div>
-          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-            <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Peso</span>
-            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{pupiloActivo.peso || 'N/A'}</strong>
+          <div className="stat-box">
+            <span className="stat-label">Peso</span>
+            <strong className="stat-value">{pupiloActivo.peso || 'N/A'}</strong>
           </div>
-          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-            <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Mano habil</span>
-            <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{pupiloActivo.manoHabil || 'N/A'}</strong>
+          <div className="stat-box">
+            <span className="stat-label">Mano habil</span>
+            <strong className="stat-value">{pupiloActivo.manoHabil || 'N/A'}</strong>
           </div>
         </div>
 
@@ -466,7 +467,7 @@ function TarjetaJugadorPanel({
               display: 'grid',
               gridTemplateRows: 'auto auto 1fr auto'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', fontWeight: '900', textTransform: 'uppercase' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase' }}>
                 <span>CCF 2026</span>
                 <span>#{serialTexto}</span>
               </div>
@@ -482,7 +483,7 @@ function TarjetaJugadorPanel({
                   </div>
                 )}
               </div>
-              <div style={{ marginTop: '8px', fontSize: '10px', fontWeight: '800' }}>
+              <div style={{ marginTop: '8px', fontSize: '11px', fontWeight: '800' }}>
                 Nivel {nivelActualNumero} · {pupiloActivo.categoria || 'General'}
               </div>
             </div>
@@ -498,18 +499,18 @@ function TarjetaJugadorPanel({
               display: 'grid',
               gridTemplateRows: 'auto auto 1fr auto'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', fontWeight: '900', textTransform: 'uppercase' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase' }}>
                 <span>Reverso CCF</span>
                 <span>#{serialTexto}</span>
               </div>
               <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '900' }}>{pupiloActivo.nombre || 'Jugador'}</div>
-              <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '10px', fontWeight: '800' }}>
+              <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '11px', fontWeight: '800' }}>
                 <span>Nivel {nivelActualNumero}</span>
                 <span>XP {xpActual}</span>
                 <span>Racha {rachaActual} dias</span>
                 <span>Puntos {puntosGamificacion}</span>
               </div>
-              <div style={{ marginTop: '8px', fontSize: '9px', opacity: 0.9 }}>
+              <div style={{ marginTop: '8px', fontSize: '11px', opacity: 0.9 }}>
                 Formato 2.5 x 3.5 in vertical
               </div>
             </div>
@@ -540,21 +541,21 @@ function TarjetaJugadorPanel({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
-            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-              <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>XP</span>
-              <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{xpActual} XP</strong>
+            <div className="stat-box">
+              <span className="stat-label">XP</span>
+              <strong className="stat-value">{xpActual} XP</strong>
             </div>
-            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-              <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Puntos</span>
-              <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{puntosGamificacion}</strong>
+            <div className="stat-box">
+              <span className="stat-label">Puntos</span>
+              <strong className="stat-value">{puntosGamificacion}</strong>
             </div>
-            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-              <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Racha</span>
-              <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rachaActual} dias</strong>
+            <div className="stat-box">
+              <span className="stat-label">Racha</span>
+              <strong className="stat-value">{rachaActual} dias</strong>
             </div>
-            <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px' }}>
-              <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Siguiente nivel</span>
-              <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{xpParaSiguienteNivel} XP</strong>
+            <div className="stat-box">
+              <span className="stat-label">Siguiente nivel</span>
+              <strong className="stat-value">{xpParaSiguienteNivel} XP</strong>
             </div>
           </div>
 
@@ -589,8 +590,8 @@ function TarjetaJugadorPanel({
                 <div className="desglose-row"><span>Camiseta:</span><strong>{pupiloActivo.tallaCamiseta}</strong></div>
                 <div className="desglose-row"><span>Short:</span><strong>{pupiloActivo.tallaShort}</strong></div>
                 <div className="desglose-row mt-10 text-center">
-                  <span className="badge-urgente" style={{ background: pupiloActivo.poleraEntregada ? 'var(--verde-victoria)' : '#FF3B30', width: '100%', display: 'block', padding: '8px 0' }}>
-                    {pupiloActivo.poleraEntregada ? 'ROPA ENTREGADA ✓' : 'FALTA ENTREGA'}
+                  <span className="badge-urgente" style={{ background: pupiloActivo.poleraEntregada ? 'var(--verde-victoria)' : 'var(--rojo-alerta)', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 0' }}>
+                    {pupiloActivo.poleraEntregada ? <>ROPA ENTREGADA <BadgeCheck size={13} /></> : 'FALTA ENTREGA'}
                   </span>
                 </div>
               </div>
@@ -683,16 +684,16 @@ function TarjetaJugadorPanel({
 
           <div style={{ marginTop: 'auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
-                <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Posicion</span>
+              <div className="stat-box">
+                <span className="stat-label">Posicion</span>
                 <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{rolUsuario === 'visita' ? 'N/A' : pupiloActivo.posicion}</strong>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
-                <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Nivel</span>
+              <div className="stat-box">
+                <span className="stat-label">Nivel</span>
                 <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</strong>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.13)', borderRadius: '12px', padding: '10px' }}>
-                <span style={{ fontSize: '10px', opacity: 0.8, textTransform: 'uppercase', fontWeight: '800' }}>Estado</span>
+              <div className="stat-box">
+                <span className="stat-label">Estado</span>
                 <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
               </div>
             </div>
@@ -746,16 +747,16 @@ function TarjetaJugadorPanel({
           {estiloColeccion === 'coleccionista' ? (
             <>
               <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
-                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>Nivel</span>
+                <div className="stat-box">
+                  <span className="stat-label">Nivel</span>
                   <strong style={{ display: 'block', marginTop: '4px', fontSize: '16px' }}>{nivelActualNumero}</strong>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
-                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>XP</span>
+                <div className="stat-box">
+                  <span className="stat-label">XP</span>
                   <strong style={{ display: 'block', marginTop: '4px', fontSize: '16px' }}>{xpActual}</strong>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
-                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>Racha</span>
+                <div className="stat-box">
+                  <span className="stat-label">Racha</span>
                   <strong style={{ display: 'block', marginTop: '4px', fontSize: '16px' }}>{rachaActual} dias</strong>
                 </div>
               </div>
@@ -781,20 +782,20 @@ function TarjetaJugadorPanel({
           ) : (
             <>
               <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
-                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>POS</span>
+                <div className="stat-box">
+                  <span className="stat-label">POS</span>
                   <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{pupiloActivo.posicion || 'N/A'}</strong>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
-                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>PTS</span>
+                <div className="stat-box">
+                  <span className="stat-label">PTS</span>
                   <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{puntosGamificacion}</strong>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
-                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>EST</span>
+                <div className="stat-box">
+                  <span className="stat-label">EST</span>
                   <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{pupiloActivo.estatura || 'N/A'}</strong>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px' }}>
-                  <span style={{ fontSize: '10px', textTransform: 'uppercase', opacity: 0.85, fontWeight: '800' }}>PESO</span>
+                <div className="stat-box">
+                  <span className="stat-label">PESO</span>
                   <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{pupiloActivo.peso || 'N/A'}</strong>
                 </div>
               </div>

@@ -1,3 +1,5 @@
+import { Check, Smartphone, Bell, Volume2, Vibrate } from 'lucide-react';
+
 function PushPreferenciasPanel({
   preferenciasSonido,
   setPreferenciasSonido,
@@ -43,7 +45,7 @@ function PushPreferenciasPanel({
               boxShadow: preferenciasSonido.habilitado ? '0 10px 18px rgba(48,184,76,0.22)' : 'none',
             }}
           >
-            {preferenciasSonido.habilitado ? '✓ Activo' : 'Inactivo'}
+            {preferenciasSonido.habilitado ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Check size={12} /> Activo</span> : 'Inactivo'}
           </button>
         </div>
 
@@ -63,7 +65,7 @@ function PushPreferenciasPanel({
               boxShadow: preferenciasSonido.vibración ? '0 10px 18px rgba(52,199,89,0.18)' : 'none',
             }}
           >
-            {preferenciasSonido.vibración ? '✓ Activo' : 'Inactivo'}
+            {preferenciasSonido.vibración ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Check size={12} /> Activo</span> : 'Inactivo'}
           </button>
         </div>
       </div>
@@ -72,9 +74,9 @@ function PushPreferenciasPanel({
         <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)', display: 'block', marginBottom: '8px' }}>Sonido de alerta</label>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px' }}>
           {[
-            { value: 'sistema', label: 'Sistema / teléfono', icon: '📳', recommended: true },
-            { value: 'campana', label: 'Campana', icon: '🔔' },
-            { value: 'tono', label: 'Moderno', icon: '📱' },
+            { value: 'sistema', label: 'Sistema / teléfono', icon: Vibrate, recommended: true },
+            { value: 'campana', label: 'Campana', icon: Bell },
+            { value: 'tono', label: 'Moderno', icon: Smartphone },
           ].map((opcion) => {
             const activa = preferenciasSonido.sonidoAlerta === opcion.value;
             return (
@@ -97,11 +99,11 @@ function PushPreferenciasPanel({
                   minHeight: '68px',
                 }}
               >
-                <div style={{ fontSize: '16px', marginBottom: '4px' }}>{opcion.icon}</div>
+                <div style={{ marginBottom: '4px' }}><opcion.icon size={18} color="var(--azul-electrico)" /></div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                   <span>{opcion.label}</span>
                   {opcion.recommended && (
-                    <span style={{ padding: '2px 6px', borderRadius: '999px', background: 'rgba(52,199,89,0.12)', color: 'var(--verde-victoria)', fontSize: '9px', fontWeight: '900' }}>Recomendado</span>
+                    <span style={{ padding: '2px 6px', borderRadius: '999px', background: 'rgba(52,199,89,0.12)', color: 'var(--verde-victoria)', fontSize: '11px', fontWeight: '900' }}>Recomendado</span>
                   )}
                 </div>
               </button>
@@ -110,9 +112,9 @@ function PushPreferenciasPanel({
         </div>
         <button
           onClick={() => reproducirSonido(preferenciasSonido.sonidoAlerta)}
-          style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '14px', border: '1px solid rgba(0,122,255,0.18)', background: 'linear-gradient(180deg, rgba(0,122,255,0.10) 0%, rgba(0,122,255,0.06) 100%)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800', cursor: 'pointer', width: '100%' }}
+          style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '14px', border: '1px solid rgba(0,122,255,0.18)', background: 'linear-gradient(180deg, rgba(0,122,255,0.10) 0%, rgba(0,122,255,0.06) 100%)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800', cursor: 'pointer', width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
         >
-          🔊 Reproducir preview
+          <Volume2 size={14} /> Reproducir preview
         </button>
         <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: 'var(--texto-secundario)', lineHeight: '1.45' }}>
           El sonido final puede depender del navegador y del dispositivo. La opción de sistema usa la notificación nativa.
@@ -131,9 +133,9 @@ function PushPreferenciasPanel({
         />
         <button
           onClick={() => onProbarPush?.()}
-          style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '14px', border: '1px solid rgba(0,122,255,0.22)', background: 'linear-gradient(180deg, rgba(0,122,255,0.12) 0%, rgba(0,122,255,0.06) 100%)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800', cursor: 'pointer', width: '100%' }}
+          style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '14px', border: '1px solid rgba(0,122,255,0.22)', background: 'linear-gradient(180deg, rgba(0,122,255,0.12) 0%, rgba(0,122,255,0.06) 100%)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800', cursor: 'pointer', width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
         >
-          🔔 Probar notificación push
+          <Bell size={14} /> Probar notificación push
         </button>
         <button
           onClick={() => onCerrarConfiguracion?.()}

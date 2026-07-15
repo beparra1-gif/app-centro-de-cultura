@@ -1,10 +1,12 @@
+import { AlertTriangle, Clock, CreditCard, Mail, MessageCircle, X } from 'lucide-react';
+
 function PushToast({ pushNotificaciones, setPushNotificaciones }) {
   if (pushNotificaciones.length === 0) return null;
 
   const push = pushNotificaciones[pushNotificaciones.length - 1];
   const colorUrgencia =
     push.urgencia === 'Crítica'
-      ? '#FF3B30'
+      ? 'var(--rojo-alerta)'
       : push.urgencia === 'Alta'
         ? '#FF9500'
         : push.urgencia === 'Media'
@@ -42,17 +44,18 @@ function PushToast({ pushNotificaciones, setPushNotificaciones }) {
           flexShrink: 0,
           boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.75)',
         }}>
-          <span style={{ fontSize: '18px' }}>
-          {push.tipo === 'alerta' ? '🚨' : push.tipo === 'comunicacion' ? '💬' : push.tipo === 'pago' ? '💳' : '📨'}
-          </span>
+          {push.tipo === 'alerta' ? <AlertTriangle size={18} color="var(--rojo-alerta)" strokeWidth={2} />
+            : push.tipo === 'comunicacion' ? <MessageCircle size={18} color="var(--azul-electrico)" strokeWidth={2} />
+            : push.tipo === 'pago' ? <CreditCard size={18} color="var(--verde-victoria)" strokeWidth={2} />
+            : <Mail size={18} color="var(--azul-electrico)" strokeWidth={2} />}
         </div>
         <div style={{ flex: 1 }}>
           <h6 style={{ margin: '0 0 5px 0', fontSize: '13px', fontWeight: '900', color: 'var(--texto-principal)', letterSpacing: '-0.01em' }}>{push.titulo}</h6>
           <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.4' }}>
             {push.descripcion}
           </p>
-          <div style={{ display: 'flex', gap: '8px', fontSize: '10px', color: 'var(--texto-secundario)', flexWrap: 'wrap' }}>
-            <span style={{ padding: '4px 8px', borderRadius: '999px', background: 'rgba(120,120,128,0.10)' }}>🕐 {push.timestamp.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
+          <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: 'var(--texto-secundario)', flexWrap: 'wrap' }}>
+            <span style={{ padding: '4px 8px', borderRadius: '999px', background: 'rgba(120,120,128,0.10)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Clock size={11} strokeWidth={2} /> {push.timestamp.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
             <span style={{ padding: '4px 8px', borderRadius: '999px', background: `${colorUrgencia}1A`, color: colorUrgencia, fontWeight: '700' }}>● {push.urgencia}</span>
           </div>
         </div>
@@ -64,13 +67,16 @@ function PushToast({ pushNotificaciones, setPushNotificaciones }) {
             width: '28px',
             height: '28px',
             borderRadius: '999px',
-            fontSize: '14px',
             cursor: 'pointer',
             color: 'var(--texto-secundario)',
             flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
+          aria-label="Cerrar notificación"
         >
-          ✕
+          <X size={13} strokeWidth={2.5} />
         </button>
       </div>
     </div>

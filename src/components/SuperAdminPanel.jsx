@@ -3,15 +3,17 @@ import {
   Activity,
   AlertTriangle,
   Bell,
+  Check,
   CheckSquare,
   FileText,
   Filter,
   History,
   Image,
   Megaphone,
+  Pencil,
+  Phone,
   Plus,
   Search,
-  Shield,
   ShieldCheck,
   Stethoscope,
   RefreshCcw,
@@ -19,9 +21,12 @@ import {
   User,
   UserPlus,
   Users,
+  X,
   XSquare,
 } from 'lucide-react';
 import * as api from '../api/client';
+import { showToast } from '../utils/toast';
+import { confirmAction } from '../utils/confirmDialog';
 import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
 import PagoForm from './PagoForm';
@@ -91,7 +96,7 @@ function SuperAdminPanel({
   onPartidosChanged,
   onComunicacionesChanged,
 }) {
-  const enviarAlerta = () => { alert('Notificación enviada por App y Correo a los destinatarios.'); };
+  const enviarAlerta = () => { showToast({ message: 'Notificación enviada por App y Correo a los destinatarios.', type: 'success' }); };
   void enviarAlerta;
   void setPagosPendientesAdmin;
   void nominaCita;
@@ -685,7 +690,7 @@ function SuperAdminPanel({
                 <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '5px', lineHeight: '1.35' }}>
                   {modulo.descripcion}
                 </div>
-                <div style={{ fontSize: '10px', marginTop: '6px', fontWeight: '800', color: vienePorRol ? 'var(--azul-electrico)' : '#b36200' }}>
+                <div style={{ fontSize: '11px', marginTop: '6px', fontWeight: '800', color: vienePorRol ? 'var(--azul-electrico)' : '#b36200' }}>
                   {vienePorRol ? 'Incluido por rol base' : 'Override manual'}
                 </div>
               </button>
@@ -720,16 +725,16 @@ function SuperAdminPanel({
   const asignarPupiloACuenta = async (jugador) => {
     const correoCuenta = String(cuentaPupilosActiva?.correo || '').trim();
     if (!correoCuenta) {
-      alert('Debes guardar un correo válido en la cuenta antes de asignar pupilos.');
+      showToast({ message: 'Debes guardar un correo válido en la cuenta antes de asignar pupilos.', type: 'error' });
       return;
     }
 
     try {
       setProcesandoPupiloRut(jugador.rut_jugador || '');
       await guardarJugadorAdmin({ ...jugador, correo_apoderado: correoCuenta }, jugador.rut_jugador);
-      alert(`Pupilo asignado a ${correoCuenta}.`);
+      showToast({ message: `Pupilo asignado a ${correoCuenta}.`, type: 'success' });
     } catch (error) {
-      alert(`No se pudo asignar el pupilo: ${error.message}`);
+      showToast({ message: `No se pudo asignar el pupilo: ${error.message}`, type: 'error' });
     } finally {
       setProcesandoPupiloRut('');
     }
@@ -747,9 +752,9 @@ function SuperAdminPanel({
     try {
       setProcesandoPupiloRut(jugador.rut_jugador || '');
       await guardarJugadorAdmin({ ...jugador, correo_apoderado: '' }, jugador.rut_jugador);
-      alert('Pupilo desasignado correctamente.');
+      showToast({ message: 'Pupilo desasignado correctamente.', type: 'success' });
     } catch (error) {
-      alert(`No se pudo quitar el pupilo: ${error.message}`);
+      showToast({ message: `No se pudo quitar el pupilo: ${error.message}`, type: 'error' });
     } finally {
       setProcesandoPupiloRut('');
     }
@@ -758,7 +763,7 @@ function SuperAdminPanel({
   const moverPupiloAOtroApoderado = async (jugador, correoDestino) => {
     const destino = String(correoDestino || '').trim();
     if (!destino) {
-      alert('Selecciona un apoderado destino para mover el pupilo.');
+      showToast({ message: 'Selecciona un apoderado destino para mover el pupilo.', type: 'error' });
       return;
     }
 
@@ -766,9 +771,9 @@ function SuperAdminPanel({
       setProcesandoPupiloRut(jugador.rut_jugador || '');
       await guardarJugadorAdmin({ ...jugador, correo_apoderado: destino }, jugador.rut_jugador);
       setDestinoApoderadoPorRut((prev) => ({ ...prev, [jugador.rut_jugador]: '' }));
-      alert(`Pupilo movido a ${destino}.`);
+      showToast({ message: `Pupilo movido a ${destino}.`, type: 'success' });
     } catch (error) {
-      alert(`No se pudo mover el pupilo: ${error.message}`);
+      showToast({ message: `No se pudo mover el pupilo: ${error.message}`, type: 'error' });
     } finally {
       setProcesandoPupiloRut('');
     }
@@ -816,7 +821,7 @@ function SuperAdminPanel({
 
   const publicarAnuncio = async () => {
     if (!formPublicacion.titulo.trim() || !formPublicacion.mensaje.trim()) {
-      alert('Completa el título y el mensaje antes de publicar.');
+      showToast({ message: 'Completa el título y el mensaje antes de publicar.', type: 'error' });
       return;
     }
     try {
@@ -842,9 +847,9 @@ function SuperAdminPanel({
       if (typeof onComunicacionesChanged === 'function') {
         await onComunicacionesChanged();
       }
-      alert(publicacionEditandoId ? 'Publicación actualizada correctamente.' : 'Publicación creada correctamente. Aparecerá en el Muro.');
+      showToast({ message: publicacionEditandoId ? 'Publicación actualizada correctamente.' : 'Publicación creada correctamente. Aparecerá en el Muro.', type: 'success' });
     } catch (error) {
-      alert(`No se pudo publicar: ${error.message}`);
+      showToast({ message: `No se pudo publicar: ${error.message}`, type: 'error' });
     } finally {
       setPublicandoForm(false);
     }
@@ -870,7 +875,7 @@ function SuperAdminPanel({
   };
 
   const borrarPublicacion = async (com) => {
-    if (!window.confirm(`¿Confirmas borrar la publicación "${com.TITULO}"?`)) return;
+    if (!(await confirmAction({ title: 'Borrar publicación', message: `¿Confirmas borrar la publicación "${com.TITULO}"?`, danger: true }))) return;
     try {
       await api.comunicacionesAPI.delete(com.id);
       if (publicacionEditandoId === com.id) {
@@ -879,9 +884,9 @@ function SuperAdminPanel({
       if (typeof onComunicacionesChanged === 'function') {
         await onComunicacionesChanged();
       }
-      alert('Publicación borrada correctamente.');
+      showToast({ message: 'Publicación borrada correctamente.', type: 'success' });
     } catch (error) {
-      alert(`No se pudo borrar la publicación: ${error.message}`);
+      showToast({ message: `No se pudo borrar la publicación: ${error.message}`, type: 'error' });
     }
   };
 
@@ -931,8 +936,8 @@ function SuperAdminPanel({
       logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url,
       pts_local, pts_visitante, cancha_sede, fecha_hora,
     } = formResultado;
-    if (!equipo_visitante.trim()) { alert('Ingresa el nombre del equipo visitante.'); return; }
-    if (pts_local === '' || pts_visitante === '') { alert('Ingresa los puntos de ambos equipos.'); return; }
+    if (!equipo_visitante.trim()) { showToast({ message: 'Ingresa el nombre del equipo visitante.', type: 'error' }); return; }
+    if (pts_local === '' || pts_visitante === '') { showToast({ message: 'Ingresa los puntos de ambos equipos.', type: 'error' }); return; }
     try {
       setGuardandoResultado(true);
       const payload = {
@@ -962,9 +967,9 @@ function SuperAdminPanel({
       if (typeof onPartidosChanged === 'function') {
         await onPartidosChanged();
       }
-      alert(partidoEditandoId ? 'Resultado actualizado correctamente.' : 'Resultado registrado correctamente.');
+      showToast({ message: partidoEditandoId ? 'Resultado actualizado correctamente.' : 'Resultado registrado correctamente.', type: 'success' });
     } catch (error) {
-      alert(`No se pudo guardar el resultado: ${error.message}`);
+      showToast({ message: `No se pudo guardar el resultado: ${error.message}`, type: 'error' });
     } finally {
       setGuardandoResultado(false);
     }
@@ -973,11 +978,11 @@ function SuperAdminPanel({
   const borrarPartidosPrueba = async () => {
     const partidosDePrueba = partidosAdmin.filter(esPartidoPrueba);
     if (partidosDePrueba.length === 0) {
-      alert('No se encontraron partidos de prueba para borrar.');
+      showToast({ message: 'No se encontraron partidos de prueba para borrar.', type: 'info' });
       return;
     }
 
-    if (!window.confirm(`Se borrarán ${partidosDePrueba.length} partidos de prueba. ¿Continuar?`)) return;
+    if (!(await confirmAction({ title: 'Borrar partidos de prueba', message: `Se borrarán ${partidosDePrueba.length} partidos de prueba. ¿Continuar?`, danger: true }))) return;
 
     try {
       for (const partido of partidosDePrueba) {
@@ -991,9 +996,9 @@ function SuperAdminPanel({
       if (typeof onPartidosChanged === 'function') {
         await onPartidosChanged();
       }
-      alert(`${partidosDePrueba.length} partidos de prueba eliminados.`);
+      showToast({ message: `${partidosDePrueba.length} partidos de prueba eliminados.`, type: 'success' });
     } catch (error) {
-      alert(`No se pudieron eliminar todos los partidos de prueba: ${error.message}`);
+      showToast({ message: `No se pudieron eliminar todos los partidos de prueba: ${error.message}`, type: 'error' });
     }
   };
 
@@ -1023,7 +1028,7 @@ function SuperAdminPanel({
           permisos_override: getPermisosPersistibles(cuentaAdminEdit),
         });
         await guardarCuentaAdmin(cuentaPreparada, cuentaAdminEdit.id);
-        alert('Cuenta actualizada correctamente.');
+        showToast({ message: 'Cuenta actualizada correctamente.', type: 'success' });
       }
 
       if (editandoTipo === 'jugador' && jugadorAdminEdit) {
@@ -1036,14 +1041,14 @@ function SuperAdminPanel({
             cuentaAsociadaJugadorEdit.id,
           );
         }
-        alert('Jugador actualizado correctamente.');
+        showToast({ message: 'Jugador actualizado correctamente.', type: 'success' });
       }
 
       setEditandoTipo(null);
       setCuentaAdminEdit(null);
       setJugadorAdminEdit(null);
     } catch (error) {
-      alert(`No se pudo guardar: ${error.message}`);
+      showToast({ message: `No se pudo guardar: ${error.message}`, type: 'error' });
     } finally {
       setGuardandoUsuario(false);
     }
@@ -1051,7 +1056,7 @@ function SuperAdminPanel({
 
   const eliminarUsuarioDefinitivo = async (item) => {
     if (!esSuperAdmin) {
-      alert('Solo super admin puede borrar usuarios definitivamente.');
+      showToast({ message: 'Solo super admin puede borrar usuarios definitivamente.', type: 'error' });
       return;
     }
 
@@ -1061,7 +1066,7 @@ function SuperAdminPanel({
       : `jugador ${item?.raw?.rut_jugador || item?.nombre || ''}`;
 
     const mensaje = `¿Confirmas borrar definitivamente ${etiqueta}? Esta acción no se puede deshacer.`;
-    if (!window.confirm(mensaje)) return;
+    if (!(await confirmAction({ title: 'Borrar definitivamente', message: mensaje, danger: true }))) return;
 
     try {
       setEliminandoUsuarioId(String(item?.id || ''));
@@ -1087,9 +1092,9 @@ function SuperAdminPanel({
         }
       }
 
-      alert('Usuario eliminado definitivamente.');
+      showToast({ message: 'Usuario eliminado definitivamente.', type: 'success' });
     } catch (error) {
-      alert(`No se pudo eliminar: ${error.message}`);
+      showToast({ message: `No se pudo eliminar: ${error.message}`, type: 'error' });
     } finally {
       setEliminandoUsuarioId('');
     }
@@ -1129,7 +1134,7 @@ function SuperAdminPanel({
           forzar_clave: true,
           logo_url: '',
         });
-        alert('Cuenta creada correctamente.');
+        showToast({ message: 'Cuenta creada correctamente.', type: 'success' });
       } else {
         await guardarJugadorAdmin(nuevoJugador);
         setNuevoJugador({
@@ -1143,10 +1148,10 @@ function SuperAdminPanel({
           estado: 'ACTIVO',
           foto_jugador: '',
         });
-        alert('Jugador creado correctamente.');
+        showToast({ message: 'Jugador creado correctamente.', type: 'success' });
       }
     } catch (error) {
-      alert(`No se pudo crear: ${error.message}`);
+      showToast({ message: `No se pudo crear: ${error.message}`, type: 'error' });
     } finally {
       setGuardandoUsuario(false);
     }
@@ -1154,7 +1159,7 @@ function SuperAdminPanel({
 
   const guardarNuevoJugadorVisita = async () => {
     if (!nuevoJugadorVisita.rut_visita || !nuevoJugadorVisita.nombres || !nuevoJugadorVisita.apellido_paterno) {
-      alert('Completa RUT, nombres y apellido paterno para registrar jugador invitado.');
+      showToast({ message: 'Completa RUT, nombres y apellido paterno para registrar jugador invitado.', type: 'error' });
       return;
     }
 
@@ -1174,9 +1179,9 @@ function SuperAdminPanel({
         contacto_apoderado: '',
         telefono_contacto: '',
       });
-      alert('Jugador invitado registrado correctamente.');
+      showToast({ message: 'Jugador invitado registrado correctamente.', type: 'success' });
     } catch (error) {
-      alert(`No se pudo registrar: ${error.message}`);
+      showToast({ message: `No se pudo registrar: ${error.message}`, type: 'error' });
     } finally {
       setGuardandoVisita(false);
     }
@@ -1184,7 +1189,7 @@ function SuperAdminPanel({
 
   const subirLogoAsset = async () => {
     if (!logoAssetForm.nombre.trim() || !logoAssetForm.archivo) {
-      alert('Completa el nombre y selecciona un archivo de logo.');
+      showToast({ message: 'Completa el nombre y selecciona un archivo de logo.', type: 'error' });
       return;
     }
 
@@ -1205,9 +1210,9 @@ function SuperAdminPanel({
       await cargarLogosDisponiblesActivos();
 
       setLogoAssetForm({ nombre: '', tipo: 'club', archivo: null });
-      alert(`Logo guardado en ${resultado.url}`);
+      showToast({ message: `Logo guardado en ${resultado.url}`, type: 'success' });
     } catch (error) {
-      alert(`No se pudo subir el logo: ${error.message}`);
+      showToast({ message: `No se pudo subir el logo: ${error.message}`, type: 'error' });
     } finally {
       setSubiendoLogoAsset(false);
       setTimeout(() => setProgresoLogoAsset(0), 1200);
@@ -1241,11 +1246,11 @@ function SuperAdminPanel({
   const eliminarLogoAsset = async (logo) => {
     const filename = String(logo?.filename || '').trim();
     if (!filename) {
-      alert('No se pudo identificar el archivo para borrar.');
+      showToast({ message: 'No se pudo identificar el archivo para borrar.', type: 'error' });
       return;
     }
 
-    if (!window.confirm(`¿Borrar logo ${filename}? Esta acción no se puede deshacer.`)) return;
+    if (!(await confirmAction({ title: 'Borrar logo', message: `¿Borrar logo ${filename}? Esta acción no se puede deshacer.`, danger: true }))) return;
 
     try {
       setEliminandoLogoFilename(filename);
@@ -1257,9 +1262,9 @@ function SuperAdminPanel({
         setLogoAssetUrl('');
       }
       await cargarLogosDisponiblesActivos();
-      alert('Logo eliminado correctamente.');
+      showToast({ message: 'Logo eliminado correctamente.', type: 'success' });
     } catch (error) {
-      alert(`No se pudo borrar el logo: ${error.message}`);
+      showToast({ message: `No se pudo borrar el logo: ${error.message}`, type: 'error' });
     } finally {
       setEliminandoLogoFilename('');
     }
@@ -1283,9 +1288,9 @@ function SuperAdminPanel({
       }, jugadorVisitaEdit.id_visita);
 
       setJugadorVisitaEdit(null);
-      alert('Seguimiento del invitado actualizado.');
+      showToast({ message: 'Seguimiento del invitado actualizado.', type: 'success' });
     } catch (error) {
-      alert(`No se pudo actualizar: ${error.message}`);
+      showToast({ message: `No se pudo actualizar: ${error.message}`, type: 'error' });
     } finally {
       setGuardandoVisita(false);
     }
@@ -1294,7 +1299,7 @@ function SuperAdminPanel({
   const ejecutarSyncSheets = async () => {
     const token = syncToken.trim();
     if (!token) {
-      alert('Ingresa el token de sincronización antes de continuar.');
+      showToast({ message: 'Ingresa el token de sincronización antes de continuar.', type: 'error' });
       return;
     }
 
@@ -1305,9 +1310,9 @@ function SuperAdminPanel({
       if (onSheetsSyncComplete) {
         await onSheetsSyncComplete();
       }
-      alert(`Sincronización completada. Importadas: ${resultado?.totals?.importadas ?? 0}`);
+      showToast({ message: `Sincronización completada. Importadas: ${resultado?.totals?.importadas ?? 0}`, type: 'success' });
     } catch (error) {
-      alert(`No se pudo sincronizar: ${error.message}`);
+      showToast({ message: `No se pudo sincronizar: ${error.message}`, type: 'error' });
     } finally {
       setSyncSheetsRunning(false);
     }
@@ -1316,7 +1321,7 @@ function SuperAdminPanel({
   const consultarEstadoSync = async () => {
     const token = syncToken.trim();
     if (!token) {
-      alert('Ingresa el token de sincronización para consultar el estado.');
+      showToast({ message: 'Ingresa el token de sincronización para consultar el estado.', type: 'error' });
       return;
     }
 
@@ -1325,7 +1330,7 @@ function SuperAdminPanel({
       const estado = await api.adminAPI.getSyncStatus(token);
       setSyncSheetsResult(estado?.lastSync || null);
     } catch (error) {
-      alert(`No se pudo consultar el estado: ${error.message}`);
+      showToast({ message: `No se pudo consultar el estado: ${error.message}`, type: 'error' });
     } finally {
       setLoadingSyncStatus(false);
     }
@@ -1334,7 +1339,7 @@ function SuperAdminPanel({
   const cargarDetalleCalidad = async () => {
     const token = syncToken.trim();
     if (!token) {
-      alert('Ingresa el token para consultar el detalle de correcciones.');
+      showToast({ message: 'Ingresa el token para consultar el detalle de correcciones.', type: 'error' });
       return;
     }
 
@@ -1343,7 +1348,7 @@ function SuperAdminPanel({
       const resultado = await api.adminAPI.getDataQualityDetails(token);
       setQualityDetailResult(resultado?.detail || null);
     } catch (error) {
-      alert(`No se pudo obtener el detalle: ${error.message}`);
+      showToast({ message: `No se pudo obtener el detalle: ${error.message}`, type: 'error' });
     } finally {
       setLoadingQualityDetails(false);
     }
@@ -1352,7 +1357,7 @@ function SuperAdminPanel({
   const cargarConflictosJugadores = async () => {
     const token = syncToken.trim();
     if (!token) {
-      alert('Ingresa el token para consultar conflictos de jugadores.');
+      showToast({ message: 'Ingresa el token para consultar conflictos de jugadores.', type: 'error' });
       return;
     }
 
@@ -1361,7 +1366,7 @@ function SuperAdminPanel({
       const resultado = await api.adminAPI.getJugadoresRutConflicts(token);
       setJugadoresConflictsResult(resultado?.detail || null);
     } catch (error) {
-      alert(`No se pudieron obtener conflictos: ${error.message}`);
+      showToast({ message: `No se pudieron obtener conflictos: ${error.message}`, type: 'error' });
     } finally {
       setLoadingJugadoresConflicts(false);
     }
@@ -1381,13 +1386,13 @@ function SuperAdminPanel({
       estado: fila.estado || 'ACTIVO',
       foto_jugador: '',
     });
-    alert('Ficha precargada desde conflicto. Ingresa el RUT correcto y guarda el nuevo jugador.');
+    showToast({ message: 'Ficha precargada desde conflicto. Ingresa el RUT correcto y guarda el nuevo jugador.', type: 'info' });
   };
 
   const resolverConflictoRut = async (conflicto, fila) => {
     const token = syncToken.trim();
     if (!token) {
-      alert('Ingresa el token para registrar la resolución.');
+      showToast({ message: 'Ingresa el token para registrar la resolución.', type: 'error' });
       return;
     }
 
@@ -1403,9 +1408,9 @@ function SuperAdminPanel({
         observaciones,
         usuario: 'super_admin',
       });
-      alert('Resolución registrada en auditoría.');
+      showToast({ message: 'Resolución registrada en auditoría.', type: 'success' });
     } catch (error) {
-      alert(`No se pudo registrar resolución: ${error.message}`);
+      showToast({ message: `No se pudo registrar resolución: ${error.message}`, type: 'error' });
     } finally {
       setResolviendoConflictoRut('');
     }
@@ -1432,7 +1437,7 @@ function SuperAdminPanel({
         setJugadorAdminEdit((prev) => ({ ...(prev || {}), foto_jugador: fotoUrl }));
       }
     } catch (error) {
-      alert(`No se pudo subir la foto: ${error.message}`);
+      showToast({ message: `No se pudo subir la foto: ${error.message}`, type: 'error' });
     } finally {
       if (target === 'nuevo') setSubiendoFotoJugadorNuevo(false);
       else setSubiendoFotoJugadorEdit(false);
@@ -1444,7 +1449,7 @@ function SuperAdminPanel({
     if (!valor || valor.toLowerCase() === 'todas') return;
 
     if (!categoriasExtraCitacionPermitidas.includes(valor)) {
-      alert('Solo puedes citar categorías menores a la categoría base oficial.');
+      showToast({ message: 'Solo puedes citar categorías menores a la categoría base oficial.', type: 'error' });
       return;
     }
 
@@ -1551,11 +1556,11 @@ function SuperAdminPanel({
 
   const crearCitacion = () => {
     if (!String(citaForm.competencia_nombre || '').trim()) {
-      alert('Debes indicar el nombre de la competencia o torneo.');
+      showToast({ message: 'Debes indicar el nombre de la competencia o torneo.', type: 'error' });
       return;
     }
     if (!String(citaForm.rival_nombre || '').trim()) {
-      alert('Debes indicar el equipo rival.');
+      showToast({ message: 'Debes indicar el equipo rival.', type: 'error' });
       return;
     }
 
@@ -1576,7 +1581,7 @@ function SuperAdminPanel({
       }));
 
     if (convocados.length === 0) {
-      alert('Selecciona al menos una jugadora o jugador para crear la citación.');
+      showToast({ message: 'Selecciona al menos una jugadora o jugador para crear la citación.', type: 'error' });
       return;
     }
 
@@ -1627,26 +1632,26 @@ function SuperAdminPanel({
     setComunicaciones([nuevaComunicacionCitacion, ...(comunicaciones || [])]);
     setCitacionActivaId(citacion.id);
     setSeleccionCitacion({});
-    alert(`Citación creada y enviada para ${convocados.length} convocados. Puedes monitorear respuestas en la barra de estado.`);
+    showToast({ message: `Citación creada y enviada para ${convocados.length} convocados. Puedes monitorear respuestas en la barra de estado.`, type: 'success' });
   };
 
   return (
     <div className="admin-container fade-in">
       <div className="scroll-horizontal-menu mb-15">
         <div className="segment-control" style={{ minWidth: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-          <div className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}><Activity size={14} /> Resumen</div>
-          <div className={`segment-btn ${vistaAdmin === 'usuarios' ? 'active' : ''}`} onClick={() => setVistaAdmin('usuarios')}><Users size={14} /> Usuarios y Cuentas</div>
-          <div className={`segment-btn ${vistaAdmin === 'publicar' ? 'active' : ''}`} onClick={() => setVistaAdmin('publicar')}><Megaphone size={14} /> Publicar</div>
-          <div className={`segment-btn ${vistaAdmin === 'resultados' ? 'active' : ''}`} onClick={() => { setVistaAdmin('resultados'); cargarPartidosAdmin(); }}><Trophy size={14} /> Resultados</div>
-          <div className={`segment-btn ${vistaAdmin === 'activos' ? 'active' : ''}`} onClick={() => setVistaAdmin('activos')}><Image size={14} /> Activos</div>
-          <div className={`segment-btn ${vistaAdmin === 'demo' ? 'active' : ''}`} onClick={() => setVistaAdmin('demo')}><ShieldCheck size={14} /> Demo</div>
-          <div className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Validar Pago</div>
-          <div className={`segment-btn ${vistaAdmin === 'citaciones' ? 'active' : ''}`} onClick={() => setVistaAdmin('citaciones')}><UserPlus size={14} /> Citaciones</div>
-          <div className={`segment-btn ${vistaAdmin === 'invitados' ? 'active' : ''}`} onClick={() => setVistaAdmin('invitados')}><Users size={14} /> Invitados</div>
-          <div className={`segment-btn ${vistaAdmin === 'auditoria' ? 'active' : ''}`} onClick={() => setVistaAdmin('auditoria')}><History size={14} /> Auditoría</div>
-          <div className={`segment-btn ${vistaAdmin === 'reportes' ? 'active' : ''}`} onClick={() => setVistaAdmin('reportes')}><FileText size={14} /> Reportes</div>
-          <div className={`segment-btn ${vistaAdmin === 'salud' ? 'active' : ''}`} onClick={() => { setVistaAdmin('salud'); generarAlertas(); }}><Stethoscope size={14} /> Salud</div>
-          <div className={`segment-btn ${vistaAdmin === 'permisos' ? 'active' : ''}`} onClick={() => setVistaAdmin('permisos')}><Filter size={14} /> Ajustes</div>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}><Activity size={14} /> Resumen</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'usuarios' ? 'active' : ''}`} onClick={() => setVistaAdmin('usuarios')}><Users size={14} /> Usuarios y Cuentas</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'publicar' ? 'active' : ''}`} onClick={() => setVistaAdmin('publicar')}><Megaphone size={14} /> Publicar</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'resultados' ? 'active' : ''}`} onClick={() => { setVistaAdmin('resultados'); cargarPartidosAdmin(); }}><Trophy size={14} /> Resultados</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'activos' ? 'active' : ''}`} onClick={() => setVistaAdmin('activos')}><Image size={14} /> Activos</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'demo' ? 'active' : ''}`} onClick={() => setVistaAdmin('demo')}><ShieldCheck size={14} /> Demo</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Validar Pago</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'citaciones' ? 'active' : ''}`} onClick={() => setVistaAdmin('citaciones')}><UserPlus size={14} /> Citaciones</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'invitados' ? 'active' : ''}`} onClick={() => setVistaAdmin('invitados')}><Users size={14} /> Invitados</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'auditoria' ? 'active' : ''}`} onClick={() => setVistaAdmin('auditoria')}><History size={14} /> Auditoría</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'reportes' ? 'active' : ''}`} onClick={() => setVistaAdmin('reportes')}><FileText size={14} /> Reportes</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'salud' ? 'active' : ''}`} onClick={() => { setVistaAdmin('salud'); generarAlertas(); }}><Stethoscope size={14} /> Salud</button>
+          <button type="button" className={`segment-btn ${vistaAdmin === 'permisos' ? 'active' : ''}`} onClick={() => setVistaAdmin('permisos')}><Filter size={14} /> Ajustes</button>
         </div>
       </div>
 
@@ -1856,7 +1861,7 @@ function SuperAdminPanel({
               </svg>
               <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center' }}>
                 <h2 style={{ margin: 0, fontSize: '22px' }}>{pctGlobal}%</h2>
-                <span style={{ fontSize: '9px', fontWeight: 'bold', color: 'var(--texto-secundario)' }}>LOGRADO</span>
+                <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--texto-secundario)' }}>LOGRADO</span>
               </div>
             </div>
             <h3 style={{ margin: '0 0 4px', fontSize: '20px', color: 'var(--texto-principal)' }}>${(af.recaudadoSocios + af.recaudadoDeportistas).toLocaleString('es-CL')}</h3>
@@ -1876,8 +1881,8 @@ function SuperAdminPanel({
             </div>
             <div className="recaud-bar mt-10"><div className="recaud-bar-fill" style={{ width: `${pctSocios}%`, background: 'linear-gradient(90deg, var(--azul-electrico), var(--verde-victoria))' }} /></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--verde-victoria)', fontWeight: '800' }}>✓ ${af.recaudadoSocios.toLocaleString('es-CL')}</span>
-              <span style={{ fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '800' }}>✗ ${(af.metaSocios - af.recaudadoSocios).toLocaleString('es-CL')} pendiente</span>
+              <span style={{ fontSize: '12px', color: 'var(--verde-victoria)', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Check size={12} /> ${af.recaudadoSocios.toLocaleString('es-CL')}</span>
+              <span style={{ fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><X size={12} /> ${(af.metaSocios - af.recaudadoSocios).toLocaleString('es-CL')} pendiente</span>
             </div>
           </div>
 
@@ -1894,14 +1899,14 @@ function SuperAdminPanel({
             </div>
             <div className="recaud-bar mt-10"><div className="recaud-bar-fill" style={{ width: `${pctDep}%`, background: 'linear-gradient(90deg, #FF9500, var(--verde-victoria))' }} /></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--verde-victoria)', fontWeight: '800' }}>✓ ${af.recaudadoDeportistas.toLocaleString('es-CL')}</span>
-              <span style={{ fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '800' }}>✗ ${(af.metaDeportistas - af.recaudadoDeportistas).toLocaleString('es-CL')} pendiente</span>
+              <span style={{ fontSize: '12px', color: 'var(--verde-victoria)', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Check size={12} /> ${af.recaudadoDeportistas.toLocaleString('es-CL')}</span>
+              <span style={{ fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><X size={12} /> ${(af.metaDeportistas - af.recaudadoDeportistas).toLocaleString('es-CL')} pendiente</span>
             </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 className="section-title" style={{ margin: 0 }}>Morosos</h3>
-            <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={() => alert(`Notificación masiva enviada a ${(morososAdmin || []).length} deudores.`)}>
+            <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={() => showToast({ message: `Notificación masiva enviada a ${(morososAdmin || []).length} deudores.`, type: 'success' })}>
               <Bell size={13} /> Notificar Todos
             </button>
           </div>
@@ -1920,15 +1925,15 @@ function SuperAdminPanel({
                   <span className="moroso-nombre">{m.nombre}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
                     <span className="moroso-tipo-badge" style={{ background: bg, color }}>{labelTipo}</span>
-                    {m.pupilos.length > 0 && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>👤 {m.pupilos.join(' · ')}</span>}
+                    {m.pupilos.length > 0 && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><User size={11} /> {m.pupilos.join(' · ')}</span>}
                   </div>
-                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'block', fontWeight: '700' }}>📞 {m.contacto}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}><Phone size={11} /> {m.contacto}</span>
                 </div>
                 <div className="moroso-deuda">
                   <span className="moroso-monto">${m.montoDeuda.toLocaleString('es-CL')}</span>
                   <span className="moroso-meses" style={{ color: gravedad }}>{m.mesesDeuda} {m.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
                 </div>
-                <button className="btn-notificar" onClick={() => alert(`Notificación enviada a ${m.nombre}\n📞 ${m.contacto}`)}>
+                <button className="btn-notificar" onClick={() => showToast({ message: `Notificación enviada a ${m.nombre} · ${m.contacto}`, type: 'success' })}>
                   <Bell size={13} /> Avisar
                 </button>
               </div>
@@ -1976,7 +1981,7 @@ function SuperAdminPanel({
             </div>
 
             {filtroTipoPerfil === 'jugador' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginTop: '8px' }}>
+              <div className="grid-auto-220" style={{ marginTop: '8px' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Rama</label>
                   <select className="form-input" value={filtroRamaJugadores} onChange={(e) => setFiltroRamaJugadores(e.target.value)}>
@@ -2008,7 +2013,7 @@ function SuperAdminPanel({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
                     <div>
                       <strong style={{ fontSize: '14px' }}>{u.nombre}</strong>
-                      <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>
+                      <div className="text-caption">
                         {u.tipo === 'jugador'
                           ? `${u.raw.rut_jugador || '-'} · ${u.raw.rama || 'Sin rama'} · ${u.raw.categoria || 'Sin categoría'}`
                           : `${u.raw.correo || '-'} · ${u.raw.rut || '-'} · ${(u.raw.rol || 'sin rol').toUpperCase()}`}
@@ -2044,7 +2049,7 @@ function SuperAdminPanel({
           {editandoTipo === 'cuenta' && cuentaAdminEdit && (
             <div ref={edicionCuentaRef} className="card" style={{ borderRadius: '24px' }}>
               <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+              <div className="grid-auto-220">
                 <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaAdminEdit.correo || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, correo: e.target.value }))} /></div>
                 <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaAdminEdit.rut || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rut: e.target.value }))} /></div>
                 <div className="form-group"><label>Nombres</label><input className="form-input" value={cuentaAdminEdit.nombres || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
@@ -2065,19 +2070,19 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={cuentaAdminEdit.condiciones_pago || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, condiciones_pago: e.target.value }))}></textarea></div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '10px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(cuentaAdminEdit))} disabled />
                   Es socio (automático por perfil)
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(cuentaAdminEdit.socio_admin)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, socio_admin: e.target.checked }))} />
                   Admin entre socios
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(cuentaAdminEdit.aprobado_superadmin)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
                   Aprobado por SuperAdmin
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(cuentaAdminEdit.requiere_foto_perfil)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
                   Solicitar foto de perfil en onboarding
                 </label>
@@ -2199,7 +2204,7 @@ function SuperAdminPanel({
           {editandoTipo === 'jugador' && jugadorAdminEdit && (
             <div ref={edicionJugadorRef} className="card">
               <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+              <div className="grid-auto-220">
                 <div className="form-group"><label>RUT Jugador</label><input className="form-input" value={jugadorAdminEdit.rut_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
                 <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={jugadorAdminEdit.correo_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
                 <div className="form-group"><label>Nombres</label><input className="form-input" value={jugadorAdminEdit.nombres || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
@@ -2211,7 +2216,7 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'edit')} /></div>
                 <div className="form-group"><label>Estado</label><select className="form-input" value={jugadorAdminEdit.estado || 'ACTIVO'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option><option value="BAJA">Baja</option></select></div>
               </div>
-              {subiendoFotoJugadorEdit && <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>Subiendo foto...</p>}
+              {subiendoFotoJugadorEdit && <p className="text-caption">Subiendo foto...</p>}
 
               {renderPermisosCuenta({
                 cuenta: cuentaAsociadaJugadorEdit,
@@ -2245,7 +2250,7 @@ function SuperAdminPanel({
             </div>
 
             {tipoNuevoUsuario === 'cuenta' ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+              <div className="grid-auto-220">
                 <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
                 <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
                 <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
@@ -2266,7 +2271,7 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={nuevaCuenta.condiciones_pago || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, condiciones_pago: e.target.value }))}></textarea></div>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+              <div className="grid-auto-220">
                 <div className="form-group"><label>RUT Jugador *</label><input className="form-input" value={nuevoJugador.rut_jugador} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
                 <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={nuevoJugador.correo_apoderado} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
                 <div className="form-group"><label>Nombres *</label><input className="form-input" value={nuevoJugador.nombres} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombres: e.target.value }))} /></div>
@@ -2280,23 +2285,23 @@ function SuperAdminPanel({
               </div>
             )}
 
-            {subiendoFotoJugadorNuevo && <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>Subiendo foto...</p>}
+            {subiendoFotoJugadorNuevo && <p className="text-caption">Subiendo foto...</p>}
 
             {tipoNuevoUsuario === 'cuenta' && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(nuevaCuenta))} disabled />
                   Es socio (automático por perfil)
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(nuevaCuenta.socio_admin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, socio_admin: e.target.checked }))} />
                   Admin entre socios
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(nuevaCuenta.aprobado_superadmin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
                   Aprobado por SuperAdmin
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(nuevaCuenta.requiere_foto_perfil)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
                   Solicitar foto de perfil en onboarding
                 </label>
@@ -2493,10 +2498,13 @@ function SuperAdminPanel({
                             fontSize: '11px',
                             fontWeight: '800',
                             cursor: cuenta.cuentaReal && cuenta.perfil !== 'super_admin' ? 'pointer' : 'not-allowed',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
                           }}
                           title={cuenta.cuentaReal ? 'Clic para agregar o quitar este acceso' : 'No se encontró la cuenta real'}
                         >
-                          {habilitado ? '✓' : '✕'} {modulo.etiqueta}
+                          {habilitado ? <Check size={11} /> : <X size={11} />} {modulo.etiqueta}
                         </button>
                       );
                     })}
@@ -2558,13 +2566,13 @@ function SuperAdminPanel({
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
                   style={{ flex: 1, padding: '12px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
-                  onClick={async () => { await validarPagoMensualidad(pago.id, 'aprobado'); alert('Pago aprobado correctamente.'); }}
+                  onClick={async () => { await validarPagoMensualidad(pago.id, 'aprobado'); showToast({ message: 'Pago aprobado correctamente.', type: 'success' }); }}
                 >
                   <CheckSquare size={16} /> Aprobar
                 </button>
                 <button
-                  style={{ flex: 1, padding: '12px', background: '#FF3B30', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
-                  onClick={async () => { await validarPagoMensualidad(pago.id, 'rechazado'); alert('Pago rechazado correctamente.'); }}
+                  style={{ flex: 1, padding: '12px', background: 'var(--rojo-alerta)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                  onClick={async () => { await validarPagoMensualidad(pago.id, 'rechazado'); showToast({ message: 'Pago rechazado correctamente.', type: 'success' }); }}
                 >
                   <XSquare size={16} /> Rechazar
                 </button>
@@ -2646,14 +2654,14 @@ function SuperAdminPanel({
                               </div>
                               <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                                 <button
-                                  style={{ padding: '7px 10px', background: '#007AFF', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
+                                  style={{ padding: '7px 10px', background: '#007AFF', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                   onClick={() => {
                                     setPagoEditandoId(pago.id);
                                     setMostrarFormularioPago(true);
                                   }}
                                   title="Editar"
                                 >
-                                  ✎
+                                  <Pencil size={12} />
                                 </button>
                                 <button
                                   style={{ padding: '7px 10px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
@@ -2663,7 +2671,7 @@ function SuperAdminPanel({
                                   <CheckSquare size={13} />
                                 </button>
                                 <button
-                                  style={{ padding: '7px 10px', background: '#FF3B30', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
+                                  style={{ padding: '7px 10px', background: 'var(--rojo-alerta)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
                                   onClick={async () => { await validarPagoMensualidad(pago.id, 'rechazado'); }}
                                   title="Rechazar"
                                 >
@@ -2731,7 +2739,7 @@ function SuperAdminPanel({
             <div key={log.id} style={{ borderBottom: '1px dashed rgba(0,0,0,0.1)', paddingBottom: '12px', marginBottom: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong style={{ fontSize: '14px', color: 'var(--texto-heading)' }}>{log.accion}</strong><span style={{ fontSize: '12px', color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{log.hora}</span></div>
               <div style={{ fontSize: '13px', color: 'var(--texto-principal)', margin: '5px 0' }}>{log.detalle}</div>
-              <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: 'bold' }}>👤 Usuario Auth: {log.usuario}</span>
+              <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}><User size={11} /> Usuario Auth: {log.usuario}</span>
             </div>
           ))}
         </div>
@@ -2743,12 +2751,12 @@ function SuperAdminPanel({
           <div className="card mt-15">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h4 className="form-subtitle" style={{ margin: 0 }}>Nómina FIBA (Tope 12)</h4>
-              <span style={{ background: cuposCitados >= 12 ? '#FF3B30' : 'var(--verde-victoria)', color: 'white', padding: '6px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: '900' }}>
+              <span style={{ background: cuposCitados >= 12 ? 'var(--rojo-alerta)' : 'var(--verde-victoria)', color: 'white', padding: '6px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: '900' }}>
                 {cuposCitados}/12 Cupos
               </span>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '15px' }}>
+            <div className="grid-auto-220 mb-15">
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Tipo de competencia</label>
                 <select className="form-input" value={citaForm.tipo_competencia} onChange={(e) => setCitaForm((p) => ({ ...p, tipo_competencia: e.target.value }))}>
@@ -2792,7 +2800,7 @@ function SuperAdminPanel({
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '15px' }}>
+            <div className="grid-auto-220 mb-15">
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Rama</label>
                 <select className="form-input" value={citaRama} onChange={(e) => setCitaRama(e.target.value)}>
@@ -2883,7 +2891,7 @@ function SuperAdminPanel({
               <div key={jugador.rut_jugador} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', background: 'var(--fondo-app)', border: `1px solid ${requiereAutorizacion ? 'rgba(255,149,0,0.45)' : 'rgba(0,0,0,0.05)'}`, borderRadius: '12px', marginBottom: '10px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <strong style={{ fontSize: '15px', color: 'var(--texto-principal)' }}>{`${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim()}</strong>
-                  <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px', fontWeight: 'bold' }}>
+                  <span className="text-caption" style={{ fontWeight: 'bold' }}>
                     RUT: {jugador.rut_jugador} | Rama: {jugador.rama || 'N/A'} | Cat: {jugador.categoria || 'N/A'}
                   </span>
 
@@ -2977,12 +2985,12 @@ function SuperAdminPanel({
                           onClick={() => {
                             const rut = String(convocadoAAgregarPorCitacion[cita.id] || '').trim();
                             if (!rut) {
-                              alert('Selecciona un deportista para agregar.');
+                              showToast({ message: 'Selecciona un deportista para agregar.', type: 'error' });
                               return;
                             }
                             const jugador = (jugadoresAdmin || []).find((item) => String(item.rut_jugador || '').trim() === rut);
                             if (!jugador) {
-                              alert('No se encontró el deportista seleccionado.');
+                              showToast({ message: 'No se encontró el deportista seleccionado.', type: 'error' });
                               return;
                             }
                             agregarConvocadoACitacion(cita, jugador);
@@ -3023,8 +3031,8 @@ function SuperAdminPanel({
                                 <button
                                   className="btn-secondary"
                                   style={{ width: 'auto', padding: '7px 10px', borderColor: 'rgba(255,59,48,0.35)', color: '#b91c1c' }}
-                                  onClick={() => {
-                                    if (!window.confirm(`¿Quitar a ${conv.nombre} de esta nómina?`)) return;
+                                  onClick={async () => {
+                                    if (!(await confirmAction({ title: 'Quitar de nómina', message: `¿Quitar a ${conv.nombre} de esta nómina?`, danger: true }))) return;
                                     quitarConvocadoDeCitacion(cita, conv.rut_jugador);
                                   }}
                                 >
@@ -3087,10 +3095,10 @@ function SuperAdminPanel({
                     </div>
                     <div>
                       <strong>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</strong>
-                      <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>
+                      <div className="text-caption">
                         {j.rut_visita || 'Sin RUT'} · {j.club_procedencia || 'Sin club'} · {j.rama || 'Sin rama'} {j.categoria ? `· ${j.categoria}` : ''}
                       </div>
-                      <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>
+                      <div className="text-caption">
                         Evaluación: {(j.resultado_prueba || 'pendiente').toUpperCase()} · Reclutado: {j.reclutado ? 'Sí' : 'No'}
                       </div>
                     </div>
@@ -3146,7 +3154,7 @@ function SuperAdminPanel({
             Crea comunicaciones visibles en el Muro del club. Elige el tipo, urgencia, rama y audiencia antes de publicar.
           </p>
           <div className="card" style={{ borderRadius: '24px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+            <div className="grid-auto-220" style={{ marginBottom: '12px' }}>
               <div className="form-group">
                 <label>Título *</label>
                 <input
@@ -3207,7 +3215,7 @@ function SuperAdminPanel({
                 placeholder="Escribe el cuerpo del anuncio o noticia..."
               />
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', marginBottom: '16px' }}>
+            <label className="checkbox-label-row mb-15">
               <input
                 type="checkbox"
                 checked={formPublicacion.solicita_asistencia}
@@ -3238,7 +3246,7 @@ function SuperAdminPanel({
                       <strong style={{ fontSize: '13px' }}>{com.TITULO || 'Sin título'}</strong>
                       <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{com.FECHA || 'Sin fecha'}</span>
                     </div>
-                    <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>
+                    <div className="text-caption">
                       Tipo: {com.TIPO_COMUNICADO || 'Aviso'} · Rama: {com.rama || 'General'} · Categoría: {com.categoria || 'General'} · Urgencia: {com.urgencia || 'Media'}
                     </div>
                     <p style={{ margin: '8px 0', fontSize: '12px', color: 'var(--texto-principal)' }}>{String(com.CUERPO_TEXTO || '').slice(0, 200)}</p>
@@ -3302,7 +3310,7 @@ function SuperAdminPanel({
           {/* Formulario */}
           <div className="card" style={{ borderRadius: '24px', marginBottom: '16px' }}>
             <h4 className="form-subtitle" style={{ marginBottom: '12px' }}>Datos del partido</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+            <div className="grid-auto-220" style={{ marginBottom: '12px' }}>
               <LogoPicker
                 label="Equipo local"
                 nombre={formResultado.equipo_local}
@@ -3431,16 +3439,16 @@ function SuperAdminPanel({
                 }
               }}
               onBorrar={async (partidoId) => {
-                if (window.confirm('¿Confirmas que quieres borrar este partido?')) {
+                if (await confirmAction({ title: 'Borrar partido', message: '¿Confirmas que quieres borrar este partido?', danger: true })) {
                   try {
                     await api.partidosLiveAPI.delete(partidoId);
                     await cargarPartidosAdmin();
                     if (typeof onPartidosChanged === 'function') {
                       await onPartidosChanged();
                     }
-                    alert('Partido borrado correctamente.');
+                    showToast({ message: 'Partido borrado correctamente.', type: 'success' });
                   } catch (err) {
-                    alert(`No se pudo borrar: ${err.message}`);
+                    showToast({ message: `No se pudo borrar: ${err.message}`, type: 'error' });
                   }
                 }
               }}
@@ -3467,7 +3475,7 @@ function SuperAdminPanel({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div>
                   <strong style={{ fontSize: '14px' }}>{`${c.nombres || 'Sin nombre'} ${c.apellido_paterno || ''}`.trim()}</strong>
-                  <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '4px' }}>
+                  <div className="text-caption">
                     {c.correo || 'Sin correo'} · {c.rut || 'Sin RUT'}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
@@ -3492,10 +3500,10 @@ function SuperAdminPanel({
                 <button className="btn-secondary" style={{ width: 'auto', padding: '9px 14px' }} onClick={() => setCuentaEditando(null)}>Salir</button>
               </div>
               <div style={{ marginTop: '8px', marginBottom: '8px', fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Identidad</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+              <div className="grid-auto-220">
               <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaEditando.correo} onChange={(e) => actualizarCampoCuenta('correo', e.target.value)} /></div>
-              <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaEditando.rut} onChange={(e) => actualizarCampoCuenta('rut', e.target.value)} style={{ borderColor: cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) ? '#FF3B30' : undefined }} /></div>
-              {cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) && <p style={{ fontSize: '12px', color: '#FF3B30', marginTop: '-6px' }}>RUT invalido</p>}
+              <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaEditando.rut} onChange={(e) => actualizarCampoCuenta('rut', e.target.value)} style={{ borderColor: cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) ? 'var(--rojo-alerta)' : undefined }} /></div>
+              {cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) && <p style={{ fontSize: '12px', color: 'var(--rojo-alerta)', marginTop: '-6px' }}>RUT invalido</p>}
               <div className="form-group"><label>Nombres</label><input className="form-input" value={cuentaEditando.nombres} onChange={(e) => actualizarCampoCuenta('nombres', e.target.value)} /></div>
               <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={cuentaEditando.apellido_paterno} onChange={(e) => actualizarCampoCuenta('apellido_paterno', e.target.value)} /></div>
               <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={cuentaEditando.apellido_materno} onChange={(e) => actualizarCampoCuenta('apellido_materno', e.target.value)} /></div>
@@ -3525,11 +3533,11 @@ function SuperAdminPanel({
                 Es socio
               </label>
               <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(cuentaEditando.socio_admin)} onChange={(e) => actualizarCampoCuenta('socio_admin', e.target.checked)} />
                   Admin entre socios
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(cuentaEditando.aprobado_superadmin)} onChange={(e) => actualizarCampoCuenta('aprobado_superadmin', e.target.checked)} />
                   Aprobado por SuperAdmin
                 </label>
@@ -3657,9 +3665,9 @@ function SuperAdminPanel({
               <>
           <div className="scroll-horizontal-menu mb-15">
             <div className="segment-control" style={{ minWidth: '300px' }}>
-              <div className={`segment-btn ${vistaSaludTab === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaSaludTab('dashboard')}>Dashboard</div>
-              <div className={`segment-btn ${vistaSaludTab === 'alertas' ? 'active' : ''}`} onClick={() => setVistaSaludTab('alertas')}>Alertas</div>
-              <div className={`segment-btn ${vistaSaludTab === 'timeline' ? 'active' : ''}`} onClick={() => setVistaSaludTab('timeline')}>Timeline</div>
+              <button type="button" className={`segment-btn ${vistaSaludTab === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaSaludTab('dashboard')}>Dashboard</button>
+              <button type="button" className={`segment-btn ${vistaSaludTab === 'alertas' ? 'active' : ''}`} onClick={() => setVistaSaludTab('alertas')}>Alertas</button>
+              <button type="button" className={`segment-btn ${vistaSaludTab === 'timeline' ? 'active' : ''}`} onClick={() => setVistaSaludTab('timeline')}>Timeline</button>
             </div>
           </div>
 

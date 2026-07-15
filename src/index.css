@@ -1,6 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Inter+Tight:wght@600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@600;700&family=Bungee:wght@400;700&display=swap');
 
-/* Paleta de colores y tipografía iOS mejorada */
+/* Paleta de colores y tipografía iOS mejorada.
+   --rama-femenina/--rama-masculina y el resto de la paleta corporativa
+   viven en App.css:6-14 (única fuente de verdad) para evitar valores
+   duplicados y en conflicto entre los dos archivos. */
 :root {
   --azul-marino: #0B1D3A; /* Elegante y profundo */
   --azul-electrico: #007AFF; /* Azul brillante clásico de iOS */
@@ -8,8 +11,6 @@
   --blanco-tarjeta: #FFFFFF;
   --texto-principal: #1C1C1E;
   --texto-secundario: #8E8E93;
-  --rama-femenina: #ec4899; /* Rosa profesional para categorías femeninas */
-  --rama-masculina: #3b82f6; /* Azul para categorías masculinas */
 }
 
 /* Tipografía elegante y profesional (Estilo nativo Apple + Deportivo) */

@@ -1,3 +1,5 @@
+import { X } from 'lucide-react';
+
 function NotificationsPanel({
   notificaciones,
   setNotificaciones,
@@ -15,7 +17,7 @@ function NotificationsPanel({
               <span style={{ fontWeight: '700', fontSize: '13px', color: 'var(--texto-principal)' }}>
                 {notif.tipo === 'comentario' ? 'Comentario' : notif.tipo === 'rsvp' ? 'RSVP' : notif.tipo === 'comunicacion' ? 'Comunicacion' : 'Notificacion'} {notif.titulo}
               </span>
-              <button onClick={() => setNotificaciones(notifs => notifs.filter(n => n.id !== notif.id))} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', fontSize: '16px', width: '30px', height: '30px', borderRadius: '999px' }}>✕</button>
+              <button onClick={() => setNotificaciones(notifs => notifs.filter(n => n.id !== notif.id))} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '30px', height: '30px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={14} /></button>
             </div>
             <p style={{ margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.3' }}>{notif.descripcion}</p>
           </div>

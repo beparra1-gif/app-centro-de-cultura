@@ -58,11 +58,11 @@ function PublicFacadePanel({
                 {tipoLoginSeleccionado === 'invitado' ? 'Portal Invitados' : 'Acceso Oficial'}
               </h4>
               <div className="input-group-login">
-                <User size={18} color="#6B7280" strokeWidth={1.5} />
+                <User size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <input type="text" placeholder="RUT" value={rutInput} onChange={e => setRutInput(e.target.value)} required />
               </div>
               <div className="input-group-login mt-10">
-                <Lock size={18} color="#6B7280" strokeWidth={1.5} />
+                <Lock size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <input type="password" placeholder="Contraseña" value={passInput} onChange={e => setPassInput(e.target.value)} required />
               </div>
               <button type="submit" className="btn-electric mt-20">Ingresar al Sistema</button>

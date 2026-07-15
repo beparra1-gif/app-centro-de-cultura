@@ -17,6 +17,10 @@ import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
 import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
 import ApiStatusBanner from './components/ApiStatusBanner';
+import ToastContainer from './components/ToastContainer';
+import ConfirmDialog from './components/ConfirmDialog';
+import { showToast } from './utils/toast';
+import { confirmAction } from './utils/confirmDialog';
 import { cuentasDemo } from './data/demoAccounts';
 import {
   getUTMLastDayPreviousMonth,
@@ -97,6 +101,7 @@ function App() {
   });
   const [onboardingSubiendoFoto, setOnboardingSubiendoFoto] = useState(false);
   const [sesionHidratada, setSesionHidratada] = useState(false);
+  const [sesionToken, setSesionToken] = useState(null);
 
   // --- ESTADOS: GAMIFICACIÓN Y PERFIL ---
   const [quizCompletado, setQuizCompletado] = useState(false);
@@ -291,6 +296,95 @@ function App() {
   const notificationsPanelRef = useRef(null);
   const appVersionCheckInFlightRef = useRef(false);
 
+  const resolverRolPrincipal = (rolBase = '', usuario = null) => {
+    const candidatos = [
+      usuario?.perfil_principal,
+      usuario?.rol,
+      ...(Array.isArray(usuario?.access_profiles) ? usuario.access_profiles : []),
+      rolBase,
+    ]
+      .map((rol) => normalizarRol(rol))
+      .filter(Boolean);
+
+    const prioridadRoles = [
+      'super_admin',
+      'admin',
+      'staff',
+      'mesa',
+      'directiva',
+      'socio_apoderado',
+      'socio-apoderado',
+      'socio',
+      'apoderado',
+      'jugador',
+      'visita',
+    ];
+
+    const rolPriorizado = prioridadRoles.find((rol) => candidatos.includes(rol));
+    return rolPriorizado || normalizarRol(rolBase || usuario?.rol || 'jugador');
+  };
+
+  const mapPartidosResumen = (partidosLiveRes = []) => {
+    return (Array.isArray(partidosLiveRes) ? partidosLiveRes : []).map((p, idx) => ({
+      id: p.id_partido || idx + 1,
+      rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
+      categoria: p.categoria || p.categoria_rama || 'General',
+      torneo: p.estado_juego || 'Partido oficial',
+      torneoLogoUrl: p.torneo_logo_url || p.logo_torneo_url || '',
+      fechaISO: p.fecha_hora || null,
+      fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
+      miEquipo: Number(p.pts_local || 0),
+      rival: Number(p.pts_visitante || 0),
+      nombreRival: p.equipo_visitante || p.equipo_visitante_nombre || 'Rival',
+      equipoLocalNombre: p.equipo_local || p.equipo_local_nombre || 'Centro de Cultura Física',
+      equipoLocalLogoUrl: p.logo_local_url || p.equipo_local_logo_url || '/logos/club-logo.png',
+      equipoVisitaLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
+      rivalLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
+    }));
+  };
+
+  const mapComunicacionesResumen = (comunicacionesRes = []) => {
+    return (Array.isArray(comunicacionesRes) ? comunicacionesRes : []).map((c) => ({
+      id: c.id,
+      TITULO: c.titulo,
+      CUERPO_TEXTO: c.cuerpo_texto,
+      FECHA: c.created_at ? new Date(c.created_at).toLocaleDateString('es-CL') : new Date().toLocaleDateString('es-CL'),
+      TIPO_COMUNICADO: c.tipo,
+      rama: c.rama,
+      categoria: c.categoria,
+      urgencia: c.urgencia,
+      solicita_asistencia: c.solicita_asistencia,
+      reacciones: c.reacciones || {},
+      asistencias: c.asistencias || [],
+      citacion_id: c.citacion_id || null,
+      convocatoria_ruts: c.convocatoria_ruts || [],
+      convocatoria_alertas_morosidad: c.convocatoria_alertas_morosidad || [],
+      responsable_nombre: c.responsable_nombre || '',
+      responsable_rol: c.responsable_rol || '',
+    }));
+  };
+
+  const obtenerAnioNacimientoJugador = (jugador = {}) => (
+    jugador.anioNacimiento
+    ?? jugador.anio_nacimiento
+    ?? jugador.ano_nacimiento
+    ?? jugador['año_nacimiento']
+    ?? ''
+  );
+
+  const obtenerNumeroCamisetaJugador = (jugador = {}, fallback = 0) => {
+    const raw = (
+      jugador.numeroCamiseta
+      ?? jugador.numero_camiseta
+      ?? jugador.numero
+      ?? jugador.dorsal
+      ?? fallback
+    );
+
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  };
+
   useEffect(() => {
     try {
       const sesionRaw = window.localStorage.getItem(SESSION_STORAGE_KEY);
@@ -305,6 +399,8 @@ function App() {
             rol: resolverRolPrincipal(sesion.usuario?.rol || rolNormalizado, sesion.usuario),
           });
           setPantallaActiva(sesion.pantallaActiva || (rolNormalizado === 'super_admin' ? 'admin_dashboard' : 'comunicaciones'));
+          setSesionToken(sesion.token || null);
+          api.setAuthToken(sesion.token || null);
         }
       }
     } catch {
@@ -324,14 +420,16 @@ function App() {
           rol: rolUsuario,
           usuario: usuarioAutenticado,
           pantallaActiva,
+          token: sesionToken,
           updatedAt: new Date().toISOString(),
         })
       );
       return;
     }
 
+    api.setAuthToken(null);
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
-  }, [rolUsuario, usuarioAutenticado, pantallaActiva, sesionHidratada, SESSION_STORAGE_KEY]);
+  }, [rolUsuario, usuarioAutenticado, pantallaActiva, sesionToken, sesionHidratada, SESSION_STORAGE_KEY]);
 
   const [nominaCita, setNominaCita] = useState([]);
 
@@ -783,34 +881,6 @@ function App() {
   const abrirFormularioLogin = (tipo) => { setTipoLoginSeleccionado(tipo); setMostrarFormularioLogin(true); setRutInput(tipo === 'invitado' ? 'visita' : ''); };
   const volverInicioLogin = () => { setMostrarFormularioLogin(false); setRutInput(''); setPassInput(''); };
 
-  const resolverRolPrincipal = (rolBase = '', usuario = null) => {
-    const candidatos = [
-      usuario?.perfil_principal,
-      usuario?.rol,
-      ...(Array.isArray(usuario?.access_profiles) ? usuario.access_profiles : []),
-      rolBase,
-    ]
-      .map((rol) => normalizarRol(rol))
-      .filter(Boolean);
-
-    const prioridadRoles = [
-      'super_admin',
-      'admin',
-      'staff',
-      'mesa',
-      'directiva',
-      'socio_apoderado',
-      'socio-apoderado',
-      'socio',
-      'apoderado',
-      'jugador',
-      'visita',
-    ];
-
-    const rolPriorizado = prioridadRoles.find((rol) => candidatos.includes(rol));
-    return rolPriorizado || normalizarRol(rolBase || usuario?.rol || 'jugador');
-  };
-
   const getCamposPendientesOnboarding = (cuenta = {}) => {
     const rolBase = normalizarRol(cuenta.perfil_principal || cuenta.rol || rolUsuarioTemporal || 'apoderado');
 
@@ -867,7 +937,7 @@ function App() {
       const fotoUrl = resultado?.url || '';
       setOnboardingPerfilDraft((prev) => ({ ...prev, foto_perfil_url: fotoUrl }));
     } catch (error) {
-      alert(error.message || 'No se pudo subir la foto de perfil.');
+      showToast({ message: error.message || 'No se pudo subir la foto de perfil.', type: 'error' });
     } finally {
       setOnboardingSubiendoFoto(false);
     }
@@ -875,7 +945,7 @@ function App() {
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
-    if(!rutInput || !passInput) return alert("Ingresa tu RUT y contraseña.");
+    if(!rutInput || !passInput) { showToast({ message: 'Ingresa tu RUT y contraseña.', type: 'error' }); return; }
 
     if(tipoLoginSeleccionado === 'invitado' || rutInput.toLowerCase().includes('visita')) {
       iniciarSesionFinal('visita', {
@@ -894,6 +964,11 @@ function App() {
       const usuarioDetectado = loginRes?.user || null;
       const perfilDetectado = resolverRolPrincipal(loginRes?.user?.rol || 'jugador', usuarioDetectado);
       const requiereCambioClave = passInput === '12345' || Boolean(loginRes?.user?.forzar_clave);
+
+      // Setear el token de inmediato: los pasos de onboarding (completar
+      // perfil) llaman a endpoints protegidos antes de que exista sesión final.
+      setSesionToken(loginRes?.token || null);
+      api.setAuthToken(loginRes?.token || null);
 
       if(requiereCambioClave) {
         setRolUsuarioTemporal(perfilDetectado);
@@ -916,7 +991,7 @@ function App() {
         setOnboardingStep(1);
         setOnboardingProgress(15);
       } else {
-        iniciarSesionFinal(perfilDetectado, usuarioDetectado);
+        iniciarSesionFinal(perfilDetectado, usuarioDetectado, loginRes?.token || null);
       }
     } catch (error) {
       const rutIngresado = String(rutInput || '').trim().toLowerCase();
@@ -941,7 +1016,7 @@ function App() {
         });
         return;
       }
-      alert(error.message || 'No se pudo iniciar sesión. Revisa RUT y contraseña.');
+      showToast({ message: error.message || 'No se pudo iniciar sesión. Revisa RUT y contraseña.', type: 'error' });
     }
   };
 
@@ -950,19 +1025,19 @@ function App() {
       const nuevaClave = String(onboardingPassword || '').trim();
       const confirmacion = String(onboardingPasswordConfirm || '').trim();
       if (nuevaClave.length < 5) {
-        alert('La nueva contraseña debe tener al menos 5 caracteres.');
+        showToast({ message: 'La nueva contraseña debe tener al menos 5 caracteres.', type: 'error' });
         return;
       }
       if (nuevaClave !== confirmacion) {
-        alert('La confirmación de contraseña no coincide.');
+        showToast({ message: 'La confirmación de contraseña no coincide.', type: 'error' });
         return;
       }
       if (!onboardingCuenta?.rut) {
-        alert('No se pudo identificar la cuenta para actualizar contraseña.');
+        showToast({ message: 'No se pudo identificar la cuenta para actualizar contraseña.', type: 'error' });
         return;
       }
 
-      let onboardingInfo = { fusion: onboardingCuenta || {}, camposPendientes: [] };
+      let onboardingInfo;
       try {
         await api.authAPI.changePassword({
           rut: onboardingCuenta.rut,
@@ -972,7 +1047,7 @@ function App() {
 
         onboardingInfo = await cargarCuentaOnboarding(onboardingCuenta);
       } catch (error) {
-        alert(error.message || 'No se pudo actualizar la contraseña.');
+        showToast({ message: error.message || 'No se pudo actualizar la contraseña.', type: 'error' });
         return;
       }
 
@@ -995,14 +1070,14 @@ function App() {
 
     if (onboardingStep === 2) {
       if (!onboardingCuenta?.id) {
-        alert('No se pudo identificar la cuenta para completar perfil.');
+        showToast({ message: 'No se pudo identificar la cuenta para completar perfil.', type: 'error' });
         return;
       }
 
       const faltantesTexto = onboardingCamposPendientes.filter((campo) => campo !== 'foto_perfil_url');
       const faltanteTextoInvalido = faltantesTexto.find((campo) => !String(onboardingPerfilDraft[campo] || '').trim());
       if (faltanteTextoInvalido) {
-        alert('Completa todos los datos pendientes antes de continuar.');
+        showToast({ message: 'Completa todos los datos pendientes antes de continuar.', type: 'error' });
         return;
       }
 
@@ -1016,7 +1091,7 @@ function App() {
         }
         await api.cuentasAPI.update(onboardingCuenta.id, payload);
       } catch (error) {
-        alert(error.message || 'No se pudieron guardar los datos pendientes.');
+        showToast({ message: error.message || 'No se pudieron guardar los datos pendientes.', type: 'error' });
         return;
       }
     }
@@ -1030,7 +1105,11 @@ function App() {
     iniciarSesionFinal(rolUsuarioTemporal, onboardingCuenta);
   };
 
-  const iniciarSesionFinal = (perfil, usuario = null) => {
+  const iniciarSesionFinal = (perfil, usuario = null, token = undefined) => {
+    const tokenFinal = token !== undefined ? token : sesionToken;
+    setSesionToken(tokenFinal);
+    api.setAuthToken(tokenFinal);
+
     const perfilNormalizado = resolverRolPrincipal(perfil, usuario);
     const usuarioNormalizado = usuario ? {
       ...usuario,
@@ -1068,17 +1147,25 @@ function App() {
         rol: perfilNormalizado,
         usuario: usuarioNormalizado,
         pantallaActiva: pantallaActiva,
+        token: tokenFinal,
         savedAt: new Date().toISOString(),
       })
     );
     
     setRutInput(''); setPassInput(''); setMostrarFormularioLogin(false);
+
+    // Recargar datos con el token recién autenticado: el fetch inicial (al montar la app)
+    // corre sin sesión y sus resultados protegidos quedan vacíos; sin este refresh, la sesión
+    // arranca con jugadores/cuentas/pagos vacíos hasta que algo más dispare una recarga manual.
+    void cargarDatos();
   };
 
   const cerrarSesion = () => {
     setShowModalSalir(false);
     setRolUsuario(null);
     setUsuarioAutenticado(null);
+    setSesionToken(null);
+    api.setAuthToken(null);
     setPantallaActiva('comunicaciones');
     setMostrarFormularioLogin(false);
     setShowSettings(false);
@@ -1102,6 +1189,13 @@ function App() {
     });
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
   };
+
+  // Si cualquier llamada a la API devuelve 401 (token vencido/ inválido),
+  // forzar el mismo cierre de sesión que el botón "Salir".
+  useEffect(() => {
+    api.setUnauthorizedHandler(cerrarSesion);
+    return () => api.setUnauthorizedHandler(null);
+  }, []);
 
   const toggleSettingsPanel = () => {
     if (rolUsuario !== 'admin' && rolUsuario !== 'super_admin') return;
@@ -1209,7 +1303,7 @@ function App() {
     }
 
     if (resultado && !resultado.hasUpdate) {
-      alert('Ya tienes la ultima version disponible.');
+      showToast({ message: 'Ya tienes la ultima version disponible.', type: 'info' });
     }
   };
 
@@ -1361,7 +1455,7 @@ function App() {
     if (!cuentaEditando) return;
 
     if (!api.validarRutChileno(cuentaEditando.rut)) {
-      alert('El RUT ingresado no es valido. Revisa digito verificador.');
+      showToast({ message: 'El RUT ingresado no es valido. Revisa digito verificador.', type: 'error' });
       return;
     }
 
@@ -1369,10 +1463,10 @@ function App() {
       setGuardandoCuenta(true);
       await api.cuentasAPI.update(cuentaEditando.id, cuentaEditando);
       await recargarUsuariosAdmin();
-      alert('Cuenta actualizada correctamente.');
+      showToast({ message: 'Cuenta actualizada correctamente.', type: 'success' });
       setCuentaEditando(null);
     } catch (error) {
-      alert(`No se pudo guardar la cuenta: ${error.message}`);
+      showToast({ message: `No se pudo guardar la cuenta: ${error.message}`, type: 'error' });
     } finally {
       setGuardandoCuenta(false);
     }
@@ -1517,46 +1611,6 @@ function App() {
     });
 
     await cargarDatos({ manual: true });
-  };
-
-  const mapPartidosResumen = (partidosLiveRes = []) => {
-    return (Array.isArray(partidosLiveRes) ? partidosLiveRes : []).map((p, idx) => ({
-      id: p.id_partido || idx + 1,
-      rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
-      categoria: p.categoria || p.categoria_rama || 'General',
-      torneo: p.estado_juego || 'Partido oficial',
-      torneoLogoUrl: p.torneo_logo_url || p.logo_torneo_url || '',
-      fechaISO: p.fecha_hora || null,
-      fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
-      miEquipo: Number(p.pts_local || 0),
-      rival: Number(p.pts_visitante || 0),
-      nombreRival: p.equipo_visitante || p.equipo_visitante_nombre || 'Rival',
-      equipoLocalNombre: p.equipo_local || p.equipo_local_nombre || 'Centro de Cultura Física',
-      equipoLocalLogoUrl: p.logo_local_url || p.equipo_local_logo_url || '/logos/club-logo.png',
-      equipoVisitaLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
-      rivalLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
-    }));
-  };
-
-  const mapComunicacionesResumen = (comunicacionesRes = []) => {
-    return (Array.isArray(comunicacionesRes) ? comunicacionesRes : []).map((c) => ({
-      id: c.id,
-      TITULO: c.titulo,
-      CUERPO_TEXTO: c.cuerpo_texto,
-      FECHA: c.created_at ? new Date(c.created_at).toLocaleDateString('es-CL') : new Date().toLocaleDateString('es-CL'),
-      TIPO_COMUNICADO: c.tipo,
-      rama: c.rama,
-      categoria: c.categoria,
-      urgencia: c.urgencia,
-      solicita_asistencia: c.solicita_asistencia,
-      reacciones: c.reacciones || {},
-      asistencias: c.asistencias || [],
-      citacion_id: c.citacion_id || null,
-      convocatoria_ruts: c.convocatoria_ruts || [],
-      convocatoria_alertas_morosidad: c.convocatoria_alertas_morosidad || [],
-      responsable_nombre: c.responsable_nombre || '',
-      responsable_rol: c.responsable_rol || '',
-    }));
   };
 
   const recargarComunicacionesResumen = async () => {
@@ -1752,7 +1806,7 @@ function App() {
     elemento.click();
     document.body.removeChild(elemento);
     
-    addNotificacionHistorial('reporte', '📥 Reporte Exportado', 'Archivo descargado exitosamente');
+    addNotificacionHistorial('reporte', 'Reporte Exportado', 'Archivo descargado exitosamente');
   };
 
   const renderGraficoSVG = (tipo) => {
@@ -1792,9 +1846,9 @@ function App() {
           <rect x="85" y={140 - h2} width="40" height={h2} fill="#34C759" rx="4" />
           <rect x="150" y={140 - h3} width="40" height={h3} fill="#FF9500" rx="4" />
           <line x1="10" y1="140" x2="200" y2="140" stroke="var(--borde-suave)" strokeWidth="1" />
-          <text x="40" y="160" textAnchor="middle" fontSize="11" fill="var(--texto-secundario)" fontWeight="600">💬</text>
-          <text x="105" y="160" textAnchor="middle" fontSize="11" fill="var(--texto-secundario)" fontWeight="600">❤️</text>
-          <text x="170" y="160" textAnchor="middle" fontSize="11" fill="var(--texto-secundario)" fontWeight="600">✓</text>
+          <text x="40" y="160" textAnchor="middle" fontSize="10" fill="var(--texto-secundario)" fontWeight="600">Com.</text>
+          <text x="105" y="160" textAnchor="middle" fontSize="10" fill="var(--texto-secundario)" fontWeight="600">Reac.</text>
+          <text x="170" y="160" textAnchor="middle" fontSize="10" fill="var(--texto-secundario)" fontWeight="600">RSVP</text>
         </svg>
       );
     }
@@ -1837,7 +1891,7 @@ function App() {
       nuevasAlertas.push({
         id: nextId(),
         tipo: 'engagement',
-        titulo: '📉 Engagement Bajo',
+        titulo: 'Engagement Bajo',
         descripcion: `Solo ${totalEngagement} interacciones en últimas 24h`,
         urgencia: 'Media',
         timestamp: new Date()
@@ -1853,7 +1907,7 @@ function App() {
       nuevasAlertas.push({
         id: nextId(),
         tipo: 'respuesta',
-        titulo: '💬 Sin Respuestas',
+        titulo: 'Sin Respuestas',
         descripcion: `${comSinRespuesta.length} comunicaciones esperando respuesta`,
         urgencia: 'Baja',
         timestamp: new Date()
@@ -1866,7 +1920,7 @@ function App() {
       nuevasAlertas.push({
         id: nextId(),
         tipo: 'stock',
-        titulo: '⚠️ Stock Crítico',
+        titulo: 'Stock Crítico',
         descripcion: `${stockCritico.length} productos con stock bajo`,
         urgencia: 'Alta',
         timestamp: new Date()
@@ -1877,7 +1931,7 @@ function App() {
     nuevasAlertas.push({
       id: nextId(),
       tipo: 'inactividad',
-      titulo: '😴 Usuarios Inactivos',
+      titulo: 'Usuarios Inactivos',
       descripcion: '3 usuarios sin actividad > 7 días',
       urgencia: 'Baja',
       timestamp: new Date()
@@ -1886,7 +1940,7 @@ function App() {
     setAlertas(nuevasAlertas);
     setSaludDelSistema({
       estado: totalEngagement > 30 ? 'Óptimo' : totalEngagement > 15 ? 'Atención' : 'Crítico',
-      emoji: totalEngagement > 30 ? '🟢' : totalEngagement > 15 ? '🟡' : '🔴'
+      color: totalEngagement > 30 ? 'var(--verde-victoria)' : totalEngagement > 15 ? 'var(--naranja-aviso)' : 'var(--rojo-alerta)'
     });
   };
 
@@ -1995,10 +2049,10 @@ function App() {
   const probarPushNotificacion = async () => {
     const autorizado = await solicitarPermisoNotificaciones();
     if (!autorizado) {
-      alert('Activa las notificaciones del navegador para ver el push nativo.');
+      showToast({ message: 'Activa las notificaciones del navegador para ver el push nativo.', type: 'warning' });
     }
 
-    crearPushNotificacion('alerta', '🔔 Notificación del sistema', 'Las notificaciones están activas y conectadas.', 'Baja');
+    crearPushNotificacion('alerta', 'Notificación del sistema', 'Las notificaciones están activas y conectadas.', 'Baja');
   };
 
   // ========== FASE 9: INTEGRACIÓN WHATSAPP + WEBHOOKS BIDIRECCIONALES ==========
@@ -2020,10 +2074,10 @@ function App() {
       };
 
       setHistorialWhatsApp(prev => [...prev, nuevoMensaje]);
-      crearPushNotificacion('whatsapp', '📤 Mensaje Enviado', `Enviado a ${nuevoMensaje.contacto}`, 'Baja');
+      crearPushNotificacion('whatsapp', 'Mensaje Enviado', `Enviado a ${nuevoMensaje.contacto}`, 'Baja');
     } catch (error) {
       console.error('Error enviando mensaje WhatsApp:', error);
-      alert('Error al enviar el mensaje');
+      showToast({ message: 'Error al enviar el mensaje', type: 'error' });
     }
   };
   
@@ -2039,7 +2093,7 @@ function App() {
 
   const agregarContactoWhatsApp = async () => {
     if (!nuevoContactoWA.nombre.trim() || !nuevoContactoWA.numero.trim()) {
-      alert('Por favor completa nombre y número');
+      showToast({ message: 'Por favor completa nombre y número', type: 'error' });
       return;
     }
 
@@ -2050,10 +2104,10 @@ function App() {
       
       setContactosWhatsApp(prev => [...prev, contactoNuevo]);
       setNuevoContactoWA({ nombre: '', numero: '' });
-      crearPushNotificacion('whatsapp', '📞 Contacto Agregado', `${contactoNuevo.nombre} añadido a WhatsApp`, 'Baja');
+      crearPushNotificacion('whatsapp', 'Contacto Agregado', `${contactoNuevo.nombre} añadido a WhatsApp`, 'Baja');
     } catch (error) {
       console.error('Error agregando contacto:', error);
-      alert('Error al agregar el contacto: ' + error.message);
+      showToast({ message: 'Error al agregar el contacto: ' + error.message, type: 'error' });
     }
   };
 
@@ -2069,28 +2123,6 @@ function App() {
   const normalizarRutComparacion = (rut = '') => (
     String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase()
   );
-
-  const obtenerAnioNacimientoJugador = (jugador = {}) => (
-    jugador.anioNacimiento
-    ?? jugador.anio_nacimiento
-    ?? jugador.ano_nacimiento
-    ?? jugador['año_nacimiento']
-    ?? jugador['a├▒o_nacimiento']
-    ?? ''
-  );
-
-  const obtenerNumeroCamisetaJugador = (jugador = {}, fallback = 0) => {
-    const raw = (
-      jugador.numeroCamiseta
-      ?? jugador.numero_camiseta
-      ?? jugador.numero
-      ?? jugador.dorsal
-      ?? fallback
-    );
-
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-  };
 
   // ==========================================
   // 5. MÓDULOS DE JUGADOR, ACADEMIA Y TESORERÍA
@@ -2313,23 +2345,25 @@ function App() {
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'flex-end', width: '100%', flexWrap: 'nowrap' }}>
               {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && (
                 <button ref={settingsButtonRef} className="btn-icon-header" onClick={toggleSettingsPanel} title="Configuración y Perfil">
-                  <Settings size={24} color="#6B7280" strokeWidth={1.5} />
+                  <Settings size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
                 </button>
               )}
-              <div
+              <button
+                type="button"
+                className="btn-icon-header"
                 ref={notificationsButtonRef}
-                style={{position: 'relative', cursor: 'pointer'}}
+                style={{position: 'relative'}}
                 onClick={toggleNotificationsPanel}
               >
-                <Bell size={24} color="#6B7280" strokeWidth={1.5} />
+                <Bell size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
                 {notificaciones.filter(n=>!n.leida).length > 0 && (
-                  <span style={{position: 'absolute', top: '-5px', right: '-5px', background: '#FF3B30', color: 'white', fontSize: '10px', fontWeight: '900', padding: '3px 6px', borderRadius: '10px', border: '2px solid var(--azul-marino)'}}>
+                  <span style={{position: 'absolute', top: '-5px', right: '-5px', background: 'var(--rojo-alerta)', color: 'white', fontSize: '11px', fontWeight: '900', padding: '3px 6px', borderRadius: '10px', border: '2px solid var(--azul-marino)'}}>
                     {notificaciones.filter(n=>!n.leida).length}
                   </span>
                 )}
-              </div>
+              </button>
               <button className="btn-icon-header" onClick={() => setShowModalSalir(true)}>
-                <LogOut size={24} color="#6B7280" strokeWidth={1.5} />
+                <LogOut size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
               </button>
             </div>
           )}
@@ -2407,6 +2441,10 @@ function App() {
         pushNotificaciones={pushNotificaciones}
         setPushNotificaciones={setPushNotificaciones}
       />
+
+      {/* TOASTS Y CONFIRMACIONES (reemplazo de alert()/confirm() nativos) */}
+      <ToastContainer />
+      <ConfirmDialog />
       
       {/* HISTORIAL DE PUSH MODAL */}
       {mostrarHistorialPush && (
@@ -2452,7 +2490,7 @@ function App() {
           position: 'fixed',
           top: '16px',
           right: '60px',
-          background: '#FF3B30',
+          background: 'var(--rojo-alerta)',
           color: 'white',
           width: '24px',
           height: '24px',
@@ -2721,17 +2759,17 @@ function App() {
       <nav className="ios-bottom-nav">
         {!rolUsuario ? (
           <>
-            <div className={`nav-item ${vistaPublica === 'inicio' ? 'active' : ''}`} onClick={() => setVistaPublica('inicio')}><Home size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Inicio</span></div>
-            <div className={`nav-item ${vistaPublica === 'noticias' ? 'active' : ''}`} onClick={() => setVistaPublica('noticias')}><Bell size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Noticias</span></div>
-            <div className={`nav-item ${vistaPublica === 'resultados' ? 'active' : ''}`} onClick={() => setVistaPublica('resultados')}><Trophy size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Resultados</span></div>
+            <button type="button" className={`nav-item ${vistaPublica === 'inicio' ? 'active' : ''}`} onClick={() => setVistaPublica('inicio')}><Home size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Inicio</span></button>
+            <button type="button" className={`nav-item ${vistaPublica === 'noticias' ? 'active' : ''}`} onClick={() => setVistaPublica('noticias')}><Bell size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Noticias</span></button>
+            <button type="button" className={`nav-item ${vistaPublica === 'resultados' ? 'active' : ''}`} onClick={() => setVistaPublica('resultados')}><Trophy size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Resultados</span></button>
           </>
         ) : rolUsuario === 'visita' ? (
           <>
-            {puedeVerPantalla('comunicaciones') && <div className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Trophy size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Torneo</span></div>}
-            {puedeVerPantalla('jugador') && <div className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><QrCode size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Pase/Fixture</span></div>}
+            {puedeVerPantalla('comunicaciones') && <button type="button" className={`nav-item ${pantallaActiva === 'comunicaciones' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('comunicaciones')}><Trophy size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Torneo</span></button>}
+            {puedeVerPantalla('jugador') && <button type="button" className={`nav-item ${pantallaActiva === 'jugador' ? 'active' : ''}`} onClick={() => cambiarPantallaConLoader('jugador')}><QrCode size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Pase/Fixture</span></button>}
           </>
         ) : rolUsuario === 'mesa' ? (
-          <div className="nav-item active" style={{width: '100%'}}><Monitor size={26} color="#6B7280" strokeWidth={1.5} /><span className="mt-5">Consola Transmisión</span></div>
+          <div className="nav-item active" style={{width: '100%'}}><Monitor size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Consola Transmisión</span></div>
         ) : modulosNavegacionVisibles.length > 0 ? (
           <>
             {modulosNavegacionVisibles.map((modulo) => {
@@ -2739,14 +2777,15 @@ function App() {
               if (!meta) return null;
               const Icon = meta.Icon;
               return (
-                <div
+                <button
+                  type="button"
                   key={`nav-${modulo}`}
                   className={`nav-item ${pantallaActiva === modulo ? 'active' : ''}`}
                   onClick={() => cambiarPantallaConLoader(modulo)}
                 >
-                  <Icon size={26} color="#6B7280" strokeWidth={1.5} />
+                  <Icon size={26} color="var(--gris-secundario)" strokeWidth={1.5} />
                   <span className="mt-5">{meta.label}</span>
-                </div>
+                </button>
               );
             })}
           </>
@@ -2757,7 +2796,7 @@ function App() {
       {showModalSalir && (
         <div className="modal-overlay-alert">
           <div className="modal-alert-card text-center">
-            <AlertTriangle size={48} color="#FF3B30" className="icon-bounce mb-15" />
+            <AlertTriangle size={48} color="var(--rojo-alerta)" className="icon-bounce mb-15" />
             <h3 style={{margin: '0 0 10px 0', fontSize: '22px', color: 'var(--texto-principal)'}}>¿Cerrar Sesión?</h3>
             <p style={{color: 'var(--texto-secundario)', marginBottom: '20px'}}>Se cerrará el módulo actual de trabajo.</p>
             <div className="modal-alert-buttons">

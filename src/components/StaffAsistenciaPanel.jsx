@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Save } from 'lucide-react';
+import { Save, Check, X, Stethoscope } from 'lucide-react';
+import { showToast } from '../utils/toast';
 import LogoAvatar from './LogoAvatar';
 
 function StaffAsistenciaPanel({
@@ -7,8 +8,6 @@ function StaffAsistenciaPanel({
   setVistaStaff,
   filtroRamaStaff,
   setFiltroRamaStaff,
-  filtroCatStaff,
-  setFiltroCatStaff,
   rosterEquipo,
   setRosterEquipo,
 }) {
@@ -56,8 +55,8 @@ function StaffAsistenciaPanel({
   return (
     <div className="mt-20 fade-in">
       <div className="segment-control mb-20">
-        <div className={`segment-btn ${vistaStaff === 'asistencia' ? 'active' : ''}`} onClick={() => setVistaStaff('asistencia')}>Pasar Lista</div>
-        <div className={`segment-btn ${vistaStaff === 'historial' ? 'active' : ''}`} onClick={() => setVistaStaff('historial')}>Historial</div>
+        <button type="button" className={`segment-btn ${vistaStaff === 'asistencia' ? 'active' : ''}`} onClick={() => setVistaStaff('asistencia')}>Pasar Lista</button>
+        <button type="button" className={`segment-btn ${vistaStaff === 'historial' ? 'active' : ''}`} onClick={() => setVistaStaff('historial')}>Historial</button>
       </div>
 
       {vistaStaff === 'asistencia' && (
@@ -144,9 +143,9 @@ function StaffAsistenciaPanel({
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-                  <button onClick={() => cambiarEstado(jugador.id, 'presente')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '14px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: jugador.estadoAsistencia === 'presente' ? 'white' : 'var(--texto-secundario)', transition: '0.2s' }}>✓ PRESENTE</button>
-                  <button onClick={() => cambiarEstado(jugador.id, 'ausente')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '14px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'ausente' ? '#FF3B30' : 'rgba(255,59,48,0.10)', color: jugador.estadoAsistencia === 'ausente' ? 'white' : 'var(--texto-secundario)', transition: '0.2s' }}>❌ AUSENTE</button>
-                  <button onClick={() => cambiarEstado(jugador.id, 'justificado')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '14px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'justificado' ? '#FF9500' : 'rgba(255,149,0,0.10)', color: jugador.estadoAsistencia === 'justificado' ? 'white' : 'var(--texto-secundario)', transition: '0.2s' }}>🚑 JUSTIFIC.</button>
+                  <button onClick={() => cambiarEstado(jugador.id, 'presente')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '14px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: jugador.estadoAsistencia === 'presente' ? 'white' : 'var(--texto-secundario)', transition: '0.2s', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Check size={12} /> PRESENTE</button>
+                  <button onClick={() => cambiarEstado(jugador.id, 'ausente')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '14px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'ausente' ? 'var(--rojo-alerta)' : 'rgba(255,59,48,0.10)', color: jugador.estadoAsistencia === 'ausente' ? 'white' : 'var(--texto-secundario)', transition: '0.2s', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><X size={12} /> AUSENTE</button>
+                  <button onClick={() => cambiarEstado(jugador.id, 'justificado')} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '14px', fontWeight: '800', fontSize: '11px', background: jugador.estadoAsistencia === 'justificado' ? '#FF9500' : 'rgba(255,149,0,0.10)', color: jugador.estadoAsistencia === 'justificado' ? 'white' : 'var(--texto-secundario)', transition: '0.2s', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Stethoscope size={12} /> JUSTIFIC.</button>
                 </div>
               </div>
             ))}
@@ -159,13 +158,13 @@ function StaffAsistenciaPanel({
 
           <div className="mt-20" style={{ background: 'rgba(0,122,255,0.05)', borderRadius: '22px', padding: '20px' }}>
             <h5 style={{ margin: '0 0 15px 0', fontSize: '15px', color: 'var(--texto-heading)' }}>Resumen a Guardar:</h5>
-            <div className="desglose-row"><span>Asistencia Efectiva:</span><strong style={{ color: porcentaje > 70 ? 'var(--verde-victoria)' : '#FF3B30', fontSize: '16px' }}>{porcentaje}%</strong></div>
+            <div className="desglose-row"><span>Asistencia Efectiva:</span><strong style={{ color: porcentaje > 70 ? 'var(--verde-victoria)' : 'var(--rojo-alerta)', fontSize: '16px' }}>{porcentaje}%</strong></div>
             <div className="desglose-row"><span>Presentes en Cancha:</span><strong>{presentes}</strong></div>
-            <div className="desglose-row"><span>Ausentes (Sin aviso):</span><strong style={{ color: '#FF3B30' }}>{ausentes}</strong></div>
+            <div className="desglose-row"><span>Ausentes (Sin aviso):</span><strong style={{ color: 'var(--rojo-alerta)' }}>{ausentes}</strong></div>
             <div className="desglose-row"><span>Con Licencia Médica:</span><strong style={{ color: '#FF9500' }}>{justificados}</strong></div>
           </div>
 
-          <button className="btn-electric mt-20" onClick={() => alert('Asistencia guardada en la base de datos de Auditoría.')}>
+          <button className="btn-electric mt-20" onClick={() => showToast({ message: 'Asistencia guardada en la base de datos de Auditoría.', type: 'success' })}>
             <Save size={18} /> Confirmar y Guardar Asistencia
           </button>
         </div>

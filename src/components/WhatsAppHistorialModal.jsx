@@ -1,3 +1,5 @@
+import { ArrowUpRight, ArrowDownLeft, Check, Clock, MessageCircle, X } from 'lucide-react';
+
 function WhatsAppHistorialModal({
   historialWhatsApp,
   setMostrarHistorialWA,
@@ -32,8 +34,8 @@ function WhatsAppHistorialModal({
         onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--texto-principal)' }}>💬 Historial WhatsApp</h4>
-          <button onClick={() => setMostrarHistorialWA(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', fontSize: '20px', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px' }}>✕</button>
+          <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--texto-principal)', display: 'flex', alignItems: 'center', gap: '6px' }}><MessageCircle size={17} /> Historial WhatsApp</h4>
+          <button onClick={() => setMostrarHistorialWA(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -49,13 +51,13 @@ function WhatsAppHistorialModal({
                 gap: '10px',
               }}
             >
-              <span style={{ fontSize: '16px' }}>{msg.tipo === 'salida' ? '📤' : '📥'}</span>
+              {msg.tipo === 'salida' ? <ArrowUpRight size={16} color="#34C759" style={{ flexShrink: 0, marginTop: '2px' }} /> : <ArrowDownLeft size={16} color="var(--azul-electrico)" style={{ flexShrink: 0, marginTop: '2px' }} />}
               <div style={{ flex: 1 }}>
                 <p style={{ margin: '0 0 4px 0', fontSize: '12px', fontWeight: '800', color: 'var(--texto-principal)' }}>{msg.contacto}</p>
                 <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: 'var(--texto-principal)', lineHeight: '1.4' }}>{msg.mensaje}</p>
-                <div style={{ display: 'flex', gap: '8px', fontSize: '10px', color: 'var(--texto-secundario)' }}>
-                  <span>🕐 {msg.timestamp.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
-                  <span style={{ color: msg.estado === 'entregado' ? '#34C759' : '#FF9500' }}>✓ {msg.estado === 'entregado' ? 'Entregado' : 'Enviando'}</span>
+                <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Clock size={10} /> {msg.timestamp.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span style={{ color: msg.estado === 'entregado' ? '#34C759' : '#FF9500', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Check size={10} /> {msg.estado === 'entregado' ? 'Entregado' : 'Enviando'}</span>
                 </div>
               </div>
             </div>

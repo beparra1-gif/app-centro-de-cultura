@@ -1,5 +1,7 @@
+import { X } from 'lucide-react';
 import * as api from '../api/client';
 import { getColorUrgencia } from '../utils/appHelpers';
+import { showToast } from '../utils/toast';
 
 function ComunicacionFormPanel({
   formCom,
@@ -44,7 +46,7 @@ function ComunicacionFormPanel({
       addNotificacionHistorial('comunicacion', 'Nueva Comunicacion', `"${tituloActual}" publicada correctamente`);
     } catch (error) {
       console.error('Error agregando comunicacion:', error);
-      alert('Error al crear la comunicacion');
+      showToast({ message: 'Error al crear la comunicacion', type: 'error' });
     }
   };
 
@@ -59,7 +61,7 @@ function ComunicacionFormPanel({
     <div className="card mt-20 fade-in" style={{ background: 'linear-gradient(180deg, rgba(0, 122, 255, 0.06), rgba(52, 199, 89, 0.05))', border: '1px solid rgba(255,255,255,0.72)', borderRadius: '24px', boxShadow: '0 14px 34px rgba(15,23,42,0.08)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', gap: '8px', flexWrap: 'wrap' }}>
         <h4 style={{ margin: 0, color: 'var(--texto-heading)', fontSize: '18px', fontWeight: '800' }}>Nueva Comunicacion</h4>
-        <button onClick={() => setMostrarFormComunicaciones(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', fontSize: '20px', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px' }}>✕</button>
+        <button onClick={() => setMostrarFormComunicaciones(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
       </div>
 
       <input type="text" placeholder="Titulo de la comunicacion" value={formCom.titulo} onChange={e => setFormCom({ ...formCom, titulo: e.target.value })} className="form-input mb-10" style={{ width: '100%', padding: '12px', borderRadius: '16px', border: '1px solid var(--borde-suave)', fontSize: '14px', background: 'rgba(255,255,255,0.92)' }} />

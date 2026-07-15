@@ -1,7 +1,9 @@
-import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
+import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown, Lock, User, Ticket, Trash2, Banknote, Smartphone, NotebookPen, BookOpen, XCircle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { nextId } from '../utils/runtimeId';
 import { getColorPorCategoria } from '../utils/appHelpers';
+import { showToast } from '../utils/toast';
+import { confirmAction } from '../utils/confirmDialog';
 
 function KioscoPanel({
   cajaAbierta,
@@ -134,7 +136,7 @@ function KioscoPanel({
     setCarritoKiosco([]);
     setModalPagoPOS(null);
     setMontoRecibidoEfectivo('');
-    alert(`Ticket #${ticketCounter.toString().padStart(3, '0')} generado con éxito.`);
+    showToast({ message: `Ticket #${ticketCounter.toString().padStart(3, '0')} generado con éxito.`, type: 'success' });
   };
 
   const registrarCuentaPendiente = (e) => {
@@ -158,13 +160,13 @@ function KioscoPanel({
     setNombreFiado('');
     setDetalleFiado('');
     setTicketCounter(c => c + 1);
-    alert('La cuenta ha sido registrada en Fiados.');
+    showToast({ message: 'La cuenta ha sido registrada en Fiados.', type: 'success' });
   };
 
   if (!cajaAbierta) {
     return (
       <div className="fade-in text-center" style={{ padding: '40px 20px 120px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '100vh', boxSizing: 'border-box' }}>
-        <div className="escudo-club-login" style={{ background: '#FF9500', color: 'white' }}>🔒</div>
+        <div className="escudo-club-login" style={{ background: '#FF9500', color: 'white' }}><Lock size={40} /></div>
         <h2 style={{ color: 'var(--texto-principal)', marginBottom: '8px' }}>Caja Bloqueada</h2>
         <p style={{ color: 'var(--texto-secundario)', maxWidth: '420px', margin: '0 auto 18px auto' }}>Completa los datos de apertura de turno para habilitar ventas.</p>
         <div className="card" style={{ textAlign: 'left', borderRadius: '24px', maxWidth: '520px', margin: '0 auto' }}>
@@ -180,15 +182,15 @@ function KioscoPanel({
   return (
     <div className="kiosco-container fade-in kiosco-shell">
       <div className="staff-header-info mb-15 kiosco-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', padding: '16px 18px', borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
-        <div><h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)', fontSize: '15px' }}>Caja Activa: {datosCaja.dia}</h4><span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: 'bold' }}>👤 {datosCaja.responsable} | 🎫 Ticket: #{ticketCounter.toString().padStart(3, '0')}</span></div>
+        <div><h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)', fontSize: '15px' }}>Caja Activa: {datosCaja.dia}</h4><span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}><User size={12} /> {datosCaja.responsable} | <Ticket size={12} /> Ticket: #{ticketCounter.toString().padStart(3, '0')}</span></div>
         <button className="btn-pill btn-danger" onClick={() => setCajaAbierta(false)}>Cerrar Turno</button>
       </div>
 
       {modalPagoPOS === 'efectivo' && (
-        <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: '24px' }}><h3 style={{ fontWeight: '900' }}>Cobro Efectivo</h3><p>Total: <strong style={{ fontSize: '22px' }}>${totalCarrito.toLocaleString('es-CL')}</strong></p><div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }} className="mb-15"><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibidoEfectivo(totalCarrito)}>Exacto</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibidoEfectivo(10000)}>$10k</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibidoEfectivo(20000)}>$20k</button></div><input type="number" className="form-input" placeholder="¿Con cuánto paga?" value={montoRecibidoEfectivo} onChange={(e) => setMontoRecibidoEfectivo(e.target.value)} />{Number(montoRecibidoEfectivo) >= totalCarrito && (<div className="vuelto-display">VUELTO: ${(Number(montoRecibidoEfectivo) - totalCarrito).toLocaleString('es-CL')}</div>)}<div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPagoPOS(null)}>Atrás</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #34C759 0%, #28A745 100%)' }} onClick={() => { if (Number(montoRecibidoEfectivo) < totalCarrito) return alert('Falta dinero.'); finalizarDespachoPOS('efectivo'); }}>Cobrar</button></div></div></div>
+        <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: '24px' }}><h3 style={{ fontWeight: '900' }}>Cobro Efectivo</h3><p>Total: <strong style={{ fontSize: '22px' }}>${totalCarrito.toLocaleString('es-CL')}</strong></p><div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }} className="mb-15"><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibidoEfectivo(totalCarrito)}>Exacto</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibidoEfectivo(10000)}>$10k</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibidoEfectivo(20000)}>$20k</button></div><input type="number" className="form-input" placeholder="¿Con cuánto paga?" value={montoRecibidoEfectivo} onChange={(e) => setMontoRecibidoEfectivo(e.target.value)} />{Number(montoRecibidoEfectivo) >= totalCarrito && (<div className="vuelto-display">VUELTO: ${(Number(montoRecibidoEfectivo) - totalCarrito).toLocaleString('es-CL')}</div>)}<div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPagoPOS(null)}>Atrás</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #34C759 0%, #28A745 100%)' }} onClick={() => { if (Number(montoRecibidoEfectivo) < totalCarrito) { showToast({ message: 'Falta dinero.', type: 'error' }); return; } finalizarDespachoPOS('efectivo'); }}>Cobrar</button></div></div></div>
       )}
       {modalPagoPOS === 'transferencia' && (
-        <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: '24px' }}><ShieldAlert size={40} color="#6B7280" strokeWidth={1.5} style={{ margin: '0 auto 10px auto' }} /><h3 style={{ fontWeight: '900' }}>Validar Transferencia</h3><div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPagoPOS(null)}>Cancelar</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' }} onClick={() => finalizarDespachoPOS('transferencia')}>Verificado</button></div></div></div>
+        <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: '24px' }}><ShieldAlert size={40} color="var(--gris-secundario)" strokeWidth={1.5} style={{ margin: '0 auto 10px auto' }} /><h3 style={{ fontWeight: '900' }}>Validar Transferencia</h3><div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPagoPOS(null)}>Cancelar</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' }} onClick={() => finalizarDespachoPOS('transferencia')}>Verificado</button></div></div></div>
       )}
       {modalPagoPOS === 'fiado' && (
         <div className="modal-overlay-alert"><div className="modal-alert-card"><h3 className="text-center">Dejar Pendiente</h3><form onSubmit={registrarCuentaPendiente}><input type="text" className="form-input mb-10" required placeholder="Nombre del responsable" value={nombreFiado} onChange={(e) => setNombreFiado(e.target.value)} /><input type="text" className="form-input mb-15" placeholder="Descripción adicional" value={detalleFiado} onChange={(e) => setDetalleFiado(e.target.value)} /><div className="modal-alert-buttons"><button type="button" className="btn-modal-cancelar" onClick={() => setModalPagoPOS(null)}>Cancelar</button><button type="submit" className="btn-modal-confirmar" style={{ background: '#FF9500' }}>Anotar Deuda</button></div></form></div></div>
@@ -196,11 +198,11 @@ function KioscoPanel({
 
       <div className="scroll-horizontal-menu mb-15">
         <div className="segment-control">
-          <div className={`segment-btn ${vistaKiosco === 'pos' ? 'active' : ''}`} onClick={() => setVistaKiosco('pos')}>Vender</div>
-          <div className={`segment-btn ${vistaKiosco === 'caja' ? 'active' : ''}`} onClick={() => setVistaKiosco('caja')}>Caja</div>
-          <div className={`segment-btn ${vistaKiosco === 'inventario' ? 'active' : ''}`} onClick={() => setVistaKiosco('inventario')}>Inventario</div>
-          <div className={`segment-btn ${vistaKiosco === 'analitica' ? 'active' : ''}`} onClick={() => setVistaKiosco('analitica')}>Analítica</div>
-          <div className={`segment-btn ${vistaKiosco === 'fiados' ? 'active' : ''}`} onClick={() => setVistaKiosco('fiados')}>Pendientes</div>
+          <button type="button" className={`segment-btn ${vistaKiosco === 'pos' ? 'active' : ''}`} onClick={() => setVistaKiosco('pos')}>Vender</button>
+          <button type="button" className={`segment-btn ${vistaKiosco === 'caja' ? 'active' : ''}`} onClick={() => setVistaKiosco('caja')}>Caja</button>
+          <button type="button" className={`segment-btn ${vistaKiosco === 'inventario' ? 'active' : ''}`} onClick={() => setVistaKiosco('inventario')}>Inventario</button>
+          <button type="button" className={`segment-btn ${vistaKiosco === 'analitica' ? 'active' : ''}`} onClick={() => setVistaKiosco('analitica')}>Analítica</button>
+          <button type="button" className={`segment-btn ${vistaKiosco === 'fiados' ? 'active' : ''}`} onClick={() => setVistaKiosco('fiados')}>Pendientes</button>
         </div>
       </div>
 
@@ -211,7 +213,7 @@ function KioscoPanel({
               const isCritico = prod.stock > 0 && prod.stock <= 5;
               const colorCat = getColorPorCategoria(prod.categoria);
               return (
-                <div key={prod.id} className={`kiosco-item ${prod.stock <= 0 ? 'producto-agotado-card' : ''}`}
+                <button type="button" key={prod.id} className={`kiosco-item ${prod.stock <= 0 ? 'producto-agotado-card' : ''}`}
                   style={{ background: colorCat.bg, borderColor: colorCat.border }}
                   onClick={() => {
                     if (prod.stock > 0) {
@@ -228,12 +230,12 @@ function KioscoPanel({
                   <div id={`prod-${prod.id}`} className="kiosco-item-inner" style={{ transition: '0.1s' }}>
                     <span className="kiosco-emoji">{prod.emoji}</span>
                     <span className="kiosco-nombre" style={{ color: colorCat.text }}>{prod.nombre}</span>
-                    <span className="kiosco-stock-label" style={{ color: isCritico ? '#FF3B30' : colorCat.text }}>Stock: {prod.stock}</span>
+                    <span className="kiosco-stock-label" style={{ color: isCritico ? 'var(--rojo-alerta)' : colorCat.text }}>Stock: {prod.stock}</span>
                     <span className="kiosco-precio" style={{ color: colorCat.text }}>${prod.precio}</span>
                   </div>
                   {prod.stock <= 0 && <span className="badge-agotado-tag">AGOTADO</span>}
                   {isCritico && <span className="badge-critico-tag" style={{ position: 'absolute', top: 5, left: 5, background: '#FF9500', color: 'white', fontSize: '8px', padding: '2px 4px', borderRadius: '999px' }}>CRÍTICO</span>}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -242,8 +244,8 @@ function KioscoPanel({
             <div className="cart-header-row">
               <h4 className="form-subtitle" style={{ margin: 0 }}>Ticket #{ticketCounter.toString().padStart(3, '0')}</h4>
               {carritoKiosco.length > 0 && (
-                <button className="btn-borrar-carrito" onClick={() => { if (window.confirm('¿Borrar el contenido del carrito? El número de ticket se mantiene.')) { setCarritoKiosco([]); } }}>
-                  🗑 Borrar Contenido
+                <button className="btn-borrar-carrito" onClick={async () => { if (await confirmAction({ title: 'Borrar carrito', message: '¿Borrar el contenido del carrito? El número de ticket se mantiene.', danger: true })) { setCarritoKiosco([]); } }}>
+                  <Trash2 size={13} /> Borrar Contenido
                 </button>
               )}
             </div>
@@ -258,9 +260,9 @@ function KioscoPanel({
                 ))}
                 <div className="cart-total-row mt-15"><span>TOTAL A PAGAR</span><h2>${totalCarrito.toLocaleString('es-CL')}</h2></div>
                 <div className="cart-pay-buttons mt-15">
-                  <button className="btn-pago efectivo" onClick={() => setModalPagoPOS('efectivo')}>💵 Efectivo</button>
-                  <button className="btn-pago transferencia" onClick={() => setModalPagoPOS('transferencia')}>📱 Transfer</button>
-                  <button className="btn-pago" style={{ background: '#FF9500' }} onClick={() => setModalPagoPOS('fiado')}>📝 Fiado</button>
+                  <button className="btn-pago efectivo" onClick={() => setModalPagoPOS('efectivo')}><Banknote size={16} /> Efectivo</button>
+                  <button className="btn-pago transferencia" onClick={() => setModalPagoPOS('transferencia')}><Smartphone size={16} /> Transfer</button>
+                  <button className="btn-pago" style={{ background: '#FF9500' }} onClick={() => setModalPagoPOS('fiado')}><NotebookPen size={16} /> Fiado</button>
                 </div>
               </div>
             )}
@@ -272,15 +274,15 @@ function KioscoPanel({
         <div className="fade-in">
           <div className="checkout-total-box"><span style={{ color: 'rgba(255,255,255,0.7)' }}>Efectivo Físico Neto en Caja</span><h2 style={{ color: 'white', textShadow: 'none' }}>${cajaNetaFinal.toLocaleString('es-CL')}</h2><span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginTop: '8px' }}>Apertura: ${Number(datosCaja.montoInicial).toLocaleString('es-CL')}</span></div>
           <div className="caja-doble-grid mt-15">
-            <div className="card sub-caja-card"><h5 className="sub-caja-title">📖 Kiosco</h5><div className="desglose-row"><span>Efec:</span><strong style={{ color: 'var(--verde-victoria)' }}>+${cajaEfectivoKiosco.toLocaleString('es-CL')}</strong></div><div className="desglose-row"><span>Trans:</span><strong>+${cajaTransferKiosco.toLocaleString('es-CL')}</strong></div></div>
-            <div className="card sub-caja-card"><h5 className="sub-caja-title" style={{ color: 'var(--azul-electrico)' }}>🎟️ Entradas</h5><div className="desglose-row"><span>Efec:</span><strong style={{ color: 'var(--verde-victoria)' }}>+${cajaEfectivoEntradas.toLocaleString('es-CL')}</strong></div><div className="desglose-row"><span>Trans:</span><strong>+${cajaTransferEntradas.toLocaleString('es-CL')}</strong></div></div>
+            <div className="card sub-caja-card"><h5 className="sub-caja-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><BookOpen size={14} /> Kiosco</h5><div className="desglose-row"><span>Efec:</span><strong style={{ color: 'var(--verde-victoria)' }}>+${cajaEfectivoKiosco.toLocaleString('es-CL')}</strong></div><div className="desglose-row"><span>Trans:</span><strong>+${cajaTransferKiosco.toLocaleString('es-CL')}</strong></div></div>
+            <div className="card sub-caja-card"><h5 className="sub-caja-title" style={{ color: 'var(--azul-electrico)', display: 'flex', alignItems: 'center', gap: '6px' }}><Ticket size={14} /> Entradas</h5><div className="desglose-row"><span>Efec:</span><strong style={{ color: 'var(--verde-victoria)' }}>+${cajaEfectivoEntradas.toLocaleString('es-CL')}</strong></div><div className="desglose-row"><span>Trans:</span><strong>+${cajaTransferEntradas.toLocaleString('es-CL')}</strong></div></div>
           </div>
           <div className="card mt-15">
-            <h4 className="form-subtitle" style={{ color: '#FF3B30' }}><Wallet size={16} color="#6B7280" strokeWidth={1.5} /> Registrar Egreso (Salida)</h4>
-            <div style={{ display: 'flex', gap: '10px' }} className="mt-10"><input type="text" className="form-input" style={{ flex: 2 }} placeholder="Glosa (Ej: Árbitros)" value={gastoRegistro.desc} onChange={(e) => setGastoRegistro({ ...gastoRegistro, desc: e.target.value })} /><input type="number" className="form-input" style={{ flex: 1 }} placeholder="Monto" value={gastoRegistro.monto} onChange={(e) => setGastoRegistro({ ...gastoRegistro, monto: e.target.value })} /><button className="btn-electric" style={{ background: '#FF3B30', width: 'auto', padding: '0 15px' }} onClick={() => { if (!gastoRegistro.desc || !gastoRegistro.monto) return; setEgresosLista([...egresosLista, { id: nextId(), desc: gastoRegistro.desc, monto: Number(gastoRegistro.monto) }]); setGastoRegistro({ desc: '', monto: '' }); }}>Restar</button></div>
-            {egresosLista.length > 0 && (<div className="egresos-list mt-15"><span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>Egresos de Hoy</span>{egresosLista.map(eg => (<div key={eg.id} className="egreso-row mt-5"><span className="egreso-desc">❌ {eg.desc}</span><span className="egreso-monto">-${eg.monto.toLocaleString('es-CL')}</span></div>))}</div>)}
+            <h4 className="form-subtitle" style={{ color: 'var(--rojo-alerta)' }}><Wallet size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Registrar Egreso (Salida)</h4>
+            <div style={{ display: 'flex', gap: '10px' }} className="mt-10"><input type="text" className="form-input" style={{ flex: 2 }} placeholder="Glosa (Ej: Árbitros)" value={gastoRegistro.desc} onChange={(e) => setGastoRegistro({ ...gastoRegistro, desc: e.target.value })} /><input type="number" className="form-input" style={{ flex: 1 }} placeholder="Monto" value={gastoRegistro.monto} onChange={(e) => setGastoRegistro({ ...gastoRegistro, monto: e.target.value })} /><button className="btn-electric" style={{ background: 'var(--rojo-alerta)', width: 'auto', padding: '0 15px' }} onClick={() => { if (!gastoRegistro.desc || !gastoRegistro.monto) return; setEgresosLista([...egresosLista, { id: nextId(), desc: gastoRegistro.desc, monto: Number(gastoRegistro.monto) }]); setGastoRegistro({ desc: '', monto: '' }); }}>Restar</button></div>
+            {egresosLista.length > 0 && (<div className="egresos-list mt-15"><span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>Egresos de Hoy</span>{egresosLista.map(eg => (<div key={eg.id} className="egreso-row mt-5"><span className="egreso-desc" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><XCircle size={12} /> {eg.desc}</span><span className="egreso-monto">-${eg.monto.toLocaleString('es-CL')}</span></div>))}</div>)}
           </div>
-          <button className="btn-secondary mt-15" style={{ background: 'rgba(0,122,255,0.1)' }} onClick={exportarCajaPdf}><FileDown size={18} color="#6B7280" strokeWidth={1.5} /> Exportar Reporte del Día (PDF)</button>
+          <button className="btn-secondary mt-15" style={{ background: 'rgba(0,122,255,0.1)' }} onClick={exportarCajaPdf}><FileDown size={18} color="var(--gris-secundario)" strokeWidth={1.5} /> Exportar Reporte del Día (PDF)</button>
         </div>
       )}
 
@@ -298,9 +300,10 @@ function KioscoPanel({
               </select>
             </div>
             <button className="btn-electric" onClick={() => {
-              if (!nuevoProducto.nombre || !nuevoProducto.precio) return alert('Faltan datos');
+              if (!nuevoProducto.nombre || !nuevoProducto.precio) { showToast({ message: 'Faltan datos', type: 'error' }); return; }
               setInventarioProductos([...inventarioProductos, { id: nextId(), ...nuevoProducto, stock: 10, ventas: 0 }]);
-              setNuevoProducto({ nombre: '', emoji: '', costo: '', precio: '', categoria: 'Bebida' }); alert('Producto Creado');
+              setNuevoProducto({ nombre: '', emoji: '', costo: '', precio: '', categoria: 'Bebida' });
+              showToast({ message: 'Producto creado.', type: 'success' });
             }}>Añadir al Catálogo</button>
           </div>
           <div className="card">
@@ -312,7 +315,7 @@ function KioscoPanel({
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <button className="btn-circle btn-danger" onClick={() => setInventarioProductos(inventarioProductos.map(p => p.id === prod.id ? { ...p, stock: Math.max(0, p.stock - 1) } : p))}>-</button>
-                      <input type="number" style={{ width: '50px', textAlign: 'center', padding: '4px 4px', border: '1.5px solid var(--borde-suave)', borderRadius: '999px', background: 'var(--fondo-input)', color: prod.stock <= 5 ? '#FF3B30' : 'var(--texto-principal)', fontWeight: '900', fontSize: '14px' }} value={prod.stock} onChange={(e) => setInventarioProductos(inventarioProductos.map(p => p.id === prod.id ? { ...p, stock: Math.max(0, parseInt(e.target.value, 10) || 0) } : p))} />
+                      <input type="number" style={{ width: '50px', textAlign: 'center', padding: '4px 4px', border: '1.5px solid var(--borde-suave)', borderRadius: '999px', background: 'var(--fondo-input)', color: prod.stock <= 5 ? 'var(--rojo-alerta)' : 'var(--texto-principal)', fontWeight: '900', fontSize: '14px' }} value={prod.stock} onChange={(e) => setInventarioProductos(inventarioProductos.map(p => p.id === prod.id ? { ...p, stock: Math.max(0, parseInt(e.target.value, 10) || 0) } : p))} />
                       <button className="btn-circle btn-success" onClick={() => setInventarioProductos(inventarioProductos.map(p => p.id === prod.id ? { ...p, stock: p.stock + 1 } : p))}>+</button>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--fondo-input)', padding: '4px 8px', borderRadius: '999px', border: '1.5px solid var(--borde-suave)' }}>
@@ -336,10 +339,10 @@ function KioscoPanel({
               <div key={p.id} className="desglose-row mt-10" style={{ fontSize: '15px' }}><span>{i + 1}. {p.emoji} {p.nombre}</span><strong style={{ color: 'var(--verde-victoria)' }}>{p.ventas} ud.</strong></div>
             ))}
           </div>
-          <div className="card mt-15" style={{ borderLeft: '4px solid #FF3B30' }}>
-            <h4 className="form-subtitle"><TrendingDown size={16} color="#FF3B30" strokeWidth={1.5} /> Menos Movimiento</h4>
+          <div className="card mt-15" style={{ borderLeft: '4px solid var(--rojo-alerta)' }}>
+            <h4 className="form-subtitle"><TrendingDown size={16} color="var(--rojo-alerta)" strokeWidth={1.5} /> Menos Movimiento</h4>
             {[...inventarioProductos].sort((a, b) => a.ventas - b.ventas).slice(0, 2).map((p) => (
-              <div key={p.id} className="desglose-row mt-10" style={{ fontSize: '15px' }}><span>{p.emoji} {p.nombre}</span><strong style={{ color: '#FF3B30' }}>{p.ventas} ud.</strong></div>
+              <div key={p.id} className="desglose-row mt-10" style={{ fontSize: '15px' }}><span>{p.emoji} {p.nombre}</span><strong style={{ color: 'var(--rojo-alerta)' }}>{p.ventas} ud.</strong></div>
             ))}
           </div>
         </div>
@@ -354,8 +357,8 @@ function KioscoPanel({
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><h4 style={{ margin: 0, color: 'var(--texto-principal)' }}>{f.nombre}</h4><span style={{ fontWeight: '900', color: '#FF9500', fontSize: '16px' }}>${f.monto.toLocaleString('es-CL')}</span></div>
               <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', margin: '8px 0' }}>{f.detalle}</p>
               <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                <button className="btn-pill btn-success" style={{ flex: 1 }} onClick={() => { if (window.confirm('¿Deuda cancelada en EFECTIVO?')) { setCajaEfectivoKiosco(p => p + f.monto); setFiadosLista(fiadosLista.filter(i => i.id !== f.id)); setTicketCounter(c => c + 1); } }}>💵 Efectivo</button>
-                <button className="btn-pill" style={{ flex: 1 }} onClick={() => { if (window.confirm('¿Deuda cancelada por TRANSFERENCIA?')) { setCajaTransferKiosco(p => p + f.monto); setFiadosLista(fiadosLista.filter(i => i.id !== f.id)); setTicketCounter(c => c + 1); } }}>📱 Transfer</button>
+                <button className="btn-pill btn-success" style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }} onClick={async () => { if (await confirmAction({ title: 'Confirmar pago', message: '¿Deuda cancelada en EFECTIVO?' })) { setCajaEfectivoKiosco(p => p + f.monto); setFiadosLista(fiadosLista.filter(i => i.id !== f.id)); setTicketCounter(c => c + 1); } }}><Banknote size={14} /> Efectivo</button>
+                <button className="btn-pill" style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }} onClick={async () => { if (await confirmAction({ title: 'Confirmar pago', message: '¿Deuda cancelada por TRANSFERENCIA?' })) { setCajaTransferKiosco(p => p + f.monto); setFiadosLista(fiadosLista.filter(i => i.id !== f.id)); setTicketCounter(c => c + 1); } }}><Smartphone size={14} /> Transfer</button>
               </div>
             </div>
           ))}

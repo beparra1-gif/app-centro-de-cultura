@@ -5,12 +5,26 @@
    ========================================= */
 :root {
   /* Paleta Corporativa Inmutable */
-  --azul-electrico: #007AFF; 
+  --azul-electrico: #007AFF;
   --verde-victoria: #34C759;
   --rojo-alerta: #FF3B30;
   --naranja-aviso: #FF9500;
-  --rama-femenina: #E03C9E; 
-  --rama-masculina: #00C7BE; 
+  --gris-secundario: #6B7280;
+  --gris-fondo: #F3F4F6;
+  --rama-femenina: #E03C9E;
+  --rama-masculina: #00C7BE;
+
+  /* Radios de borde */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  /* Espaciados */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 14px;
+  --space-lg: 20px;
 }
 
 /* TEMA CLARO (LIGHT MODE) */
@@ -453,12 +467,13 @@ button,
 }
 .ios-bottom-nav::-webkit-scrollbar { display: none; }
 
-.nav-item { 
-  display: flex; flex-direction: column; align-items: center; 
-  color: var(--texto-secundario); font-size: 12px; font-weight: 800; 
+.nav-item {
+  display: flex; flex-direction: column; align-items: center;
+  color: var(--texto-secundario); font-size: 12px; font-weight: 800;
   cursor: pointer; gap: 4px; width: 25%; min-width: 64px; max-width: 92px;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   text-align: center;
+  background: none; border: none; font-family: inherit; padding: 0;
 }
 .nav-item span {
   margin-top: 0 !important;
@@ -479,6 +494,7 @@ button,
    ========================================= */
 .fade-in { animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideInRight { from { opacity: 0; transform: translateX(30px); } to { opacity: 1; transform: translateX(0); } }
 
 .icon-bounce { animation: bounce 2s infinite; }
 @keyframes bounce { 0%, 20%, 50%, 80%, 100% {transform: translateY(0);} 40% {transform: translateY(-10px);} 60% {transform: translateY(-5px);} }
@@ -589,7 +605,15 @@ button,
 .mt-5 { margin-top: 5px; } .mt-10 { margin-top: 10px; } .mt-15 { margin-top: 15px; } .mt-20 { margin-top: 20px; } 
 .mb-10 { margin-bottom: 10px; } .mb-15 { margin-bottom: 15px; } .mb-20 { margin-bottom: 20px; }
 
-.section-title { 
+/* Patrones repetidos extraídos de estilos inline (SuperAdminPanel / TarjetaJugadorPanel) */
+.grid-auto-220 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.checkbox-label-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.text-caption { font-size: 12px; color: var(--texto-secundario); margin-top: 4px; }
+.stat-label { font-size: 11px; text-transform: uppercase; font-weight: 800; opacity: 0.85; }
+.stat-box { background: rgba(255,255,255,0.12); border-radius: 12px; padding: 10px; }
+.stat-value { display: block; margin-top: 4px; font-size: 13px; }
+
+.section-title {
   font-size: 22px; color: var(--texto-principal); 
   margin: 0 0 15px 5px; font-weight: 900; letter-spacing: -0.04em; 
 }
@@ -599,7 +623,11 @@ button,
 }
 
 /* Formularios y Botones Generales */
-.form-input { 
+.form-label {
+  display: block; font-size: 12px; font-weight: 700; color: var(--texto-secundario);
+  margin: 0 0 6px 4px;
+}
+.form-input {
   padding: 15px 16px; border-radius: 16px; border: 1.5px solid var(--borde-suave); 
   background-color: var(--fondo-input); color: var(--texto-principal);
   width: 100%; box-sizing: border-box; font-size: 15px; outline: none; 
@@ -862,7 +890,7 @@ button,
 .scroll-horizontal-menu { display: flex; overflow-x: auto; padding-bottom: 10px; margin-bottom: 15px;}
 .scroll-horizontal-menu { scrollbar-width: none; }
 .segment-control { display: flex; background: var(--fondo-input); border-radius: 16px; padding: 5px; min-width: max-content; }
-.segment-btn { text-align: center; padding: 12px 20px; font-size: 14px; font-weight: 800; color: var(--texto-secundario); border-radius: 14px; cursor: pointer; transition: 0.25s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.segment-btn { text-align: center; padding: 12px 20px; font-size: 14px; font-weight: 800; color: var(--texto-secundario); border-radius: 14px; cursor: pointer; transition: 0.25s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; background: none; border: none; font-family: inherit; }
 .segment-btn:hover { color: var(--texto-principal); }
 .segment-btn.active { background-color: var(--blanco-tarjeta); color: var(--texto-principal); box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 4px 14px rgba(0,0,0,0.06); }
 
@@ -1721,10 +1749,11 @@ button,
 .grid-12-meses { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .lista-12-meses { display: flex; flex-wrap: wrap; gap: 6px; }
 
-.mes-box { 
-  padding: 12px 5px; border-radius: 12px; border: 1px solid transparent; 
-  cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); 
+.mes-box {
+  padding: 12px 5px; border-radius: 12px; border: 1px solid transparent;
+  cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: none; font-family: inherit;
 }
 .lista-12-meses .mes-box { 
   padding: 8px 10px; min-width: 62px; font-size: 12px;
@@ -1805,6 +1834,7 @@ button,
   overflow: hidden;
   min-height: 0;
   gap: 0;
+  font-family: inherit;
 }
 .kiosco-item:hover { transform: translateY(-4px); box-shadow: 0 8px 22px rgba(0,0,0,0.14); }
 .kiosco-item:active { transform: scale(0.92); }

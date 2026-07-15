@@ -17,7 +17,7 @@ function SaludTimelinePanel() {
               style={{ width: '100%', background: 'linear-gradient(180deg, var(--azul-electrico) 0%, rgba(0,122,255,0.3) 100%)', height: `${(h.cantidad / maxCantidad) * 130}px`, borderRadius: '999px', cursor: 'pointer', transition: 'all 0.2s' }}
               title={h.cantidad + ' acciones'}
             ></div>
-            {i % 3 === 0 && <span style={{ fontSize: '9px', color: 'var(--texto-secundario)', fontWeight: '500' }}>{h.hora}</span>}
+            {i % 3 === 0 && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '500' }}>{h.hora}</span>}
           </div>
         ))}
       </div>

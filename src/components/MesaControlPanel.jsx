@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRightLeft, Download, Expand, FileText, Filter, History, Shield, Tv, Users } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import { calcularEff } from '../utils/appHelpers';
+import { showToast } from '../utils/toast';
+import { confirmAction } from '../utils/confirmDialog';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
@@ -100,13 +102,6 @@ const coincideCategoriaFiltro = (valorA = '', valorB = '') => {
   const normA = normalizarClaveFiltro(valorA);
   const normB = normalizarClaveFiltro(valorB);
   return Boolean(normA && normB && (normA.includes(normB) || normB.includes(normA)));
-};
-
-const esCategoriaMenorOIgual = (categoriaJugador = '', categoriaBase = '') => {
-  const subJugador = obtenerSubCategoriaNumero(categoriaJugador);
-  const subBase = obtenerSubCategoriaNumero(categoriaBase);
-  if (subJugador == null || subBase == null) return false;
-  return subJugador <= subBase;
 };
 
 const esCategoriaInferiorDentroDeRango = (categoriaJugador = '', categoriaBase = '', niveles = 0) => {
@@ -1268,7 +1263,7 @@ function MesaControlPanel({
   const incluirDesdeCategoriasInferioresLocal = (jugadorId) => {
     if (nominaLocalIds.includes(jugadorId)) return;
     if (nominaLocalIds.length >= LIMITE_JUGADORES_POR_EQUIPO) {
-      alert(`La nomina local ya tiene ${LIMITE_JUGADORES_POR_EQUIPO} jugadoras/es.`);
+      showToast({ message: `La nomina local ya tiene ${LIMITE_JUGADORES_POR_EQUIPO} jugadoras/es.`, type: 'error' });
       return;
     }
     setNominaLocalIds((prev) => [...prev, jugadorId]);
@@ -1276,12 +1271,12 @@ function MesaControlPanel({
 
   const validarQuinteto = ({ tipo }) => {
     if (tipo === 'local') {
-      if (quintetoLocalIds.length !== 5) return alert('El quinteto local debe tener 5 jugadoras/es.');
+      if (quintetoLocalIds.length !== 5) { showToast({ message: 'El quinteto local debe tener 5 jugadoras/es.', type: 'error' }); return; }
       setQuintetoLocalValidado(true);
       return;
     }
     if (modoAnalisis !== 'dos') return;
-    if (quintetoVisitaIds.length !== 5) return alert('El quinteto visita debe tener 5 jugadoras/es.');
+    if (quintetoVisitaIds.length !== 5) { showToast({ message: 'El quinteto visita debe tener 5 jugadoras/es.', type: 'error' }); return; }
     setQuintetoVisitaValidado(true);
   };
 
@@ -1359,7 +1354,7 @@ function MesaControlPanel({
 
   const cambiarModuloProtegido = (destino) => {
     if (forzarPantallaCompletaLive && moduloMesa === 'live' && destino !== 'live') {
-      alert('Debes usar "Salir Pantalla Completa" para abandonar el modo forzado.');
+      showToast({ message: 'Debes usar "Salir Pantalla Completa" para abandonar el modo forzado.', type: 'error' });
       return;
     }
     setModuloMesa(destino);
@@ -1480,12 +1475,13 @@ function MesaControlPanel({
     const salida = rosterLocalCompleto.find((j) => String(j.id) === salidaIdObjetivo);
     const ingreso = rosterLocalCompleto.find((j) => String(j.id) === ingresoIdObjetivo);
     if (!salida || !ingreso) return;
-    if (!quintetoLocalIds.includes(salida.id)) return alert('La jugadora/o de salida debe estar en cancha.');
+    if (!quintetoLocalIds.includes(salida.id)) { showToast({ message: 'La jugadora/o de salida debe estar en cancha.', type: 'error' }); return; }
     if (cambioObligatorioJugadorId && String(cambioObligatorioJugadorId) !== String(salida.id)) {
-      return alert('Debes sacar primero a la jugadora/o que llegó a 5 faltas.');
+      showToast({ message: 'Debes sacar primero a la jugadora/o que llegó a 5 faltas.', type: 'error' });
+      return;
     }
-    if (quintetoLocalIds.includes(ingreso.id)) return alert('La jugadora/o de ingreso ya está en cancha.');
-    if (ingreso._bloqueado || ingreso.flt >= 5) return alert('La jugadora/o de ingreso está bloqueada/o.');
+    if (quintetoLocalIds.includes(ingreso.id)) { showToast({ message: 'La jugadora/o de ingreso ya está en cancha.', type: 'error' }); return; }
+    if (ingreso._bloqueado || ingreso.flt >= 5) { showToast({ message: 'La jugadora/o de ingreso está bloqueada/o.', type: 'error' }); return; }
 
     setQuintetoLocalIds((prev) => prev.filter((id) => id !== salida.id).concat(ingreso.id).slice(0, 5));
     const detalle = `Cambio Local: sale #${salida.dorsal} ${salida.nombre}, entra #${ingreso.dorsal} ${ingreso.nombre}`;
@@ -1505,7 +1501,7 @@ function MesaControlPanel({
 
   const confirmarCambioObligatorio = () => {
     if (!cambioSalidaId || !cambioIngresoId) {
-      alert('Selecciona quién sale y quién entra para confirmar el cambio obligatorio.');
+      showToast({ message: 'Selecciona quién sale y quién entra para confirmar el cambio obligatorio.', type: 'error' });
       return;
     }
     ejecutarCambioJugadorLocal();
@@ -1569,18 +1565,20 @@ function MesaControlPanel({
   };
 
   const ejecutarAccionFIBA = (tipo, payload = {}) => {
-    if (!partidoIniciado) return alert('Valida y comienza el partido antes de capturar eventos.');
-    if (!jugadorSeleccionadoLive) return alert('Selecciona un jugador del Roster primero.');
+    if (!partidoIniciado) { showToast({ message: 'Valida y comienza el partido antes de capturar eventos.', type: 'error' }); return; }
+    if (!jugadorSeleccionadoLive) { showToast({ message: 'Selecciona un jugador del Roster primero.', type: 'error' }); return; }
     if (cambioObligatorioJugadorId && String(cambioObligatorioJugadorId) !== String(jugadorSeleccionadoLive)) {
-      return alert('Hay un cambio obligatorio pendiente por 5 faltas. Debes resolverlo antes de continuar.');
+      showToast({ message: 'Hay un cambio obligatorio pendiente por 5 faltas. Debes resolverlo antes de continuar.', type: 'error' });
+      return;
     }
     if (!quintetoLocalIds.includes(jugadorSeleccionadoLive)) {
-      return alert('La accion solo se permite para jugadoras/es titulares en cancha.');
+      showToast({ message: 'La accion solo se permite para jugadoras/es titulares en cancha.', type: 'error' });
+      return;
     }
     let nombreJugador = '';
     let expulsionNombre = '';
     let puntosAnotados = 0;
-    let detalleAccion = '';
+    let detalleAccion;
 
     const tirosLibresIntentados = limitar(Number(payload.tirosLibresIntentados || 0), 0, 3);
     const tirosLibresConvertidos = limitar(Number(payload.tirosLibresConvertidos || 0), 0, tirosLibresIntentados);
@@ -1653,7 +1651,7 @@ function MesaControlPanel({
       const primerIngresoValido = bancoLocal.find((j) => !j._bloqueado && numero(j.flt) < 5);
       setCambioIngresoId(primerIngresoValido ? String(primerIngresoValido.id) : '');
       setMostrarModalCambioObligatorio(true);
-      alert(`${expulsionNombre} llegó a 5 faltas. Cambio obligatorio inmediato.`);
+      showToast({ message: `${expulsionNombre} llegó a 5 faltas. Cambio obligatorio inmediato.`, type: 'warning' });
     }
     if (!expulsionNombre) setJugadorSeleccionadoLive(null);
   };
@@ -1666,8 +1664,8 @@ function MesaControlPanel({
     const dorsal = Number(dorsalTexto);
 
     if (!equipoTarget?.key) return;
-    if (!nombre) return alert('Ingresa el nombre del jugador.');
-    if (!Number.isFinite(dorsal) || dorsal <= 0) return alert('Ingresa un dorsal valido.');
+    if (!nombre) { showToast({ message: 'Ingresa el nombre del jugador.', type: 'error' }); return; }
+    if (!Number.isFinite(dorsal) || dorsal <= 0) { showToast({ message: 'Ingresa un dorsal valido.', type: 'error' }); return; }
 
     let nuevoIdCreado = null;
 
@@ -1683,7 +1681,7 @@ function MesaControlPanel({
 
       const cantidadEquipo = normalizadoPrev.filter((j) => j._equipoKey === equipoTarget.key).length;
       if (cantidadEquipo >= LIMITE_JUGADORES_POR_EQUIPO) {
-        alert(`El equipo ${equipoTarget.nombre} ya tiene ${LIMITE_JUGADORES_POR_EQUIPO} jugadores en mesa.`);
+        showToast({ message: `El equipo ${equipoTarget.nombre} ya tiene ${LIMITE_JUGADORES_POR_EQUIPO} jugadores en mesa.`, type: 'error' });
         return prev;
       }
 
@@ -1728,43 +1726,18 @@ function MesaControlPanel({
     }
   };
 
-  const registrarPuntosVisita = (puntos = 1, jugadorId = '') => {
-    if (!partidoIniciado) return;
-    if (modoAnalisis !== 'dos') return;
-    const nombreEquipo = equipoVisita?.nombre || liveScore.equipoVisitaNombre || 'Visita';
-    const rosterBase = quintetoVisitaEnCancha.length > 0 ? quintetoVisitaEnCancha : rosterVisita;
-    const jugador = rosterBase.find((j) => String(j.id) === String(jugadorId)) || null;
-    const actor = jugador ? `#${jugador.dorsal} ${jugador.nombre}` : nombreEquipo;
-    setLiveScore((prev) => ({ ...prev, ptsVisita: prev.ptsVisita + puntos }));
-    const detalle = `${actor} anota ${puntos} pts (${nombreEquipo})`;
-    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalle }, ...prev]);
-    registrarEventoJuego({ tipo: 'PUNTO', detalle, equipo: 'visita', jugadorId: jugador?.id || null, valor: puntos });
-  };
-
-  const registrarFaltaVisita = (jugadorId = '') => {
-    if (!partidoIniciado) return;
-    if (modoAnalisis !== 'dos') return;
-    const nombreEquipo = equipoVisita?.nombre || liveScore.equipoVisitaNombre || 'Visita';
-    const rosterBase = quintetoVisitaEnCancha.length > 0 ? quintetoVisitaEnCancha : rosterVisita;
-    const jugador = rosterBase.find((j) => String(j.id) === String(jugadorId)) || null;
-    const actor = jugador ? `#${jugador.dorsal} ${jugador.nombre}` : nombreEquipo;
-    setLiveScore((prev) => ({ ...prev, faltasVisita: prev.faltasVisita + 1 }));
-    const detalle = `${actor} comete FALTA (${nombreEquipo})`;
-    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalle }, ...prev]);
-    registrarEventoJuego({ tipo: 'FALTA', detalle, equipo: 'visita', jugadorId: jugador?.id || null });
-  };
-
   const ejecutarAccionFIBAVisita = (tipo, payload = {}) => {
-    if (!partidoIniciado) return alert('Valida y comienza el partido antes de capturar eventos.');
+    if (!partidoIniciado) { showToast({ message: 'Valida y comienza el partido antes de capturar eventos.', type: 'error' }); return; }
     if (modoAnalisis !== 'dos') return;
-    if (!jugadorVisitaSeleccionadoId) return alert('Selecciona una jugadora/o visita primero.');
+    if (!jugadorVisitaSeleccionadoId) { showToast({ message: 'Selecciona una jugadora/o visita primero.', type: 'error' }); return; }
     if (!quintetoVisitaIds.map((id) => String(id)).includes(String(jugadorVisitaSeleccionadoId))) {
-      return alert('La accion visita solo se permite para jugadoras/es titulares en cancha.');
+      showToast({ message: 'La accion visita solo se permite para jugadoras/es titulares en cancha.', type: 'error' });
+      return;
     }
 
     let nombreJugador = '';
     let puntosAnotados = 0;
-    let detalleAccion = '';
+    let detalleAccion;
 
     const tirosLibresIntentados = limitar(Number(payload.tirosLibresIntentados || 0), 0, 3);
     const tirosLibresConvertidos = limitar(Number(payload.tirosLibresConvertidos || 0), 0, tirosLibresIntentados);
@@ -1995,11 +1968,11 @@ function MesaControlPanel({
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `${tipo}: ${detalle} · ${operadorNombre}` }, ...prev]);
   };
 
-  const confirmarColorEquipo = ({ tipo, color }) => {
+  const confirmarColorEquipo = async ({ tipo, color }) => {
     const valor = String(color || '').trim();
     if (!/^#[0-9A-Fa-f]{6}$/.test(valor)) return;
     const nombreEquipo = tipo === 'local' ? 'Local' : 'Visita';
-    if (!window.confirm(`¿Confirmar color ${valor} para equipo ${nombreEquipo}?`)) return;
+    if (!(await confirmAction({ title: 'Confirmar color', message: `¿Confirmar color ${valor} para equipo ${nombreEquipo}?` }))) return;
     if (tipo === 'local') {
       setColorLocal(valor);
       setColorLocalDraft(valor);
@@ -2019,7 +1992,7 @@ function MesaControlPanel({
     if (respuesta == null) return;
     const dorsal = Number(String(respuesta).trim());
     if (!Number.isFinite(dorsal) || dorsal <= 0) {
-      alert('Ingresa un dorsal válido mayor que 0.');
+      showToast({ message: 'Ingresa un dorsal válido mayor que 0.', type: 'error' });
       return;
     }
     setRosterEquipo((prev) => prev.map((j) => (String(j.id) === String(jugador.id) ? { ...j, dorsal } : j)));
@@ -2252,7 +2225,7 @@ function MesaControlPanel({
 
     if (tipoFichaTecnicaExport === 'ficha_tecnica_partido') {
       if (!partidoBase) {
-        alert('Selecciona un partido en el historial para exportar la ficha técnica del partido.');
+        showToast({ message: 'Selecciona un partido en el historial para exportar la ficha técnica del partido.', type: 'error' });
         return;
       }
       filas = [
@@ -2278,7 +2251,7 @@ function MesaControlPanel({
 
     if (tipoFichaTecnicaExport === 'ficha_tecnica_local' || tipoFichaTecnicaExport === 'ficha_tecnica_visita') {
       if (!partidoBase) {
-        alert('Selecciona un partido en el historial para exportar la ficha técnica individual.');
+        showToast({ message: 'Selecciona un partido en el historial para exportar la ficha técnica individual.', type: 'error' });
         return;
       }
       const esLocal = tipoFichaTecnicaExport === 'ficha_tecnica_local';
@@ -2317,14 +2290,14 @@ function MesaControlPanel({
 
     if (tipoFichaTecnicaExport === 'planilla_fiba_impresion') {
       if (!partidoBase) {
-        alert('Selecciona un partido en el historial para imprimir la planilla FIBA.');
+        showToast({ message: 'Selecciona un partido en el historial para imprimir la planilla FIBA.', type: 'error' });
         return;
       }
       const html = construirHtmlPlanillaFiba(partidoBase);
       const popup = window.open('', '_blank');
       if (!popup) {
         descargarTexto(`planilla-fiba-impresion-${Date.now()}.html`, html, 'text/html;charset=utf-8');
-        alert('No se pudo abrir la ventana de impresión. Se descargó el archivo HTML para imprimir.');
+        showToast({ message: 'No se pudo abrir la ventana de impresión. Se descargó el archivo HTML para imprimir.', type: 'warning' });
         return;
       }
       popup.document.open();
@@ -2342,13 +2315,13 @@ function MesaControlPanel({
 
   const eliminarPartidoHistorial = async (partido) => {
     if (!partido?.id) return;
-    if (!window.confirm('¿Eliminar este juego del historial?')) return;
+    if (!(await confirmAction({ title: 'Eliminar del historial', message: '¿Eliminar este juego del historial?', danger: true }))) return;
 
     if (partido._origen === 'remoto') {
       try {
         await api.partidosLiveAPI.delete(partido.id);
       } catch (error) {
-        alert(error.message || 'No se pudo eliminar el partido en backend.');
+        showToast({ message: error.message || 'No se pudo eliminar el partido en backend.', type: 'error' });
         return;
       }
       await recargarHistorialRemoto();
@@ -2362,9 +2335,9 @@ function MesaControlPanel({
     if (!partido?.id) return;
 
     const ptsLocal = Number(window.prompt('PTS Local', String(partido?.marcador?.ptsLocal ?? 0)));
-    if (!Number.isFinite(ptsLocal) || ptsLocal < 0) return alert('PTS Local invalido.');
+    if (!Number.isFinite(ptsLocal) || ptsLocal < 0) { showToast({ message: 'PTS Local invalido.', type: 'error' }); return; }
     const ptsVisita = Number(window.prompt('PTS Visita', String(partido?.marcador?.ptsVisita ?? 0)));
-    if (!Number.isFinite(ptsVisita) || ptsVisita < 0) return alert('PTS Visita invalido.');
+    if (!Number.isFinite(ptsVisita) || ptsVisita < 0) { showToast({ message: 'PTS Visita invalido.', type: 'error' }); return; }
     const rama = normalizarTexto(window.prompt('Rama', partido?.filtros?.rama || 'Mixta')) || 'Mixta';
     const categoria = normalizarTexto(window.prompt('Categoria', partido?.filtros?.categoria || 'General')) || 'General';
     const competencia = normalizarTexto(window.prompt('Competencia', partido?.filtros?.competicion || ''));
@@ -2381,7 +2354,7 @@ function MesaControlPanel({
           cancha_sede: sede,
         });
       } catch (error) {
-        alert(error.message || 'No se pudo editar el partido remoto.');
+        showToast({ message: error.message || 'No se pudo editar el partido remoto.', type: 'error' });
         return;
       }
       await recargarHistorialRemoto();
@@ -2511,10 +2484,10 @@ function MesaControlPanel({
   const confirmarInicioPartido = async () => {
     if (partidoIniciado) return;
     if (!prepartidoValido) {
-      alert('Corrige las validaciones prepartido antes de iniciar.');
+      showToast({ message: 'Corrige las validaciones prepartido antes de iniciar.', type: 'error' });
       return;
     }
-    if (!window.confirm('¿Confirmas iniciar el partido?')) return;
+    if (!(await confirmAction({ title: 'Iniciar partido', message: '¿Confirmas iniciar el partido?' }))) return;
     setPartidoIniciado(true);
     setModuloMesa('live');
     setForzarPantallaCompletaLive(true);
@@ -2530,20 +2503,20 @@ function MesaControlPanel({
 
   const confirmarFinalizacionPartido = async () => {
     if (!partidoIniciado) return;
-    if (!window.confirm('¿Finalizar partido y guardar estadística?')) return;
-    const guardarHistorico = window.confirm('¿Quieres guardar este partido en la base histórica?');
+    if (!(await confirmAction({ title: 'Finalizar partido', message: '¿Finalizar partido y guardar estadística?' }))) return;
+    const guardarHistorico = await confirmAction({ title: 'Guardar en histórico', message: '¿Quieres guardar este partido en la base histórica?' });
 
     const guardado = await guardarEstadisticaPartido({ guardarEnBaseHistorica: guardarHistorico });
     setPartidoIniciado(false);
     if (forzarPantallaCompletaLive) {
-      alert('Partido finalizado. Usa "Salir Pantalla Completa" para cambiar de módulo.');
+      showToast({ message: 'Partido finalizado. Usa "Salir Pantalla Completa" para cambiar de módulo.', type: 'info' });
     } else {
       setModuloMesa('analitica');
     }
     setPartidoPersistidoId(null);
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '00:00', texto: guardado ? `■ Partido finalizado y ${guardarHistorico ? 'guardado en histórico' : 'guardado localmente'}` : '■ Partido finalizado (falló guardado local)' }, ...prev]);
     if (!guardado) {
-      alert('Partido finalizado, pero no se pudo guardar la estadística en este dispositivo.');
+      showToast({ message: 'Partido finalizado, pero no se pudo guardar la estadística en este dispositivo.', type: 'warning' });
     }
   };
 
@@ -2551,9 +2524,9 @@ function MesaControlPanel({
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#00FF00', zIndex: 99999, display: 'flex', alignItems: 'flex-end', padding: '50px' }}>
         <div style={{ background: '#1C1C1E', border: '3px solid #333', borderRadius: '15px', padding: '20px 40px', display: 'flex', gap: '40px', alignItems: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
-          <div className="text-center"><span style={{ color: '#aaa', fontSize: '14px', fontWeight: 'bold' }}>LOCAL {liveScore.flecha === 'LOCAL' && '◀'}</span><h1 style={{ color: 'white', margin: 0, fontSize: '60px', fontFamily: 'Orbitron' }}>{liveScore.ptsLocal}</h1><span style={{ color: '#FF3B30', fontSize: '12px', fontWeight: 'bold' }}>FALTAS: {liveScore.faltasLocal}</span></div>
+          <div className="text-center"><span style={{ color: '#aaa', fontSize: '14px', fontWeight: 'bold' }}>LOCAL {liveScore.flecha === 'LOCAL' && '◀'}</span><h1 style={{ color: 'white', margin: 0, fontSize: '60px', fontFamily: 'Orbitron' }}>{liveScore.ptsLocal}</h1><span style={{ color: 'var(--rojo-alerta)', fontSize: '12px', fontWeight: 'bold' }}>FALTAS: {liveScore.faltasLocal}</span></div>
           <div className="text-center"><span style={{ background: '#333', color: '#00FF00', padding: '10px 20px', borderRadius: '10px', fontSize: '24px', fontWeight: '900', fontFamily: 'Orbitron' }}>{liveScore.reloj}</span><h3 style={{ color: 'white', margin: '10px 0 0 0' }}>{etiquetaPeriodo(liveScore.periodo)}</h3></div>
-          <div className="text-center"><span style={{ color: '#aaa', fontSize: '14px', fontWeight: 'bold' }}>{liveScore.flecha === 'VISITA' && '▶'} VISITA</span><h1 style={{ color: 'white', margin: 0, fontSize: '60px', fontFamily: 'Orbitron' }}>{liveScore.ptsVisita}</h1><span style={{ color: '#FF3B30', fontSize: '12px', fontWeight: 'bold' }}>FALTAS: {liveScore.faltasVisita}</span></div>
+          <div className="text-center"><span style={{ color: '#aaa', fontSize: '14px', fontWeight: 'bold' }}>{liveScore.flecha === 'VISITA' && '▶'} VISITA</span><h1 style={{ color: 'white', margin: 0, fontSize: '60px', fontFamily: 'Orbitron' }}>{liveScore.ptsVisita}</h1><span style={{ color: 'var(--rojo-alerta)', fontSize: '12px', fontWeight: 'bold' }}>FALTAS: {liveScore.faltasVisita}</span></div>
           <button style={{ position: 'absolute', top: '10px', right: '10px', background: 'black', color: 'white', border: 'none', padding: '10px', borderRadius: '999px', cursor: 'pointer', opacity: 0.2 }} onClick={() => setModoChromaKey(false)}>Cerrar Modo TV</button>
         </div>
       </div>
@@ -2564,7 +2537,7 @@ function MesaControlPanel({
     <div className="fiba-container fade-in">
       <div className="mesa-lab-header card mb-15">
         <div className="mesa-lab-title-wrap">
-          <h3 className="form-subtitle" style={{ margin: 0 }}><Users size={18} color="#6B7280" strokeWidth={1.5} /> Mesa Insights</h3>
+          <h3 className="form-subtitle" style={{ margin: 0 }}><Users size={18} color="var(--gris-secundario)" strokeWidth={1.5} /> Mesa Insights</h3>
           <span className="mesa-lab-subtitle">Analiza uno o dos equipos con filtros competitivos y control live.</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -2576,7 +2549,7 @@ function MesaControlPanel({
             <button className={`mesa-mode-btn ${moduloMesa === 'prepartido' ? 'active' : ''}`} onClick={() => cambiarModuloProtegido('prepartido')}>1. Datos partido</button>
             <button className={`mesa-mode-btn ${moduloMesa === 'live' ? 'active' : ''}`} onClick={() => cambiarModuloProtegido('live')} disabled={!partidoIniciado}>2. Juego en vivo</button>
             <button className={`mesa-mode-btn ${moduloMesa === 'analitica' ? 'active' : ''}`} onClick={() => cambiarModuloProtegido('analitica')}>3. Estadística</button>
-            <button className={`mesa-mode-btn ${moduloMesa === 'historia' ? 'active' : ''}`} onClick={() => cambiarModuloProtegido('historia')}><History size={12} color="#6B7280" strokeWidth={1.5} /> 4. Historia</button>
+            <button className={`mesa-mode-btn ${moduloMesa === 'historia' ? 'active' : ''}`} onClick={() => cambiarModuloProtegido('historia')}><History size={12} color="var(--gris-secundario)" strokeWidth={1.5} /> 4. Historia</button>
           </div>
         </div>
       </div>
@@ -2592,7 +2565,7 @@ function MesaControlPanel({
         <>
 
       <div className="card mb-15" style={{ borderRadius: '18px' }}>
-        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="#6B7280" strokeWidth={1.5} /> Operadores de Mesa (Trazabilidad)</h4>
+        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Operadores de Mesa (Trazabilidad)</h4>
         <div className="mesa-filtros-grid" style={{ marginBottom: '10px' }}>
           <label className="mesa-filter-item">
             <span>Planillero/a</span>
@@ -2650,7 +2623,7 @@ function MesaControlPanel({
       </div>
 
       <div className="card mb-15" style={{ borderRadius: '18px' }}>
-        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Configuración de Equipos y Staff</h4>
+        <h4 className="form-subtitle" style={{ marginTop: 0 }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Configuración de Equipos y Staff</h4>
         <div className={`mesa-team-config-grid ${modoAnalisis === 'dos' ? 'dos-equipos' : 'uno-equipo'}`}>
           <div className="mesa-team-config-card" style={{ borderColor: colorConAlpha(colorLocal, '99'), background: `linear-gradient(180deg, ${colorConAlpha(colorLocal, '22')} 0%, rgba(255,255,255,0.02) 65%)` }}>
             <div className="mesa-team-config-header">
@@ -2667,7 +2640,7 @@ function MesaControlPanel({
               </div>
             )}
             <div className="mesa-filter-item">
-              <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Local</span>
+              <span><Users size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Club Local</span>
               <LogoPicker
                 nombre={clubLocalNombre}
                 onNombre={setClubLocalNombre}
@@ -2702,7 +2675,7 @@ function MesaControlPanel({
                 </div>
               )}
               <div className="mesa-filter-item">
-                <span><Users size={14} color="#6B7280" strokeWidth={1.5} /> Club Visita</span>
+                <span><Users size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Club Visita</span>
                 <LogoPicker
                   nombre={clubVisitaNombre}
                   onNombre={setClubVisitaNombre}
@@ -2726,21 +2699,21 @@ function MesaControlPanel({
 
       <div className="mesa-filtros-grid card mb-15">
         <label className="mesa-filter-item">
-          <span><Filter size={14} color="#6B7280" strokeWidth={1.5} /> Rama</span>
+          <span><Filter size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Rama</span>
           <select className="form-input" value={filtroRama} onChange={(e) => setFiltroRama(e.target.value)}>
             {opcionesRama.map((op) => <option key={op} value={op}>{op}</option>)}
           </select>
         </label>
 
         <label className="mesa-filter-item">
-          <span><Filter size={14} color="#6B7280" strokeWidth={1.5} /> Categoría</span>
+          <span><Filter size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Categoría</span>
           <select className="form-input" value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
             {opcionesCategoria.map((op) => <option key={op} value={op}>{op}</option>)}
           </select>
         </label>
 
         <div className="mesa-filter-item">
-          <span><Shield size={14} color="#6B7280" strokeWidth={1.5} /> Competencia / Torneo</span>
+          <span><Shield size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Competencia / Torneo</span>
           <LogoPicker
             nombre={competenciaNombre}
             onNombre={setCompetenciaNombre}
@@ -2759,7 +2732,7 @@ function MesaControlPanel({
         </div>
 
         <label className="mesa-filter-item">
-          <span><FileText size={14} color="#6B7280" strokeWidth={1.5} /> Cancha / Sede</span>
+          <span><FileText size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Cancha / Sede</span>
           <input
             className="form-input"
             list="mesa-canchas-sugeridas"
@@ -2782,7 +2755,7 @@ function MesaControlPanel({
         {filtroCategoria !== 'Todas' && (
           <>
             <label className="mesa-filter-item" style={{ justifyContent: 'center' }}>
-              <span><Shield size={14} color="#6B7280" strokeWidth={1.5} /> Incluir categorías menores</span>
+              <span><Shield size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Incluir categorías menores</span>
               <input
                 type="checkbox"
                 checked={incluirCategoriasMenores}
@@ -2805,7 +2778,7 @@ function MesaControlPanel({
 
       {incluirCategoriasMenores && filtroCategoria !== 'Todas' && (
         <div className="card mb-15" style={{ borderRadius: '18px' }}>
-          <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="#6B7280" strokeWidth={1.5} /> Incluir jugadoras/es desde categorías inferiores</h4>
+          <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Incluir jugadoras/es desde categorías inferiores</h4>
           <input className="form-input mb-15" placeholder="Buscar por nombre o dorsal" value={busquedaInclusionLocal} onChange={(e) => setBusquedaInclusionLocal(e.target.value)} />
           <div className="mesa-historial-list">
             {candidatasInferioresLocal.length === 0 && <p className="text-muted">No hay candidatas/os para el rango seleccionado.</p>}
@@ -2824,7 +2797,7 @@ function MesaControlPanel({
 
       <div className={`card mb-15 mesa-prepartido-card ${partidoIniciado ? 'mesa-prepartido-live' : ''}`}>
         <div className="mesa-prepartido-header">
-          <h4 className="form-subtitle" style={{ margin: 0 }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Validacion Prepartido</h4>
+          <h4 className="form-subtitle" style={{ margin: 0 }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Validacion Prepartido</h4>
         </div>
 
         <div className="mesa-validation-grid">
@@ -2926,9 +2899,9 @@ function MesaControlPanel({
       {moduloMesa === 'live' && (
         <div ref={liveFullScreenRef} className="mesa-live-wrap">
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', gap: '8px' }}>
-            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={activarPantallaCompletaForzada}><Expand size={14} color="#6B7280" strokeWidth={1.5} /> Forzar Pantalla Completa</button>
+            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={activarPantallaCompletaForzada}><Expand size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Forzar Pantalla Completa</button>
             <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={salirPantallaCompletaManual}>Salir Pantalla Completa</button>
-            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={() => setModoChromaKey(true)}><Tv size={14} color="#6B7280" strokeWidth={1.5} /> Modo Transmisión (OBS)</button>
+            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={() => setModoChromaKey(true)}><Tv size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Modo Transmisión (OBS)</button>
           </div>
 
       {!partidoIniciado && (
@@ -2948,7 +2921,7 @@ function MesaControlPanel({
               <h1 style={{ fontSize: '52px', margin: 0, color: 'white', fontFamily: 'Orbitron' }}>{liveScore.ptsLocal}</h1>
             </div>
           </div>
-          <span style={{ fontSize: '11px', color: '#FF3B30', fontWeight: '800', display: 'block' }}>FALTAS: {liveScore.faltasLocal}</span>
+          <span style={{ fontSize: '11px', color: 'var(--rojo-alerta)', fontWeight: '800', display: 'block' }}>FALTAS: {liveScore.faltasLocal}</span>
           <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', marginTop: '8px' }}>
             {[...Array(3)].map((_, i) => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i < liveScore.timeoutsLocal ? '#FFD700' : '#333' }}></div>)}
           </div>
@@ -2984,7 +2957,7 @@ function MesaControlPanel({
               <h1 style={{ fontSize: '52px', margin: 0, color: 'white', fontFamily: 'Orbitron' }}>{modoAnalisis === 'dos' ? liveScore.ptsVisita : '-'}</h1>
             </div>
           </div>
-          <span style={{ fontSize: '11px', color: '#FF3B30', fontWeight: '800', display: 'block' }}>FALTAS: {liveScore.faltasVisita}</span>
+          <span style={{ fontSize: '11px', color: 'var(--rojo-alerta)', fontWeight: '800', display: 'block' }}>FALTAS: {liveScore.faltasVisita}</span>
           <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', marginTop: '8px' }}>
             {[...Array(3)].map((_, i) => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i < liveScore.timeoutsVisita ? '#FFD700' : '#333' }}></div>)}
           </div>
@@ -2993,7 +2966,7 @@ function MesaControlPanel({
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
         <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsLocal: Math.max(0, liveScore.timeoutsLocal - 1) })}>TM Local</button>
-        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', background: 'var(--azul-marino)', color: 'white' }} onClick={() => setLiveScore({ ...liveScore, flecha: liveScore.flecha === 'LOCAL' ? 'VISITA' : 'LOCAL' })}><ArrowRightLeft size={16} color="#6B7280" strokeWidth={1.5} /></button>
+        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', background: 'var(--azul-marino)', color: 'white' }} onClick={() => setLiveScore({ ...liveScore, flecha: liveScore.flecha === 'LOCAL' ? 'VISITA' : 'LOCAL' })}><ArrowRightLeft size={16} color="var(--gris-secundario)" strokeWidth={1.5} /></button>
         <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsVisita: Math.max(0, liveScore.timeoutsVisita - 1) })}>TM Visita</button>
       </div>
 
@@ -3016,7 +2989,7 @@ function MesaControlPanel({
       {mostrarModalCambioObligatorio && jugadorCambioObligatorio && (
         <div className="mesa-cambio-obligatorio-overlay">
           <div className="mesa-cambio-obligatorio-card">
-            <h5 style={{ margin: 0, color: '#FF3B30' }}>Cambio Obligatorio</h5>
+            <h5 style={{ margin: 0, color: 'var(--rojo-alerta)' }}>Cambio Obligatorio</h5>
             <p style={{ margin: '8px 0 0 0' }}>
               #{jugadorCambioObligatorio.dorsal} {jugadorCambioObligatorio.nombre} acumula 5 faltas y debe salir.
             </p>
@@ -3232,7 +3205,7 @@ function MesaControlPanel({
             </select>
           )}
 
-          <h5 className="sub-caja-title text-center" style={{ color: jugadorAccionSeleccionadoValido ? 'var(--verde-victoria)' : '#FF3B30' }}>
+          <h5 className="sub-caja-title text-center" style={{ color: jugadorAccionSeleccionadoValido ? 'var(--verde-victoria)' : 'var(--rojo-alerta)' }}>
             {jugadorAccionSeleccionadoValido ? `Control de Acciones (${accionEquipoEsVisita ? 'Visita' : 'Local'})` : `Seleccione Jugador/a en Cancha (${accionEquipoEsVisita ? 'Visita' : 'Local'})`}
           </h5>
 
@@ -3300,7 +3273,7 @@ function MesaControlPanel({
       {moduloMesa === 'analitica' && (
       <>
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
-        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Seguimiento Estadístico (Eficiencia)</h4>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Seguimiento Estadístico (Eficiencia)</h4>
         <div className="mesa-stats-grid">
           <div className="mesa-stats-box">
             <h6>{equipoLocal?.nombre || 'Local'}</h6>
@@ -3413,7 +3386,7 @@ function MesaControlPanel({
       </div>
 
       <div className="card mt-20 mesa-historial-card" style={{ borderRadius: '24px' }}>
-        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="#6B7280" strokeWidth={1.5} /> Historial de Partidos Guardados</h4>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Historial de Partidos Guardados</h4>
         {historialCombinado.length === 0 ? (
           <p className="text-muted" style={{ marginBottom: 0 }}>Aun no hay partidos guardados en historial local o backend.</p>
         ) : (
@@ -3446,7 +3419,7 @@ function MesaControlPanel({
       </div>
 
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
-        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Analítica Histórica Comparativa</h4>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Analítica Histórica Comparativa</h4>
         <div className="mesa-stats-grid">
           <div className="mesa-stats-box">
             <h6>Rendimiento Global</h6>
@@ -3516,7 +3489,7 @@ function MesaControlPanel({
       {moduloMesa === 'historia' && (
       <>
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
-        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><History size={16} color="#6B7280" strokeWidth={1.5} /> Historia de Partidos</h4>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><History size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Historia de Partidos</h4>
         <div className="mesa-filtros-grid">
           <label className="mesa-filter-item">
             <span>Buscar</span>
@@ -3548,19 +3521,26 @@ function MesaControlPanel({
           </label>
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-          <button className="btn-secondary" style={{ width: 'auto' }} onClick={exportarHistorialCsv}><Download size={14} color="#6B7280" strokeWidth={1.5} /> Exportar Historial CSV</button>
-          <button className="btn-secondary" style={{ width: 'auto' }} onClick={exportarPlanillaReglamentaria}><Download size={14} color="#6B7280" strokeWidth={1.5} /> Exportar Planilla/Ficha Oficial</button>
+          <button className="btn-secondary" style={{ width: 'auto' }} onClick={exportarHistorialCsv}><Download size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Exportar Historial CSV</button>
+          <button className="btn-secondary" style={{ width: 'auto' }} onClick={exportarPlanillaReglamentaria}><Download size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Exportar Planilla/Ficha Oficial</button>
         </div>
       </div>
 
       <div className="card mt-20 mesa-historial-card" style={{ borderRadius: '24px' }}>
-        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="#6B7280" strokeWidth={1.5} /> Partidos Realizados</h4>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Partidos Realizados</h4>
         {historialFiltrado.length === 0 ? (
           <p className="text-muted" style={{ marginBottom: 0 }}>No hay partidos para los filtros actuales.</p>
         ) : (
           <div className="mesa-historial-list">
             {historialFiltrado.map((partido) => (
-              <div key={`hist-${partido.id}`} className="mesa-historial-item" onClick={() => setPartidoAnalisisId(partido.id)}>
+              <div
+                key={`hist-${partido.id}`}
+                className="mesa-historial-item"
+                onClick={() => setPartidoAnalisisId(partido.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter') setPartidoAnalisisId(partido.id); }}
+              >
                 <div>
                   <strong>{partido.equipos?.local?.nombre || 'Local'} vs {partido.equipos?.visita?.nombre || 'Visita'}</strong>
                   <span>{partido.finalizadoAt ? new Date(partido.finalizadoAt).toLocaleString('es-CL') : 'Sin fecha'} · {partido.filtros?.rama || 'Rama'} · {partido.filtros?.categoria || 'Categoria'}</span>
@@ -3580,7 +3560,7 @@ function MesaControlPanel({
       </div>
 
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
-        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="#6B7280" strokeWidth={1.5} /> Acumulado por Equipo</h4>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Acumulado por Equipo</h4>
         <div className="mesa-stats-grid">
           <div className="mesa-stats-box">
             <p>PJ: <strong>{acumuladoEquipos.pj}</strong></p>
@@ -3593,7 +3573,7 @@ function MesaControlPanel({
       </div>
 
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
-        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Users size={16} color="#6B7280" strokeWidth={1.5} /> Acumulado por Jugador/a</h4>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Users size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Acumulado por Jugador/a</h4>
         <div className="mesa-stats-table">
           {acumuladoJugadores.length === 0 ? (
             <p className="text-muted">Sin datos acumulados de jugadores.</p>
@@ -3612,7 +3592,7 @@ function MesaControlPanel({
 
       {moduloMesa === 'live' && (
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
-        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="#6B7280" strokeWidth={1.5} /> Línea de Tiempo (Play-by-Play)</h4>
+        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Línea de Tiempo (Play-by-Play)</h4>
         <div style={{ display: 'flex', gap: '10px' }} className="mb-15"><input type="text" className="form-input" placeholder="Nota táctica o scouting..." value={notaScouting} onChange={(e) => setNotaScouting(e.target.value)} /><button className="btn-electric" style={{ width: 'auto', padding: '0 20px' }} onClick={() => { if (!notaScouting) return; setPlayByPlay((prev) => [{ id: nextId(), tiempo: 'DT', texto: `📝 ${notaScouting}` }, ...prev]); setNotaScouting(''); }}>Log</button></div>
         <div className="play-by-play-box">{playByPlay.length === 0 ? <p className="text-center text-muted" style={{ fontSize: '13px', fontStyle: 'italic', margin: '20px 0' }}>Inicio de transmisión.</p> : playByPlay.map(play => (<div key={play.id} className={`play-row ${claseSeveridadPlay(play)}`}><span className="play-tiempo">{play.tiempo}</span><span className="play-texto">{play.texto}</span></div>))}</div>
       </div>

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Upload, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Upload, Search, ClipboardList, Check, Pin, Lightbulb, BarChart2 } from 'lucide-react';
 import * as api from '../api/client.js';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -35,7 +35,6 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
   const [apoderadoAsignado, setApoderadoAsignado] = useState(null);
   
   // Datos del jugador seleccionado
-  const [jugadorSeleccionado, setJugadorSeleccionado] = useState(null);
   const [valorMensualidad, setValorMensualidad] = useState(0);
   const [desglose, setDesglose] = useState(null);
 
@@ -87,8 +86,6 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
     if (formData.rut_jugador) {
       const jugador = jugadores.find(j => j.rut_jugador === formData.rut_jugador);
       if (jugador) {
-        setJugadorSeleccionado(jugador);
-        
         // Traer valor de mensualidad
         const mensualidad = jugador.valor_mensualidad || 25000;
         setValorMensualidad(mensualidad);
@@ -285,7 +282,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
               padding: '4px'
             }}
           >
-            <X size={24} color="#6B7280" strokeWidth={1.5} />
+            <X size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
           </button>
         </div>
 
@@ -321,7 +318,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
             <label style={{ fontWeight: '600', fontSize: '13px' }}>Deportista *</label>
             <div style={{ position: 'relative' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
-                <Search size={16} color="#6B7280" strokeWidth={1.5} />
+                <Search size={16} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <input
                   type="text"
                   placeholder="Busca por nombre o RUT..."
@@ -357,7 +354,8 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                   boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                 }}>
                   {deportistasFiltrados.map(j => (
-                    <div
+                    <button
+                      type="button"
                       key={j.rut_jugador}
                       onClick={() => {
                         setFormData(prev => ({ ...prev, rut_jugador: j.rut_jugador }));
@@ -365,6 +363,11 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                         setShowSearchResults(false);
                       }}
                       style={{
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        border: 'none',
+                        fontFamily: 'inherit',
                         padding: '10px 12px',
                         borderBottom: '1px solid var(--gris-fondo)',
                         cursor: 'pointer',
@@ -380,7 +383,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                       <div style={{ fontSize: '12px', color: 'var(--gris-secundario)' }}>
                         {j.rut_jugador}
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -399,8 +402,8 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                   {jugadores.find(j => j.rut_jugador === formData.rut_jugador)?.nombres} ({formData.rut_jugador})
                 </div>
                 {apoderadoAsignado && (
-                  <div style={{ fontSize: '11px', color: 'var(--azul-electrico)', fontWeight: '600' }}>
-                    📋 Apoderado: {apoderadoAsignado.nombres || 'Sin nombre'} ({apoderadoAsignado.correo_usuario})
+                  <div style={{ fontSize: '11px', color: 'var(--azul-electrico)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <ClipboardList size={12} /> Apoderado: {apoderadoAsignado.nombres || 'Sin nombre'} ({apoderadoAsignado.correo_usuario})
                   </div>
                 )}
               </div>
@@ -501,9 +504,12 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                   borderRadius: '6px',
                   fontSize: '12px',
                   fontWeight: '600',
-                  color: 'white'
+                  color: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px'
                 }}>
-                  ✓ {mesesSeleccionados.length} mes{mesesSeleccionados.length > 1 ? 'es' : ''} seleccionado{mesesSeleccionados.length > 1 ? 's' : ''}
+                  <Check size={13} /> {mesesSeleccionados.length} mes{mesesSeleccionados.length > 1 ? 'es' : ''} seleccionado{mesesSeleccionados.length > 1 ? 's' : ''}
                 </div>
               )}
             </div>
@@ -558,9 +564,12 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                   <div style={{
                     marginTop: '6px',
                     fontSize: '12px',
-                    color: 'var(--gris-secundario)'
+                    color: 'var(--gris-secundario)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
                   }}>
-                    📌 {mesesSeleccionados.length} mes{mesesSeleccionados.length > 1 ? 'es' : ''} × ${valorMensualidad.toLocaleString()} = <strong style={{ color: 'var(--verde-victoria)' }}>${(valorMensualidad * mesesSeleccionados.length).toLocaleString()}</strong>
+                    <Pin size={12} /> {mesesSeleccionados.length} mes{mesesSeleccionados.length > 1 ? 'es' : ''} × ${valorMensualidad.toLocaleString()} = <strong style={{ color: 'var(--verde-victoria)' }}>${(valorMensualidad * mesesSeleccionados.length).toLocaleString()}</strong>
                   </div>
                 )}
               </div>
@@ -595,9 +604,12 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
               <div style={{
                 fontSize: '11px',
                 color: 'var(--gris-secundario)',
-                marginBottom: '10px'
+                marginBottom: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
               }}>
-                💡 Sugerencia: ${(valorMensualidad * mesesSeleccionados.length).toLocaleString()} ({mesesSeleccionados.length} meses × ${valorMensualidad.toLocaleString()})
+                <Lightbulb size={12} /> Sugerencia: ${(valorMensualidad * mesesSeleccionados.length).toLocaleString()} ({mesesSeleccionados.length} meses × ${valorMensualidad.toLocaleString()})
               </div>
 
               {/* Desglose automático */}
@@ -608,8 +620,8 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                   borderRadius: '8px',
                   fontSize: '12px'
                 }}>
-                  <div style={{ fontWeight: '600', marginBottom: '8px', color: 'var(--texto-heading)' }}>
-                    📊 Desglose del abono:
+                  <div style={{ fontWeight: '600', marginBottom: '8px', color: 'var(--texto-heading)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <BarChart2 size={14} /> Desglose del abono:
                   </div>
                   {desglose.detalles.map((detalle, idx) => (
                     <div
@@ -707,15 +719,15 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                 id="archivo-input"
               />
               <label htmlFor="archivo-input" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                <Upload size={20} color="#6B7280" strokeWidth={1.5} />
+                <Upload size={20} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <span style={{ fontSize: '12px', fontWeight: '600' }}>
                   {archivo ? archivo.name : 'Haz clic para seleccionar'}
                 </span>
               </label>
             </div>
             {formData.comprobante_url && !archivo && (
-              <p style={{ fontSize: '11px', color: 'var(--verde-victoria)', marginTop: '6px' }}>
-                ✓ Comprobante ya cargado
+              <p style={{ fontSize: '11px', color: 'var(--verde-victoria)', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Check size={12} /> Comprobante ya cargado
               </p>
             )}
           </div>

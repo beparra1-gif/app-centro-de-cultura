@@ -1,5 +1,6 @@
 import PushPreferenciasPanel from './PushPreferenciasPanel';
 import { MODULOS_ACCESO, normalizarRol } from '../security/accessControl';
+import { showToast } from '../utils/toast';
 
 function SettingsPanel({
   rolUsuario,
@@ -74,7 +75,7 @@ function SettingsPanel({
           {usuariosFiltrados.map(u => (
             <div key={u.id} style={{ marginBottom: '8px', padding: '10px', background: 'var(--fondo-card-sutil)', borderRadius: '18px', border: '1px solid var(--borde-suave)' }}>
               <strong style={{ fontSize: '11px', display: 'block' }}>{u.nombre}</strong>
-              <span style={{ fontSize: '10px', color: 'var(--texto-secundario)' }}>{u.rol}</span>
+              <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{u.rol}</span>
               <div style={{ marginTop: '6px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '4px' }}>
                 {permisosDisponibles.map(p => (
                   <button
@@ -82,7 +83,7 @@ function SettingsPanel({
                     onClick={() => togglePermiso(u.id, p.id)}
                     style={{
                       padding: '4px 6px',
-                      fontSize: '9px',
+                      fontSize: '11px',
                       borderRadius: '999px',
                       background: u.permisos[p.id] ? 'rgba(52,199,89,0.2)' : 'rgba(255,255,255,0.92)',
                       border: u.permisos[p.id] ? '1px solid var(--verde-victoria)' : '1px solid rgba(0,0,0,0.1)',
@@ -106,7 +107,7 @@ function SettingsPanel({
     <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', borderRadius: '24px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
       <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: '900' }}>Mi Perfil</h4>
       <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>Tema único activo: Claro</div>
-      <button onClick={() => alert('Próximamente')} style={{ padding: '8px 10px', borderRadius: '999px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '700', border: '1px solid rgba(0,122,255,0.18)', cursor: 'pointer' }}>Contraseña</button>
+      <button onClick={() => showToast({ message: 'Próximamente', type: 'info' })} style={{ padding: '8px 10px', borderRadius: '999px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '700', border: '1px solid rgba(0,122,255,0.18)', cursor: 'pointer' }}>Contraseña</button>
       <hr style={{ margin: '10px 0', border: 'none', borderTop: '1px solid var(--borde-suave)' }} />
       <PushPreferenciasPanel
         preferenciasSonido={preferenciasSonido}

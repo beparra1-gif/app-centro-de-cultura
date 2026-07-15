@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { ShieldAlert, MessageCircle, Trophy, BarChart3, Heart, ThumbsUp, Frown } from 'lucide-react';
+import { ShieldAlert, MessageCircle, Trophy, BarChart3, Heart, ThumbsUp, Frown, PartyPopper, ClipboardList, AlertTriangle, Megaphone, Check, X, BarChart2 } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
+import { showToast } from '../utils/toast';
+import { confirmAction } from '../utils/confirmDialog';
 import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
 
@@ -91,7 +93,7 @@ function ComunicacionesPanel({
     }));
   };
 
-  const addRSVP = (comId, convocado, respuesta) => {
+  const addRSVP = async (comId, convocado, respuesta) => {
     const rutUsuario = String(usuarioAutenticado?.rut || pupiloActivo?.rut || '').trim();
     const correoUsuario = String(usuarioAutenticado?.correo || pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
     const actorId = rutUsuario || correoUsuario || `anon-${Date.now()}`;
@@ -103,36 +105,44 @@ function ComunicacionesPanel({
       : '';
 
     if (respuesta === 'no' && !justificacion) {
-      alert('Debes justificar la inasistencia para registrar la respuesta.');
+      showToast({ message: 'Debes justificar la inasistencia para registrar la respuesta.', type: 'error' });
       return;
+    }
+
+    const comunicacionObjetivo = comunicaciones.find((c) => c.id === comId);
+    let solicitaExcepcion = false;
+    if (comunicacionObjetivo) {
+      const citacionVinculada = (nominaCita || []).find((cita) => cita.id === comunicacionObjetivo.citacion_id);
+      const convocados = Array.isArray(citacionVinculada?.convocados) ? citacionVinculada.convocados : [];
+      const convocadosActor = convocados.filter((conv) => {
+        const correoConv = String(conv.correo_apoderado || '').trim().toLowerCase();
+        const rutConv = String(conv.rut_jugador || '').trim();
+        return (rutUsuario && rutConv && rutConv === rutUsuario) || (correoUsuario && correoConv && correoConv === correoUsuario);
+      });
+
+      if (comunicacionObjetivo.citacion_id && convocadosActor.length === 0) {
+        showToast({ message: 'No estás en la nómina de esta citación.', type: 'error' });
+        return;
+      }
+
+      const convocadoPrincipal = convocadosActor[0] || null;
+      const requiereExcepcion = Boolean(convocadoPrincipal?.requiere_excepcion_morosidad);
+      if (requiereExcepcion && !esApoderado) {
+        showToast({ message: 'Tu apoderado debe gestionar la excepción de citación por tesorería.', type: 'error' });
+        return;
+      }
+
+      solicitaExcepcion = requiereExcepcion
+        ? await confirmAction({
+            title: 'Excepción de citación',
+            message: 'Este deportista presenta morosidad. ¿Solicitar excepción de citación para revisión administrativa?',
+            confirmText: 'Solicitar',
+          })
+        : false;
     }
 
     setComunicaciones(comunicaciones.map(c => {
       if (c.id === comId) {
-        const citacionVinculada = (nominaCita || []).find((cita) => cita.id === c.citacion_id);
-        const convocados = Array.isArray(citacionVinculada?.convocados) ? citacionVinculada.convocados : [];
-        const convocadosActor = convocados.filter((conv) => {
-          const correoConv = String(conv.correo_apoderado || '').trim().toLowerCase();
-          const rutConv = String(conv.rut_jugador || '').trim();
-          return (rutUsuario && rutConv && rutConv === rutUsuario) || (correoUsuario && correoConv && correoConv === correoUsuario);
-        });
-
-        if (c.citacion_id && convocadosActor.length === 0) {
-          alert('No estás en la nómina de esta citación.');
-          return c;
-        }
-
-        const convocadoPrincipal = convocadosActor[0] || null;
-        const requiereExcepcion = Boolean(convocadoPrincipal?.requiere_excepcion_morosidad);
-        if (requiereExcepcion && !esApoderado) {
-          alert('Tu apoderado debe gestionar la excepción de citación por tesorería.');
-          return c;
-        }
-
-        const solicitaExcepcion = requiereExcepcion
-          ? window.confirm('Este deportista presenta morosidad. ¿Solicitar excepción de citación para revisión administrativa?')
-          : false;
-
         const asistencias = Array.isArray(c.asistencias) ? [...c.asistencias] : [];
         const idx = asistencias.findIndex((a) => String(a.rut_jugador || a.actorId || '').trim() === String(convocado?.rut_jugador || actorId).trim());
         const payload = {
@@ -204,7 +214,7 @@ function ComunicacionesPanel({
       }));
     }
 
-    alert('Mensaje al profesor actualizado.');
+    showToast({ message: 'Mensaje al profesor actualizado.', type: 'success' });
   };
 
   const voteEncuesta = (encId, opcion) => {
@@ -270,7 +280,7 @@ function ComunicacionesPanel({
     const comentarios = comentariosUI[comId] || [];
     return (
       <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid var(--borde-suave)' }}>
-        <h6 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '700', color: 'var(--texto-principal)' }}>💬 Comentarios ({comentarios.length})</h6>
+        <h6 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '700', color: 'var(--texto-principal)', display: 'flex', alignItems: 'center', gap: '6px' }}><MessageCircle size={14} /> Comentarios ({comentarios.length})</h6>
 
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
           <input
@@ -306,15 +316,15 @@ function ComunicacionesPanel({
               <div style={{ display: 'flex', gap: '10px', fontSize: '12px' }}>
                 <button
                   onClick={() => likeComentario(comId, com.id)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: com.meGusta ? '#FF3B30' : 'var(--texto-secundario)', fontWeight: com.meGusta ? '700' : '500' }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: com.meGusta ? 'var(--rojo-alerta)' : 'var(--texto-secundario)', fontWeight: com.meGusta ? '700' : '500', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                 >
-                  ❤️ {com.likes > 0 ? com.likes : ''}
+                  <Heart size={13} fill={com.meGusta ? 'var(--rojo-alerta)' : 'none'} /> {com.likes > 0 ? com.likes : ''}
                 </button>
                 <button
                   onClick={() => setMostrarFormComentario(prev => ({ ...prev, [`${comId}_resp_${com.id}`]: !prev[`${comId}_resp_${com.id}`] }))}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)' }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                 >
-                  💬 Responder
+                  <MessageCircle size={13} /> Responder
                 </button>
               </div>
 
@@ -327,16 +337,16 @@ function ComunicacionesPanel({
                         <div style={{ flex: 1 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontWeight: '700', fontSize: '12px' }}>{resp.usuario}</span>
-                            <span style={{ fontSize: '10px', color: 'var(--texto-secundario)' }}>{resp.timestamp}</span>
+                            <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{resp.timestamp}</span>
                           </div>
                           <p style={{ margin: '2px 0 0 0', fontSize: '12px', lineHeight: '1.3' }}>{resp.texto}</p>
                         </div>
                       </div>
                       <button
                         onClick={() => likeComentario(comId, resp.id, com.id)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: resp.meGusta ? '#FF3B30' : 'var(--texto-secundario)', fontSize: '11px', fontWeight: resp.meGusta ? '700' : '500' }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: resp.meGusta ? 'var(--rojo-alerta)' : 'var(--texto-secundario)', fontSize: '11px', fontWeight: resp.meGusta ? '700' : '500', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                       >
-                        ❤️ {resp.likes > 0 ? resp.likes : ''}
+                        <Heart size={11} fill={resp.meGusta ? 'var(--rojo-alerta)' : 'none'} /> {resp.likes > 0 ? resp.likes : ''}
                       </button>
                     </div>
                   ))}
@@ -378,15 +388,17 @@ function ComunicacionesPanel({
 
       {mostrarFormComunicaciones && formularioComunicaciones}
 
-      <div className="segment-control mb-20">
-        <div className={`segment-btn ${vistaMuro === 'noticias' ? 'active' : ''}`} onClick={() => setVistaMuro('noticias')}>
-          <MessageCircle size={18} color="#6B7280" strokeWidth={1.5} /> Comunicaciones
-        </div>
-        <div className={`segment-btn ${vistaMuro === 'resultados' ? 'active' : ''}`} onClick={() => setVistaMuro('resultados')}>
-          <Trophy size={18} color="#6B7280" strokeWidth={1.5} /> Resultados
-        </div>
-        <div className={`segment-btn ${vistaMuro === 'encuestas' ? 'active' : ''}`} onClick={() => setVistaMuro('encuestas')}>
-          <BarChart3 size={18} color="#6B7280" strokeWidth={1.5} /> Encuestas
+      <div className="scroll-horizontal-menu mb-20">
+        <div className="segment-control">
+          <button type="button" className={`segment-btn ${vistaMuro === 'noticias' ? 'active' : ''}`} onClick={() => setVistaMuro('noticias')}>
+            <MessageCircle size={18} color="var(--gris-secundario)" strokeWidth={1.5} /> Comunicaciones
+          </button>
+          <button type="button" className={`segment-btn ${vistaMuro === 'resultados' ? 'active' : ''}`} onClick={() => setVistaMuro('resultados')}>
+            <Trophy size={18} color="var(--gris-secundario)" strokeWidth={1.5} /> Resultados
+          </button>
+          <button type="button" className={`segment-btn ${vistaMuro === 'encuestas' ? 'active' : ''}`} onClick={() => setVistaMuro('encuestas')}>
+            <BarChart3 size={18} color="var(--gris-secundario)" strokeWidth={1.5} /> Encuestas
+          </button>
         </div>
       </div>
 
@@ -395,8 +407,8 @@ function ComunicacionesPanel({
           {alertasPublicadas.map((alerta, i) => (
             <div key={i} className="card citacion-card fade-in" style={{ borderColor: 'rgba(255,59,48,0.22)', background: 'linear-gradient(180deg, rgba(255,59,48,0.09) 0%, rgba(255,59,48,0.03) 100%)', borderRadius: '24px' }}>
               <div className="citacion-header">
-                <span className="badge-urgente" style={{ backgroundColor: '#FF3B30', borderRadius: '999px', padding: '7px 12px' }}>
-                  <ShieldAlert size={12} color="#6B7280" strokeWidth={1.5} /> ALERTA DEL CLUB
+                <span className="badge-urgente" style={{ backgroundColor: 'var(--rojo-alerta)', borderRadius: '999px', padding: '7px 12px' }}>
+                  <ShieldAlert size={12} color="var(--gris-secundario)" strokeWidth={1.5} /> ALERTA DEL CLUB
                 </span>
               </div>
               <h4 style={{ color: '#C1121F', margin: '10px 0 0 0', fontSize: '16px', fontWeight: '900' }}>{alerta}</h4>
@@ -413,11 +425,11 @@ function ComunicacionesPanel({
           )}
 
           {comunicaciones.map(c => (
-            <div key={c.id} className="ios-rrss-card fade-in" style={{ borderLeft: `4px solid ${c.urgencia === 'Crítica' ? '#8B0000' : c.urgencia === 'Alta' ? '#FF3B30' : c.urgencia === 'Media' ? '#FF9500' : '#34C759'}`, borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
+            <div key={c.id} className="ios-rrss-card fade-in" style={{ borderLeft: `4px solid ${c.urgencia === 'Crítica' ? '#8B0000' : c.urgencia === 'Alta' ? 'var(--rojo-alerta)' : c.urgencia === 'Media' ? '#FF9500' : '#34C759'}`, borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
               <div className="ios-rrss-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <LogoAvatar nombre={c.TITULO} logoUrl={c.logo_url || c.logoUrl} size={28} borderRadius="999px" />
-                  <span className="badge-tipo" style={{ background: c.urgencia === 'Crítica' ? '#8B0000' : c.urgencia === 'Alta' ? '#FF3B30' : c.urgencia === 'Media' ? '#FF9500' : '#34C759', color: 'white', padding: '5px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: '800' }}>
+                  <span className="badge-tipo" style={{ background: c.urgencia === 'Crítica' ? '#8B0000' : c.urgencia === 'Alta' ? 'var(--rojo-alerta)' : c.urgencia === 'Media' ? '#FF9500' : '#34C759', color: 'white', padding: '5px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: '800' }}>
                     {c.TIPO_COMUNICADO}
                   </span>
                   {c.rama !== 'General' && <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.1)', padding: '2px 6px', borderRadius: '3px' }}>{c.rama}</span>}
@@ -426,8 +438,8 @@ function ComunicacionesPanel({
                 <span className="fecha-comunicado">{c.FECHA}</span>
               </div>
 
-              <h4 className="titulo-comunicado" style={{ marginBottom: '8px', color: 'var(--texto-principal)', fontWeight: '800', fontSize: '16px' }}>
-                {c.TIPO_COMUNICADO === 'Evento' ? '🎉' : c.TIPO_COMUNICADO === 'Asamblea' ? '📋' : c.TIPO_COMUNICADO === 'Suspensión' ? '⚠️' : '📢'} {c.TITULO}
+              <h4 className="titulo-comunicado" style={{ marginBottom: '8px', color: 'var(--texto-principal)', fontWeight: '800', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {c.TIPO_COMUNICADO === 'Evento' ? <PartyPopper size={16} /> : c.TIPO_COMUNICADO === 'Asamblea' ? <ClipboardList size={16} /> : c.TIPO_COMUNICADO === 'Suspensión' ? <AlertTriangle size={16} color="var(--naranja-aviso)" /> : <Megaphone size={16} />} {c.TITULO}
               </h4>
               <p className="ios-rrss-body">{c.CUERPO_TEXTO}</p>
 
@@ -494,8 +506,8 @@ function ComunicacionesPanel({
                                     <>
                                       <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)' }}>Selecciona una opción de asistencia</div>
                                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-                                        <button onClick={() => addRSVP(c.id, convocado, 'si')} className="btn-confirmar" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: convocado.respuesta === 'si' ? '#15803d' : '#34C759', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✓ Sí asiste</button>
-                                        <button onClick={() => addRSVP(c.id, convocado, 'no')} className="btn-ausente" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#FF3B30', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✕ No asiste</button>
+                                        <button onClick={() => addRSVP(c.id, convocado, 'si')} className="btn-confirmar" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: convocado.respuesta === 'si' ? '#15803d' : '#34C759', color: 'white', cursor: 'pointer', fontWeight: '700', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}><Check size={14} /> Sí asiste</button>
+                                        <button onClick={() => addRSVP(c.id, convocado, 'no')} className="btn-ausente" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: 'var(--rojo-alerta)', color: 'white', cursor: 'pointer', fontWeight: '700', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}><X size={14} /> No asiste</button>
                                       </div>
 
                                       {convocado.respuesta === 'no' && (
@@ -557,8 +569,8 @@ function ComunicacionesPanel({
                           <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: '14px', padding: '10px' }}>
                             <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)', marginBottom: '8px' }}>Selecciona una opción de asistencia</div>
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              <button onClick={() => addRSVP(c.id, null, 'si')} className="btn-confirmar" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#34C759', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✓ Sí asiste</button>
-                              <button onClick={() => addRSVP(c.id, null, 'no')} className="btn-ausente" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#FF3B30', color: 'white', cursor: 'pointer', fontWeight: '700' }}>✕ No asiste</button>
+                              <button onClick={() => addRSVP(c.id, null, 'si')} className="btn-confirmar" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: '#34C759', color: 'white', cursor: 'pointer', fontWeight: '700', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}><Check size={14} /> Sí asiste</button>
+                              <button onClick={() => addRSVP(c.id, null, 'no')} className="btn-ausente" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: '14px', border: 'none', background: 'var(--rojo-alerta)', color: 'white', cursor: 'pointer', fontWeight: '700', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}><X size={14} /> No asiste</button>
                             </div>
                             {rsvpPropio?.respuesta && (
                               <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>
@@ -598,7 +610,7 @@ function ComunicacionesPanel({
                       }}
                       title={reaccion.nombre}
                     >
-                      <IconComponent size={14} color="#6B7280" strokeWidth={1.5} fill={tieneReaccion ? reaccion.color : 'none'} />
+                      <IconComponent size={14} color="var(--gris-secundario)" strokeWidth={1.5} fill={tieneReaccion ? reaccion.color : 'none'} />
                       {contador > 0 && <span style={{ fontSize: '11px' }}>{contador}</span>}
                     </button>
                   );
@@ -606,8 +618,8 @@ function ComunicacionesPanel({
               </div>
 
               {!c.citacion_id && c.asistencias && c.asistencias.length > 0 && (
-                <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '8px', padding: '10px 12px', background: 'rgba(0,0,0,0.02)', borderRadius: '14px' }}>
-                  ✓ <strong>{c.asistencias.filter(a => a.respuesta === 'si').length}</strong> confirmados •
+                <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '8px', padding: '10px 12px', background: 'rgba(0,0,0,0.02)', borderRadius: '14px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                  <Check size={13} /> <strong>{c.asistencias.filter(a => a.respuesta === 'si').length}</strong> confirmados •
                   <strong>{c.asistencias.filter(a => a.respuesta === 'no').length}</strong> rechazaron •
                   Pendientes según convocatoria
                 </div>
@@ -619,7 +631,7 @@ function ComunicacionesPanel({
         </>
       ) : vistaMuro === 'encuestas' ? (
         <div className="fade-in">
-          <h4 style={{ color: 'var(--texto-heading)', marginBottom: '15px' }}>📊 Encuestas y Sondeos</h4>
+          <h4 style={{ color: 'var(--texto-heading)', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}><BarChart2 size={17} /> Encuestas y Sondeos</h4>
           {encuestas.map(enc => {
             const totalVotos = Object.values(enc.votos).reduce((a, b) => a + b, 0);
             return (
@@ -645,7 +657,7 @@ function ComunicacionesPanel({
                     </div>
                   );
                 })}
-                {enc.respondio && <p style={{ margin: '10px 0 0 0', fontSize: '12px', color: '#34C759', fontWeight: '600' }}>✓ Ya has votado en esta encuesta</p>}
+                {enc.respondio && <p style={{ margin: '10px 0 0 0', fontSize: '12px', color: '#34C759', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}><Check size={13} /> Ya has votado en esta encuesta</p>}
               </div>
             );
           })}

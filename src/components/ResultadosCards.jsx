@@ -1,4 +1,4 @@
-import { CalendarDays, Trophy, Heart, Edit2, Trash2, MapPin, ThumbsUp, Frown } from 'lucide-react';
+import { CalendarDays, Heart, Edit2, Trash2, MapPin, ThumbsUp, Frown, Check, X, Venus, Mars } from 'lucide-react';
 import { useState } from 'react';
 import LogoAvatar from './LogoAvatar';
 
@@ -14,11 +14,6 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
     }));
   };
 
-  // Contar reacciones para badge
-  const contarReacciones = (tipo) => {
-    return Object.values(reacciones).filter(r => r === tipo).length;
-  };
-
   const esFemelina = (partido) => (partido.rama || '').toLowerCase().includes('femen');
   const colorBorde = (partido) => esFemelina(partido) ? '#ec4899' : '#3b82f6';
   const colorFondo = (partido) => esFemelina(partido) ? 'rgba(236, 72, 153, 0.08)' : 'rgba(59, 130, 246, 0.08)';
@@ -26,7 +21,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 560;
   
   // Colores monocromáticos para iconos
-  const colorIcono = '#6B7280'; // Gris neutro
+  const colorIcono = 'var(--gris-secundario)'; // Gris neutro
 
   return partidos.map((partido) => {
     const esVictoria = partido.miEquipo > partido.rival;
@@ -72,16 +67,16 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                 <LogoAvatar nombre={partido.torneo || 'Torneo'} logoUrl={partido.torneoLogoUrl} size={26} borderRadius="999px" />
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <span style={{ fontSize: '10px', fontWeight: '700', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   {partido.torneo || 'Competencia'}
                 </span>
-                <span style={{ fontSize: '9px', color: 'var(--texto-secundario)', opacity: 0.7 }}>
+                <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', opacity: 0.7 }}>
                   {partido.categoria || 'General'}
                 </span>
               </div>
             </div>
             <span style={{
-              fontSize: '10px',
+              fontSize: '11px',
               fontWeight: '900',
               padding: '5px 12px',
               borderRadius: '10px',
@@ -248,8 +243,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                 }}
                 title="Me encanta"
               >
-                <Heart size={14} color="#6B7280" fill={reaccionActual === 'love' ? colorBadge(partido) : 'none'} strokeWidth={1.5} />
-                {reaccionActual === 'love' && <span>♥</span>}
+                <Heart size={14} color="var(--gris-secundario)" fill={reaccionActual === 'love' ? colorBadge(partido) : 'none'} strokeWidth={1.5} />
               </button>
 
               {/* Genial - Thumbs Up */}
@@ -272,7 +266,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                 }}
                 title="Genial"
               >
-                <ThumbsUp size={14} color="#6B7280" fill={reaccionActual === 'great' ? '#10b981' : 'none'} strokeWidth={1.5} />
+                <ThumbsUp size={14} color="var(--gris-secundario)" fill={reaccionActual === 'great' ? '#10b981' : 'none'} strokeWidth={1.5} />
               </button>
 
               {/* Ánimo - Frown */}
@@ -295,7 +289,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                 }}
                 title="Ánimo"
               >
-                <Frown size={14} color="#6B7280" fill={reaccionActual === 'sad' ? '#f59315' : 'none'} strokeWidth={1.5} />
+                <Frown size={14} color="var(--gris-secundario)" fill={reaccionActual === 'sad' ? '#f59315' : 'none'} strokeWidth={1.5} />
               </button>
             </div>
 
@@ -376,8 +370,8 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
               <div style={{ fontSize: '32px', fontWeight: '900', color: colorBadge(partido), fontFamily: "'Inter Tight', monospace" }}>
                 {partido.miEquipo}
               </div>
-              <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)' }}>
-                {esVictoria ? '✓ Ganado' : esEmpate ? '= Empate' : '✗ Perdido'}
+              <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                {esVictoria ? <><Check size={12} /> Ganado</> : esEmpate ? '= Empate' : <><X size={12} /> Perdido</>}
               </div>
               <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', marginTop: '2px' }}>
                 {partido.rival}
@@ -415,8 +409,8 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
             <span style={{ fontWeight: '800', color: 'var(--texto-principal)' }}>{partido.torneo}</span>
             <span style={{ fontWeight: '600', color: 'var(--texto-secundario)' }}>• {partido.categoria}</span>
           </div>
-          <span style={{ fontSize: '10px', fontWeight: '900', background: colorBadge(partido), color: 'white', padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase' }}>
-            {esFemelina(partido) ? '👩' : '👨'}
+          <span style={{ fontSize: '11px', fontWeight: '900', background: colorBadge(partido), color: 'white', padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase', display: 'inline-flex', alignItems: 'center' }}>
+            {esFemelina(partido) ? <Venus size={12} /> : <Mars size={12} />}
           </span>
         </div>
 
@@ -433,7 +427,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
             <div style={{ fontSize: '42px', fontWeight: '900', color: colorBadge(partido), fontFamily: "'Inter Tight', monospace", lineHeight: '1' }}>
               {partido.miEquipo}
             </div>
-            <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--texto-secundario)', margin: '3px 0' }}>vs</div>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', margin: '3px 0' }}>vs</div>
             <div style={{ fontSize: '42px', fontWeight: '900', color: '#D1D5DB', fontFamily: "'Inter Tight', monospace", lineHeight: '1' }}>
               {partido.rival}
             </div>
@@ -448,7 +442,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
 
         {/* Footer */}
         <div style={{ padding: '10px 16px', background: 'rgba(255,255,255,0.4)', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '600', display: 'flex', gap: '10px', justifyContent: 'center' }}>
-          <span>{esVictoria ? `✓ +${dif}` : esEmpate ? '=' : `✗ -${dif}`}</span> · <span>{partido.fecha}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>{esVictoria ? <><Check size={11} /> +{dif}</> : esEmpate ? '=' : <><X size={11} /> -{dif}</>}</span> · <span>{partido.fecha}</span>
         </div>
       </div>
     );
