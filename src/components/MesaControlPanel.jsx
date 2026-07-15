@@ -580,6 +580,7 @@ function MesaControlPanel({
   const [mostrarModalCambioObligatorio, setMostrarModalCambioObligatorio] = useState(false);
   const [jugadorVisitaSeleccionadoId, setJugadorVisitaSeleccionadoId] = useState('');
   const [mostrarOpcionesTL, setMostrarOpcionesTL] = useState(false);
+  const [mostrarOpcionesTLVisita, setMostrarOpcionesTLVisita] = useState(false);
   const [jugadorAnalisisId, setJugadorAnalisisId] = useState('');
   const liveFullScreenRef = useRef(null);
 
@@ -1739,6 +1740,77 @@ function MesaControlPanel({
     registrarEventoJuego({ tipo: 'FALTA', detalle, equipo: 'visita', jugadorId: jugador?.id || null });
   };
 
+  const ejecutarAccionFIBAVisita = (tipo, payload = {}) => {
+    if (!partidoIniciado) return alert('Valida y comienza el partido antes de capturar eventos.');
+    if (modoAnalisis !== 'dos') return;
+    if (!jugadorVisitaSeleccionadoId) return alert('Selecciona una jugadora/o visita primero.');
+    if (!quintetoVisitaIds.map((id) => String(id)).includes(String(jugadorVisitaSeleccionadoId))) {
+      return alert('La accion visita solo se permite para jugadoras/es titulares en cancha.');
+    }
+
+    let nombreJugador = '';
+    let puntosAnotados = 0;
+    let detalleAccion = '';
+
+    const tirosLibresIntentados = limitar(Number(payload.tirosLibresIntentados || 0), 0, 3);
+    const tirosLibresConvertidos = limitar(Number(payload.tirosLibresConvertidos || 0), 0, tirosLibresIntentados);
+    const es2Pts = tipo === 'PUNTO' && Number(payload.puntos || 0) === 2;
+    const es3Pts = tipo === 'PUNTO' && Number(payload.puntos || 0) === 3;
+    const puntosBase = tipo === 'PUNTO' ? Number(payload.puntos || 0) : 0;
+    puntosAnotados = puntosBase + tirosLibresConvertidos;
+
+    const idSeleccionado = Number(jugadorVisitaSeleccionadoId);
+    setRosterEquipo((prev) => prev.map((j) => {
+      if (Number(j.id) !== idSeleccionado) return j;
+      nombreJugador = `#${j.dorsal} ${j.nombre}`;
+
+      const ftmActual = numero(j.ftm);
+      const ftaActual = numero(j.fta);
+      const fg2mActual = numero(j.fg2m);
+      const fg2aActual = numero(j.fg2a);
+      const fg3mActual = numero(j.fg3m);
+      const fg3aActual = numero(j.fg3a);
+
+      return {
+        ...j,
+        pts: numero(j.pts) + puntosAnotados,
+        reb: tipo === 'REB' ? numero(j.reb) + 1 : numero(j.reb),
+        ast: tipo === 'AST' ? numero(j.ast) + 1 : numero(j.ast),
+        stl: tipo === 'ROBO' ? numero(j.stl) + 1 : numero(j.stl),
+        flt: tipo === 'FALTA' ? numero(j.flt) + 1 : numero(j.flt),
+        to: tipo === 'PERDIDA' ? numero(j.to) + 1 : numero(j.to),
+        ftm: ftmActual + tirosLibresConvertidos,
+        fta: ftaActual + tirosLibresIntentados,
+        fg2m: fg2mActual + (es2Pts ? 1 : 0),
+        fg2a: fg2aActual + (es2Pts ? 1 : 0),
+        fg3m: fg3mActual + (es3Pts ? 1 : 0),
+        fg3a: fg3aActual + (es3Pts ? 1 : 0),
+      };
+    }));
+
+    if (puntosAnotados > 0) setLiveScore((prev) => ({ ...prev, ptsVisita: prev.ptsVisita + puntosAnotados }));
+    if (tipo === 'FALTA') setLiveScore((prev) => ({ ...prev, faltasVisita: prev.faltasVisita + 1 }));
+
+    if (tipo === 'PUNTO') {
+      if (puntosBase === 1) {
+        detalleAccion = `${nombreJugador} TL ${tirosLibresConvertidos}/${Math.max(1, tirosLibresIntentados || 1)} (Visita)`;
+      } else if (puntosBase === 0 && tirosLibresIntentados > 0) {
+        detalleAccion = `${nombreJugador} tiros libres ${tirosLibresConvertidos}/${tirosLibresIntentados} (Visita)`;
+      } else if (tirosLibresIntentados > 0) {
+        detalleAccion = `${nombreJugador} anota ${puntosBase} pts + TL ${tirosLibresConvertidos}/${tirosLibresIntentados} (Visita)`;
+      } else {
+        detalleAccion = `${nombreJugador} anota ${puntosBase} pts (Visita)`;
+      }
+    } else if (tipo === 'FALTA') {
+      detalleAccion = `${nombreJugador} comete FALTA (Visita)`;
+    } else {
+      detalleAccion = `${nombreJugador} registra ${tipo} (Visita)`;
+    }
+
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalleAccion }, ...prev]);
+    registrarEventoJuego({ tipo, detalle: detalleAccion, equipo: 'visita', jugadorId: idSeleccionado, valor: puntosAnotados });
+  };
+
   const topEficienciaLocal = useMemo(
     () => [...rosterLocal].sort((a, b) => calcularEff(b) - calcularEff(a)),
     [rosterLocal]
@@ -2100,6 +2172,15 @@ function MesaControlPanel({
     return Array.from(mapa.values()).sort((a, b) => b.eff - a.eff);
   }, [historialFiltrado]);
 
+  const actualizarHistorialLocal = (transform = (items) => items) => {
+    const clave = 'mesa_partidos_guardados';
+    const actual = JSON.parse(window.localStorage.getItem(clave) || '[]');
+    const siguiente = transform(Array.isArray(actual) ? actual : []);
+    window.localStorage.setItem(clave, JSON.stringify(siguiente));
+    setHistorialPartidosMesa(siguiente);
+    return siguiente;
+  };
+
   const exportarHistorialCsv = () => {
     const filas = historialFiltrado.map((p) => ({
       fecha: p.finalizadoAt ? new Date(p.finalizadoAt).toLocaleString('es-CL') : '',
@@ -2230,6 +2311,73 @@ function MesaControlPanel({
     const csv = construirCsv(filas);
     if (!csv) return;
     descargarTexto(nombreArchivo, csv, 'text/csv;charset=utf-8');
+  };
+
+  const eliminarPartidoHistorial = async (partido) => {
+    if (!partido?.id) return;
+    if (!window.confirm('¿Eliminar este juego del historial?')) return;
+
+    if (partido._origen === 'remoto') {
+      try {
+        await api.partidosLiveAPI.delete(partido.id);
+      } catch (error) {
+        alert(error.message || 'No se pudo eliminar el partido en backend.');
+        return;
+      }
+      await recargarHistorialRemoto();
+    }
+
+    actualizarHistorialLocal((actual) => actual.filter((item) => String(item.id) !== String(partido.id)));
+    setPartidoAnalisisId((prev) => (String(prev || '') === String(partido.id) ? null : prev));
+  };
+
+  const editarPartidoHistorial = async (partido) => {
+    if (!partido?.id) return;
+
+    const ptsLocal = Number(window.prompt('PTS Local', String(partido?.marcador?.ptsLocal ?? 0)));
+    if (!Number.isFinite(ptsLocal) || ptsLocal < 0) return alert('PTS Local invalido.');
+    const ptsVisita = Number(window.prompt('PTS Visita', String(partido?.marcador?.ptsVisita ?? 0)));
+    if (!Number.isFinite(ptsVisita) || ptsVisita < 0) return alert('PTS Visita invalido.');
+    const rama = normalizarTexto(window.prompt('Rama', partido?.filtros?.rama || 'Mixta')) || 'Mixta';
+    const categoria = normalizarTexto(window.prompt('Categoria', partido?.filtros?.categoria || 'General')) || 'General';
+    const competencia = normalizarTexto(window.prompt('Competencia', partido?.filtros?.competicion || ''));
+    const sede = normalizarTexto(window.prompt('Sede', partido?.canchaSede || ''));
+
+    if (partido._origen === 'remoto') {
+      try {
+        await api.partidosLiveAPI.update(partido.id, {
+          pts_local: ptsLocal,
+          pts_visitante: ptsVisita,
+          rama,
+          categoria,
+          competencia_nombre: competencia,
+          cancha_sede: sede,
+        });
+      } catch (error) {
+        alert(error.message || 'No se pudo editar el partido remoto.');
+        return;
+      }
+      await recargarHistorialRemoto();
+    }
+
+    actualizarHistorialLocal((actual) => actual.map((item) => {
+      if (String(item.id) !== String(partido.id)) return item;
+      return {
+        ...item,
+        marcador: {
+          ...(item.marcador || {}),
+          ptsLocal,
+          ptsVisita,
+        },
+        filtros: {
+          ...(item.filtros || {}),
+          rama,
+          categoria,
+          competicion: competencia,
+        },
+        canchaSede: sede,
+      };
+    }));
   };
 
   const guardarEstadisticaPartido = async ({ guardarEnBaseHistorica = true } = {}) => {
@@ -2869,45 +3017,24 @@ function MesaControlPanel({
               <h6 className="sub-caja-title" style={{ marginTop: 0, fontSize: '12px' }}>En Cancha (5) · Local</h6>
               <div className="mesa-oncourt-grid mesa-oncourt-grid-two-cols">
                 {quintetoLocalEnCancha.map((j) => (
-                  <div key={`cancha-${j.id}`} className="mesa-oncourt-player-card">
-                    <button
-                      type="button"
-                      title={`#${j.dorsal} ${j.nombre}`}
-                      onClick={() => {
-                        if (j._bloqueado || j.flt >= 5) return;
-                        setJugadorSeleccionadoLive(j.id);
-                        setCambioSalidaId(j.id);
-                      }}
-                      className={`mesa-oncourt-btn mesa-oncourt-main-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.flt >= 5 ? 'bloqueado' : ''}`}
-                      style={{
-                        borderColor: colorLocal,
-                        background: colorLocal,
-                        color: colorTextoContraste(colorLocal),
-                      }}
-                    >
-                      <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
-                    </button>
-                    <div className="mesa-oncourt-cambio-row">
-                      <select
-                        className="form-input"
-                        value={cambioIngresoPorSalida[j.id] || ''}
-                        onChange={(e) => setCambioIngresoPorSalida((prev) => ({ ...prev, [j.id]: e.target.value }))}
-                        disabled={!partidoIniciado || j._bloqueado || j.flt >= 5 || bancoLocal.length === 0}
-                      >
-                        <option value="">Entra...</option>
-                        {bancoLocal.filter((b) => !b._bloqueado && numero(b.flt) < 5).map((b) => (
-                          <option key={`ingreso-${j.id}-${b.id}`} value={b.id}>#{b.dorsal}</option>
-                        ))}
-                      </select>
-                      <button
-                        className="btn-secondary"
-                        disabled={!partidoIniciado || !cambioIngresoPorSalida[j.id] || j._bloqueado || j.flt >= 5}
-                        onClick={() => ejecutarCambioJugadorLocal(j.id, cambioIngresoPorSalida[j.id])}
-                      >
-                        Cambiar
-                      </button>
-                    </div>
-                  </div>
+                  <button
+                    key={`cancha-${j.id}`}
+                    type="button"
+                    title={`#${j.dorsal} ${j.nombre}`}
+                    onClick={() => {
+                      if (j._bloqueado || j.flt >= 5) return;
+                      setJugadorSeleccionadoLive(j.id);
+                      setCambioSalidaId(j.id);
+                    }}
+                    className={`mesa-oncourt-btn mesa-oncourt-main-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.flt >= 5 ? 'bloqueado' : ''}`}
+                    style={{
+                      borderColor: colorLocal,
+                      background: colorLocal,
+                      color: colorTextoContraste(colorLocal),
+                    }}
+                  >
+                    <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
+                  </button>
                 ))}
                 {Array.from({ length: Math.max(0, 5 - quintetoLocalEnCancha.length) }).map((_, idx) => (
                   <div key={`vacante-${idx}`} className="mesa-oncourt-btn mesa-oncourt-empty" style={{ borderColor: colorConAlpha(colorLocal, '88'), background: colorConAlpha(colorLocal, '22') }}>
@@ -3014,6 +3141,21 @@ function MesaControlPanel({
             </div>
           </div>
 
+          <div className="mesa-visitor-actions" style={{ marginBottom: '10px' }}>
+            <h6>Cambio Local (en cancha ↔ banco)</h6>
+            <div className="mesa-visitor-actions-grid" style={{ gridTemplateColumns: '1fr 1fr 120px' }}>
+              <select className="form-input" value={cambioSalidaId} onChange={(e) => setCambioSalidaId(e.target.value)}>
+                <option value="">Sale...</option>
+                {quintetoLocalEnCancha.map((j) => <option key={`sale-local-${j.id}`} value={j.id}>#{j.dorsal}</option>)}
+              </select>
+              <select className="form-input" value={cambioIngresoId} onChange={(e) => setCambioIngresoId(e.target.value)}>
+                <option value="">Entra...</option>
+                {bancoLocal.filter((j) => !j._bloqueado && numero(j.flt) < 5).map((j) => <option key={`entra-local-${j.id}`} value={j.id}>#{j.dorsal}</option>)}
+              </select>
+              <button className="btn-secondary" disabled={!partidoIniciado || !cambioSalidaId || !cambioIngresoId} onClick={() => ejecutarCambioJugadorLocal(cambioSalidaId, cambioIngresoId)}>Cambiar</button>
+            </div>
+          </div>
+
           <h5 className="sub-caja-title text-center" style={{ color: jugadorSeleccionadoLive ? 'var(--verde-victoria)' : '#FF3B30' }}>
             {jugadorSeleccionadoLive ? 'Control de Acciones' : 'Seleccione Jugador'}
           </h5>
@@ -3049,19 +3191,42 @@ function MesaControlPanel({
 
           {modoAnalisis === 'dos' && (
             <div className="mesa-visitor-actions">
-              <h6>Acciones Rápidas Visita</h6>
+              <h6>Control de Acciones Visita</h6>
               <select className="form-input" style={{ marginBottom: '8px' }} value={jugadorVisitaSeleccionadoId} onChange={(e) => setJugadorVisitaSeleccionadoId(e.target.value)}>
                 <option value="">Seleccionar jugadora/or visita...</option>
                 {(quintetoVisitaEnCancha.length > 0 ? quintetoVisitaEnCancha : rosterVisita).map((j) => (
                   <option key={`sel-vis-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
                 ))}
               </select>
-              <div className="mesa-visitor-actions-grid">
-                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(1, jugadorVisitaSeleccionadoId)}>Visita +1</button>
-                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(2, jugadorVisitaSeleccionadoId)}>Visita +2</button>
-                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarPuntosVisita(3, jugadorVisitaSeleccionadoId)}>Visita +3</button>
-                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => registrarFaltaVisita(jugadorVisitaSeleccionadoId)}>Falta Visita</button>
+
+              <div className="fiba-botones-grid">
+                <button className="btn-fiba pt" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => setMostrarOpcionesTLVisita((v) => !v)}>TL Visita</button>
+                <button className="btn-fiba pt" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('PUNTO', { puntos: 2 })}>+2 V</button>
+                <button className="btn-fiba pt" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('PUNTO', { puntos: 3 })}>+3 V</button>
+                <button className="btn-fiba st" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('REB')}>REB V</button>
+                <button className="btn-fiba st" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('AST')}>AST V</button>
+                <button className="btn-fiba st" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('ROBO')}>ROBO V</button>
+                <button className="btn-fiba err" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('PERDIDA')}>PÉRDIDA V</button>
+                <button className="btn-fiba err" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('FALTA', { faltaNumero: 1 })}>FALTA V</button>
               </div>
+
+              {mostrarOpcionesTLVisita && (
+                <div className="mesa-tl-options-panel">
+                  <h6>Opciones TL Visita</h6>
+                  <div className="mesa-tl-options-grid">
+                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>2 TL (0/2)</button>
+                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>2 TL (1/2)</button>
+                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 2 }); setMostrarOpcionesTLVisita(false); }}>2 TL (2/2)</button>
+                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>2+1 (TL fallado)</button>
+                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>2+1 (TL convertido)</button>
+                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 3, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>3+1 (TL convertido)</button>
+                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>3 TL (0/3)</button>
+                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>3 TL (1/3)</button>
+                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 2 }); setMostrarOpcionesTLVisita(false); }}>3 TL (2/3)</button>
+                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 3 }); setMostrarOpcionesTLVisita(false); }}>3 TL (3/3)</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -3208,6 +3373,10 @@ function MesaControlPanel({
                   <strong>{partido.marcador?.ptsLocal ?? 0} - {partido.marcador?.ptsVisita ?? 0}</strong>
                   <span>{partido.equipos?.local?.resumen?.effTotal ?? 0} EFF / {partido.equipos?.visita?.resumen?.effTotal ?? 0} EFF</span>
                 </div>
+                <div className="mesa-historial-actions">
+                  <button className="btn-secondary" style={{ width: 'auto' }} onClick={(e) => { e.stopPropagation(); editarPartidoHistorial(partido); }}>Editar</button>
+                  <button className="btn-secondary" style={{ width: 'auto' }} onClick={(e) => { e.stopPropagation(); eliminarPartidoHistorial(partido); }}>Eliminar</button>
+                </div>
               </div>
             ))}
           </div>
@@ -3337,6 +3506,10 @@ function MesaControlPanel({
                 <div className="mesa-historial-score">
                   <strong>{partido.marcador?.ptsLocal ?? 0} - {partido.marcador?.ptsVisita ?? 0}</strong>
                   <span>{partido._origen === 'remoto' ? 'Base histórica' : 'Local'}</span>
+                </div>
+                <div className="mesa-historial-actions">
+                  <button className="btn-secondary" style={{ width: 'auto' }} onClick={(e) => { e.stopPropagation(); editarPartidoHistorial(partido); }}>Editar</button>
+                  <button className="btn-secondary" style={{ width: 'auto' }} onClick={(e) => { e.stopPropagation(); eliminarPartidoHistorial(partido); }}>Eliminar</button>
                 </div>
               </div>
             ))}

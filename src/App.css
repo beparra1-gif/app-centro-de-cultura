@@ -2447,6 +2447,18 @@ button,
   margin-top: 14px;
 }
 
+.mesa-historial-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 6px;
+}
+
+.mesa-historial-actions .btn-secondary {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
 .mesa-team-preview {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -2725,20 +2737,55 @@ button,
 }
 
 @media (min-width: 768px) and (max-width: 1199px) {
+  .fiba-container .mesa-live-wrap {
+    padding-bottom: 4px;
+  }
+
+  .fiba-container .mesa-live-wrap .checkout-total-box {
+    margin-bottom: 10px !important;
+    padding: 14px 8px !important;
+    border-radius: 18px !important;
+  }
+
+  .fiba-container .mesa-live-wrap .checkout-total-box h1 {
+    font-size: 42px !important;
+  }
+
+  .fiba-container .mesa-live-wrap > div[style*='margin-bottom: 20px'] {
+    margin-bottom: 10px !important;
+  }
+
   .fiba-container .mesa-live-layout-grid {
     grid-template-columns: minmax(280px, 1fr) minmax(300px, 0.95fr) minmax(280px, 1fr) !important;
     gap: 12px;
+    max-height: calc(100vh - 320px);
+    min-height: 440px;
   }
 
   .fiba-container .mesa-live-zone-local,
   .fiba-container .mesa-live-zone-center,
   .fiba-container .mesa-live-zone-visit {
     min-width: 0;
+    max-height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .fiba-container .mesa-team-split-grid {
     grid-template-columns: minmax(0, 1fr) 96px;
     gap: 10px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .fiba-container .mesa-team-col {
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .fiba-container .mesa-live-zone-center {
+    overflow: auto;
   }
 
   .fiba-container .mesa-oncourt-grid-two-cols {
@@ -2760,6 +2807,21 @@ button,
 
   .fiba-container .mesa-control-tiempo-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .fiba-container .mesa-live-zone-center .fiba-botones-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .fiba-container .mesa-live-zone-center .mesa-tl-options-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fiba-container .mesa-live-zone-local .mesa-add-player,
+  .fiba-container .mesa-live-zone-visit .mesa-add-player {
+    grid-template-columns: minmax(0, 1fr) 72px 84px;
+    margin-top: 8px !important;
   }
 }
 
