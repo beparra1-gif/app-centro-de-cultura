@@ -579,6 +579,7 @@ function MesaControlPanel({
   const [cambioObligatorioJugadorId, setCambioObligatorioJugadorId] = useState(null);
   const [mostrarModalCambioObligatorio, setMostrarModalCambioObligatorio] = useState(false);
   const [jugadorVisitaSeleccionadoId, setJugadorVisitaSeleccionadoId] = useState('');
+  const [equipoAccionActivo, setEquipoAccionActivo] = useState('local');
   const [mostrarOpcionesTL, setMostrarOpcionesTL] = useState(false);
   const [mostrarOpcionesTLVisita, setMostrarOpcionesTLVisita] = useState(false);
   const [jugadorAnalisisId, setJugadorAnalisisId] = useState('');
@@ -1408,6 +1409,19 @@ function MesaControlPanel({
     }
   }, [jugadorSeleccionadoLive, quintetoLocalIds, rosterLocal, setJugadorSeleccionadoLive]);
 
+  useEffect(() => {
+    if (!jugadorVisitaSeleccionadoId) return;
+    if (!rosterVisita.some((j) => String(j.id) === String(jugadorVisitaSeleccionadoId))) {
+      setJugadorVisitaSeleccionadoId('');
+    }
+  }, [jugadorVisitaSeleccionadoId, rosterVisita]);
+
+  useEffect(() => {
+    if (modoAnalisis === 'dos') return;
+    setEquipoAccionActivo('local');
+    setMostrarOpcionesTLVisita(false);
+  }, [modoAnalisis]);
+
   const quintetoLocalEnCancha = useMemo(() => {
     const mapa = new Map(rosterLocal.map((j) => [String(j.id), j]));
     return quintetoLocalIds
@@ -1809,6 +1823,19 @@ function MesaControlPanel({
 
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalleAccion }, ...prev]);
     registrarEventoJuego({ tipo, detalle: detalleAccion, equipo: 'visita', jugadorId: idSeleccionado, valor: puntosAnotados });
+  };
+
+  const accionEquipoEsVisita = modoAnalisis === 'dos' && equipoAccionActivo === 'visita';
+  const jugadorAccionSeleccionadoValido = accionEquipoEsVisita
+    ? Boolean(jugadorVisitaSeleccionadoId) && quintetoVisitaIds.map((id) => String(id)).includes(String(jugadorVisitaSeleccionadoId))
+    : Boolean(jugadorSeleccionadoLive) && quintetoLocalIds.includes(jugadorSeleccionadoLive);
+
+  const ejecutarAccionEquipoActivo = (tipo, payload = {}) => {
+    if (accionEquipoEsVisita) {
+      ejecutarAccionFIBAVisita(tipo, payload);
+      return;
+    }
+    ejecutarAccionFIBA(tipo, payload);
   };
 
   const topEficienciaLocal = useMemo(
@@ -3024,6 +3051,7 @@ function MesaControlPanel({
                     onClick={() => {
                       if (j._bloqueado || j.flt >= 5) return;
                       setJugadorSeleccionadoLive(j.id);
+                      setEquipoAccionActivo('local');
                       setCambioSalidaId(j.id);
                     }}
                     className={`mesa-oncourt-btn mesa-oncourt-main-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.flt >= 5 ? 'bloqueado' : ''}`}
@@ -3083,7 +3111,10 @@ function MesaControlPanel({
                       type="button"
                       title={`#${j.dorsal} ${j.nombre}`}
                       className={`mesa-oncourt-btn mesa-oncourt-main-btn ${String(jugadorVisitaSeleccionadoId) === String(j.id) ? 'selected' : ''}`}
-                      onClick={() => setJugadorVisitaSeleccionadoId(j.id)}
+                      onClick={() => {
+                        setJugadorVisitaSeleccionadoId(j.id);
+                        setEquipoAccionActivo('visita');
+                      }}
                       style={{
                         borderColor: colorVisita,
                         background: colorVisita,
@@ -3109,7 +3140,10 @@ function MesaControlPanel({
                       key={`banca-visita-${j.id}`}
                       type="button"
                       className={`mesa-banco-btn ${String(jugadorVisitaSeleccionadoId) === String(j.id) ? 'selected' : ''}`}
-                      onClick={() => setJugadorVisitaSeleccionadoId(j.id)}
+                      onClick={() => {
+                        setJugadorVisitaSeleccionadoId(j.id);
+                        setEquipoAccionActivo('visita');
+                      }}
                       title="Seleccionar jugadora/o visita"
                       style={{ borderColor: colorVisita, background: colorVisita, color: colorTextoContraste(colorVisita) }}
                     >
@@ -3156,77 +3190,105 @@ function MesaControlPanel({
             </div>
           </div>
 
-          <h5 className="sub-caja-title text-center" style={{ color: jugadorSeleccionadoLive ? 'var(--verde-victoria)' : '#FF3B30' }}>
-            {jugadorSeleccionadoLive ? 'Control de Acciones' : 'Seleccione Jugador'}
+          {modoAnalisis === 'dos' && (
+            <div className="mesa-actions-segmented">
+              <button
+                type="button"
+                className={`mesa-actions-segment ${equipoAccionActivo === 'local' ? 'active' : ''}`}
+                onClick={() => {
+                  setEquipoAccionActivo('local');
+                  setMostrarOpcionesTLVisita(false);
+                }}
+              >
+                Acciones Local
+              </button>
+              <button
+                type="button"
+                className={`mesa-actions-segment ${equipoAccionActivo === 'visita' ? 'active' : ''}`}
+                onClick={() => {
+                  setEquipoAccionActivo('visita');
+                  setMostrarOpcionesTL(false);
+                }}
+              >
+                Acciones Visita
+              </button>
+            </div>
+          )}
+
+          {accionEquipoEsVisita && (
+            <select
+              className="form-input"
+              style={{ marginBottom: '8px' }}
+              value={jugadorVisitaSeleccionadoId}
+              onChange={(e) => {
+                setJugadorVisitaSeleccionadoId(e.target.value);
+                setEquipoAccionActivo('visita');
+              }}
+            >
+              <option value="">Seleccionar jugadora/or visita...</option>
+              {(quintetoVisitaEnCancha.length > 0 ? quintetoVisitaEnCancha : rosterVisita).map((j) => (
+                <option key={`sel-vis-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
+              ))}
+            </select>
+          )}
+
+          <h5 className="sub-caja-title text-center" style={{ color: jugadorAccionSeleccionadoValido ? 'var(--verde-victoria)' : '#FF3B30' }}>
+            {jugadorAccionSeleccionadoValido ? `Control de Acciones (${accionEquipoEsVisita ? 'Visita' : 'Local'})` : `Seleccione Jugador/a en Cancha (${accionEquipoEsVisita ? 'Visita' : 'Local'})`}
           </h5>
 
           <div className="fiba-botones-grid">
-            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => setMostrarOpcionesTL((v) => !v)}>Tiro Libre</button>
-            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', { puntos: 2 })}>+2 PTS</button>
-            <button className="btn-fiba pt" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PUNTO', { puntos: 3 })}>+3 PTS</button>
-            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('REB')}>REB</button>
-            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('AST')}>AST</button>
-            <button className="btn-fiba st" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('ROBO')}>ROBO</button>
-            <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('PERDIDA')}>PÉRDIDA</button>
-            <button className="btn-fiba err" disabled={!jugadorSeleccionadoLive || !partidoIniciado || !quintetoLocalIds.includes(jugadorSeleccionadoLive)} onClick={() => ejecutarAccionFIBA('FALTA', { faltaNumero: 1 })}>FALTA</button>
+            <button
+              className="btn-fiba pt"
+              disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado}
+              onClick={() => {
+                if (accionEquipoEsVisita) setMostrarOpcionesTLVisita((v) => !v);
+                else setMostrarOpcionesTL((v) => !v);
+              }}
+            >
+              Tiro Libre
+            </button>
+            <button className="btn-fiba pt" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('PUNTO', { puntos: 2 })}>+2 PTS</button>
+            <button className="btn-fiba pt" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('PUNTO', { puntos: 3 })}>+3 PTS</button>
+            <button className="btn-fiba st" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('REB')}>REB</button>
+            <button className="btn-fiba st" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('AST')}>AST</button>
+            <button className="btn-fiba st" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('ROBO')}>ROBO</button>
+            <button className="btn-fiba err" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('PERDIDA')}>PÉRDIDA</button>
+            <button className="btn-fiba err" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('FALTA', { faltaNumero: 1 })}>FALTA</button>
           </div>
 
-          {mostrarOpcionesTL && (
+          {mostrarOpcionesTL && !accionEquipoEsVisita && (
             <div className="mesa-tl-options-panel">
               <h6>Opciones de Tiro Libre</h6>
               <div className="mesa-tl-options-grid">
-                <button className="btn-secondary" onClick={() => { ejecutarAccionFIBA('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>2 TL (0/2)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionFIBA('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>2 TL (1/2)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionFIBA('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 2 }); setMostrarOpcionesTL(false); }}>2 TL (2/2)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionFIBA('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>2+1 (TL fallado)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionFIBA('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>2+1 (TL convertido)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionFIBA('PUNTO', { puntos: 3, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>3+1 (TL convertido)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionFIBA('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>3 TL (0/3)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionFIBA('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>3 TL (1/3)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionFIBA('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 2 }); setMostrarOpcionesTL(false); }}>3 TL (2/3)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionFIBA('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 3 }); setMostrarOpcionesTL(false); }}>3 TL (3/3)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>2 TL (0/2)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>2 TL (1/2)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 2 }); setMostrarOpcionesTL(false); }}>2 TL (2/2)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>2+1 (TL fallado)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>2+1 (TL convertido)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 3, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>3+1 (TL convertido)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>3 TL (0/3)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>3 TL (1/3)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 2 }); setMostrarOpcionesTL(false); }}>3 TL (2/3)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 3 }); setMostrarOpcionesTL(false); }}>3 TL (3/3)</button>
               </div>
             </div>
           )}
 
-          {modoAnalisis === 'dos' && (
-            <div className="mesa-visitor-actions">
-              <h6>Control de Acciones Visita</h6>
-              <select className="form-input" style={{ marginBottom: '8px' }} value={jugadorVisitaSeleccionadoId} onChange={(e) => setJugadorVisitaSeleccionadoId(e.target.value)}>
-                <option value="">Seleccionar jugadora/or visita...</option>
-                {(quintetoVisitaEnCancha.length > 0 ? quintetoVisitaEnCancha : rosterVisita).map((j) => (
-                  <option key={`sel-vis-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
-                ))}
-              </select>
-
-              <div className="fiba-botones-grid">
-                <button className="btn-fiba pt" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => setMostrarOpcionesTLVisita((v) => !v)}>TL Visita</button>
-                <button className="btn-fiba pt" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('PUNTO', { puntos: 2 })}>+2 V</button>
-                <button className="btn-fiba pt" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('PUNTO', { puntos: 3 })}>+3 V</button>
-                <button className="btn-fiba st" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('REB')}>REB V</button>
-                <button className="btn-fiba st" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('AST')}>AST V</button>
-                <button className="btn-fiba st" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('ROBO')}>ROBO V</button>
-                <button className="btn-fiba err" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('PERDIDA')}>PÉRDIDA V</button>
-                <button className="btn-fiba err" disabled={!jugadorVisitaSeleccionadoId || !partidoIniciado} onClick={() => ejecutarAccionFIBAVisita('FALTA', { faltaNumero: 1 })}>FALTA V</button>
+          {mostrarOpcionesTLVisita && accionEquipoEsVisita && (
+            <div className="mesa-tl-options-panel">
+              <h6>Opciones TL Visita</h6>
+              <div className="mesa-tl-options-grid">
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>2 TL (0/2)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>2 TL (1/2)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 2 }); setMostrarOpcionesTLVisita(false); }}>2 TL (2/2)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>2+1 (TL fallado)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>2+1 (TL convertido)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 3, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>3+1 (TL convertido)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>3 TL (0/3)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>3 TL (1/3)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 2 }); setMostrarOpcionesTLVisita(false); }}>3 TL (2/3)</button>
+                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 3 }); setMostrarOpcionesTLVisita(false); }}>3 TL (3/3)</button>
               </div>
-
-              {mostrarOpcionesTLVisita && (
-                <div className="mesa-tl-options-panel">
-                  <h6>Opciones TL Visita</h6>
-                  <div className="mesa-tl-options-grid">
-                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>2 TL (0/2)</button>
-                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>2 TL (1/2)</button>
-                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 2 }); setMostrarOpcionesTLVisita(false); }}>2 TL (2/2)</button>
-                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>2+1 (TL fallado)</button>
-                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>2+1 (TL convertido)</button>
-                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 3, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>3+1 (TL convertido)</button>
-                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>3 TL (0/3)</button>
-                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>3 TL (1/3)</button>
-                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 2 }); setMostrarOpcionesTLVisita(false); }}>3 TL (2/3)</button>
-                    <button className="btn-secondary" onClick={() => { ejecutarAccionFIBAVisita('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 3 }); setMostrarOpcionesTLVisita(false); }}>3 TL (3/3)</button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>

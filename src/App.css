@@ -2410,6 +2410,30 @@ button,
   background: rgba(0, 122, 255, 0.06);
 }
 
+.mesa-actions-segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mesa-actions-segment {
+  border: 1px solid var(--borde-suave);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--texto-secundario);
+  min-height: 40px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.mesa-actions-segment.active {
+  border-color: rgba(0, 122, 255, 0.45);
+  color: var(--texto-principal);
+  background: rgba(0, 122, 255, 0.12);
+}
+
 .mesa-control-tiempo-card h6 {
   margin: 0;
   font-size: 12px;
@@ -2788,6 +2812,13 @@ button,
     overflow: auto;
   }
 
+  .fiba-container .mesa-control-tiempo-card {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    backdrop-filter: blur(4px);
+  }
+
   .fiba-container .mesa-oncourt-grid-two-cols {
     gap: 10px;
   }
@@ -2890,6 +2921,18 @@ button,
   .mesa-live-zone-center,
   .mesa-live-zone-visit {
     grid-column: auto;
+  }
+
+  .mesa-live-zone-center {
+    grid-row: 1;
+  }
+
+  .mesa-live-zone-local {
+    grid-row: 2;
+  }
+
+  .mesa-live-zone-visit {
+    grid-row: 3;
   }
 
   .mesa-oncourt-grid {
