@@ -2212,16 +2212,26 @@ button,
   align-items: start;
 }
 
+/* Gana por especificidad a .fiba-container .caja-doble-grid.landscape-mode (más abajo
+   en este archivo), que si no, pisa este grid-template-columns con un auto-fit genérico
+   y descoloca la tarjeta de control a una fila aparte cuando hay 3 zonas (2 equipos). */
+.fiba-container .caja-doble-grid.landscape-mode.mesa-live-layout-grid {
+  grid-template-columns: minmax(300px, 1fr) minmax(320px, 0.92fr) minmax(300px, 1fr) !important;
+}
+
 .mesa-live-zone-local {
   grid-column: 1;
+  grid-row: 1;
 }
 
 .mesa-live-zone-center {
   grid-column: 2;
+  grid-row: 1;
 }
 
 .mesa-live-zone-visit {
   grid-column: 3;
+  grid-row: 1;
 }
 
 .mesa-oncourt-player-card {
@@ -2809,7 +2819,7 @@ button,
     margin-bottom: 10px !important;
   }
 
-  .fiba-container .mesa-live-layout-grid {
+  .fiba-container .caja-doble-grid.landscape-mode.mesa-live-layout-grid {
     grid-template-columns: minmax(280px, 1fr) minmax(300px, 0.95fr) minmax(280px, 1fr) !important;
     gap: 12px;
     max-height: calc(100vh - 320px);
@@ -2943,8 +2953,8 @@ button,
     flex-wrap: wrap;
   }
 
-  .mesa-live-layout-grid {
-    grid-template-columns: 1fr;
+  .fiba-container .caja-doble-grid.landscape-mode.mesa-live-layout-grid {
+    grid-template-columns: 1fr !important;
   }
 
   .mesa-live-zone-local,
@@ -2989,6 +2999,49 @@ button,
 
   .mesa-oncourt-cambio-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Móvil landscape (mesa/tablero de anotación usado apaisado, típico ~570-767px):
+   en vez de apilar las 3 zonas como en el portrait de arriba, mantenemos las 3
+   columnas lado a lado con anchos mínimos más angostos para que la tarjeta de
+   control siga siempre visible junto a los rosters. */
+@media (max-width: 767px) and (orientation: landscape) {
+  .fiba-container .caja-doble-grid.landscape-mode.mesa-live-layout-grid {
+    grid-template-columns: minmax(150px, 1fr) minmax(170px, 0.95fr) minmax(150px, 1fr) !important;
+    gap: 8px;
+  }
+
+  .fiba-container .mesa-live-zone-local,
+  .fiba-container .mesa-live-zone-center,
+  .fiba-container .mesa-live-zone-visit {
+    grid-column: unset;
+    min-width: 0;
+    max-height: calc(100vh - 220px);
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .fiba-container .mesa-live-zone-local {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .fiba-container .mesa-live-zone-center {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .fiba-container .mesa-live-zone-visit {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .fiba-container .mesa-live-zone-center .fiba-botones-grid,
+  .fiba-container .mesa-live-zone-center .mesa-tl-options-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
 }
 
