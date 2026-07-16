@@ -8,7 +8,9 @@ const CAMPOS_APODERADO = [
   { campo: 'apellido_paterno', etiqueta: 'Apellido paterno' },
   { campo: 'apellido_materno', etiqueta: 'Apellido materno' },
   { campo: 'fecha_nacimiento', etiqueta: 'Fecha de nacimiento', tipo: 'date' },
+  { campo: 'año_nacimiento', etiqueta: 'Año de nacimiento', tipo: 'number' },
   { campo: 'colegio', etiqueta: 'Colegio' },
+  { campo: 'parentesco_apoderado', etiqueta: 'Parentesco del apoderado' },
   { campo: 'posicion_de_juego', etiqueta: 'Posición de juego' },
   { campo: 'estatura', etiqueta: 'Estatura' },
   { campo: 'peso', etiqueta: 'Peso' },
@@ -16,18 +18,21 @@ const CAMPOS_APODERADO = [
   { campo: 'club_anterior', etiqueta: 'Club anterior' },
   { campo: 'talla_camiseta', etiqueta: 'Talla camiseta' },
   { campo: 'talla_short', etiqueta: 'Talla short' },
+  { campo: 'foto_jugador', etiqueta: 'Foto del jugador (URL)' },
   { campo: 'prevision', etiqueta: 'Previsión' },
   { campo: 'tipo_sangre', etiqueta: 'Tipo de sangre' },
   { campo: 'alergias', etiqueta: 'Alergias' },
   { campo: 'nombre_emergencia', etiqueta: 'Nombre contacto emergencia' },
   { campo: 'parentesco_emergencia', etiqueta: 'Parentesco contacto emergencia' },
   { campo: 'num_emergencia', etiqueta: 'Teléfono contacto emergencia' },
-  { campo: 'derechos_imagen', etiqueta: 'Derechos de imagen' },
+  { campo: 'derechos_imagen', etiqueta: 'Autoriza derechos de imagen', tipo: 'checkbox' },
 ];
 
 const CAMPOS_SOLO_ADMIN = [
   { campo: 'rut_apoderado', etiqueta: 'RUT apoderado (vínculo de cuenta)' },
   { campo: 'correo_apoderado', etiqueta: 'Correo apoderado' },
+  { campo: 'correo_jugador', etiqueta: 'Correo del jugador' },
+  { campo: 'forzar_clave_jugador', etiqueta: 'Forzar cambio de clave', tipo: 'checkbox' },
   { campo: 'rama', etiqueta: 'Rama' },
   { campo: 'categoria', etiqueta: 'Categoría' },
   { campo: 'numero_camiseta', etiqueta: 'Número camiseta' },
@@ -35,15 +40,27 @@ const CAMPOS_SOLO_ADMIN = [
   { campo: 'mes_inicio_cobro', etiqueta: 'Mes inicio cobro' },
   { campo: 'beca', etiqueta: 'Beca' },
   { campo: 'valor_mensualidad', etiqueta: 'Valor mensualidad' },
+  { campo: 'matricula_pagada', etiqueta: 'Matrícula pagada', tipo: 'checkbox' },
+  { campo: 'polera_entregada', etiqueta: 'Polera entregada', tipo: 'checkbox' },
+  { campo: 'poleron_entregado', etiqueta: 'Polerón entregado', tipo: 'checkbox' },
   { campo: 'estado', etiqueta: 'Estado' },
   { campo: 'estado_deportivo', etiqueta: 'Estado deportivo' },
+  { campo: 'fecha_inicio_baja', etiqueta: 'Fecha inicio baja', tipo: 'date' },
+  { campo: 'fecha_fin_baja', etiqueta: 'Fecha fin baja', tipo: 'date' },
+  { campo: 'xp_puntos', etiqueta: 'XP puntos', tipo: 'number' },
 ];
 
 const construirValoresIniciales = (jugador) => {
   const inicial = {};
   [...CAMPOS_APODERADO, ...CAMPOS_SOLO_ADMIN].forEach(({ campo, tipo }) => {
     const raw = jugador?.[campo];
-    inicial[campo] = tipo === 'date' && raw ? String(raw).slice(0, 10) : (raw ?? '');
+    if (tipo === 'checkbox') {
+      inicial[campo] = Boolean(raw);
+    } else if (tipo === 'date' && raw) {
+      inicial[campo] = String(raw).slice(0, 10);
+    } else {
+      inicial[campo] = raw ?? '';
+    }
   });
   return inicial;
 };
@@ -77,22 +94,38 @@ function EditarJugadorModal({ jugador, esAdmin, onClose, onSaved }) {
     }
   };
 
-  const renderCampo = ({ campo, etiqueta, tipo }, bloqueado) => (
-    <div key={campo} className="input-group">
-      <label style={{ fontSize: '12px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
-        {etiqueta}
-        {bloqueado && <Lock size={12} color="var(--texto-secundario)" />}
-      </label>
-      <input
-        type={tipo === 'date' ? 'date' : 'text'}
-        className="form-input mt-5"
-        value={valores[campo] ?? ''}
-        disabled={bloqueado}
-        onChange={(e) => actualizarCampo(campo, e.target.value)}
-        style={bloqueado ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
-      />
-    </div>
-  );
+  const renderCampo = ({ campo, etiqueta, tipo }, bloqueado) => {
+    if (tipo === 'checkbox') {
+      return (
+        <label key={campo} className="checkbox-label-row" style={bloqueado ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}>
+          <input
+            type="checkbox"
+            checked={Boolean(valores[campo])}
+            disabled={bloqueado}
+            onChange={(e) => actualizarCampo(campo, e.target.checked)}
+          />
+          {etiqueta}
+          {bloqueado && <Lock size={12} color="var(--texto-secundario)" />}
+        </label>
+      );
+    }
+    return (
+      <div key={campo} className="input-group">
+        <label style={{ fontSize: '12px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {etiqueta}
+          {bloqueado && <Lock size={12} color="var(--texto-secundario)" />}
+        </label>
+        <input
+          type={tipo === 'date' ? 'date' : tipo === 'number' ? 'number' : 'text'}
+          className="form-input mt-5"
+          value={valores[campo] ?? ''}
+          disabled={bloqueado}
+          onChange={(e) => actualizarCampo(campo, e.target.value)}
+          style={bloqueado ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
+        />
+      </div>
+    );
+  };
 
   return (
     <div
