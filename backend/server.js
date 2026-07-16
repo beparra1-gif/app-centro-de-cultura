@@ -25,8 +25,11 @@ const {
   requireAnyModule,
   requireOwnerIdOrModule,
   requireApoderadoDeJugadorOModule,
+  requireApoderadoDeJugador,
   stripFieldsUnlessModule,
+  normalizarRutParaComparar,
 } = require('./security/auth');
+const { obtenerPermisosEfectivos } = require('./security/accessControl');
 
 const app = express();
 let isSheetsSyncRunning = false;
@@ -1549,6 +1552,81 @@ const ensureKioscoTables = async () => {
   await pool.query(`ALTER TABLE kiosco_egresos ADD COLUMN IF NOT EXISTS firma_receptor TEXT`);
 
   console.log('🛒 Tablas de kiosco POS verificadas');
+};
+
+// Citaciones: el flujo vivía 100% en memoria del navegador (nominaCita en
+// App.jsx), por lo que las convocatorias y las respuestas de los apoderados
+// se perdían al recargar. Estas tablas le dan persistencia real: la citación
+// en sí y, por cada convocado, su fila propia con el estado de respuesta.
+const ensureCitacionesTables = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS citaciones (
+      id SERIAL PRIMARY KEY,
+      tipo_competencia VARCHAR(50),
+      competencia_nombre VARCHAR(255) NOT NULL,
+      competencia_logo_url VARCHAR(255),
+      dia_citacion DATE,
+      hora_citacion TIME,
+      hora_presentacion TIME,
+      rival_nombre VARCHAR(255) NOT NULL,
+      rival_logo_url VARCHAR(255),
+      rama VARCHAR(50),
+      categoria_base VARCHAR(50),
+      categorias_apoyo JSONB DEFAULT '[]'::jsonb,
+      responsable_nombre VARCHAR(255),
+      responsable_rut VARCHAR(20),
+      responsable_correo VARCHAR(255),
+      responsable_rol VARCHAR(50),
+      estado VARCHAR(20) NOT NULL DEFAULT 'activa',
+      creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS citacion_convocados (
+      id SERIAL PRIMARY KEY,
+      citacion_id INTEGER NOT NULL REFERENCES citaciones(id) ON DELETE CASCADE,
+      rut_jugador VARCHAR(20) NOT NULL,
+      nombre VARCHAR(255),
+      rama VARCHAR(50),
+      categoria VARCHAR(50),
+      correo_apoderado VARCHAR(255),
+      respuesta VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+      justificacion TEXT,
+      mensaje_profesor TEXT,
+      requiere_excepcion_morosidad BOOLEAN DEFAULT false,
+      excepcion_solicitada BOOLEAN DEFAULT false,
+      estado_excepcion VARCHAR(20) DEFAULT 'no_requiere',
+      actualizado_en TIMESTAMP,
+      creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(citacion_id, rut_jugador)
+    )
+  `);
+
+  console.log('📋 Tablas de citaciones verificadas');
+};
+
+// Notificaciones in-app reales, dirigidas por RUT (cuentas y jugadores comparten
+// el mismo espacio de RUT), para reemplazar el aviso puramente en memoria que
+// solo se veía en la pestaña donde se creó la citación.
+const ensureNotificacionesAppTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notificaciones_app (
+      id SERIAL PRIMARY KEY,
+      rut_destinatario VARCHAR(20) NOT NULL,
+      tipo VARCHAR(50) NOT NULL,
+      titulo VARCHAR(255),
+      cuerpo TEXT,
+      referencia_tipo VARCHAR(50),
+      referencia_id INTEGER,
+      leida BOOLEAN DEFAULT false,
+      creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_notificaciones_app_rut ON notificaciones_app (rut_destinatario, creado_en DESC)`);
+
+  console.log('🔔 Tabla notificaciones_app verificada');
 };
 
 app.post('/api/logo-assets', authenticate, requireModule('admin_dashboard'), uploadLogoMemoria.single('archivo'), async (req, res) => {
@@ -3769,6 +3847,339 @@ app.post('/api/convocatorias', authenticate, requireModule('citaciones'), async 
 });
 
 // ==========================================
+// 11B. ENDPOINTS: CITACIONES (persistencia real + RSVP + notificaciones)
+// ==========================================
+
+// pg devuelve las columnas DATE como objetos Date; interpolarlas directo en un
+// template literal cae en Date.toString() (verboso, con huso horario). Esto
+// las deja en YYYY-MM-DD para el cuerpo de la notificación.
+const formatearFechaCitacion = (valor) => {
+  if (!valor) return 'por confirmar';
+  const fecha = valor instanceof Date ? valor : new Date(valor);
+  if (Number.isNaN(fecha.getTime())) return String(valor);
+  return fecha.toISOString().slice(0, 10);
+};
+
+// Crea una fila de notificación in-app para un RUT destinatario. No lanza:
+// una notificación fallida no debe tumbar la creación/RSVP de la citación.
+const crearNotificacionApp = async ({ rut, tipo, titulo, cuerpo, referenciaTipo, referenciaId }) => {
+  const rutLimpio = String(rut || '').trim();
+  if (!rutLimpio) return;
+  try {
+    await pool.query(
+      `INSERT INTO notificaciones_app (rut_destinatario, tipo, titulo, cuerpo, referencia_tipo, referencia_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [rutLimpio, tipo, titulo, cuerpo, referenciaTipo, referenciaId]
+    );
+  } catch (err) {
+    console.error('❌ Error creando notificación in-app:', err.message);
+  }
+};
+
+// Resuelve los RUT a notificar por cada convocado: el apoderado registrado
+// (por rut_apoderado, con correo_apoderado como respaldo) y la cuenta propia
+// del jugador si inició sesión alguna vez con su propio RUT.
+const resolverDestinatariosCitacion = async (convocados) => {
+  const ruts = new Set();
+  for (const conv of convocados) {
+    const rutJugador = String(conv.rut_jugador || '').trim();
+    if (!rutJugador) continue;
+
+    const jugadorRow = await pool.query(
+      'SELECT rut_apoderado, correo_apoderado FROM jugadores WHERE rut_jugador = $1',
+      [rutJugador]
+    );
+    const rutApoderado = String(jugadorRow.rows[0]?.rut_apoderado || '').trim();
+    const correoApoderado = String(jugadorRow.rows[0]?.correo_apoderado || conv.correo_apoderado || '').trim();
+
+    if (rutApoderado) {
+      ruts.add(normalizarRutParaComparar(rutApoderado));
+    } else if (correoApoderado) {
+      const cuentaPorCorreo = await pool.query('SELECT rut FROM cuentas WHERE LOWER(correo) = LOWER($1)', [correoApoderado]);
+      if (cuentaPorCorreo.rows[0]?.rut) ruts.add(normalizarRutParaComparar(cuentaPorCorreo.rows[0].rut));
+    }
+
+    const cuentaJugador = await pool.query(
+      "SELECT rut FROM cuentas WHERE REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = $1",
+      [normalizarRutParaComparar(rutJugador)]
+    );
+    if (cuentaJugador.rows[0]?.rut) ruts.add(normalizarRutParaComparar(cuentaJugador.rows[0].rut));
+  }
+  return ruts;
+};
+
+// Trae los RUT de los pupilos del actor (apoderado) o el propio RUT si el
+// actor es un jugador con cuenta propia, junto a su rama/categoría — base
+// para filtrar qué citaciones puede ver un usuario no administrativo.
+const obtenerPupilosDeActor = async (actor) => {
+  const rutActor = normalizarRutParaComparar(actor.rut);
+  const result = await pool.query(
+    `SELECT rut_jugador, rama, categoria FROM jugadores
+     WHERE REPLACE(REPLACE(UPPER(rut_apoderado), '.', ''), '-', '') = $1
+        OR REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = $1`,
+    [rutActor]
+  );
+  return result.rows;
+};
+
+const citacionEsVisibleParaPupilos = (citacion, pupilos) => {
+  const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
+  const esConvocado = (citacion.convocados || []).some((c) => rutsPupilos.has(normalizarRutParaComparar(c.rut_jugador)));
+  if (esConvocado) return true;
+
+  const categoriasApoyo = Array.isArray(citacion.categorias_apoyo) ? citacion.categorias_apoyo : [];
+  return pupilos.some((p) => {
+    const ramaCoincide = !citacion.rama || citacion.rama === 'todas' || String(citacion.rama).toLowerCase() === String(p.rama || '').toLowerCase();
+    if (!ramaCoincide) return false;
+    const categoriaBaseCoincide = !citacion.categoria_base || citacion.categoria_base === 'todas' || String(citacion.categoria_base).toLowerCase() === String(p.categoria || '').toLowerCase();
+    const enApoyo = categoriasApoyo.some((cat) => String(cat).toLowerCase() === String(p.categoria || '').toLowerCase());
+    return categoriaBaseCoincide || enApoyo;
+  });
+};
+
+const cargarCitacionConConvocados = async (id) => {
+  const citacionRes = await pool.query('SELECT * FROM citaciones WHERE id = $1', [id]);
+  if (citacionRes.rows.length === 0) return null;
+  const convocadosRes = await pool.query(
+    'SELECT * FROM citacion_convocados WHERE citacion_id = $1 ORDER BY nombre ASC',
+    [id]
+  );
+  return { ...citacionRes.rows[0], convocados: convocadosRes.rows };
+};
+
+// POST: crear citación con su nómina inicial de convocados. Notifica al
+// apoderado y, si existe, a la cuenta propia del jugador de cada convocado.
+app.post('/api/citaciones', authenticate, requireModule('citaciones'), async (req, res) => {
+  const {
+    tipo_competencia, competencia_nombre, competencia_logo_url,
+    dia_citacion, hora_citacion, hora_presentacion,
+    rival_nombre, rival_logo_url,
+    rama, categoria_base, categorias_apoyo,
+    convocados,
+  } = req.body;
+
+  if (!String(competencia_nombre || '').trim() || !String(rival_nombre || '').trim()) {
+    return res.status(400).json({ error: 'Debes indicar la competencia y el equipo rival.' });
+  }
+  if (!Array.isArray(convocados) || convocados.length === 0) {
+    return res.status(400).json({ error: 'Selecciona al menos un deportista para la citación.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    const actorRow = await client.query('SELECT nombres, apellido_paterno, correo, rol FROM cuentas WHERE rut = $1', [req.actor.rut]);
+    const actorCuenta = actorRow.rows[0] || {};
+    const responsableNombre = `${actorCuenta.nombres || ''} ${actorCuenta.apellido_paterno || ''}`.trim() || actorCuenta.correo || 'Administración CCF';
+
+    await client.query('BEGIN');
+    const citacionRes = await client.query(
+      `INSERT INTO citaciones
+        (tipo_competencia, competencia_nombre, competencia_logo_url, dia_citacion, hora_citacion, hora_presentacion,
+         rival_nombre, rival_logo_url, rama, categoria_base, categorias_apoyo,
+         responsable_nombre, responsable_rut, responsable_correo, responsable_rol)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       RETURNING *`,
+      [
+        tipo_competencia || null, competencia_nombre, competencia_logo_url || null,
+        dia_citacion || null, hora_citacion || null, hora_presentacion || null,
+        rival_nombre, rival_logo_url || null, rama || 'todas', categoria_base || 'todas',
+        JSON.stringify(Array.isArray(categorias_apoyo) ? categorias_apoyo : []),
+        responsableNombre, req.actor.rut, actorCuenta.correo || null, actorCuenta.rol || req.actor.rol,
+      ]
+    );
+    const citacion = citacionRes.rows[0];
+
+    for (const conv of convocados) {
+      if (!String(conv.rut_jugador || '').trim()) continue;
+      await client.query(
+        `INSERT INTO citacion_convocados
+          (citacion_id, rut_jugador, nombre, rama, categoria, correo_apoderado, requiere_excepcion_morosidad, estado_excepcion)
+         VALUES ($1,$2,$3,$4,$5,$6,$7, CASE WHEN $7 THEN 'solicitada' ELSE 'no_requiere' END)
+         ON CONFLICT (citacion_id, rut_jugador) DO NOTHING`,
+        [
+          citacion.id, conv.rut_jugador, conv.nombre || '', conv.rama || '', conv.categoria || '',
+          conv.correo_apoderado || null, Boolean(conv.requiere_excepcion_morosidad),
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    const destinatarios = await resolverDestinatariosCitacion(convocados);
+    const titulo = `Citación ${citacion.tipo_competencia || ''}: ${citacion.competencia_nombre}`.trim();
+    const cuerpo = `Convocatoria vs ${citacion.rival_nombre}. Día ${formatearFechaCitacion(citacion.dia_citacion)}, presentación ${citacion.hora_presentacion || '-'}.`;
+    await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
+      rut, tipo: 'citacion', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: citacion.id,
+    })));
+
+    const completa = await cargarCitacionConConvocados(citacion.id);
+    res.status(201).json(completa);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// GET: lista de citaciones visibles para el actor. Admin/staff con módulo
+// citaciones ven todas; el resto solo las suyas (convocado) o las de la
+// rama/categoría de sus pupilos (visibilidad, no necesariamente convocado).
+app.get('/api/citaciones', authenticate, async (req, res) => {
+  try {
+    const citacionesRes = await pool.query('SELECT * FROM citaciones ORDER BY dia_citacion DESC NULLS LAST, hora_citacion ASC');
+    const convocadosRes = await pool.query('SELECT * FROM citacion_convocados ORDER BY nombre ASC');
+    const convocadosPorCitacion = new Map();
+    convocadosRes.rows.forEach((c) => {
+      const lista = convocadosPorCitacion.get(c.citacion_id) || [];
+      lista.push(c);
+      convocadosPorCitacion.set(c.citacion_id, lista);
+    });
+    const citaciones = citacionesRes.rows.map((c) => ({ ...c, convocados: convocadosPorCitacion.get(c.id) || [] }));
+
+    const permisos = obtenerPermisosEfectivos({ rol: req.actor.rol });
+    if (permisos.citaciones) {
+      return res.json(citaciones);
+    }
+
+    const pupilos = await obtenerPupilosDeActor(req.actor);
+    const visibles = citaciones.filter((c) => citacionEsVisibleParaPupilos(c, pupilos));
+    res.json(visibles);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: detalle de una citación (mismas reglas de visibilidad que la lista).
+app.get('/api/citaciones/:id', authenticate, async (req, res) => {
+  try {
+    const citacion = await cargarCitacionConConvocados(req.params.id);
+    if (!citacion) return res.status(404).json({ error: 'Citación no encontrada.' });
+
+    const permisos = obtenerPermisosEfectivos({ rol: req.actor.rol });
+    if (!permisos.citaciones) {
+      const pupilos = await obtenerPupilosDeActor(req.actor);
+      if (!citacionEsVisibleParaPupilos(citacion, pupilos)) {
+        return res.status(403).json({ error: 'No tienes acceso a esta citación.' });
+      }
+    }
+    res.json(citacion);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: agrega un convocado a una citación existente y lo notifica.
+app.post('/api/citaciones/:id/convocados', authenticate, requireModule('citaciones'), async (req, res) => {
+  const { rut_jugador, nombre, rama, categoria, correo_apoderado, requiere_excepcion_morosidad } = req.body;
+  if (!String(rut_jugador || '').trim()) {
+    return res.status(400).json({ error: 'Falta el RUT del deportista.' });
+  }
+  try {
+    const result = await pool.query(
+      `INSERT INTO citacion_convocados
+        (citacion_id, rut_jugador, nombre, rama, categoria, correo_apoderado, requiere_excepcion_morosidad, estado_excepcion)
+       VALUES ($1,$2,$3,$4,$5,$6,$7, CASE WHEN $7 THEN 'solicitada' ELSE 'no_requiere' END)
+       ON CONFLICT (citacion_id, rut_jugador) DO NOTHING
+       RETURNING *`,
+      [req.params.id, rut_jugador, nombre || '', rama || '', categoria || '', correo_apoderado || null, Boolean(requiere_excepcion_morosidad)]
+    );
+    if (result.rows.length === 0) {
+      return res.status(409).json({ error: 'Ese deportista ya está en la nómina.' });
+    }
+
+    const citacion = await pool.query('SELECT tipo_competencia, competencia_nombre, rival_nombre, dia_citacion, hora_presentacion FROM citaciones WHERE id = $1', [req.params.id]);
+    const destinatarios = await resolverDestinatariosCitacion([{ rut_jugador, correo_apoderado }]);
+    const titulo = `Citación ${citacion.rows[0]?.tipo_competencia || ''}: ${citacion.rows[0]?.competencia_nombre || ''}`.trim();
+    const cuerpo = `Convocatoria vs ${citacion.rows[0]?.rival_nombre || ''}. Día ${formatearFechaCitacion(citacion.rows[0]?.dia_citacion)}, presentación ${citacion.rows[0]?.hora_presentacion || '-'}.`;
+    await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
+      rut, tipo: 'citacion', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: Number(req.params.id),
+    })));
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE: quita un convocado de la nómina.
+app.delete('/api/citaciones/:id/convocados/:rut', authenticate, requireModule('citaciones'), async (req, res) => {
+  try {
+    await pool.query(
+      'DELETE FROM citacion_convocados WHERE citacion_id = $1 AND rut_jugador = $2',
+      [req.params.id, req.params.rut]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH: confirma/rechaza la citación — solo el apoderado registrado del
+// deportista puede responder (ni admin ni staff responden en su lugar).
+app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireApoderadoDeJugador(pool), async (req, res) => {
+  const { respuesta, justificacion, mensaje_profesor, excepcion_solicitada } = req.body;
+  if (!['si', 'no'].includes(respuesta)) {
+    return res.status(400).json({ error: 'Respuesta inválida: debe ser "si" o "no".' });
+  }
+  if (respuesta === 'no' && !String(justificacion || '').trim()) {
+    return res.status(400).json({ error: 'Debes indicar una justificación para rechazar la citación.' });
+  }
+  try {
+    const result = await pool.query(
+      `UPDATE citacion_convocados SET
+        respuesta = $1,
+        justificacion = COALESCE($2, justificacion),
+        mensaje_profesor = COALESCE($3, mensaje_profesor),
+        excepcion_solicitada = COALESCE($4, excepcion_solicitada),
+        estado_excepcion = CASE WHEN $4 THEN 'solicitada' ELSE estado_excepcion END,
+        actualizado_en = NOW()
+       WHERE citacion_id = $5 AND rut_jugador = $6
+       RETURNING *`,
+      [respuesta, justificacion || null, mensaje_profesor || null, Boolean(excepcion_solicitada), req.params.id, req.params.rut]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'No se encontró ese convocado en la citación.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: notificaciones in-app del actor autenticado.
+app.get('/api/notificaciones', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM notificaciones_app WHERE REPLACE(REPLACE(UPPER(rut_destinatario), '.', ''), '-', '') = $1
+       ORDER BY creado_en DESC LIMIT 100`,
+      [normalizarRutParaComparar(req.actor.rut)]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH: marca una notificación propia como leída.
+app.patch('/api/notificaciones/:id/leida', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE notificaciones_app SET leida = true
+       WHERE id = $1 AND REPLACE(REPLACE(UPPER(rut_destinatario), '.', ''), '-', '') = $2
+       RETURNING *`,
+      [req.params.id, normalizarRutParaComparar(req.actor.rut)]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notificación no encontrada.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // 12. ENDPOINTS: EVENTOS (FASE 1)
 // ==========================================
 
@@ -5270,6 +5681,14 @@ app.listen(PORT, () => {
 
   ensureKioscoTables().catch((error) => {
     console.error('❌ Error verificando tablas de kiosco:', error.message);
+  });
+
+  ensureCitacionesTables().catch((error) => {
+    console.error('❌ Error verificando tablas de citaciones:', error.message);
+  });
+
+  ensureNotificacionesAppTable().catch((error) => {
+    console.error('❌ Error verificando tabla notificaciones_app:', error.message);
   });
 
   ensureSuperAdminAccount().catch((error) => {

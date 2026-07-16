@@ -1457,7 +1457,18 @@ function SuperAdminPanel({
     }));
   };
 
-  const agregarConvocadoACitacion = (cita, jugador) => {
+  // dia_citacion/hora_* vuelven del backend como timestamp ISO / HH:MM:SS
+  // (columnas DATE/TIME serializadas por pg/JSON); se normalizan al formato
+  // YYYY-MM-DD / HH:MM antes de guardar en nominaCita.
+  const normalizarHora = (hora) => (hora ? String(hora).slice(0, 5) : hora);
+  const normalizarCitacion = (cita) => ({
+    ...cita,
+    dia_citacion: cita?.dia_citacion ? String(cita.dia_citacion).slice(0, 10) : cita?.dia_citacion,
+    hora_citacion: normalizarHora(cita?.hora_citacion),
+    hora_presentacion: normalizarHora(cita?.hora_presentacion),
+  });
+
+  const agregarConvocadoACitacion = async (cita, jugador) => {
     if (!cita || !jugador) return;
 
     const nuevoConvocado = {
@@ -1466,44 +1477,45 @@ function SuperAdminPanel({
       categoria: jugador.categoria || 'Sin categoría',
       rama: jugador.rama || 'Sin rama',
       correo_apoderado: jugador.correo_apoderado || '',
-      respuesta: 'pendiente',
-      justificacion: '',
       requiere_excepcion_morosidad: (morososAdmin || []).some((m) => String(m.rut || '').trim() === String(jugador.rut_jugador || '').trim()),
-      excepcion_solicitada: false,
-      estado_excepcion: 'no_requiere',
-      actualizado_en: null,
     };
 
-    const siguientes = (nominaCita || []).map((item) => {
-      if (item.id !== cita.id) return item;
-      if ((item.convocados || []).some((conv) => conv.rut_jugador === nuevoConvocado.rut_jugador)) {
-        return item;
-      }
-      return { ...item, convocados: [...(item.convocados || []), nuevoConvocado] };
-    });
+    try {
+      const citaActualizada = await api.citacionesAPI.getById(cita.id).then(async (citaViva) => {
+        if ((citaViva.convocados || []).some((conv) => conv.rut_jugador === nuevoConvocado.rut_jugador)) {
+          showToast({ message: 'Ese deportista ya está en la nómina.', type: 'error' });
+          return null;
+        }
+        await api.citacionesAPI.agregarConvocado(cita.id, nuevoConvocado);
+        return normalizarCitacion(await api.citacionesAPI.getById(cita.id));
+      });
+      if (!citaActualizada) return;
 
-    const citaActualizada = siguientes.find((item) => item.id === cita.id);
-    setNominaCita(siguientes);
-    if (citaActualizada) sincronizarComunicacionDesdeCitacion(citaActualizada);
+      setNominaCita((prev) => (prev || []).map((item) => (item.id === cita.id ? citaActualizada : item)));
+      sincronizarComunicacionDesdeCitacion(citaActualizada);
+      showToast({ message: `${nuevoConvocado.nombre || 'Deportista'} agregado a la nómina.`, type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo agregar el deportista a la nómina.', type: 'error' });
+    }
   };
 
-  const quitarConvocadoDeCitacion = (cita, rutJugador) => {
+  const quitarConvocadoDeCitacion = async (cita, rutJugador) => {
     if (!cita || !rutJugador) return;
 
-    const siguientes = (nominaCita || []).map((item) => {
-      if (item.id !== cita.id) return item;
-      return {
-        ...item,
-        convocados: (item.convocados || []).filter((conv) => String(conv.rut_jugador || '').trim() !== String(rutJugador || '').trim()),
+    try {
+      await api.citacionesAPI.quitarConvocado(cita.id, rutJugador);
+      const citaActualizada = {
+        ...cita,
+        convocados: (cita.convocados || []).filter((conv) => String(conv.rut_jugador || '').trim() !== String(rutJugador || '').trim()),
       };
-    });
-
-    const citaActualizada = siguientes.find((item) => item.id === cita.id);
-    setNominaCita(siguientes);
-    if (citaActualizada) sincronizarComunicacionDesdeCitacion(citaActualizada);
+      setNominaCita((prev) => (prev || []).map((item) => (item.id === cita.id ? citaActualizada : item)));
+      sincronizarComunicacionDesdeCitacion(citaActualizada);
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo quitar el deportista de la nómina.', type: 'error' });
+    }
   };
 
-  const crearCitacion = () => {
+  const crearCitacion = async () => {
     if (!String(citaForm.competencia_nombre || '').trim()) {
       showToast({ message: 'Debes indicar el nombre de la competencia o torneo.', type: 'error' });
       return;
@@ -1521,12 +1533,7 @@ function SuperAdminPanel({
         categoria: j.categoria || 'Sin categoría',
         rama: j.rama || 'Sin rama',
         correo_apoderado: j.correo_apoderado || '',
-        respuesta: 'pendiente',
-        justificacion: '',
         requiere_excepcion_morosidad: (morososAdmin || []).some((m) => String(m.rut || '').trim() === String(j.rut_jugador || '').trim()),
-        excepcion_solicitada: false,
-        estado_excepcion: 'no_requiere',
-        actualizado_en: null,
       }));
 
     if (convocados.length === 0) {
@@ -1534,54 +1541,52 @@ function SuperAdminPanel({
       return;
     }
 
-    const citacion = {
-      id: nextId(),
-      tipo_competencia: citaForm.tipo_competencia,
-      competencia_nombre: citaForm.competencia_nombre,
-      competencia_logo_url: citaForm.competencia_logo_url || '/logos/club-logo.png',
-      dia_citacion: citaForm.dia_citacion,
-      hora_citacion: citaForm.hora_citacion,
-      hora_presentacion: citaForm.hora_presentacion,
-      rival_nombre: citaForm.rival_nombre,
-      rival_logo_url: citaForm.rival_logo_url || '/logos/club-logo.png',
-      rama: citaRama,
-      categoria_base: citaCategoria,
-      categorias_apoyo: categoriasExtraCitacion,
-      convocados,
-      responsable_nombre: `${usuarioAutenticado?.nombres || ''} ${usuarioAutenticado?.apellido_paterno || ''}`.trim() || usuarioAutenticado?.correo || 'Administración CCF',
-      responsable_rut: usuarioAutenticado?.rut || '',
-      responsable_correo: usuarioAutenticado?.correo || '',
-      responsable_rol: usuarioAutenticado?.rol || 'admin',
-      creado_en: new Date().toISOString(),
-    };
+    try {
+      const citacion = normalizarCitacion(await api.citacionesAPI.create({
+        tipo_competencia: citaForm.tipo_competencia,
+        competencia_nombre: citaForm.competencia_nombre,
+        competencia_logo_url: citaForm.competencia_logo_url || '/logos/club-logo.png',
+        dia_citacion: citaForm.dia_citacion,
+        hora_citacion: citaForm.hora_citacion,
+        hora_presentacion: citaForm.hora_presentacion,
+        rival_nombre: citaForm.rival_nombre,
+        rival_logo_url: citaForm.rival_logo_url || '/logos/club-logo.png',
+        rama: citaRama,
+        categoria_base: citaCategoria,
+        categorias_apoyo: categoriasExtraCitacion,
+        convocados,
+      }));
 
-    const nuevaComunicacionCitacion = {
-      id: nextId(),
-      TITULO: `Citación ${citaForm.tipo_competencia}: ${citaForm.competencia_nombre}`,
-      CUERPO_TEXTO: `Convocatoria oficial vs ${citaForm.rival_nombre}. Día ${citaForm.dia_citacion}, citación ${citaForm.hora_citacion}, presentación ${citaForm.hora_presentacion}.`,
-      FECHA: new Date().toLocaleDateString('es-CL'),
-      TIPO_COMUNICADO: 'Citación',
-      rama: citaRama === 'todas' ? 'General' : citaRama,
-      categoria: citaCategoria === 'todas' ? 'General' : citaCategoria,
-      urgencia: 'Alta',
-      solicita_asistencia: true,
-      audiencia: ['apoderados', 'deportistas'],
-      asistencias: [],
-      reacciones: {},
-      citacion_id: citacion.id,
-      responsable_nombre: citacion.responsable_nombre,
-      responsable_rol: citacion.responsable_rol,
-      convocatoria_ruts: convocados.map((x) => x.rut_jugador),
-      convocatoria_alertas_morosidad: convocados
-        .filter((x) => Boolean(x.requiere_excepcion_morosidad))
-        .map((x) => x.rut_jugador),
-    };
+      const nuevaComunicacionCitacion = {
+        id: nextId(),
+        TITULO: `Citación ${citaForm.tipo_competencia}: ${citaForm.competencia_nombre}`,
+        CUERPO_TEXTO: `Convocatoria oficial vs ${citaForm.rival_nombre}. Día ${citaForm.dia_citacion}, citación ${citaForm.hora_citacion}, presentación ${citaForm.hora_presentacion}.`,
+        FECHA: new Date().toLocaleDateString('es-CL'),
+        TIPO_COMUNICADO: 'Citación',
+        rama: citaRama === 'todas' ? 'General' : citaRama,
+        categoria: citaCategoria === 'todas' ? 'General' : citaCategoria,
+        urgencia: 'Alta',
+        solicita_asistencia: true,
+        audiencia: ['apoderados', 'deportistas'],
+        asistencias: [],
+        reacciones: {},
+        citacion_id: citacion.id,
+        responsable_nombre: citacion.responsable_nombre,
+        responsable_rol: citacion.responsable_rol,
+        convocatoria_ruts: convocados.map((x) => x.rut_jugador),
+        convocatoria_alertas_morosidad: convocados
+          .filter((x) => Boolean(x.requiere_excepcion_morosidad))
+          .map((x) => x.rut_jugador),
+      };
 
-    setNominaCita((prev) => [citacion, ...(prev || [])]);
-    setComunicaciones([nuevaComunicacionCitacion, ...(comunicaciones || [])]);
-    setCitacionActivaId(citacion.id);
-    setSeleccionCitacion({});
-    showToast({ message: `Citación creada y enviada para ${convocados.length} convocados. Puedes monitorear respuestas en la barra de estado.`, type: 'success' });
+      setNominaCita((prev) => [citacion, ...(prev || [])]);
+      setComunicaciones([nuevaComunicacionCitacion, ...(comunicaciones || [])]);
+      setCitacionActivaId(citacion.id);
+      setSeleccionCitacion({});
+      showToast({ message: `Citación creada y enviada para ${convocados.length} convocados. Los apoderados y deportistas citados ya fueron notificados.`, type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo crear la citación.', type: 'error' });
+    }
   };
 
   return (

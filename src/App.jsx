@@ -594,6 +594,18 @@ function App() {
     return morosos.sort((a, b) => b.montoDeuda - a.montoDeuda);
   };
 
+  // El backend devuelve dia_citacion como timestamp ISO (columna DATE serializada
+  // por pg/JSON) y las horas como HH:MM:SS (columna TIME), pero el resto de la UI
+  // espera el mismo formato que generaban los <input type="date"/"time"> originales
+  // (YYYY-MM-DD y HH:MM). Se normaliza una sola vez al entrar los datos del API.
+  const normalizarHora = (hora) => (hora ? String(hora).slice(0, 5) : hora);
+  const normalizarCitacion = (cita) => ({
+    ...cita,
+    dia_citacion: cita?.dia_citacion ? String(cita.dia_citacion).slice(0, 10) : cita?.dia_citacion,
+    hora_citacion: normalizarHora(cita?.hora_citacion),
+    hora_presentacion: normalizarHora(cita?.hora_presentacion),
+  });
+
   const cargarDatos = async ({ manual = false } = {}) => {
     if (manual) setApiRetrying(true);
 
@@ -610,6 +622,8 @@ function App() {
         api.auditoriaAPI.getAll(),
         api.encuestasAPI.getAll(),
         api.quizAPI.getAll(),
+        api.citacionesAPI.getAll(),
+        api.notificacionesAppAPI.getAll(),
       ]);
 
       const getResult = (index, fallback = []) => (
@@ -629,6 +643,8 @@ function App() {
       const auditoriaRes = getResult(8, []);
       const encuestasRes = getResult(9, []);
       const quizRes = getResult(10, []);
+      const citacionesRes = getResult(11, []);
+      const notificacionesAppRes = getResult(12, []);
       const totalErrores = resultados.filter((r) => r.status === 'rejected').length;
 
       if (Array.isArray(comunicacionesRes)) {
@@ -783,6 +799,31 @@ function App() {
           respuestaCorrecta: primera.respuesta_correcta || 'A',
           explicacion: primera.explicacion || 'Revisa la respuesta con tu entrenador.',
         });
+      }
+
+      if (Array.isArray(citacionesRes)) {
+        setNominaCita(citacionesRes.map(normalizarCitacion));
+      }
+
+      if (Array.isArray(notificacionesAppRes) && notificacionesAppRes.length > 0) {
+        const pendientes = notificacionesAppRes.filter((n) => !n.leida);
+        if (pendientes.length > 0) {
+          setNotificaciones((prev) => {
+            const idsExistentes = new Set(prev.map((n) => n.origenId).filter(Boolean));
+            const nuevas = pendientes
+              .filter((n) => !idsExistentes.has(n.id))
+              .map((n) => ({
+                id: nextId(),
+                origenId: n.id,
+                tipo: n.tipo || 'citacion',
+                titulo: n.titulo || 'Notificación',
+                mensaje: n.cuerpo || '',
+                leida: false,
+                firmada: false,
+              }));
+            return [...nuevas, ...prev];
+          });
+        }
       }
 
       try {

@@ -3,6 +3,7 @@ import { ShieldAlert, MessageCircle, Trophy, BarChart3, Heart, ThumbsUp, Frown, 
 import { nextId } from '../utils/runtimeId';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
+import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
 
@@ -104,34 +105,61 @@ function ComunicacionesPanel({
       ? String(convocado?.justificacion || '').trim()
       : '';
 
+    if (!esApoderado) {
+      showToast({ message: 'Solo el apoderado puede confirmar o rechazar la citación.', type: 'error' });
+      return;
+    }
+
     if (respuesta === 'no' && !justificacion) {
       showToast({ message: 'Debes justificar la inasistencia para registrar la respuesta.', type: 'error' });
       return;
     }
 
     const comunicacionObjetivo = comunicaciones.find((c) => c.id === comId);
+    const citacionVinculada = comunicacionObjetivo
+      ? (nominaCita || []).find((cita) => cita.id === comunicacionObjetivo.citacion_id)
+      : null;
+
+    // Citación real (persistida en backend): responder vía API — solo el
+    // apoderado registrado del deportista puede hacerlo, el server lo exige.
+    if (citacionVinculada && convocado?.rut_jugador) {
+      const requiereExcepcion = Boolean(convocado?.requiere_excepcion_morosidad);
+      const solicitaExcepcion = requiereExcepcion
+        ? await confirmAction({
+            title: 'Excepción de citación',
+            message: 'Este deportista presenta morosidad. ¿Solicitar excepción de citación para revisión administrativa?',
+            confirmText: 'Solicitar',
+          })
+        : false;
+
+      try {
+        const actualizado = await api.citacionesAPI.responder(citacionVinculada.id, convocado.rut_jugador, {
+          respuesta,
+          justificacion: justificacion || undefined,
+          mensaje_profesor: mensajeProfesor || undefined,
+          excepcion_solicitada: solicitaExcepcion,
+        });
+        setNominaCita((prev) => (prev || []).map((cita) => {
+          if (cita.id !== citacionVinculada.id) return cita;
+          return {
+            ...cita,
+            convocados: (cita.convocados || []).map((conv) => (
+              conv.rut_jugador === convocado.rut_jugador ? { ...conv, ...actualizado } : conv
+            )),
+          };
+        }));
+        showToast({ message: respuesta === 'si' ? 'Asistencia confirmada.' : 'Inasistencia registrada.', type: 'success' });
+      } catch (error) {
+        showToast({ message: error.message || 'No se pudo registrar la respuesta.', type: 'error' });
+      }
+      return;
+    }
+
+    // Citación legacy / post de asistencia sin persistencia real: se mantiene
+    // el comportamiento anterior (bookkeeping solo en el post local).
     let solicitaExcepcion = false;
     if (comunicacionObjetivo) {
-      const citacionVinculada = (nominaCita || []).find((cita) => cita.id === comunicacionObjetivo.citacion_id);
-      const convocados = Array.isArray(citacionVinculada?.convocados) ? citacionVinculada.convocados : [];
-      const convocadosActor = convocados.filter((conv) => {
-        const correoConv = String(conv.correo_apoderado || '').trim().toLowerCase();
-        const rutConv = String(conv.rut_jugador || '').trim();
-        return (rutUsuario && rutConv && rutConv === rutUsuario) || (correoUsuario && correoConv && correoConv === correoUsuario);
-      });
-
-      if (comunicacionObjetivo.citacion_id && convocadosActor.length === 0) {
-        showToast({ message: 'No estás en la nómina de esta citación.', type: 'error' });
-        return;
-      }
-
-      const convocadoPrincipal = convocadosActor[0] || null;
-      const requiereExcepcion = Boolean(convocadoPrincipal?.requiere_excepcion_morosidad);
-      if (requiereExcepcion && !esApoderado) {
-        showToast({ message: 'Tu apoderado debe gestionar la excepción de citación por tesorería.', type: 'error' });
-        return;
-      }
-
+      const requiereExcepcion = Boolean(convocado?.requiere_excepcion_morosidad);
       solicitaExcepcion = requiereExcepcion
         ? await confirmAction({
             title: 'Excepción de citación',
@@ -157,30 +185,6 @@ function ComunicacionesPanel({
         };
         if (idx >= 0) asistencias[idx] = { ...asistencias[idx], ...payload };
         else asistencias.push(payload);
-
-        if (c.citacion_id && typeof setNominaCita === 'function') {
-          setNominaCita((prev) => (prev || []).map((cita) => {
-            if (cita.id !== c.citacion_id) return cita;
-
-            const convocados = (cita.convocados || []).map((conv) => {
-              const correoConv = String(conv.correo_apoderado || '').trim().toLowerCase();
-              const rutConv = String(conv.rut_jugador || '').trim();
-              const match = (rutUsuario && rutConv && rutConv === rutUsuario) || (correoUsuario && correoConv && correoConv === correoUsuario);
-              if (!match) return conv;
-              return {
-                ...conv,
-                respuesta,
-                justificacion,
-                mensaje_profesor: mensajeProfesor,
-                excepcion_solicitada: solicitaExcepcion || Boolean(conv.excepcion_solicitada),
-                estado_excepcion: solicitaExcepcion ? 'solicitada' : conv.estado_excepcion,
-                actualizado_en: new Date().toISOString(),
-              };
-            });
-
-            return { ...cita, convocados };
-          }));
-        }
 
         return { ...c, asistencias };
       }
@@ -502,7 +506,13 @@ function ComunicacionesPanel({
                                     </p>
                                   )}
 
-                                  {esPropio && (
+                                  {esPropio && !esApoderadoRol && (
+                                    <p style={{ marginTop: '8px', fontSize: '12px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(15,23,42,0.05)', borderRadius: '10px', padding: '8px 10px' }}>
+                                      Fuiste citado a este partido. Solo tu apoderado puede confirmar o rechazar la asistencia.
+                                    </p>
+                                  )}
+
+                                  {esPropio && esApoderadoRol && (
                                     <>
                                       <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)' }}>Selecciona una opción de asistencia</div>
                                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>

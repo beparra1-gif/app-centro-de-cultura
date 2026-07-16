@@ -174,6 +174,33 @@ const requireApoderadoDeJugadorOModule = (pool, moduloId) => (req, res, next) =>
     .catch((err) => res.status(500).json({ error: err.message }));
 };
 
+// Exige que el actor sea el apoderado registrado (rut_apoderado) del jugador
+// indicado por :rut en la ruta — sin bypass de módulo administrativo. Se usa
+// para la confirmación/rechazo de citaciones, que el club pidió reservar
+// exclusivamente a apoderados (ni siquiera admin/staff responde en su lugar).
+const requireApoderadoDeJugador = (pool) => (req, res, next) => {
+  const actor = req.actor;
+  if (!actor) {
+    return res.status(401).json({ error: 'Falta token de autenticación.' });
+  }
+
+  const rutJugador = String(req.params.rut || '').trim();
+  const rutActor = normalizarRutParaComparar(actor.rut);
+  if (!rutJugador || !rutActor) {
+    return res.status(403).json({ error: 'No tienes acceso a este recurso.' });
+  }
+
+  pool.query('SELECT rut_apoderado FROM jugadores WHERE rut_jugador = $1', [rutJugador])
+    .then((result) => {
+      const rutApoderadoRegistrado = normalizarRutParaComparar(result.rows[0]?.rut_apoderado || '');
+      if (rutApoderadoRegistrado && rutApoderadoRegistrado === rutActor) {
+        return next();
+      }
+      return res.status(403).json({ error: 'Solo el apoderado del deportista puede confirmar o rechazar esta citación.' });
+    })
+    .catch((err) => res.status(500).json({ error: err.message }));
+};
+
 module.exports = {
   hashPassword,
   verifyPassword,
@@ -184,6 +211,8 @@ module.exports = {
   requireAnyModule,
   requireOwnerIdOrModule,
   requireApoderadoDeJugadorOModule,
+  requireApoderadoDeJugador,
   stripFieldsUnlessModule,
   isBcryptHash,
+  normalizarRutParaComparar,
 };

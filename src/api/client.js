@@ -625,6 +625,64 @@ export const convocatoriasAPI = {
   }
 };
 
+// ========== CITACIONES (persistencia real + RSVP) ==========
+
+export const citacionesAPI = {
+  getAll: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones`);
+    return handleResponse(response);
+  },
+  getById: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones/${id}`);
+    return handleResponse(response);
+  },
+  create: async (datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+  agregarConvocado: async (citacionId, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+  quitarConvocado: async (citacionId, rutJugador) => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados/${rutJugador}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(response);
+  },
+  responder: async (citacionId, rutJugador, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados/${rutJugador}/rsvp`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+};
+
+// ========== NOTIFICACIONES APP (in-app, persistidas) ==========
+
+export const notificacionesAppAPI = {
+  getAll: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/notificaciones`);
+    return handleResponse(response);
+  },
+  marcarLeida: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/notificaciones/${id}/leida`, {
+      method: 'PATCH',
+    });
+    return handleResponse(response);
+  },
+};
+
 // ========== EVENTOS (FASE 1) ==========
 
 export const eventosAPI = {
