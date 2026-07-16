@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 1120" width="600" height="1120">
+  <rect x="0" y="0" width="600" height="1120" fill="#F4EFE4" />
+  <rect x="6" y="6" width="588" height="1108" fill="none" stroke="#0D2244" stroke-width="4" />
+  <!-- Línea de medio campo + círculo central -->
+  <line x1="6" y1="560" x2="594" y2="560" stroke="#0D2244" stroke-width="3" />
+  <circle cx="300" cy="560" r="90" fill="none" stroke="#0D2244" stroke-width="3" />
+  <circle cx="300" cy="560" r="18" fill="none" stroke="#0D2244" stroke-width="2" />
+
+  <!-- ===== Aro inferior ===== -->
+  <rect x="202" y="882" width="196" height="232" fill="none" stroke="#0D2244" stroke-width="3" />
+  <rect x="230" y="882" width="140" height="232" fill="none" stroke="#0D2244" stroke-width="2" opacity="0.5" />
+  <circle cx="300" cy="882" r="72" fill="none" stroke="#0D2244" stroke-width="3" stroke-dasharray="10 8" />
+  <path d="M 228 882 A 72 72 0 0 0 372 882" fill="none" stroke="#0D2244" stroke-width="3" />
+  <line x1="255" y1="1080" x2="345" y2="1080" stroke="#0D2244" stroke-width="5" />
+  <circle cx="300" cy="1057" r="9" fill="none" stroke="#C1272D" stroke-width="3" />
+  <path d="M 260 1057 A 40 40 0 0 1 340 1057" fill="none" stroke="#0D2244" stroke-width="2" />
+  <path d="M 30 1114 L 30 990 A 270 270 0 0 1 570 990 L 570 1114" fill="none" stroke="#0D2244" stroke-width="3" />
+
+  <!-- ===== Aro superior ===== -->
+  <rect x="202" y="6" width="196" height="232" fill="none" stroke="#0D2244" stroke-width="3" />
+  <rect x="230" y="6" width="140" height="232" fill="none" stroke="#0D2244" stroke-width="2" opacity="0.5" />
+  <circle cx="300" cy="238" r="72" fill="none" stroke="#0D2244" stroke-width="3" stroke-dasharray="10 8" />
+  <path d="M 228 238 A 72 72 0 0 1 372 238" fill="none" stroke="#0D2244" stroke-width="3" />
+  <line x1="255" y1="40" x2="345" y2="40" stroke="#0D2244" stroke-width="5" />
+  <circle cx="300" cy="63" r="9" fill="none" stroke="#C1272D" stroke-width="3" />
+  <path d="M 260 63 A 40 40 0 0 0 340 63" fill="none" stroke="#0D2244" stroke-width="2" />
+  <path d="M 30 6 L 30 130 A 270 270 0 0 0 570 130 L 570 6" fill="none" stroke="#0D2244" stroke-width="3" />
+</svg>

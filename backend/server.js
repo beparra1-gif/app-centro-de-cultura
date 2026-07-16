@@ -754,6 +754,22 @@ const uploadLogoMemoria = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
+// Videos "cortos" subidos directo por el profesor (sin depender de un link de
+// YouTube). Límite bajo a propósito — el pedido explícito fue que esto no
+// recargue la app, así que no se acepta cualquier tamaño de archivo.
+const uploadVideoMemoria = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (_req, file, cb) => {
+    const permitido = ['video/mp4', 'video/webm', 'video/quicktime'];
+    if (!permitido.includes(file.mimetype)) {
+      cb(new Error('Formato de video no permitido. Usa MP4, WEBM o MOV.'));
+      return;
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
+
 app.post('/api/assets/logos', authenticate, requireModule('admin_dashboard'), uploadLogo.single('archivo'), (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: 'Debes seleccionar un archivo de logo.' });
@@ -1389,12 +1405,48 @@ const ensureComunicacionesExtendedColumns = async () => {
     `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS convocatoria_alertas_morosidad JSONB DEFAULT '[]'::jsonb`,
     `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS responsable_nombre VARCHAR(255)`,
     `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS responsable_rol VARCHAR(50)`,
+    // Material de Academia llegaba a todos sin distinción de rama/categoría.
+    // Este arreglo guarda a qué categoría(s) específicas va dirigido un
+    // material (independiente del campo "categoria" singular ya usado por
+    // otras comunicaciones); vacío = visible para todas (comportamiento igual al anterior).
+    `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS categorias_objetivo JSONB DEFAULT '[]'::jsonb`,
   ];
 
   for (const statement of ddl) {
     await pool.query(statement);
   }
   console.log('🧩 Columnas extendidas de comunicaciones verificadas');
+};
+
+// El módulo de Lista (StaffAsistenciaPanel) no guardaba nada realmente: el
+// botón "Confirmar y Guardar" solo mostraba un toast. sesion_id agrupa todas
+// las filas de una misma pasada de lista (una fecha/rama/categoría/entrenador)
+// para poder listarla, editarla o borrarla como unidad en el historial.
+const ensureAsistenciaExtendedColumns = async () => {
+  const ddl = [
+    `CREATE TABLE IF NOT EXISTS asistencia (
+      id_asistencia SERIAL PRIMARY KEY,
+      fecha DATE,
+      rama VARCHAR(50),
+      categoria VARCHAR(50),
+      rut_jugador VARCHAR(20),
+      estado_asistencia VARCHAR(50),
+      observacion TEXT,
+      entrenador_cargo VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `ALTER TABLE asistencia ADD COLUMN IF NOT EXISTS sesion_id VARCHAR(50)`,
+    `ALTER TABLE asistencia ADD COLUMN IF NOT EXISTS hora_inicio VARCHAR(5)`,
+    `ALTER TABLE asistencia ADD COLUMN IF NOT EXISTS hora_fin VARCHAR(5)`,
+    `ALTER TABLE asistencia ADD COLUMN IF NOT EXISTS nombre_jugador VARCHAR(255)`,
+    `ALTER TABLE asistencia ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+    `CREATE INDEX IF NOT EXISTS idx_asistencia_sesion ON asistencia (sesion_id)`,
+  ];
+
+  for (const statement of ddl) {
+    await pool.query(statement);
+  }
+  console.log('🧩 Columnas extendidas de asistencia verificadas');
 };
 
 const ensurePartidosLiveLogos = async () => {
@@ -1469,6 +1521,45 @@ const ensureLogoAssetsTable = async () => {
     )
   `);
   console.log('🖼️ Tabla logo_assets verificada');
+};
+
+const ensureAcademiaVideosTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS academia_videos (
+      id SERIAL PRIMARY KEY,
+      titulo VARCHAR(255) NOT NULL,
+      filename VARCHAR(255) UNIQUE NOT NULL,
+      mime_type VARCHAR(100) NOT NULL,
+      file_data BYTEA NOT NULL,
+      tamano_bytes INTEGER,
+      subido_por VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('🎬 Tabla academia_videos verificada');
+};
+
+// pizarra_tactica ya existía pero atada a id_partido (anotaciones de un
+// partido en vivo, módulo scoreboard_live) — no servía para material
+// docente general. academia_pizarras es la versión desacoplada: una
+// captura de la pizarra (cancha + fichas + trazos) más metadata, dirigida
+// a una rama/categoría como el resto del material de Academia.
+const ensureAcademiaPizarrasTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS academia_pizarras (
+      id SERIAL PRIMARY KEY,
+      nombre_tactica VARCHAR(255) NOT NULL,
+      descripcion TEXT,
+      imagen_filename VARCHAR(255) UNIQUE,
+      imagen_mime_type VARCHAR(100),
+      imagen_data BYTEA,
+      rama VARCHAR(50),
+      categorias_objetivo JSONB DEFAULT '[]'::jsonb,
+      creado_por VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('🏀 Tabla academia_pizarras verificada');
 };
 
 // Kiosco POS: el módulo vivía 100% en memoria del navegador (sin backend detrás),
@@ -1774,6 +1865,176 @@ app.delete('/api/logo-assets/:filename', authenticate, requireModule('admin_dash
     return res.json({ ok: true, filename: safeFilename });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'No se pudo borrar el logo.' });
+  }
+});
+
+// POST: sube un video corto y de paso crea la comunicación "Academia-Video"
+// que lo hace aparecer en el mismo listado que el material por enlace.
+app.post('/api/academia-videos', authenticate, requireRole('staff', 'admin', 'super_admin'), uploadVideoMemoria.single('archivo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Debes seleccionar un archivo de video.' });
+    }
+    const titulo = String(req.body.titulo || '').trim();
+    if (!titulo) {
+      return res.status(400).json({ error: 'Falta el título del video.' });
+    }
+
+    const extension = path.extname(req.file.originalname).toLowerCase() || '.mp4';
+    const slug = String(titulo).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'video';
+    const filename = `${slug}-${Date.now()}${extension}`;
+
+    const inserted = await pool.query(
+      `INSERT INTO academia_videos (titulo, filename, mime_type, file_data, tamano_bytes, subido_por)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, titulo, filename, tamano_bytes, created_at`,
+      [titulo, filename, req.file.mimetype, req.file.buffer, req.file.size, req.actor.rut]
+    );
+    const video = inserted.rows[0];
+    // Ruta relativa a la raíz de la API (sin protocolo/host ni prefijo /api):
+    // el frontend la resuelve contra su propio API_BASE_URL_CONFIG, que en dev
+    // apunta a un puerto distinto (3000) del de Vite (5173).
+    const urlVideo = `academia-videos/file/${video.id}`;
+
+    const comunicacion = await pool.query(
+      `INSERT INTO comunicaciones
+        (titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia, reacciones, asistencias, categorias_objetivo)
+       VALUES ($1,$2,'Academia-Video',$3,$4,'Baja',false,'{}','[]',$5)
+       RETURNING *`,
+      [titulo, urlVideo, req.body.rama || 'General', req.body.categoria || 'General', JSON.stringify(JSON.parse(req.body.categorias_objetivo || '[]'))]
+    );
+
+    return res.status(201).json({ video, comunicacion: comunicacion.rows[0] });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'No se pudo subir el video.' });
+  }
+});
+
+// GET: sirve el video con soporte de Range para que el <video> del navegador
+// pueda buscar/adelantar sin descargar el archivo completo de una vez.
+app.get('/api/academia-videos/file/:id', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT mime_type, file_data FROM academia_videos WHERE id = $1', [req.params.id]);
+    const row = result.rows?.[0];
+    if (!row) {
+      return res.status(404).json({ error: 'Video no encontrado.' });
+    }
+
+    const buffer = row.file_data;
+    const total = buffer.length;
+    const range = req.headers.range;
+
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.contentType(row.mime_type || 'video/mp4');
+
+    if (!range) {
+      res.setHeader('Content-Length', total);
+      return res.send(buffer);
+    }
+
+    const match = /bytes=(\d*)-(\d*)/.exec(range);
+    const start = match && match[1] ? parseInt(match[1], 10) : 0;
+    const end = match && match[2] ? parseInt(match[2], 10) : total - 1;
+    const chunkEnd = Math.min(end, total - 1);
+
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${chunkEnd}/${total}`);
+    res.setHeader('Content-Length', chunkEnd - start + 1);
+    return res.send(buffer.subarray(start, chunkEnd + 1));
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'No se pudo obtener el video.' });
+  }
+});
+
+app.delete('/api/academia-videos/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM academia_videos WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'No se pudo borrar el video.' });
+  }
+});
+
+const uploadPizarraMemoria = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (_req, file, cb) => {
+    const permitido = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!permitido.includes(file.mimetype)) {
+      cb(new Error('Formato de imagen no permitido para la pizarra. Usa PNG, JPG o WEBP.'));
+      return;
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+app.get('/api/academia-pizarras', authenticate, requireAnyModule('academia'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, nombre_tactica, descripcion, imagen_filename, rama, categorias_objetivo, creado_por, created_at
+       FROM academia_pizarras ORDER BY created_at DESC LIMIT 50`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/academia-pizarras', authenticate, requireRole('staff', 'admin', 'super_admin'), uploadPizarraMemoria.single('archivo'), async (req, res) => {
+  try {
+    const nombreTactica = String(req.body.nombre_tactica || '').trim();
+    if (!nombreTactica) {
+      return res.status(400).json({ error: 'Falta el nombre de la táctica.' });
+    }
+
+    let filename = null;
+    let mimeType = null;
+    let data = null;
+    if (req.file) {
+      const extension = path.extname(req.file.originalname).toLowerCase() || '.png';
+      const slug = nombreTactica.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'pizarra';
+      filename = `${slug}-${Date.now()}${extension}`;
+      mimeType = req.file.mimetype;
+      data = req.file.buffer;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO academia_pizarras (nombre_tactica, descripcion, imagen_filename, imagen_mime_type, imagen_data, rama, categorias_objetivo, creado_por)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING id, nombre_tactica, descripcion, imagen_filename, rama, categorias_objetivo, creado_por, created_at`,
+      [
+        nombreTactica, req.body.descripcion || '', filename, mimeType, data,
+        req.body.rama || 'General', JSON.stringify(JSON.parse(req.body.categorias_objetivo || '[]')), req.actor.rut,
+      ]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'No se pudo guardar la pizarra.' });
+  }
+});
+
+app.get('/api/academia-pizarras/imagen/:id', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT imagen_mime_type, imagen_data FROM academia_pizarras WHERE id = $1', [req.params.id]);
+    const row = result.rows?.[0];
+    if (!row || !row.imagen_data) {
+      return res.status(404).json({ error: 'Imagen no encontrada.' });
+    }
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.contentType(row.imagen_mime_type || 'image/png');
+    return res.send(row.imagen_data);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/academia-pizarras/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM academia_pizarras WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'No se pudo borrar la pizarra.' });
   }
 });
 
@@ -2427,7 +2688,7 @@ app.get('/api/comunicaciones', async (req, res) => {
         id, titulo, cuerpo_texto, tipo, rama, categoria, urgencia,
         solicita_asistencia, reacciones, asistencias,
         citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad,
-        responsable_nombre, responsable_rol,
+        responsable_nombre, responsable_rol, categorias_objetivo,
         created_at as fecha
       FROM comunicaciones
       ORDER BY created_at DESC
@@ -2452,24 +2713,26 @@ app.get('/api/comunicaciones/:id', async (req, res) => {
   }
 });
 
-// POST: Crear comunicación
-app.post('/api/comunicaciones', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+// POST: Crear comunicación. requireRole (no requireModule('admin_dashboard'))
+// porque 'staff' publica material de Academia desde este mismo endpoint y no
+// tiene el módulo admin_dashboard — antes quedaba bloqueado con 403.
+app.post('/api/comunicaciones', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
   const {
     titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia,
     citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad,
-    responsable_nombre, responsable_rol,
+    responsable_nombre, responsable_rol, categorias_objetivo,
   } = req.body;
   try {
     const result = await pool.query(
       `INSERT INTO comunicaciones
        (titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia, reacciones, asistencias,
-        citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad, responsable_nombre, responsable_rol)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad, responsable_nombre, responsable_rol, categorias_objetivo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
         titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia || false, '{}', '[]',
         citacion_id || null, JSON.stringify(convocatoria_ruts || []), JSON.stringify(convocatoria_alertas_morosidad || []),
-        responsable_nombre || null, responsable_rol || null,
+        responsable_nombre || null, responsable_rol || null, JSON.stringify(categorias_objetivo || []),
       ]
     );
     res.json(result.rows[0]);
@@ -4261,13 +4524,49 @@ app.post('/api/eventos', authenticate, requireModule('citaciones'), async (req, 
 // ==========================================
 
 // GET: Asistencia
-app.get('/api/asistencia', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
+// GET: lista de sesiones de asistencia (una fila por "pasar lista"), con
+// conteos agregados — base del resumen filtrable por rama/categoría/profesor.
+app.get('/api/asistencia/sesiones', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
+  const { rama, categoria, entrenador, desde, hasta } = req.query;
   try {
+    const condiciones = [];
+    const valores = [];
+    if (rama && rama !== 'todas') {
+      valores.push(rama);
+      condiciones.push(`rama = $${valores.length}`);
+    }
+    if (categoria) {
+      valores.push(categoria);
+      condiciones.push(`categoria = $${valores.length}`);
+    }
+    if (entrenador) {
+      valores.push(`%${entrenador}%`);
+      condiciones.push(`entrenador_cargo ILIKE $${valores.length}`);
+    }
+    if (desde) {
+      valores.push(desde);
+      condiciones.push(`fecha >= $${valores.length}`);
+    }
+    if (hasta) {
+      valores.push(hasta);
+      condiciones.push(`fecha <= $${valores.length}`);
+    }
+    const where = condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
+
     const result = await pool.query(
-      `SELECT a.*, j.nombres, j.apellido_paterno
-       FROM asistencia a
-       LEFT JOIN jugadores j ON a.rut_jugador = j.rut_jugador
-       ORDER BY a.fecha DESC`
+      `SELECT
+        sesion_id, fecha, rama, entrenador_cargo, hora_inicio, hora_fin,
+        array_agg(DISTINCT categoria) FILTER (WHERE categoria IS NOT NULL AND categoria != '') AS categorias,
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE estado_asistencia = 'presente') AS presentes,
+        COUNT(*) FILTER (WHERE estado_asistencia = 'ausente') AS ausentes,
+        COUNT(*) FILTER (WHERE estado_asistencia = 'justificado') AS justificados,
+        MAX(created_at) AS creado_en
+       FROM asistencia
+       ${where}
+       GROUP BY sesion_id, fecha, rama, entrenador_cargo, hora_inicio, hora_fin
+       ORDER BY fecha DESC, creado_en DESC`,
+      valores
     );
     res.json(result.rows);
   } catch (err) {
@@ -4275,18 +4574,91 @@ app.get('/api/asistencia', authenticate, requireAnyModule('citaciones', 'asisten
   }
 });
 
-// POST: Registrar asistencia
-app.post('/api/asistencia', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
-  const { fecha, rama, categoria, rut_jugador, estado_asistencia, observacion, entrenador_cargo } = req.body;
+// GET: detalle de una sesión (una fila por jugador).
+app.get('/api/asistencia/sesiones/:sesionId', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
   try {
     const result = await pool.query(
-      `INSERT INTO asistencia 
-       (fecha, rama, categoria, rut_jugador, estado_asistencia, observacion, entrenador_cargo)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [fecha, rama, categoria, rut_jugador, estado_asistencia, observacion, entrenador_cargo]
+      `SELECT * FROM asistencia WHERE sesion_id = $1 ORDER BY nombre_jugador ASC`,
+      [req.params.sesionId]
     );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: registra una sesión completa de una sola vez (todo el roster de esa
+// pasada de lista), en una transacción con un sesion_id común.
+app.post('/api/asistencia/sesion', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
+  const { fecha, rama, hora_inicio, hora_fin, entrenador_cargo, registros } = req.body;
+  if (!Array.isArray(registros) || registros.length === 0) {
+    return res.status(400).json({ error: 'No hay registros de asistencia para guardar.' });
+  }
+
+  const sesionId = `ses_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const registro of registros) {
+      await client.query(
+        `INSERT INTO asistencia
+          (sesion_id, fecha, rama, categoria, rut_jugador, nombre_jugador, estado_asistencia, observacion, entrenador_cargo, hora_inicio, hora_fin)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          sesionId, fecha || null, rama || null, registro.categoria || null,
+          registro.rut_jugador || null, registro.nombre_jugador || '', registro.estado_asistencia || 'pendiente',
+          registro.observacion || null, entrenador_cargo || null, hora_inicio || null, hora_fin || null,
+        ]
+      );
+    }
+    await client.query('COMMIT');
+    const creada = await pool.query('SELECT * FROM asistencia WHERE sesion_id = $1 ORDER BY nombre_jugador ASC', [sesionId]);
+    res.status(201).json({ sesion_id: sesionId, registros: creada.rows });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PUT: corrige el estado/observación de un jugador dentro de una sesión ya guardada.
+app.put('/api/asistencia/:id', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
+  const { estado_asistencia, observacion } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE asistencia SET
+        estado_asistencia = COALESCE($1, estado_asistencia),
+        observacion = COALESCE($2, observacion),
+        updated_at = NOW()
+       WHERE id_asistencia = $3
+       RETURNING *`,
+      [estado_asistencia || null, observacion, req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Registro de asistencia no encontrado.' });
+    }
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE: borra un registro individual (un jugador dentro de una sesión).
+app.delete('/api/asistencia/:id', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM asistencia WHERE id_asistencia = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE: borra una sesión completa (toda una pasada de lista).
+app.delete('/api/asistencia/sesiones/:sesionId', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM asistencia WHERE sesion_id = $1', [req.params.sesionId]);
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -5708,6 +6080,10 @@ app.listen(PORT, () => {
     console.error('❌ Error verificando columnas extendidas de comunicaciones:', error.message);
   });
 
+  ensureAsistenciaExtendedColumns().catch((error) => {
+    console.error('❌ Error verificando columnas extendidas de asistencia:', error.message);
+  });
+
   ensurePartidosLiveCoreColumns().catch((error) => {
     console.error('❌ Error verificando columnas base partidos_live:', error.message);
   });
@@ -5726,6 +6102,14 @@ app.listen(PORT, () => {
 
   ensureLogoAssetsTable().catch((error) => {
     console.error('❌ Error verificando tabla logo_assets:', error.message);
+  });
+
+  ensureAcademiaVideosTable().catch((error) => {
+    console.error('❌ Error verificando tabla academia_videos:', error.message);
+  });
+
+  ensureAcademiaPizarrasTable().catch((error) => {
+    console.error('❌ Error verificando tabla academia_pizarras:', error.message);
   });
 
   ensureKioscoTables().catch((error) => {

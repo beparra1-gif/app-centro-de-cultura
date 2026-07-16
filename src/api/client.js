@@ -706,21 +706,44 @@ export const eventosAPI = {
 // ========== ASISTENCIA (FASE 1) ==========
 
 export const asistenciaAPI = {
-  // Obtener todas
-  getAll: async () => {
-    const response = await apiFetch(`${API_BASE_URL}/asistencia`);
+  // Lista de sesiones (historial/resumen), con filtros opcionales
+  getSesiones: async (filtros = {}) => {
+    const response = await apiFetch(`${API_BASE_URL}/asistencia/sesiones${buildQuery(filtros)}`);
     return handleResponse(response);
   },
-
-  // Registrar
-  create: async (datos) => {
-    const response = await apiFetch(`${API_BASE_URL}/asistencia`, {
+  // Detalle de una sesión (una fila por jugador)
+  getSesion: async (sesionId) => {
+    const response = await apiFetch(`${API_BASE_URL}/asistencia/sesiones/${sesionId}`);
+    return handleResponse(response);
+  },
+  // Registrar una sesión completa de una sola vez
+  crearSesion: async (datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/asistencia/sesion`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
     });
     return handleResponse(response);
-  }
+  },
+  // Corregir un registro individual dentro de una sesión
+  actualizarRegistro: async (id, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/asistencia/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+  // Borrar un registro individual
+  borrarRegistro: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/asistencia/${id}`, { method: 'DELETE' });
+    return handleResponse(response);
+  },
+  // Borrar una sesión completa
+  borrarSesion: async (sesionId) => {
+    const response = await apiFetch(`${API_BASE_URL}/asistencia/sesiones/${sesionId}`, { method: 'DELETE' });
+    return handleResponse(response);
+  },
 };
 
 // ========== PARTIDOS EN VIVO (FASE 1) ==========
@@ -1081,6 +1104,73 @@ export const assetsAPI = {
     const response = await apiFetch(`${API_BASE_URL}/logo-assets/${safeFilename}`, {
       method: 'DELETE',
     });
+    return handleResponse(response);
+  },
+};
+
+// ========== ACADEMIA: VIDEOS CORTOS SUBIDOS ==========
+
+export const academiaVideosAPI = {
+  subir: async (formData, { onProgress } = {}) => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE_URL}/academia-videos`);
+      if (authToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+      }
+
+      if (typeof onProgress === 'function') {
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const porcentaje = Math.round((event.loaded / event.total) * 100);
+          onProgress(Math.max(0, Math.min(100, porcentaje)));
+        };
+      }
+
+      xhr.onload = () => {
+        let payload;
+        try {
+          payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+        } catch {
+          payload = null;
+        }
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(payload || {});
+          return;
+        }
+
+        const errorMsg = payload?.error || payload?.message || `Error ${xhr.status}: ${xhr.statusText || 'Respuesta no válida'}`;
+        reject(new Error(errorMsg));
+      };
+
+      xhr.onerror = () => reject(new Error('Error de red al subir el video.'));
+      xhr.onabort = () => reject(new Error('La subida del video fue cancelada.'));
+      xhr.send(formData);
+    });
+  },
+  borrar: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/academia-videos/${id}`, { method: 'DELETE' });
+    return handleResponse(response);
+  },
+};
+
+// ========== ACADEMIA: PIZARRAS TÁCTICAS (captura de cancha + fichas) ==========
+
+export const academiaPizarrasAPI = {
+  getAll: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/academia-pizarras`);
+    return handleResponse(response);
+  },
+  guardar: async (formData) => {
+    const response = await apiFetch(`${API_BASE_URL}/academia-pizarras`, {
+      method: 'POST',
+      body: formData,
+    });
+    return handleResponse(response);
+  },
+  borrar: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/academia-pizarras/${id}`, { method: 'DELETE' });
     return handleResponse(response);
   },
 };

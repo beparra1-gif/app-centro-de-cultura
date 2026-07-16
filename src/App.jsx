@@ -827,15 +827,8 @@ function App() {
       }
 
       try {
-        const partidoRef = partidosLiveRes?.[0]?.id_partido;
-        if (partidoRef) {
-          const pizarrasRes = await api.pizarraAPI.getByPartido(partidoRef);
-          if (Array.isArray(pizarrasRes)) {
-            setPizarrasAcademia(pizarrasRes);
-          }
-        } else {
-          setPizarrasAcademia([]);
-        }
+        const pizarrasRes = await api.academiaPizarrasAPI.getAll();
+        setPizarrasAcademia(Array.isArray(pizarrasRes) ? pizarrasRes : []);
       } catch {
         setPizarrasAcademia([]);
       }
@@ -1530,7 +1523,7 @@ function App() {
     generarAlertas();
   };
 
-  const publicarMaterialAcademia = async ({ titulo, url, tipo }) => {
+  const publicarMaterialAcademia = async ({ titulo, url, tipo, rama, categorias }) => {
     const tipoComunicado = tipo === 'video'
       ? 'Academia-Video'
       : tipo === 'imagen'
@@ -1541,12 +1534,25 @@ function App() {
       titulo,
       cuerpo_texto: url,
       tipo: tipoComunicado,
-      rama: 'General',
-      categoria: 'General',
+      rama: rama || 'General',
+      categoria: (categorias && categorias[0]) || 'General',
+      categorias_objetivo: Array.isArray(categorias) ? categorias : [],
       urgencia: 'Baja',
       solicita_asistencia: false,
     });
 
+    await cargarDatos({ manual: true });
+  };
+
+  const subirVideoAcademia = async ({ titulo, archivo, rama, categorias }, { onProgress } = {}) => {
+    const formData = new FormData();
+    formData.append('archivo', archivo);
+    formData.append('titulo', titulo);
+    formData.append('rama', rama || 'General');
+    formData.append('categoria', (categorias && categorias[0]) || 'General');
+    formData.append('categorias_objetivo', JSON.stringify(Array.isArray(categorias) ? categorias : []));
+
+    await api.academiaVideosAPI.subir(formData, { onProgress });
     await cargarDatos({ manual: true });
   };
 
@@ -1564,29 +1570,15 @@ function App() {
     await cargarDatos({ manual: true });
   };
 
-  const guardarPizarraAcademia = async ({ nombre_tactica, descripcion, formacion, zona_defensa, zona_ataque }) => {
-    const partidoOrdenado = [...(partidosResumen || [])].sort((a, b) => {
-      const fechaA = a.fechaISO ? new Date(a.fechaISO).getTime() : 0;
-      const fechaB = b.fechaISO ? new Date(b.fechaISO).getTime() : 0;
-      if (fechaA !== fechaB) return fechaB - fechaA;
-      return Number(b.id || 0) - Number(a.id || 0);
-    });
-    const partidoRef = partidoOrdenado[0]?.id || null;
+  const guardarPizarraAcademia = async ({ nombre_tactica, descripcion, rama, categorias, imagenBlob }) => {
+    const formData = new FormData();
+    if (imagenBlob) formData.append('archivo', imagenBlob, 'pizarra.png');
+    formData.append('nombre_tactica', nombre_tactica);
+    formData.append('descripcion', descripcion || '');
+    formData.append('rama', rama || 'General');
+    formData.append('categorias_objetivo', JSON.stringify(Array.isArray(categorias) ? categorias : []));
 
-    if (!partidoRef) {
-      throw new Error('No hay un partido reciente disponible para asociar la pizarra.');
-    }
-
-    await api.pizarraAPI.create({
-      id_partido: partidoRef,
-      entrenador_rut: 'staff-ccf',
-      nombre_tactica,
-      descripcion,
-      formacion,
-      zona_defensa,
-      zona_ataque,
-    });
-
+    await api.academiaPizarrasAPI.guardar(formData);
     await cargarDatos({ manual: true });
   };
 
@@ -2536,6 +2528,7 @@ function App() {
                 pupiloActivo={pupiloActivo}
                 setPupiloActivo={setPupiloActivo}
                 pupilosDisponibles={pupilosDisponibles}
+                jugadoresAdmin={jugadoresAdmin}
                 rolUsuario={rolUsuario}
                 animacionXP={animacionXP}
                 setAnimacionXP={setAnimacionXP}
@@ -2547,6 +2540,7 @@ function App() {
                 materialesAcademia={materialesAcademia}
                 pizarrasAcademia={pizarrasAcademia}
                 publicarMaterialAcademia={publicarMaterialAcademia}
+                subirVideoAcademia={subirVideoAcademia}
                 crearQuizAcademia={crearQuizAcademia}
                 guardarPizarraAcademia={guardarPizarraAcademia}
               />
@@ -2583,6 +2577,7 @@ function App() {
             )}
             {puedeVerPantalla('asistencia_staff') && pantallaActiva === 'asistencia_staff' && (
               <StaffAsistenciaPanel
+                usuarioAutenticado={usuarioAutenticado}
                 vistaStaff={vistaStaff}
                 setVistaStaff={setVistaStaff}
                 filtroRamaStaff={filtroRamaStaff}
