@@ -2177,6 +2177,48 @@ button,
   gap: 8px;
 }
 
+/* Cambio de jugador (en cancha <-> banco): es una accion ocasional frente a
+   anotar/faltas, que se usan constantemente durante el partido. Se baja de
+   enfasis para que no compita visualmente con los controles de juego. */
+.mesa-cambio-sutil {
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+.mesa-cambio-sutil h6 {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.mesa-cambio-sutil select {
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.btn-cambio-sutil {
+  margin-top: 6px;
+  width: auto;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid var(--borde-suave);
+  color: var(--texto-secundario);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-cambio-sutil:hover:not(:disabled) {
+  border-color: rgba(0, 122, 255, 0.35);
+  color: var(--azul-electrico);
+}
+
+.btn-cambio-sutil:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .mesa-team-config-grid {
   display: grid;
   gap: 10px;
@@ -3042,11 +3084,13 @@ button,
     overflow: auto;
   }
 
+  /* Antes usaba position: sticky para mantenerla visible al hacer scroll de la
+     columna central, pero combinado con el grid de 3 columnas y el blur, el
+     navegador la terminaba pintando fuera de su columna, montada sobre
+     "Cambio Local/Visita" a los costados. Con flujo normal (sin sticky) queda
+     siempre arriba de su propia columna sin invadir las columnas vecinas. */
   .fiba-container .mesa-control-tiempo-card {
-    position: sticky;
-    top: 0;
-    z-index: 3;
-    backdrop-filter: blur(4px);
+    flex-shrink: 0;
   }
 
   .fiba-container .mesa-oncourt-grid-two-cols {

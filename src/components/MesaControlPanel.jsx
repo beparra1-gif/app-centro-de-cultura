@@ -561,8 +561,6 @@ function MesaControlPanel({
   });
   const [quintetoLocalIds, setQuintetoLocalIds] = useState([]);
   const [quintetoVisitaIds, setQuintetoVisitaIds] = useState([]);
-  const [nuevoNombreLocal, setNuevoNombreLocal] = useState('');
-  const [nuevoDorsalLocal, setNuevoDorsalLocal] = useState('');
   const [nuevoNombreVisita, setNuevoNombreVisita] = useState('');
   const [nuevoDorsalVisita, setNuevoDorsalVisita] = useState('');
   const [capitanLocalId, setCapitanLocalId] = useState('');
@@ -1731,11 +1729,15 @@ function MesaControlPanel({
     if (!expulsionNombre) setJugadorSeleccionadoLive(null);
   };
 
-  const agregarJugadorManual = ({ tipo }) => {
-    const esLocal = tipo === 'local';
-    const equipoTarget = esLocal ? equipoLocal : equipoVisita;
-    const nombre = normalizarTexto(esLocal ? nuevoNombreLocal : nuevoNombreVisita);
-    const dorsalTexto = normalizarTexto(esLocal ? nuevoDorsalLocal : nuevoDorsalVisita);
+  // Solo para el equipo visita: si el rival no es nuestro club, sus jugadoras/es
+  // no existen en la base de jugadores del club y no hay de dónde seleccionarlos,
+  // asi que se cargan a mano al armar los equipos (prepartido). El equipo local
+  // siempre sale de la nómina real, y durante el partido en vivo no se agregan
+  // jugadoras/es nuevas/os (eso solo pasa al armar los equipos).
+  const agregarJugadorVisitaManual = () => {
+    const equipoTarget = equipoVisita;
+    const nombre = normalizarTexto(nuevoNombreVisita);
+    const dorsalTexto = normalizarTexto(nuevoDorsalVisita);
     const dorsal = Number(dorsalTexto);
 
     if (!equipoTarget?.key) return;
@@ -1766,7 +1768,7 @@ function MesaControlPanel({
         rut_jugador: `manual-${nextId()}`,
         nombre,
         dorsal,
-        rama: filtroRama === 'Todas' ? (esLocal ? (equipoTarget.ramas?.[0] || 'General') : 'General') : filtroRama,
+        rama: filtroRama === 'Todas' ? 'General' : filtroRama,
         categoria: filtroCategoria === 'Todas' ? (equipoTarget.categorias?.[0] || 'General') : filtroCategoria,
         competicion: filtroCompeticionActiva || (equipoTarget.competiciones?.[0] || 'Sin competencia'),
         equipo: equipoTarget.nombre,
@@ -1785,20 +1787,11 @@ function MesaControlPanel({
     });
 
     if (nuevoIdCreado != null) {
-      if (esLocal) {
-        setNominaLocalIds((prev) => (prev.length >= LIMITE_JUGADORES_POR_EQUIPO ? prev : [...prev, nuevoIdCreado]));
-      } else {
-        setNominaVisitaIds((prev) => (prev.length >= LIMITE_JUGADORES_POR_EQUIPO ? prev : [...prev, nuevoIdCreado]));
-      }
+      setNominaVisitaIds((prev) => (prev.length >= LIMITE_JUGADORES_POR_EQUIPO ? prev : [...prev, nuevoIdCreado]));
     }
 
-    if (esLocal) {
-      setNuevoNombreLocal('');
-      setNuevoDorsalLocal('');
-    } else {
-      setNuevoNombreVisita('');
-      setNuevoDorsalVisita('');
-    }
+    setNuevoNombreVisita('');
+    setNuevoDorsalVisita('');
   };
 
   const ejecutarAccionFIBAVisita = (tipo, payload = {}) => {
@@ -2965,7 +2958,7 @@ function MesaControlPanel({
                 <div className="mesa-add-player mt-10">
                   <input className="form-input" placeholder="Nombre jugadora/or visita" value={nuevoNombreVisita} onChange={(e) => setNuevoNombreVisita(e.target.value)} />
                   <input className="form-input" placeholder="Dorsal" value={nuevoDorsalVisita} onChange={(e) => setNuevoDorsalVisita(e.target.value)} />
-                  <button className="btn-secondary" onClick={() => agregarJugadorManual({ tipo: 'visita' })}>Agregar a nómina visita</button>
+                  <button className="btn-secondary" onClick={agregarJugadorVisitaManual}>Agregar a nómina visita</button>
                 </div>
               )}
               <div className="mesa-quinteto-list" style={{ marginTop: '8px' }}>
@@ -3178,7 +3171,7 @@ function MesaControlPanel({
               </div>
             </div>
           </div>
-          <div className="mesa-visitor-actions mt-10">
+          <div className="mesa-visitor-actions mesa-cambio-sutil mt-10">
             <h6>Cambio Local (en cancha ↔ banco)</h6>
             <select className="form-input" value={cambioSalidaId} onChange={(e) => setCambioSalidaId(e.target.value)}>
               <option value="">Selecciona quién sale...</option>
@@ -3192,12 +3185,7 @@ function MesaControlPanel({
                 <option key={`entra-local-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
               ))}
             </select>
-            <button className="btn-secondary" disabled={!partidoIniciado || !cambioSalidaId || !cambioIngresoId} onClick={() => ejecutarCambioJugador('local', cambioSalidaId, cambioIngresoId)}>Cambiar</button>
-          </div>
-          <div className="mesa-add-player mt-10">
-            <input className="form-input" placeholder="Nombre jugadora/or" value={nuevoNombreLocal} onChange={(e) => setNuevoNombreLocal(e.target.value)} />
-            <input className="form-input" placeholder="Dorsal" value={nuevoDorsalLocal} onChange={(e) => setNuevoDorsalLocal(e.target.value)} />
-            <button className="btn-secondary" onClick={() => agregarJugadorManual({ tipo: 'local' })}>Añadir Local</button>
+            <button className="btn-cambio-sutil" disabled={!partidoIniciado || !cambioSalidaId || !cambioIngresoId} onClick={() => ejecutarCambioJugador('local', cambioSalidaId, cambioIngresoId)}>Cambiar</button>
           </div>
         </div>
 
@@ -3260,7 +3248,7 @@ function MesaControlPanel({
                 </div>
               </div>
             </div>
-            <div className="mesa-visitor-actions mt-10">
+            <div className="mesa-visitor-actions mesa-cambio-sutil mt-10">
               <h6>Cambio Visita (en cancha ↔ banco)</h6>
               <select className="form-input" value={cambioSalidaVisitaId} onChange={(e) => setCambioSalidaVisitaId(e.target.value)}>
                 <option value="">Selecciona quién sale...</option>
@@ -3274,12 +3262,7 @@ function MesaControlPanel({
                   <option key={`entra-visita-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
                 ))}
               </select>
-              <button className="btn-secondary" disabled={!partidoIniciado || !cambioSalidaVisitaId || !cambioIngresoVisitaId} onClick={() => ejecutarCambioJugador('visita', cambioSalidaVisitaId, cambioIngresoVisitaId)}>Cambiar</button>
-            </div>
-            <div className="mesa-add-player mt-10">
-              <input className="form-input" placeholder="Nombre jugadora/or" value={nuevoNombreVisita} onChange={(e) => setNuevoNombreVisita(e.target.value)} />
-              <input className="form-input" placeholder="Dorsal" value={nuevoDorsalVisita} onChange={(e) => setNuevoDorsalVisita(e.target.value)} />
-              <button className="btn-secondary" onClick={() => agregarJugadorManual({ tipo: 'visita' })}>Añadir Visita</button>
+              <button className="btn-cambio-sutil" disabled={!partidoIniciado || !cambioSalidaVisitaId || !cambioIngresoVisitaId} onClick={() => ejecutarCambioJugador('visita', cambioSalidaVisitaId, cambioIngresoVisitaId)}>Cambiar</button>
             </div>
           </div>
         )}
