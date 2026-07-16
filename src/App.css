@@ -3089,25 +3089,68 @@ button,
      navegador la terminaba pintando fuera de su columna, montada sobre
      "Cambio Local/Visita" a los costados. Con flujo normal (sin sticky) queda
      siempre arriba de su propia columna sin invadir las columnas vecinas. */
+  /* Tarjeta "Control de Partido" mas compacta en tablet/pantalla completa:
+     el objetivo es dejarle mas alto disponible al roster (cancha + banca)
+     sin perder legibilidad en los controles de tiempo/acciones. */
   .fiba-container .mesa-control-tiempo-card {
     flex-shrink: 0;
+    padding: 8px 10px;
+  }
+
+  .fiba-container .mesa-control-tiempo-meta {
+    font-size: 12px;
+    margin-top: 4px;
+  }
+
+  .fiba-container .mesa-btn-reloj-principal {
+    font-size: 13px;
+    min-height: 34px;
+  }
+
+  .fiba-container .mesa-control-tiempo-lado .btn-secondary {
+    font-size: 11px;
+    padding: 6px 4px;
+    min-height: 30px;
+  }
+
+  .fiba-container .mesa-actions-segment {
+    min-height: 32px;
+    font-size: 11px;
+  }
+
+  .fiba-container .mesa-live-zone-center .fiba-botones-grid .btn-fiba {
+    padding: 8px 4px;
+    font-size: 11px;
   }
 
   .fiba-container .mesa-oncourt-grid-two-cols {
-    gap: 10px;
+    gap: 8px;
   }
 
   .fiba-container .mesa-oncourt-btn {
-    min-height: 74px;
-    padding: 10px 8px;
+    min-height: 66px;
+    padding: 8px 6px;
   }
 
   .fiba-container .mesa-oncourt-dorsal-flat {
-    font-size: 1.28rem;
+    font-size: 1.15rem;
   }
 
+  /* Banca: solo hace falta ver el dorsal para seleccionar quien entra, asi
+     que se reduce bastante mas que las tarjetas de cancha. */
   .fiba-container .mesa-banco-btn {
-    min-height: 44px;
+    min-height: 30px;
+    padding: 4px;
+  }
+
+  .fiba-container .mesa-banco-dorsal {
+    min-height: 22px;
+    font-size: 0.85rem;
+  }
+
+  .fiba-container .mesa-banco-grid {
+    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+    gap: 5px;
   }
 
   .fiba-container .mesa-control-tiempo-grid {
