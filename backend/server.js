@@ -1369,6 +1369,16 @@ const ensureSuperAdminAccount = async () => {
   console.log(`🔐 Super admin asegurado: ${email} (${rutFmt})`);
 };
 
+// Diseño de marco cosmético de la tarjeta coleccionable, elegido libremente
+// por el jugador/apoderado — independiente de la rareza por nivel (que sigue
+// reflejando progresión). No es un campo administrativo: no va en
+// CAMPOS_JUGADOR_SOLO_ADMIN, así que el apoderado dueño ya puede guardarlo
+// a través del PUT /api/jugadores/:rut existente.
+const ensureJugadoresExtendedColumns = async () => {
+  await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS diseno_marco VARCHAR(20) DEFAULT 'clasico'`);
+  console.log('🎴 Columna diseno_marco de jugadores verificada');
+};
+
 const ensureCuentasExtendedColumns = async () => {
   const ddl = [
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS perfil_principal VARCHAR(50) DEFAULT 'apoderado'`,
@@ -3715,6 +3725,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
     fecha_inicio_baja,
     fecha_fin_baja,
     xp_puntos,
+    diseno_marco,
   } = req.body;
 
   try {
@@ -3762,8 +3773,9 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
         fecha_fin_baja = COALESCE($40, fecha_fin_baja),
         xp_puntos = COALESCE($41, xp_puntos),
         rut_apoderado = COALESCE($42, rut_apoderado),
+        diseno_marco = COALESCE($43, diseno_marco),
         updated_at = NOW()
-      WHERE rut_jugador = $43
+      WHERE rut_jugador = $44
       RETURNING *`,
       [
         correo_apoderado ?? null,
@@ -3808,6 +3820,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
         fecha_fin_baja ?? null,
         xp_puntos ?? null,
         rut_apoderado ?? null,
+        diseno_marco ?? null,
         req.params.rut,
       ]
     );
@@ -3819,6 +3832,40 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: el apoderado dueño del jugador (o admin) sube la foto para la
+// tarjeta coleccionable. Reutiliza el almacenamiento de logo_assets (misma
+// tabla BYTEA que ya sirve logos) en vez de crear otra tabla para lo mismo.
+app.post('/api/jugadores/:rut/foto', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), uploadLogoMemoria.single('archivo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Debes seleccionar una foto.' });
+    }
+
+    const rut = String(req.params.rut || '').trim();
+    const extension = path.extname(req.file.originalname).toLowerCase() || '.png';
+    const filename = `foto-jugador-${normalizarRutParaComparar(rut)}-${Date.now()}${extension}`;
+
+    await pool.query(
+      `INSERT INTO logo_assets (nombre, tipo, filename, mime_type, file_data)
+       VALUES ($1, 'foto-jugador', $2, $3, $4)`,
+      [`Foto ${rut}`, filename, req.file.mimetype, req.file.buffer]
+    );
+
+    const urlFoto = `/api/logo-assets/file/${encodeURIComponent(filename)}`;
+    const result = await pool.query(
+      `UPDATE jugadores SET foto_jugador = $1, updated_at = NOW() WHERE rut_jugador = $2 RETURNING *`,
+      [urlFoto, rut]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Jugador no encontrado.' });
+    }
+    return res.json(result.rows[0]);
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'No se pudo subir la foto.' });
   }
 });
 
@@ -6074,6 +6121,10 @@ app.listen(PORT, () => {
 
   ensureCuentasExtendedColumns().catch((error) => {
     console.error('❌ Error verificando columnas extendidas de cuentas:', error.message);
+  });
+
+  ensureJugadoresExtendedColumns().catch((error) => {
+    console.error('❌ Error verificando columnas extendidas de jugadores:', error.message);
   });
 
   ensureComunicacionesExtendedColumns().catch((error) => {

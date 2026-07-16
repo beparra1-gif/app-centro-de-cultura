@@ -557,6 +557,15 @@ export const jugadoresAPI = {
     });
     return handleResponse(response);
   },
+
+  // Foto para la tarjeta coleccionable (apoderado dueño del jugador, o admin)
+  subirFoto: async (rut, formData) => {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}/foto`, {
+      method: 'POST',
+      body: formData,
+    });
+    return handleResponse(response);
+  },
 };
 
 // ========== PAGOS MENSUALIDADES (FASE 1) ==========

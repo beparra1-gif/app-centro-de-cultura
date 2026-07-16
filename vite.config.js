@@ -9,6 +9,15 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'logos/club-logo.png'],
+      workbox: {
+        // El runtime WASM de onnxruntime (usado por @imgly/background-removal
+        // para "quitar fondo" en la tarjeta de jugador) pesa ~24MB. No tiene
+        // sentido precachearlo de entrada para todos los visitantes — se
+        // sirve como asset normal bajo demanda solo cuando alguien realmente
+        // usa esa función.
+        globIgnores: ['**/ort*.wasm', '**/ort*.mjs', '**/ort.*.js'],
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+      },
       manifest: {
         name: 'Centro de Cultura Física Viña del Mar',
         short_name: 'CCF Viña',

@@ -1537,7 +1537,7 @@ button,
 }
 .assist-cta-card {
   min-height: 196px;
-  height: 100%;
+  height: auto;
   display: flex;
   padding-left: 12px;
   border-left: 1px solid rgba(255,255,255,0.12);
@@ -1546,7 +1546,7 @@ button,
   align-content: start;
 }
 .assist-cta-btn {
-  min-height: 100%;
+  min-height: 84px;
   width: 100%;
   border: 1px solid rgba(255,255,255,0.16);
   border-radius: 14px;

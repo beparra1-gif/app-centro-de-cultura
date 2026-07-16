@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Download, ClipboardEdit, Mars, QrCode, ShieldCheck, Shirt, Trophy, User, Venus, X } from 'lucide-react';
+import { BadgeCheck, Camera, Download, ClipboardEdit, Loader2, Mars, QrCode, ShieldCheck, Shirt, Sparkles, Trophy, User, Venus, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer } from 'recharts';
@@ -11,6 +11,22 @@ import { showToast } from '../utils/toast';
 
 const EXPORT_WIDTH = 750;
 const EXPORT_HEIGHT = 1050;
+
+// Rutas que el backend devuelve como /api/logo-assets/file/... (guardado
+// BYTEA en DB) necesitan resolverse contra el origen del backend, no del
+// frontend: en dev corren en puertos distintos (Vite no proxya /api).
+const resolverUrlFoto = (foto = '') => {
+  if (!foto || !foto.startsWith('/api/')) return foto;
+  const origen = String(api.API_BASE_URL_CONFIG || '').replace(/\/api\/?$/, '');
+  return `${origen}${foto}`;
+};
+
+const DISENOS_MARCO = {
+  clasico: { etiqueta: 'Clásico', extraBorder: null, extraShadow: null, extraFilter: null },
+  neon: { etiqueta: 'Neón', extraBorder: '2px solid #39FF88', extraShadow: '0 0 4px 1px rgba(57,255,136,0.55), 0 0 26px 6px rgba(57,255,136,0.35)', extraFilter: null },
+  vintage: { etiqueta: 'Vintage', extraBorder: '2px solid #C9A66B', extraShadow: '0 0 0 4px rgba(201,166,107,0.2)', extraFilter: 'sepia(0.3) saturate(1.1)' },
+  holografico: { etiqueta: 'Holográfico', extraBorder: '2px solid rgba(255,255,255,0.65)', extraShadow: '0 0 6px 2px rgba(255,105,180,0.45), 0 0 18px 6px rgba(120,190,255,0.4), 0 0 30px 10px rgba(255,230,120,0.3)', extraFilter: null },
+};
 
 function TarjetaJugadorPanel({
   pupiloActivo,
@@ -26,6 +42,12 @@ function TarjetaJugadorPanel({
   const estiloColeccion = 'coleccionista';
   const [vistaColeccion, setVistaColeccion] = useState('frente');
   const [detalleJugador, setDetalleJugador] = useState(null);
+  const [mostrarSubirFoto, setMostrarSubirFoto] = useState(false);
+  const [archivoFoto, setArchivoFoto] = useState(null);
+  const [previewFoto, setPreviewFoto] = useState('');
+  const [quitarFondo, setQuitarFondo] = useState(false);
+  const [procesandoFoto, setProcesandoFoto] = useState(false);
+  const [guardandoDiseno, setGuardandoDiseno] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -190,7 +212,8 @@ function TarjetaJugadorPanel({
   const rutValidacion = rolUsuario === 'visita' ? 'VISITA' : (pupiloActivo.rut || 'SIN-RUT');
   const clubNombre = pupiloActivo.club_nombre || pupiloActivo.club_procedencia || (rolUsuario === 'visita' ? 'Club invitado' : 'Centro de Cultura Física');
   const clubLogoUrl = pupiloActivo.club_logo_url || '/logos/club-logo.png';
-  const fotoPrincipal = pupiloActivo.foto_jugador || pupiloActivo.foto_perfil_url || '';
+  const fotoPrincipal = resolverUrlFoto(detalleJugador?.foto_jugador || pupiloActivo.foto_jugador || pupiloActivo.foto_perfil_url || '');
+  const disenoActivo = DISENOS_MARCO[detalleJugador?.diseno_marco || pupiloActivo.diseno_marco || 'clasico'] || DISENOS_MARCO.clasico;
   const descriptorGenero = `${pupiloActivo.genero || ''} ${pupiloActivo.sexo || ''} ${pupiloActivo.rama || ''}`.toLowerCase();
   const esFemenino = descriptorGenero.includes('femen') || descriptorGenero.includes('mujer');
   const clubIniciales = clubNombre
@@ -269,6 +292,64 @@ function TarjetaJugadorPanel({
     }
   };
 
+  const cambiarDisenoMarco = async (nuevoValor) => {
+    const rut = String(pupiloActivo?.rut || '').trim();
+    if (!rut) return;
+    setGuardandoDiseno(true);
+    try {
+      const actualizado = await api.jugadoresAPI.update(rut, { diseno_marco: nuevoValor });
+      setDetalleJugador((prev) => ({ ...prev, ...actualizado }));
+      showToast({ message: 'Diseño de tarjeta actualizado.', type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo cambiar el diseño.', type: 'error' });
+    } finally {
+      setGuardandoDiseno(false);
+    }
+  };
+
+  const cerrarModalFoto = () => {
+    setMostrarSubirFoto(false);
+    setArchivoFoto(null);
+    setPreviewFoto((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+    setQuitarFondo(false);
+  };
+
+  const handleSeleccionArchivoFoto = (file) => {
+    if (!file) return;
+    setArchivoFoto(file);
+    setPreviewFoto((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const handleConfirmarFoto = async () => {
+    const rut = String(pupiloActivo?.rut || '').trim();
+    if (!rut || !archivoFoto) return;
+    setProcesandoFoto(true);
+    try {
+      let archivoParaSubir = archivoFoto;
+      if (quitarFondo) {
+        const { removeBackground } = await import('@imgly/background-removal');
+        const blobSinFondo = await removeBackground(archivoFoto);
+        archivoParaSubir = new File([blobSinFondo], 'foto-sin-fondo.png', { type: 'image/png' });
+      }
+      const formData = new FormData();
+      formData.append('archivo', archivoParaSubir);
+      const actualizado = await api.jugadoresAPI.subirFoto(rut, formData);
+      setDetalleJugador((prev) => ({ ...prev, ...actualizado }));
+      showToast({ message: 'Foto actualizada correctamente.', type: 'success' });
+      cerrarModalFoto();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo procesar o subir la foto.', type: 'error' });
+    } finally {
+      setProcesandoFoto(false);
+    }
+  };
+
   return (
     <div className="player-screen-shell">
       {esAdminDatosJugador ? (
@@ -326,6 +407,34 @@ function TarjetaJugadorPanel({
                   <span>{esAdminDatosJugador ? 'Editar datos del jugador' : 'Revisar / completar datos'}</span>
                 </button>
               )}
+              {puedeEditarDatosJugador && rolUsuario !== 'visita' && (
+                <div style={{ marginTop: '4px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '800', opacity: 0.85, display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '6px' }}>
+                    <Sparkles size={12} /> Diseño de la tarjeta
+                  </span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {Object.entries(DISENOS_MARCO).map(([key, d]) => {
+                      const activo = (detalleJugador?.diseno_marco || pupiloActivo.diseno_marco || 'clasico') === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          disabled={guardandoDiseno}
+                          onClick={() => cambiarDisenoMarco(key)}
+                          style={{
+                            padding: '6px 11px', borderRadius: '999px', fontSize: '11px', fontWeight: '800',
+                            border: activo ? '1px solid white' : '1px solid rgba(255,255,255,0.35)',
+                            background: activo ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.08)',
+                            color: 'white', cursor: guardandoDiseno ? 'default' : 'pointer',
+                          }}
+                        >
+                          {d.etiqueta}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -339,8 +448,9 @@ function TarjetaJugadorPanel({
           padding: '22px',
           background: `${estiloRareza.background}, radial-gradient(circle at 20% -10%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 45%)`,
           color: 'white',
-          border: `1px solid ${estiloRareza.border}`,
-          boxShadow: '0 20px 45px rgba(9, 20, 38, 0.32)'
+          border: disenoActivo.extraBorder || `1px solid ${estiloRareza.border}`,
+          boxShadow: disenoActivo.extraShadow ? `0 20px 45px rgba(9, 20, 38, 0.32), ${disenoActivo.extraShadow}` : '0 20px 45px rgba(9, 20, 38, 0.32)',
+          filter: disenoActivo.extraFilter || undefined,
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -390,25 +500,41 @@ function TarjetaJugadorPanel({
           </div>
 
           <div className="official-player-photo-wrap" style={{ display: 'grid', gap: '10px', justifyItems: 'center' }}>
-            <div className="official-player-photo-frame" style={{
-              width: '180px',
-              height: '214px',
-              borderRadius: '20px',
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.12) 100%)',
-              border: '1px solid rgba(255,255,255,0.3)',
-              padding: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: `0 10px 24px rgba(0,0,0,0.25), inset 0 0 0 2px ${estiloRareza.accent}`
-            }}>
-              {fotoPrincipal ? (
-                <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '14px' }} />
-              ) : (
-                <div style={{ width: '100%', height: '100%', borderRadius: '14px', background: 'rgba(255,255,255,0.18)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  {esFemenino ? <Venus size={30} /> : <Mars size={30} />}
-                  <span style={{ fontSize: '11px', fontWeight: '800', opacity: 0.9 }}>SIN FOTO</span>
-                </div>
+            <div style={{ position: 'relative' }}>
+              <div className="official-player-photo-frame" style={{
+                width: '180px',
+                height: '214px',
+                borderRadius: '20px',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.12) 100%)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                padding: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: `0 10px 24px rgba(0,0,0,0.25), inset 0 0 0 2px ${estiloRareza.accent}`
+              }}>
+                {fotoPrincipal ? (
+                  <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '14px' }} />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', borderRadius: '14px', background: 'rgba(255,255,255,0.18)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    {esFemenino ? <Venus size={30} /> : <Mars size={30} />}
+                    <span style={{ fontSize: '11px', fontWeight: '800', opacity: 0.9 }}>SIN FOTO</span>
+                  </div>
+                )}
+              </div>
+              {puedeEditarDatosJugador && rolUsuario !== 'visita' && (
+                <button
+                  type="button"
+                  onClick={() => setMostrarSubirFoto(true)}
+                  title="Cambiar foto"
+                  style={{
+                    position: 'absolute', bottom: '2px', right: '2px', width: '34px', height: '34px', borderRadius: '999px',
+                    background: 'var(--azul-electrico)', color: 'white', border: '2px solid white', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
+                  }}
+                >
+                  <Camera size={16} />
+                </button>
               )}
             </div>
           </div>
@@ -651,6 +777,67 @@ function TarjetaJugadorPanel({
         />
       )}
 
+      {mostrarSubirFoto && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Cambiar foto del jugador"
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(10,15,25,0.5)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: '16px',
+          }}
+          onClick={cerrarModalFoto}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--blanco-tarjeta)', borderRadius: 'var(--radius-lg)', padding: '20px',
+              maxWidth: '420px', width: '100%', maxHeight: '85vh', overflowY: 'auto',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '17px' }}>Foto para la tarjeta</h3>
+              <button onClick={cerrarModalFoto} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }} aria-label="Cerrar">
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+              Elige la foto que más te guste. Puedes quitarle el fondo automáticamente para que se vea mejor en la tarjeta.
+            </p>
+
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
+              className="form-input mb-10"
+              onChange={(e) => handleSeleccionArchivoFoto(e.target.files?.[0] || null)}
+            />
+
+            {previewFoto && (
+              <div style={{ width: '160px', height: '190px', margin: '0 auto 12px', borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--borde-suave)', background: 'repeating-conic-gradient(#e5e5e5 0% 25%, #ffffff 0% 50%) 0 0 / 16px 16px' }}>
+                <img src={previewFoto} alt="Vista previa" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+            )}
+
+            <label className="checkbox-label-row" style={{ marginBottom: '14px' }}>
+              <input type="checkbox" checked={quitarFondo} onChange={(e) => setQuitarFondo(e.target.checked)} disabled={procesandoFoto} />
+              <Sparkles size={13} /> Quitar el fondo automáticamente
+            </label>
+
+            <button
+              className="btn-electric"
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              onClick={handleConfirmarFoto}
+              disabled={!archivoFoto || procesandoFoto}
+            >
+              {procesandoFoto ? <Loader2 size={16} className="spin" /> : <Camera size={16} />}
+              {procesandoFoto ? (quitarFondo ? 'Quitando fondo y subiendo...' : 'Subiendo...') : 'Guardar foto'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div aria-hidden="true" style={{ position: 'fixed', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>
         <div
           ref={cardFrontExportRef}
@@ -664,8 +851,9 @@ function TarjetaJugadorPanel({
             flexDirection: 'column',
             background: `${estiloRareza.background}, radial-gradient(circle at 18% -5%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 40%)`,
             color: 'white',
-            border: `1px solid ${estiloRareza.border}`,
-            boxShadow: '0 20px 45px rgba(9, 20, 38, 0.32)'
+            border: disenoActivo.extraBorder || `1px solid ${estiloRareza.border}`,
+            boxShadow: disenoActivo.extraShadow ? `0 20px 45px rgba(9, 20, 38, 0.32), ${disenoActivo.extraShadow}` : '0 20px 45px rgba(9, 20, 38, 0.32)',
+            filter: disenoActivo.extraFilter || undefined,
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
