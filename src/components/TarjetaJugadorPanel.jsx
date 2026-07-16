@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Download, Mars, QrCode, ShieldCheck, Shirt, Trophy, User, Venus, X } from 'lucide-react';
+import { BadgeCheck, Download, ClipboardEdit, Mars, QrCode, ShieldCheck, Shirt, Trophy, User, Venus, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer } from 'recharts';
 import PupiloSelector from './PupiloSelector';
+import EditarJugadorModal from './EditarJugadorModal';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 
@@ -20,6 +21,7 @@ function TarjetaJugadorPanel({
   const cardFrontExportRef = useRef(null);
   const cardBackRef = useRef(null);
   const [mostrarCredencialAsistencia, setMostrarCredencialAsistencia] = useState(false);
+  const [mostrarEditarJugador, setMostrarEditarJugador] = useState(false);
   const estiloColeccion = 'coleccionista';
   const [vistaColeccion, setVistaColeccion] = useState('frente');
   const [detalleJugador, setDetalleJugador] = useState(null);
@@ -84,6 +86,8 @@ function TarjetaJugadorPanel({
   const nivelActualNumero = Number(nivelActual) || 0;
   const rolNormalizado = String(rolUsuario || '').toLowerCase().replace('-', '_');
   const mostrarIndumentaria = ['admin', 'super_admin'].includes(rolNormalizado);
+  const esAdminDatosJugador = ['admin', 'super_admin'].includes(rolNormalizado);
+  const puedeEditarDatosJugador = rolUsuario !== 'visita';
   const normalizarRut = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
   const pupiloDesdeListado = Array.isArray(pupilosDisponibles)
     ? pupilosDisponibles.find((item) => normalizarRut(item?.rut) === normalizarRut(pupiloActivo?.rut))
@@ -302,11 +306,17 @@ function TarjetaJugadorPanel({
               </div>
             </div>
 
-            <div className="assist-cta-card">
+            <div className="assist-cta-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button className="assist-cta-btn" onClick={() => setMostrarCredencialAsistencia(true)}>
                 <QrCode size={16} />
                 <span>Valida tu asistencia</span>
               </button>
+              {puedeEditarDatosJugador && (
+                <button className="assist-cta-btn" onClick={() => setMostrarEditarJugador(true)}>
+                  <ClipboardEdit size={16} />
+                  <span>{esAdminDatosJugador ? 'Editar datos del jugador' : 'Revisar / completar datos'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -621,6 +631,15 @@ function TarjetaJugadorPanel({
             <p>Presenta este QR al staff para registrar tu asistencia.</p>
           </div>
         </div>
+      )}
+
+      {mostrarEditarJugador && (
+        <EditarJugadorModal
+          jugador={detalleJugador || pupiloActivo}
+          esAdmin={esAdminDatosJugador}
+          onClose={() => setMostrarEditarJugador(false)}
+          onSaved={(actualizado) => setDetalleJugador((prev) => ({ ...prev, ...actualizado }))}
+        />
       )}
 
       <div aria-hidden="true" style={{ position: 'fixed', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>

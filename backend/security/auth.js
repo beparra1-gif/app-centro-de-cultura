@@ -141,6 +141,39 @@ const stripFieldsUnlessModule = (fields, moduloId) => (req, res, next) => {
   return next();
 };
 
+const normalizarRutParaComparar = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+
+// Permite el acceso a /api/jugadores/:rut si el actor tiene el módulo admin dado,
+// o si su RUT coincide con el rut_apoderado registrado del jugador (apoderado
+// editando el perfil de su propio pupilo). Consulta la tabla en cada request
+// para reflejar reasignaciones de apoderado sin depender del token.
+const requireApoderadoDeJugadorOModule = (pool, moduloId) => (req, res, next) => {
+  const actor = req.actor;
+  if (!actor) {
+    return res.status(401).json({ error: 'Falta token de autenticación.' });
+  }
+
+  const permisos = obtenerPermisosEfectivos({ rol: actor.rol });
+  if (permisos[moduloId]) return next();
+
+  const rutJugador = String(req.params.rut || '').trim();
+  const rutActor = normalizarRutParaComparar(actor.rut);
+  if (!rutJugador || !rutActor) {
+    return res.status(403).json({ error: 'No tienes acceso a este recurso.' });
+  }
+
+  pool.query('SELECT rut_apoderado FROM jugadores WHERE rut_jugador = $1', [rutJugador])
+    .then((result) => {
+      const rutApoderadoRegistrado = normalizarRutParaComparar(result.rows[0]?.rut_apoderado || '');
+      if (rutApoderadoRegistrado && rutApoderadoRegistrado === rutActor) {
+        req.esApoderadoDueno = true;
+        return next();
+      }
+      return res.status(403).json({ error: 'No tienes acceso a este recurso.' });
+    })
+    .catch((err) => res.status(500).json({ error: err.message }));
+};
+
 module.exports = {
   hashPassword,
   verifyPassword,
@@ -150,6 +183,7 @@ module.exports = {
   requireModule,
   requireAnyModule,
   requireOwnerIdOrModule,
+  requireApoderadoDeJugadorOModule,
   stripFieldsUnlessModule,
   isBcryptHash,
 };

@@ -2110,6 +2110,7 @@ function App() {
     apellido_paterno: j.apellido_paterno || '',
     apellido_materno: j.apellido_materno || '',
     correo_apoderado: j.correo_apoderado || '',
+    rut_apoderado: j.rut_apoderado || '',
     categoria: j.categoria || 'General',
     rama: j.rama || j.categoria_rama || 'General',
     genero: j.genero || j.sexo || '',
@@ -2165,6 +2166,9 @@ function App() {
 
     if (esPerfilFamiliar) {
       return pupilosDisponiblesBase.filter((j) => {
+        const rutApoderado = normalizarRutComparacion(j.rut_apoderado || '');
+        if (rutApoderado && rutUsuarioAutenticado && rutApoderado === rutUsuarioAutenticado) return true;
+
         const correoApoderado = String(j.correo_apoderado || '').trim().toLowerCase();
         return Boolean(correoUsuarioAutenticado) && correoApoderado === correoUsuarioAutenticado;
       });

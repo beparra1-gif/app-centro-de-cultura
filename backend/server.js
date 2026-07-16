@@ -24,6 +24,7 @@ const {
   requireModule,
   requireAnyModule,
   requireOwnerIdOrModule,
+  requireApoderadoDeJugadorOModule,
   stripFieldsUnlessModule,
 } = require('./security/auth');
 
@@ -3278,8 +3279,19 @@ app.post('/api/jugadores', authenticate, requireModule('admin_dashboard'), async
 });
 
 // PUT: Actualizar jugador por RUT
-app.put('/api/jugadores/:rut', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+const CAMPOS_JUGADOR_SOLO_ADMIN = [
+  'rut_apoderado', 'correo_apoderado', 'correo_jugador', 'password_jugador', 'forzar_clave_jugador',
+  'rama', 'categoria', 'numero_camiseta', 'fecha_ingreso', 'mes_inicio_cobro', 'beca',
+  'valor_mensualidad', 'matricula_pagada', 'polera_entregada', 'poleron_entregado',
+  'estado', 'estado_deportivo', 'fecha_inicio_baja', 'fecha_fin_baja', 'xp_puntos',
+];
+
+// El apoderado dueño (rut_apoderado registrado) puede editar el perfil de su propio
+// pupilo (datos personales, salud, contacto, tallas); los campos administrativos
+// (categoría, mensualidad, beca, vínculo de cuenta, etc.) quedan reservados a admin.
+app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), stripFieldsUnlessModule(CAMPOS_JUGADOR_SOLO_ADMIN, 'admin_dashboard'), async (req, res) => {
   const {
+    rut_apoderado,
     correo_apoderado,
     correo_jugador,
     password_jugador,
@@ -3367,8 +3379,9 @@ app.put('/api/jugadores/:rut', authenticate, requireModule('admin_dashboard'), a
         fecha_inicio_baja = COALESCE($39, fecha_inicio_baja),
         fecha_fin_baja = COALESCE($40, fecha_fin_baja),
         xp_puntos = COALESCE($41, xp_puntos),
+        rut_apoderado = COALESCE($42, rut_apoderado),
         updated_at = NOW()
-      WHERE rut_jugador = $42
+      WHERE rut_jugador = $43
       RETURNING *`,
       [
         correo_apoderado ?? null,
@@ -3412,6 +3425,7 @@ app.put('/api/jugadores/:rut', authenticate, requireModule('admin_dashboard'), a
         fecha_inicio_baja ?? null,
         fecha_fin_baja ?? null,
         xp_puntos ?? null,
+        rut_apoderado ?? null,
         req.params.rut,
       ]
     );

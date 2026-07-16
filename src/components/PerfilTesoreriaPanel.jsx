@@ -72,11 +72,16 @@ function PerfilTesoreriaPanel({
 
   const mesesBase = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const anioObjetivo = 2026;
+  const normalizarRutCuenta = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
   const cuentaActual = Array.isArray(cuentasAdmin)
     ? cuentasAdmin.find((cuenta) => {
+      const rutCuenta = normalizarRutCuenta(cuenta.rut || '');
+      const rutApoderado = normalizarRutCuenta(pupiloActivo?.rut_apoderado || '');
+      if (rutCuenta && rutApoderado && rutCuenta === rutApoderado) return true;
+
       const correoCuenta = String(cuenta.correo || '').trim().toLowerCase();
       const correoApoderado = String(pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
-      return correoCuenta && correoApoderado && correoCuenta === correoApoderado;
+      return Boolean(correoCuenta && correoApoderado && correoCuenta === correoApoderado);
     }) || null
     : null;
   const pupilosActivos = esVistaAdmin
