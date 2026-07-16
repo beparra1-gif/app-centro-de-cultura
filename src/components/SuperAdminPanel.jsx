@@ -135,11 +135,19 @@ function SuperAdminPanel({
     ? Math.round((af.recaudadoSocios + af.recaudadoDeportistas) / (af.metaSocios + af.metaDeportistas) * 100)
     : 0;
 
-  const morososFiltrados = filtroMorosos === 'todos'
+  const [busquedaMorosos, setBusquedaMorosos] = useState('');
+
+  const morososFiltrados = (filtroMorosos === 'todos'
     ? (morososAdmin || [])
     : filtroMorosos === 'socios'
       ? (morososAdmin || []).filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado')
-      : (morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado');
+      : (morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado')
+  ).filter((m) => {
+    const q = busquedaMorosos.trim().toLowerCase();
+    if (!q) return true;
+    if (String(m.nombre || '').toLowerCase().includes(q)) return true;
+    return (m.pupilos || []).some((p) => String(p || '').toLowerCase().includes(q));
+  });
 
   const [filtroUsuariosTexto, setFiltroUsuariosTexto] = useState('');
   const [filtroTipoPerfil, setFiltroTipoPerfil] = useState('todos');
@@ -1737,11 +1745,37 @@ function SuperAdminPanel({
               <Bell size={13} /> Notificar Todos
             </button>
           </div>
+          <div style={{ position: 'relative', marginBottom: '10px' }}>
+            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+            <input
+              type="text"
+              className="form-input"
+              style={{ paddingLeft: '34px', paddingRight: busquedaMorosos ? '34px' : undefined }}
+              placeholder="Buscar por socio, apoderado o deportista..."
+              value={busquedaMorosos}
+              onChange={(e) => setBusquedaMorosos(e.target.value)}
+            />
+            {busquedaMorosos && (
+              <button
+                type="button"
+                onClick={() => setBusquedaMorosos('')}
+                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
+                aria-label="Limpiar búsqueda"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
           <div className="filter-chips mb-15">
             <button className={`filter-chip ${filtroMorosos === 'todos' ? 'active' : ''}`} onClick={() => setFiltroMorosos('todos')}>Todos ({(morososAdmin || []).length})</button>
             <button className={`filter-chip ${filtroMorosos === 'socios' ? 'active' : ''}`} onClick={() => setFiltroMorosos('socios')}>Socios ({(morososAdmin || []).filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado').length})</button>
             <button className={`filter-chip ${filtroMorosos === 'apoderados' ? 'active' : ''}`} onClick={() => setFiltroMorosos('apoderados')}>Apoderados ({(morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado').length})</button>
           </div>
+          {morososFiltrados.length === 0 && (
+            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
+              Sin morosos que coincidan con la búsqueda.
+            </p>
+          )}
           {[...morososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map(m => {
             const gravedad = m.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : m.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
             const { bg, color } = colorTipo(m.tipo);
