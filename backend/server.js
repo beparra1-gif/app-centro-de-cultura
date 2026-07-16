@@ -2506,6 +2506,49 @@ app.post('/api/admin/sync-sheets/export', async (req, res) => {
   }
 });
 
+// Repara el vinculo por RUT entre jugadores y su cuenta apoderada para
+// asignaciones hechas ANTES del fix que hizo que "asignar pupilo" tambien
+// escribiera rut_apoderado (antes solo quedaba correo_apoderado). Empareja
+// por correo_apoderado <-> cuentas.correo y completa el RUT faltante, sin
+// tocar ningun otro campo.
+app.post('/api/admin/backfill-rut-apoderado', async (req, res) => {
+  const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
+  if (!configuredToken) {
+    return res.status(503).json({
+      error: 'Backfill deshabilitado: falta ADMIN_SYNC_TOKEN en variables de entorno.',
+    });
+  }
+
+  const requestToken = getSyncTokenFromRequest(req);
+  if (!requestToken || requestToken !== configuredToken) {
+    return res.status(401).json({ error: 'Token invalido para ejecutar el backfill.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE jugadores j
+       SET rut_apoderado = c.rut, updated_at = NOW()
+       FROM cuentas c
+       WHERE COALESCE(TRIM(j.rut_apoderado), '') = ''
+         AND COALESCE(TRIM(j.correo_apoderado), '') <> ''
+         AND COALESCE(TRIM(c.rut), '') <> ''
+         AND LOWER(TRIM(c.correo)) = LOWER(TRIM(j.correo_apoderado))
+       RETURNING j.rut_jugador, j.nombres, j.correo_apoderado, j.rut_apoderado`
+    );
+
+    return res.json({
+      ok: true,
+      actualizados: result.rows.length,
+      detalle: result.rows,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: 'No se pudo ejecutar el backfill de rut_apoderado.',
+      detail: error.message,
+    });
+  }
+});
+
 app.post('/api/admin/sync-sheets/webhook-ping', async (req, res) => {
   const configuredToken = String(process.env.ADMIN_SYNC_TOKEN || '').trim();
   if (!configuredToken) {
