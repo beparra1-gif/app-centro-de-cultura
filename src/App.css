@@ -2077,11 +2077,42 @@ button,
   border-radius: 22px;
   padding: 10px;
   background: linear-gradient(145deg, rgba(10, 14, 22, 0.94), rgba(25, 31, 45, 0.9));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Con el partido iniciado, el panel cubre TODA la ventana como una capa fija,
+   sin depender de la Fullscreen API del navegador (que exige un gesto directo
+   del usuario y falla en silencio en los reintentos automaticos). Asi el
+   header/banner/nav de la app quedan tapados y no le quitan alto util a la
+   pantalla de mesa, entremos o no a fullscreen nativo. */
+.mesa-live-wrap-activo {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  border-radius: 0;
+  border: none;
+  background: linear-gradient(145deg, #0a0e16 0%, #191f2d 100%);
 }
 
 .mesa-live-wrap:fullscreen {
-  overflow: auto;
+  height: 100dvh;
+  max-height: 100dvh;
   padding: 16px;
+}
+
+.mesa-live-wrap > * {
+  flex-shrink: 0;
+}
+
+.mesa-live-wrap .mesa-live-layout-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .mesa-filtros-grid {
@@ -2220,17 +2251,34 @@ button,
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.10);
 }
 
+.mesa-live-zone-local > *,
+.mesa-live-zone-visit > *,
+.mesa-live-zone-center > * {
+  flex-shrink: 0;
+}
+
+.mesa-live-zone-local .mesa-team-split-grid,
+.mesa-live-zone-visit .mesa-team-split-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .mesa-team-split-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(96px, 0.72fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .mesa-team-col {
   border: 1px solid var(--borde-suave);
   border-radius: 18px;
   padding: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .mesa-team-col-interior {
@@ -2244,30 +2292,54 @@ button,
 .mesa-live-layout-grid {
   display: grid !important;
   grid-template-columns: minmax(300px, 1fr) minmax(320px, 0.92fr) minmax(300px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
 }
 
 /* Gana por especificidad a .fiba-container .caja-doble-grid.landscape-mode (más abajo
    en este archivo), que si no, pisa este grid-template-columns con un auto-fit genérico
-   y descoloca la tarjeta de control a una fila aparte cuando hay 3 zonas (2 equipos). */
+   y descoloca la tarjeta de control a una fila aparte cuando hay 3 zonas (2 equipos).
+   align-items: stretch (en vez de start) es lo que permite que height:100% en las
+   zonas hijas realmente se limite al alto disponible en vez de crecer con su contenido. */
 .fiba-container .caja-doble-grid.landscape-mode.mesa-live-layout-grid {
   grid-template-columns: minmax(300px, 1fr) minmax(320px, 0.92fr) minmax(300px, 1fr) !important;
+  align-items: stretch !important;
 }
 
 .mesa-live-zone-local {
   grid-column: 1;
   grid-row: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .mesa-live-zone-center {
   grid-column: 2;
   grid-row: 1;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.mesa-live-zone-center .fiba-botones-grid .btn-fiba {
+  padding: 12px 5px;
+  font-size: 13px;
 }
 
 .mesa-live-zone-visit {
   grid-column: 3;
   grid-row: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .mesa-oncourt-player-card {

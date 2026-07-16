@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowRightLeft, Download, Expand, FileText, Filter, History, Shield, Tv, Users } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import { calcularEff } from '../utils/appHelpers';
@@ -11,6 +12,22 @@ import { normalizarSlugLogo } from '../utils/logoResolver';
 
 const LIMITE_JUGADORES_POR_EQUIPO = 12;
 const MESA_SESSION_KEY = 'mesa_live_session_v2';
+
+// Cuando "activo", renderiza el contenido directo en document.body en vez del
+// arbol normal: .ios-main tiene una transform permanente (clase screen-ready,
+// para su animacion de entrada) que lo convierte en containing block de los
+// descendientes position:fixed, atrapando el overlay de pantalla completa de
+// Mesa por debajo del header de la app en vez de cubrirlo. El portal evita
+// ese problema por completo sin tocar la animacion global de .ios-main.
+function LiveWrapPortal({ activo, innerRef, children }) {
+  const contenido = (
+    <div ref={innerRef} className={`mesa-live-wrap ${activo ? 'mesa-live-wrap-activo' : ''}`}>
+      {children}
+    </div>
+  );
+  if (!activo || typeof document === 'undefined') return contenido;
+  return createPortal(contenido, document.body);
+}
 
 const numero = (valor) => Number(valor || 0);
 const limitar = (valor, min, max) => Math.max(min, Math.min(max, valor));
@@ -1302,9 +1319,14 @@ function MesaControlPanel({
     }
   };
 
-  const activarPantallaCompletaForzada = async () => {
+  // No llama a requestFullscreen() directamente aca: el nodo puede migrar
+  // dentro/fuera de un portal (ver LiveWrapPortal) cuando cambia este estado,
+  // y usar la ref de inmediato despues de setState apunta al nodo viejo a
+  // punto de desconectarse. El efecto de mas abajo (dependiente de
+  // forzarPantallaCompletaLive) reintenta con la ref ya actualizada tras el
+  // commit.
+  const activarPantallaCompletaForzada = () => {
     setForzarPantallaCompletaLive(true);
-    await cambiarVistaLivePantallaCompleta();
   };
 
   useEffect(() => {
@@ -1537,16 +1559,6 @@ function MesaControlPanel({
     if (!cambioObligatorioJugadorId) return;
     setMostrarModalCambioObligatorio(true);
   }, [cambioObligatorioJugadorId]);
-
-  const cambiarVistaLivePantallaCompleta = async () => {
-    const node = liveFullScreenRef.current;
-    if (!node || !document?.fullscreenEnabled) return;
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-      return;
-    }
-    await node.requestFullscreen();
-  };
 
   const alternarCronometro = () => {
     if (!partidoIniciado) return;
@@ -2985,7 +2997,7 @@ function MesaControlPanel({
       )}
 
       {moduloMesa === 'live' && (
-        <div ref={liveFullScreenRef} className="mesa-live-wrap">
+        <LiveWrapPortal activo={partidoIniciado && forzarPantallaCompletaLive} innerRef={liveFullScreenRef}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', gap: '8px' }}>
             <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={activarPantallaCompletaForzada}><Expand size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Forzar Pantalla Completa</button>
             <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={salirPantallaCompletaManual}>Salir Pantalla Completa</button>
@@ -3406,7 +3418,7 @@ function MesaControlPanel({
         </div>
 
       </div>
-        </div>
+        </LiveWrapPortal>
       )}
 
       {moduloMesa === 'analitica' && (
