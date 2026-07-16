@@ -4,6 +4,7 @@ import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer } from 'recharts';
 import PupiloSelector from './PupiloSelector';
+import BuscadorJugadorAdmin from './BuscadorJugadorAdmin';
 import EditarJugadorModal from './EditarJugadorModal';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
@@ -270,12 +271,20 @@ function TarjetaJugadorPanel({
 
   return (
     <div className="player-screen-shell">
-      <PupiloSelector
-        pupilos={pupilosDisponibles}
-        pupiloActivo={pupiloActivo}
-        rolUsuario={rolUsuario}
-        onChangePupilo={setPupiloActivo}
-      />
+      {esAdminDatosJugador ? (
+        <BuscadorJugadorAdmin
+          jugadores={pupilosDisponibles}
+          pupiloActivo={pupiloActivo}
+          onSeleccionar={setPupiloActivo}
+        />
+      ) : (
+        <PupiloSelector
+          pupilos={pupilosDisponibles}
+          pupiloActivo={pupiloActivo}
+          rolUsuario={rolUsuario}
+          onChangePupilo={setPupiloActivo}
+        />
+      )}
 
       {rolUsuario !== 'visita' && (
         <div className="card history-assist-card" style={{ marginTop: '4px', borderRadius: '18px', background: 'linear-gradient(135deg, #101C2E 0%, #142E45 100%)', color: 'white', border: '1px solid rgba(255,255,255,0.12)' }}>
