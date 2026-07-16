@@ -32,7 +32,6 @@ import LogoPicker from './LogoPicker';
 import PagoForm from './PagoForm';
 import ResultadosCards from './ResultadosCards';
 import { colorTipo } from '../utils/appHelpers';
-import { nextId } from '../utils/runtimeId';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { cuentasDemo } from '../data/demoAccounts';
 import ReportesPanel from './ReportesPanel';
@@ -1557,19 +1556,17 @@ function SuperAdminPanel({
         convocados,
       }));
 
-      const nuevaComunicacionCitacion = {
-        id: nextId(),
-        TITULO: `Citación ${citaForm.tipo_competencia}: ${citaForm.competencia_nombre}`,
-        CUERPO_TEXTO: `Convocatoria oficial vs ${citaForm.rival_nombre}. Día ${citaForm.dia_citacion}, citación ${citaForm.hora_citacion}, presentación ${citaForm.hora_presentacion}.`,
-        FECHA: new Date().toLocaleDateString('es-CL'),
-        TIPO_COMUNICADO: 'Citación',
+      // El post que anuncia la citación en el Muro se guarda en el backend
+      // (no solo en el estado local) para que un apoderado en otra sesión o
+      // dispositivo también vea la tarjeta de confirmar/rechazar.
+      const comunicacionCreada = await api.comunicacionesAPI.create({
+        titulo: `Citación ${citaForm.tipo_competencia}: ${citaForm.competencia_nombre}`,
+        cuerpo_texto: `Convocatoria oficial vs ${citaForm.rival_nombre}. Día ${citaForm.dia_citacion}, citación ${citaForm.hora_citacion}, presentación ${citaForm.hora_presentacion}.`,
+        tipo: 'Citación',
         rama: citaRama === 'todas' ? 'General' : citaRama,
         categoria: citaCategoria === 'todas' ? 'General' : citaCategoria,
         urgencia: 'Alta',
         solicita_asistencia: true,
-        audiencia: ['apoderados', 'deportistas'],
-        asistencias: [],
-        reacciones: {},
         citacion_id: citacion.id,
         responsable_nombre: citacion.responsable_nombre,
         responsable_rol: citacion.responsable_rol,
@@ -1577,6 +1574,25 @@ function SuperAdminPanel({
         convocatoria_alertas_morosidad: convocados
           .filter((x) => Boolean(x.requiere_excepcion_morosidad))
           .map((x) => x.rut_jugador),
+      });
+
+      const nuevaComunicacionCitacion = {
+        id: comunicacionCreada.id,
+        TITULO: comunicacionCreada.titulo,
+        CUERPO_TEXTO: comunicacionCreada.cuerpo_texto,
+        FECHA: new Date().toLocaleDateString('es-CL'),
+        TIPO_COMUNICADO: comunicacionCreada.tipo,
+        rama: comunicacionCreada.rama,
+        categoria: comunicacionCreada.categoria,
+        urgencia: comunicacionCreada.urgencia,
+        solicita_asistencia: comunicacionCreada.solicita_asistencia,
+        asistencias: [],
+        reacciones: {},
+        citacion_id: comunicacionCreada.citacion_id,
+        responsable_nombre: comunicacionCreada.responsable_nombre,
+        responsable_rol: comunicacionCreada.responsable_rol,
+        convocatoria_ruts: comunicacionCreada.convocatoria_ruts || [],
+        convocatoria_alertas_morosidad: comunicacionCreada.convocatoria_alertas_morosidad || [],
       };
 
       setNominaCita((prev) => [citacion, ...(prev || [])]);

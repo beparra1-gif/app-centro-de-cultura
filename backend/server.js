@@ -1375,6 +1375,28 @@ const ensureCuentasExtendedColumns = async () => {
   console.log('🧩 Columnas extendidas de cuentas verificadas');
 };
 
+// El post que anuncia una citación en el Muro (comunicaciones) solo vivía en
+// el estado local del navegador que la creaba: un apoderado en otra sesión
+// nunca llegaba a ver la tarjeta de confirmar/rechazar. Estas columnas le dan
+// persistencia real al vínculo comunicación ↔ citación.
+const ensureComunicacionesExtendedColumns = async () => {
+  const ddl = [
+    // Sin FK: ensureCitacionesTables/ensureComunicacionesExtendedColumns corren
+    // en paralelo en el arranque (no están encadenadas), así que una referencia
+    // a citaciones(id) podría fallar por orden de ejecución.
+    `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS citacion_id INTEGER`,
+    `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS convocatoria_ruts JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS convocatoria_alertas_morosidad JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS responsable_nombre VARCHAR(255)`,
+    `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS responsable_rol VARCHAR(50)`,
+  ];
+
+  for (const statement of ddl) {
+    await pool.query(statement);
+  }
+  console.log('🧩 Columnas extendidas de comunicaciones verificadas');
+};
+
 const ensurePartidosLiveLogos = async () => {
   const ddl = [
     `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS logo_local_url VARCHAR(255)`,
@@ -2401,11 +2423,13 @@ app.post('/api/auth/change-password', authRateLimiter, async (req, res) => {
 app.get('/api/comunicaciones', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT 
-        id, titulo, cuerpo_texto, tipo, rama, categoria, urgencia, 
+      SELECT
+        id, titulo, cuerpo_texto, tipo, rama, categoria, urgencia,
         solicita_asistencia, reacciones, asistencias,
+        citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad,
+        responsable_nombre, responsable_rol,
         created_at as fecha
-      FROM comunicaciones 
+      FROM comunicaciones
       ORDER BY created_at DESC
     `);
     res.json(result.rows);
@@ -2430,14 +2454,23 @@ app.get('/api/comunicaciones/:id', async (req, res) => {
 
 // POST: Crear comunicación
 app.post('/api/comunicaciones', authenticate, requireModule('admin_dashboard'), async (req, res) => {
-  const { titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia } = req.body;
+  const {
+    titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia,
+    citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad,
+    responsable_nombre, responsable_rol,
+  } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO comunicaciones 
-       (titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia, reacciones, asistencias)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO comunicaciones
+       (titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia, reacciones, asistencias,
+        citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad, responsable_nombre, responsable_rol)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
-      [titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia || false, '{}', '[]']
+      [
+        titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia || false, '{}', '[]',
+        citacion_id || null, JSON.stringify(convocatoria_ruts || []), JSON.stringify(convocatoria_alertas_morosidad || []),
+        responsable_nombre || null, responsable_rol || null,
+      ]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -4117,18 +4150,30 @@ app.delete('/api/citaciones/:id/convocados/:rut', authenticate, requireModule('c
 
 // PATCH: confirma/rechaza la citación — solo el apoderado registrado del
 // deportista puede responder (ni admin ni staff responden en su lugar).
+// respuesta es opcional: el apoderado puede guardar solo un mensaje al
+// profesor (o corregir la justificación) sin volver a confirmar/rechazar.
 app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireApoderadoDeJugador(pool), async (req, res) => {
   const { respuesta, justificacion, mensaje_profesor, excepcion_solicitada } = req.body;
-  if (!['si', 'no'].includes(respuesta)) {
+  const hayRespuesta = respuesta !== undefined && respuesta !== null;
+
+  if (hayRespuesta && !['si', 'no'].includes(respuesta)) {
     return res.status(400).json({ error: 'Respuesta inválida: debe ser "si" o "no".' });
   }
   if (respuesta === 'no' && !String(justificacion || '').trim()) {
     return res.status(400).json({ error: 'Debes indicar una justificación para rechazar la citación.' });
   }
+  if (!hayRespuesta && mensaje_profesor === undefined && justificacion === undefined) {
+    return res.status(400).json({ error: 'No hay ningún cambio para guardar.' });
+  }
+
+  const excepcionProvista = excepcion_solicitada === undefined || excepcion_solicitada === null
+    ? null
+    : Boolean(excepcion_solicitada);
+
   try {
     const result = await pool.query(
       `UPDATE citacion_convocados SET
-        respuesta = $1,
+        respuesta = COALESCE($1, respuesta),
         justificacion = COALESCE($2, justificacion),
         mensaje_profesor = COALESCE($3, mensaje_profesor),
         excepcion_solicitada = COALESCE($4, excepcion_solicitada),
@@ -4136,7 +4181,7 @@ app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireApode
         actualizado_en = NOW()
        WHERE citacion_id = $5 AND rut_jugador = $6
        RETURNING *`,
-      [respuesta, justificacion || null, mensaje_profesor || null, Boolean(excepcion_solicitada), req.params.id, req.params.rut]
+      [hayRespuesta ? respuesta : null, justificacion || null, mensaje_profesor || null, excepcionProvista, req.params.id, req.params.rut]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'No se encontró ese convocado en la citación.' });
@@ -5657,6 +5702,10 @@ app.listen(PORT, () => {
 
   ensureCuentasExtendedColumns().catch((error) => {
     console.error('❌ Error verificando columnas extendidas de cuentas:', error.message);
+  });
+
+  ensureComunicacionesExtendedColumns().catch((error) => {
+    console.error('❌ Error verificando columnas extendidas de comunicaciones:', error.message);
   });
 
   ensurePartidosLiveCoreColumns().catch((error) => {

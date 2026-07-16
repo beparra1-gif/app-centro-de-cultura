@@ -36,8 +36,6 @@ function ComunicacionesPanel({
     { id: 'great', nombre: 'Genial', color: '#10b981', icon: ThumbsUp },
     { id: 'sad', nombre: 'No me gusta', color: '#f59315', icon: Frown }
   ];
-  const rolNormalizado = String(rolUsuario || '').toLowerCase();
-  const esApoderadoRol = rolNormalizado === 'apoderado' || rolNormalizado === 'socio-apoderado';
   const [draftMensajesProfesor, setDraftMensajesProfesor] = useState({});
 
   const obtenerClaveMensaje = (comId, rut) => `${comId}-${rut}`;
@@ -98,14 +96,17 @@ function ComunicacionesPanel({
     const rutUsuario = String(usuarioAutenticado?.rut || pupiloActivo?.rut || '').trim();
     const correoUsuario = String(usuarioAutenticado?.correo || pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
     const actorId = rutUsuario || correoUsuario || `anon-${Date.now()}`;
-    const esApoderado = esApoderadoRol;
+    // El backend autoriza por titularidad (rut_apoderado del jugador), no por
+    // el rol de la cuenta. Lo único que bloquea es que el propio deportista
+    // citado (coincide por su propio RUT) intente responder por sí mismo.
+    const esElJugadorCitado = Boolean(rutUsuario) && String(convocado?.rut_jugador || '').trim() === rutUsuario;
     const claveMensaje = obtenerClaveMensaje(comId, convocado?.rut_jugador || actorId);
     const mensajeProfesor = String(draftMensajesProfesor[claveMensaje] ?? convocado?.mensaje_profesor ?? '').trim();
     const justificacion = respuesta === 'no'
       ? String(convocado?.justificacion || '').trim()
       : '';
 
-    if (!esApoderado) {
+    if (esElJugadorCitado) {
       showToast({ message: 'Solo el apoderado puede confirmar o rechazar la citación.', type: 'error' });
       return;
     }
@@ -192,12 +193,38 @@ function ComunicacionesPanel({
     }));
   };
 
-  const guardarMensajeProfesor = (comId, convocado) => {
+  const guardarMensajeProfesor = async (comId, convocado) => {
     const claveMensaje = obtenerClaveMensaje(comId, convocado?.rut_jugador || 'sin-rut');
     const mensajeProfesor = String(draftMensajesProfesor[claveMensaje] ?? '').trim();
     const comunicacion = comunicaciones.find((item) => item.id === comId);
     const citacionId = comunicacion?.citacion_id || convocado?.citacion_id || null;
+    const citacionVinculada = citacionId ? (nominaCita || []).find((cita) => cita.id === citacionId) : null;
 
+    // Citación real: el mensaje se guarda en el backend (solo el apoderado
+    // llega hasta aquí, el botón está oculto para el resto de los roles).
+    if (citacionVinculada && convocado?.rut_jugador) {
+      try {
+        const actualizado = await api.citacionesAPI.responder(citacionVinculada.id, convocado.rut_jugador, {
+          mensaje_profesor: mensajeProfesor,
+        });
+        setNominaCita((prev) => (prev || []).map((cita) => {
+          if (cita.id !== citacionVinculada.id) return cita;
+          return {
+            ...cita,
+            convocados: (cita.convocados || []).map((item) => (
+              item.rut_jugador === convocado.rut_jugador ? { ...item, ...actualizado } : item
+            )),
+          };
+        }));
+        showToast({ message: 'Mensaje al profesor actualizado.', type: 'success' });
+      } catch (error) {
+        showToast({ message: error.message || 'No se pudo guardar el mensaje al profesor.', type: 'error' });
+      }
+      return;
+    }
+
+    // Citación legacy sin persistencia real: se mantiene el comportamiento
+    // anterior (bookkeeping solo en el post local).
     setComunicaciones(comunicaciones.map((c) => {
       if (c.id !== comId) return c;
       const asistencias = Array.isArray(c.asistencias) ? [...c.asistencias] : [];
@@ -207,16 +234,6 @@ function ComunicacionesPanel({
       }
       return { ...c, asistencias };
     }));
-
-    if (typeof setNominaCita === 'function' && convocado?.rut_jugador) {
-      setNominaCita((prev) => (prev || []).map((cita) => {
-        if (cita.id !== citacionId) return cita;
-        return {
-          ...cita,
-          convocados: (cita.convocados || []).map((item) => item.rut_jugador === convocado.rut_jugador ? { ...item, mensaje_profesor: mensajeProfesor, actualizado_en: new Date().toISOString() } : item),
-        };
-      }));
-    }
 
     showToast({ message: 'Mensaje al profesor actualizado.', type: 'success' });
   };
@@ -485,6 +502,14 @@ function ComunicacionesPanel({
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {(convocados || []).map((convocado) => {
                               const esPropio = propios.some((item) => item.rut_jugador === convocado.rut_jugador);
+                              // El backend autoriza el RSVP por titularidad (rut_apoderado del
+                              // jugador), no por el rol de la cuenta — un "socio" o "directiva"
+                              // puede ser apoderado igual que un rol "apoderado" literal. La
+                              // única persona que NO puede confirmar/rechazar es el propio
+                              // deportista citado (coincide por su propio RUT, no por correo
+                              // de apoderado).
+                              const esElJugadorCitado = Boolean(rutUsuario) && String(convocado.rut_jugador || '').trim() === rutUsuario;
+                              const puedeResponder = esPropio && !esElJugadorCitado;
                               const colores = obtenerColorEstado(convocado.respuesta);
                               const claveMensaje = obtenerClaveMensaje(c.id, convocado.rut_jugador);
                               const mensajeActual = draftMensajesProfesor[claveMensaje] ?? convocado.mensaje_profesor ?? '';
@@ -500,19 +525,19 @@ function ComunicacionesPanel({
                                     </span>
                                   </div>
 
-                                  {convocado.requiere_excepcion_morosidad && esApoderadoRol && esPropio && (
+                                  {convocado.requiere_excepcion_morosidad && puedeResponder && (
                                     <p style={{ margin: '8px 0 0 0', fontSize: '12px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.14)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '10px', padding: '8px 10px' }}>
                                       Alerta tesorería: deportista moroso. Debes solicitar excepción de citación para confirmar asistencia.
                                     </p>
                                   )}
 
-                                  {esPropio && !esApoderadoRol && (
+                                  {esElJugadorCitado && (
                                     <p style={{ marginTop: '8px', fontSize: '12px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(15,23,42,0.05)', borderRadius: '10px', padding: '8px 10px' }}>
                                       Fuiste citado a este partido. Solo tu apoderado puede confirmar o rechazar la asistencia.
                                     </p>
                                   )}
 
-                                  {esPropio && esApoderadoRol && (
+                                  {puedeResponder && (
                                     <>
                                       <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)' }}>Selecciona una opción de asistencia</div>
                                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
@@ -550,7 +575,7 @@ function ComunicacionesPanel({
                                         <button className="btn-secondary" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => guardarMensajeProfesor(c.id, { ...convocado, citacion_id: c.citacion_id })}>
                                           Guardar mensaje al profesor
                                         </button>
-                                        {convocado.respuesta && (
+                                        {(convocado.respuesta === 'si' || convocado.respuesta === 'no') && (
                                           <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>
                                             Información de asistencia completada: usted {convocado.respuesta === 'si' ? 'sí asiste' : 'no asiste'}.
                                           </span>
