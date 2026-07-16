@@ -218,15 +218,12 @@ function SuperAdminPanel({
   }));
   const [jugadorVisitaEdit, setJugadorVisitaEdit] = useState(null);
   const [guardandoVisita, setGuardandoVisita] = useState(false);
+  const [asignandoApoderadoRut, setAsignandoApoderadoRut] = useState(null);
+  const [correoApoderadoParaAsignar, setCorreoApoderadoParaAsignar] = useState('');
+  const [guardandoAsignacionApoderado, setGuardandoAsignacionApoderado] = useState(false);
   const [syncToken, setSyncToken] = useState('');
   const [syncSheetsRunning, setSyncSheetsRunning] = useState(false);
   const [syncSheetsResult, setSyncSheetsResult] = useState(null);
-  const [loadingSyncStatus, setLoadingSyncStatus] = useState(false);
-  const [loadingQualityDetails, setLoadingQualityDetails] = useState(false);
-  const [qualityDetailResult, setQualityDetailResult] = useState(null);
-  const [loadingJugadoresConflicts, setLoadingJugadoresConflicts] = useState(false);
-  const [jugadoresConflictsResult, setJugadoresConflictsResult] = useState(null);
-  const [resolviendoConflictoRut, setResolviendoConflictoRut] = useState('');
   const [subiendoFotoJugadorNuevo, setSubiendoFotoJugadorNuevo] = useState(false);
   const [subiendoFotoJugadorEdit, setSubiendoFotoJugadorEdit] = useState(false);
   const edicionCuentaRef = useRef(null);
@@ -476,6 +473,60 @@ function SuperAdminPanel({
       );
     });
   }, [jugadoresAdmin]);
+
+  const jugadoresSinApoderado = useMemo(() => {
+    return (jugadoresAdmin || []).filter((j) => (
+      !String(j.rut_apoderado || '').trim() && !String(j.correo_apoderado || '').trim()
+    ));
+  }, [jugadoresAdmin]);
+
+  const rutsJugadoresIncompletos = useMemo(
+    () => new Set(jugadoresIncompletos.map((j) => String(j.rut_jugador || ''))),
+    [jugadoresIncompletos]
+  );
+  const idsCuentasIncompletas = useMemo(
+    () => new Set((cuentasIncompletas || []).map((c) => String(c.id))),
+    [cuentasIncompletas]
+  );
+  const rutsJugadoresSinApoderado = useMemo(
+    () => new Set(jugadoresSinApoderado.map((j) => String(j.rut_jugador || ''))),
+    [jugadoresSinApoderado]
+  );
+
+  const cuentasApoderadoParaAsignar = useMemo(() => {
+    return (cuentasAdmin || [])
+      .filter((c) => String(c.correo || '').trim())
+      .map((c) => ({
+        correo: c.correo,
+        rut: c.rut || '',
+        nombre: `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || c.correo,
+      }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [cuentasAdmin]);
+
+  const asignarApoderadoAJugador = async (jugador) => {
+    const cuenta = cuentasApoderadoParaAsignar.find((c) => c.correo === correoApoderadoParaAsignar);
+    if (!cuenta) {
+      showToast({ message: 'Selecciona un apoderado de la lista.', type: 'error' });
+      return;
+    }
+    setGuardandoAsignacionApoderado(true);
+    try {
+      await guardarJugadorAdmin({
+        rut_jugador: jugador.rut_jugador,
+        rut_apoderado: cuenta.rut || null,
+        correo_apoderado: cuenta.correo,
+      }, jugador.rut_jugador);
+      if (onSheetsSyncComplete) await onSheetsSyncComplete();
+      showToast({ message: `${cuenta.nombre} asignado como apoderado de ${jugador.nombres || jugador.rut_jugador}.`, type: 'success' });
+      setAsignandoApoderadoRut(null);
+      setCorreoApoderadoParaAsignar('');
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo asignar el apoderado.', type: 'error' });
+    } finally {
+      setGuardandoAsignacionApoderado(false);
+    }
+  };
 
   const pagosConCorreccion = useMemo(() => {
     return (pagosMensualidadesAdmin || []).filter((p) => {
@@ -1318,104 +1369,6 @@ function SuperAdminPanel({
     }
   };
 
-  const consultarEstadoSync = async () => {
-    const token = syncToken.trim();
-    if (!token) {
-      showToast({ message: 'Ingresa el token de sincronización para consultar el estado.', type: 'error' });
-      return;
-    }
-
-    try {
-      setLoadingSyncStatus(true);
-      const estado = await api.adminAPI.getSyncStatus(token);
-      setSyncSheetsResult(estado?.lastSync || null);
-    } catch (error) {
-      showToast({ message: `No se pudo consultar el estado: ${error.message}`, type: 'error' });
-    } finally {
-      setLoadingSyncStatus(false);
-    }
-  };
-
-  const cargarDetalleCalidad = async () => {
-    const token = syncToken.trim();
-    if (!token) {
-      showToast({ message: 'Ingresa el token para consultar el detalle de correcciones.', type: 'error' });
-      return;
-    }
-
-    try {
-      setLoadingQualityDetails(true);
-      const resultado = await api.adminAPI.getDataQualityDetails(token);
-      setQualityDetailResult(resultado?.detail || null);
-    } catch (error) {
-      showToast({ message: `No se pudo obtener el detalle: ${error.message}`, type: 'error' });
-    } finally {
-      setLoadingQualityDetails(false);
-    }
-  };
-
-  const cargarConflictosJugadores = async () => {
-    const token = syncToken.trim();
-    if (!token) {
-      showToast({ message: 'Ingresa el token para consultar conflictos de jugadores.', type: 'error' });
-      return;
-    }
-
-    try {
-      setLoadingJugadoresConflicts(true);
-      const resultado = await api.adminAPI.getJugadoresRutConflicts(token);
-      setJugadoresConflictsResult(resultado?.detail || null);
-    } catch (error) {
-      showToast({ message: `No se pudieron obtener conflictos: ${error.message}`, type: 'error' });
-    } finally {
-      setLoadingJugadoresConflicts(false);
-    }
-  };
-
-  const prepararJugadorCorregidoDesdeConflicto = (fila) => {
-    setTipoNuevoUsuario('jugador');
-    setVistaAdmin('usuarios');
-    setNuevoJugador({
-      rut_jugador: '',
-      correo_apoderado: fila.correo_apoderado || '',
-      nombres: fila.nombres || '',
-      apellido_paterno: fila.apellido_paterno || '',
-      apellido_materno: fila.apellido_materno || '',
-      rama: fila.rama || 'MASCULINA',
-      categoria: fila.categoria || 'SUB-13',
-      estado: fila.estado || 'ACTIVO',
-      foto_jugador: '',
-    });
-    showToast({ message: 'Ficha precargada desde conflicto. Ingresa el RUT correcto y guarda el nuevo jugador.', type: 'info' });
-  };
-
-  const resolverConflictoRut = async (conflicto, fila) => {
-    const token = syncToken.trim();
-    if (!token) {
-      showToast({ message: 'Ingresa el token para registrar la resolución.', type: 'error' });
-      return;
-    }
-
-    const observaciones = window.prompt('Observaciones de resolución (opcional):', 'Corrección aplicada desde panel superadmin.') || '';
-    const opId = `${conflicto.rutNormalizado || conflicto.rut}-${fila.filaSheet}`;
-
-    try {
-      setResolviendoConflictoRut(opId);
-      await api.adminAPI.resolveJugadoresRutConflict(token, {
-        rut: conflicto.rut || conflicto.rutNormalizado,
-        filaSheet: fila.filaSheet,
-        accion: 'correccion_desde_panel',
-        observaciones,
-        usuario: 'super_admin',
-      });
-      showToast({ message: 'Resolución registrada en auditoría.', type: 'success' });
-    } catch (error) {
-      showToast({ message: `No se pudo registrar resolución: ${error.message}`, type: 'error' });
-    } finally {
-      setResolviendoConflictoRut('');
-    }
-  };
-
   const subirFotoJugadorDesdeGaleria = async (file, target = 'nuevo') => {
     if (!file) return;
 
@@ -1682,15 +1635,6 @@ function SuperAdminPanel({
                 />
               </div>
               <div className="sync-actions">
-                <button className="btn-secondary sync-action-btn" onClick={consultarEstadoSync} disabled={loadingSyncStatus || syncSheetsRunning}>
-                  {loadingSyncStatus ? 'Consultando...' : 'Consultar estado'}
-                </button>
-                <button className="btn-secondary sync-action-btn" onClick={cargarDetalleCalidad} disabled={loadingQualityDetails || syncSheetsRunning}>
-                  {loadingQualityDetails ? 'Cargando detalle...' : 'Ver detalle correcciones'}
-                </button>
-                <button className="btn-secondary sync-action-btn" onClick={cargarConflictosJugadores} disabled={loadingJugadoresConflicts || syncSheetsRunning}>
-                  {loadingJugadoresConflicts ? 'Cargando conflictos...' : 'Conflictos RUT jugadores'}
-                </button>
                 <button className="btn-electric sync-action-btn" onClick={ejecutarSyncSheets} disabled={syncSheetsRunning}>
                   <RefreshCcw size={15} /> {syncSheetsRunning ? 'Sincronizando...' : 'Sincronizar ahora'}
                 </button>
@@ -1732,123 +1676,6 @@ function SuperAdminPanel({
               </div>
             )}
 
-            {qualityDetailResult && (
-              <div className="card" style={{ marginTop: '12px', borderRadius: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  <h4 className="form-subtitle" style={{ marginBottom: 0 }}><AlertTriangle size={16} /> Detalle de correcciones</h4>
-                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: '999px' }}>
-                    Cuentas {qualityDetailResult?.totals?.cuentasIncompletas ?? 0} · Jugadores {qualityDetailResult?.totals?.jugadoresIncompletos ?? 0} · Pagos {qualityDetailResult?.totals?.pagosConCorreccion ?? 0}
-                  </span>
-                </div>
-
-                <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
-                  <div style={{ border: '1px solid rgba(255,149,0,0.25)', borderRadius: '14px', padding: '10px' }}>
-                    <strong style={{ fontSize: '12px' }}>Cuentas incompletas</strong>
-                    <div style={{ marginTop: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-                      {(qualityDetailResult.cuentasIncompletas || []).slice(0, 8).map((c) => (
-                        <div key={`qc-${c.id}`} style={{ marginBottom: '8px', fontSize: '12px' }}>
-                          <div style={{ fontWeight: '700' }}>{`${c.nombres || 'Sin nombre'} ${c.apellido_paterno || ''}`.trim()}</div>
-                          <div style={{ color: 'var(--texto-secundario)' }}>{c.correo || 'Sin correo'} · {c.rut || 'Sin RUT'}</div>
-                          <div style={{ color: '#b36200', fontWeight: '700' }}>{(c.campos_faltantes || []).join(', ')}</div>
-                        </div>
-                      ))}
-                      {(qualityDetailResult.cuentasIncompletas || []).length === 0 && <div style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin observaciones.</div>}
-                    </div>
-                  </div>
-
-                  <div style={{ border: '1px solid rgba(255,149,0,0.25)', borderRadius: '14px', padding: '10px' }}>
-                    <strong style={{ fontSize: '12px' }}>Jugadores incompletos</strong>
-                    <div style={{ marginTop: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-                      {(qualityDetailResult.jugadoresIncompletos || []).slice(0, 8).map((j, idx) => (
-                        <div key={`qj-${j.rut_jugador || j.correo_apoderado || idx}`} style={{ marginBottom: '8px', fontSize: '12px' }}>
-                          <div style={{ fontWeight: '700' }}>{`${j.nombres || 'Sin nombre'} ${j.apellido_paterno || ''}`.trim()}</div>
-                          <div style={{ color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.rama || 'Sin rama'} · {j.categoria || 'Sin categoría'}</div>
-                          <div style={{ color: '#b36200', fontWeight: '700' }}>{(j.campos_faltantes || []).join(', ')}</div>
-                        </div>
-                      ))}
-                      {(qualityDetailResult.jugadoresIncompletos || []).length === 0 && <div style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin observaciones.</div>}
-                    </div>
-                  </div>
-
-                  <div style={{ border: '1px solid rgba(255,149,0,0.25)', borderRadius: '14px', padding: '10px' }}>
-                    <strong style={{ fontSize: '12px' }}>Pagos con corrección</strong>
-                    <div style={{ marginTop: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-                      {(qualityDetailResult.pagosConCorreccion || []).slice(0, 8).map((p) => (
-                        <div key={`qp-${p.id}`} style={{ marginBottom: '8px', fontSize: '12px' }}>
-                          <div style={{ fontWeight: '700' }}>Pago #{p.id} · ${Number(p.monto_total_pagado || 0).toLocaleString('es-CL')}</div>
-                          <div style={{ color: 'var(--texto-secundario)' }}>{p.rut_jugador || 'Sin RUT'} · {p.meses_correspondientes || 'Sin meses'}</div>
-                          <div style={{ color: '#b36200', fontWeight: '700' }}>{p.notas_tesoreria || 'Sin nota'}</div>
-                        </div>
-                      ))}
-                      {(qualityDetailResult.pagosConCorreccion || []).length === 0 && <div style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin observaciones.</div>}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Ir a cuentas</button>
-                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Ir a jugadores</button>
-                  <button className="btn-secondary" onClick={() => setVistaAdmin('pagos')}>Ir a pagos</button>
-                </div>
-              </div>
-            )}
-
-            {jugadoresConflictsResult && (
-              <div className="card" style={{ marginTop: '12px', borderRadius: '20px', borderLeft: '4px solid #FF9500' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  <h4 className="form-subtitle" style={{ marginBottom: 0 }}><AlertTriangle size={16} /> Conflictos RUT en hoja jugadores</h4>
-                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: '999px' }}>
-                    Conflictos: {jugadoresConflictsResult?.totalConflictos ?? 0} · Filas hoja: {jugadoresConflictsResult?.totalFilas ?? 0}
-                  </span>
-                </div>
-
-                <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {(jugadoresConflictsResult.conflictos || []).map((conflicto, idx) => (
-                    <div key={`conf-rut-${conflicto.rutNormalizado || idx}`} style={{ border: '1px solid rgba(255,149,0,0.25)', borderRadius: '14px', padding: '10px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <strong style={{ fontSize: '13px' }}>RUT en conflicto: {conflicto.rut || conflicto.rutNormalizado}</strong>
-                        <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200' }}>Filas repetidas: {conflicto.totalFilas}</span>
-                      </div>
-
-                      {conflicto.jugadorActual && (
-                        <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
-                          Jugador actual en sistema: {(conflicto.jugadorActual.nombres || '').trim()} {(conflicto.jugadorActual.apellido_paterno || '').trim()} · {conflicto.jugadorActual.rama || 'Sin rama'} · {conflicto.jugadorActual.categoria || 'Sin categoría'}
-                        </div>
-                      )}
-
-                      <div style={{ marginTop: '8px', display: 'grid', gap: '8px' }}>
-                        {(conflicto.filas || []).map((fila, filaIdx) => (
-                          <div key={`conf-fila-${conflicto.rutNormalizado || idx}-${fila.filaSheet || filaIdx}`} style={{ background: 'rgba(255,149,0,0.08)', borderRadius: '10px', padding: '8px' }}>
-                            <div style={{ fontSize: '12px', fontWeight: '700' }}>
-                              Fila {fila.filaSheet}: {(fila.nombres || '').trim()} {(fila.apellido_paterno || '').trim()} {(fila.apellido_materno || '').trim()}
-                            </div>
-                            <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>
-                              Correo apoderado: {fila.correo_apoderado || 'Sin correo'} · Rama: {fila.rama || 'Sin rama'} · Categoría: {fila.categoria || 'Sin categoría'}
-                            </div>
-                            <div style={{ marginTop: '6px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              <button className="btn-secondary" onClick={() => prepararJugadorCorregidoDesdeConflicto(fila)}>Crear ficha corregida</button>
-                              <button
-                                className="btn-secondary"
-                                onClick={() => resolverConflictoRut(conflicto, fila)}
-                                disabled={resolviendoConflictoRut === `${conflicto.rutNormalizado || conflicto.rut}-${fila.filaSheet}`}
-                              >
-                                {resolviendoConflictoRut === `${conflicto.rutNormalizado || conflicto.rut}-${fila.filaSheet}` ? 'Registrando...' : 'Resolver conflicto'}
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-
-                  {(jugadoresConflictsResult.conflictos || []).length === 0 && (
-                    <div style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                      No hay conflictos de RUT repetido en la hoja JUGADORES.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="card text-center admin-panel-card mb-5" style={{ borderRadius: '28px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', border: '1px solid rgba(255,255,255,0.72)', boxShadow: '0 14px 34px rgba(15,23,42,0.08)' }}>
@@ -1948,6 +1775,13 @@ function SuperAdminPanel({
           <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
             Esta es la vista unificada de trabajo. Aquí se gestionan cuentas, usuarios relacionados y jugadores sin volver al flujo antiguo separado.
           </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+            <div className="admin-stat-pill verde"><span>Completas</span><h2>{listadoUsuarios.length - (cuentasIncompletas.length + jugadoresIncompletos.length)}</h2></div>
+            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#b36200' }}>{cuentasIncompletas.length + jugadoresIncompletos.length}</h2></div>
+            <div className="admin-stat-pill rojo"><span>Jugadores sin apoderado</span><h2>{jugadoresSinApoderado.length}</h2></div>
+          </div>
+
           <div className="card">
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -2008,41 +1842,95 @@ function SuperAdminPanel({
                 <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay resultados con los filtros actuales.</p>
               )}
 
-              {usuariosFiltrados.map((u) => (
-                <div key={u.id} className="card" style={{ marginBottom: '10px', borderLeft: `4px solid ${u.tipo === 'jugador' ? 'var(--azul-electrico)' : '#FF9500'}`, borderRadius: '22px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-                    <div>
-                      <strong style={{ fontSize: '14px' }}>{u.nombre}</strong>
-                      <div className="text-caption">
-                        {u.tipo === 'jugador'
-                          ? `${u.raw.rut_jugador || '-'} · ${u.raw.rama || 'Sin rama'} · ${u.raw.categoria || 'Sin categoría'}`
-                          : `${u.raw.correo || '-'} · ${u.raw.rut || '-'} · ${(u.raw.rol || 'sin rol').toUpperCase()}`}
+              {usuariosFiltrados.map((u) => {
+                const esIncompleta = u.tipo === 'jugador'
+                  ? rutsJugadoresIncompletos.has(String(u.raw.rut_jugador || ''))
+                  : idsCuentasIncompletas.has(String(u.raw.id));
+                const sinApoderado = u.tipo === 'jugador' && rutsJugadoresSinApoderado.has(String(u.raw.rut_jugador || ''));
+                const mostrandoAsignar = asignandoApoderadoRut === u.raw.rut_jugador;
+
+                return (
+                  <div key={u.id} className="card" style={{ marginBottom: '10px', borderLeft: `4px solid ${u.tipo === 'jugador' ? 'var(--azul-electrico)' : '#FF9500'}`, borderRadius: '22px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <strong style={{ fontSize: '14px' }}>{u.nombre}</strong>
+                          <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', color: esIncompleta ? '#b36200' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
+                            {esIncompleta ? 'Incompleta' : 'Completa'}
+                          </span>
+                          {sinApoderado && (
+                            <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', color: '#b00020', background: 'rgba(255,59,48,0.12)' }}>
+                              Sin apoderado
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-caption">
+                          {u.tipo === 'jugador'
+                            ? `${u.raw.rut_jugador || '-'} · ${u.raw.rama || 'Sin rama'} · ${u.raw.categoria || 'Sin categoría'}`
+                            : `${u.raw.correo || '-'} · ${u.raw.rut || '-'} · ${(u.raw.rol || 'sin rol').toUpperCase()}`}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {sinApoderado && (
+                          <button
+                            className="btn-secondary"
+                            style={{ width: 'auto' }}
+                            onClick={() => {
+                              setAsignandoApoderadoRut(mostrandoAsignar ? null : u.raw.rut_jugador);
+                              setCorreoApoderadoParaAsignar('');
+                            }}
+                          >
+                            {mostrandoAsignar ? 'Cancelar' : 'Asignar apoderado'}
+                          </button>
+                        )}
+                        <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
+                          Modificar
+                        </button>
+                        {esSuperAdmin && (
+                          <button
+                            className="btn-secondary"
+                            style={{
+                              width: 'auto',
+                              background: 'rgba(255,59,48,0.12)',
+                              borderColor: 'rgba(255,59,48,0.36)',
+                              color: '#b00020',
+                              fontWeight: '800',
+                            }}
+                            onClick={() => eliminarUsuarioDefinitivo(u)}
+                            disabled={eliminandoUsuarioId === u.id}
+                          >
+                            {eliminandoUsuarioId === u.id ? 'Borrando...' : 'Borrar definitivo'}
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
-                        Modificar
-                      </button>
-                      {esSuperAdmin && (
-                        <button
-                          className="btn-secondary"
-                          style={{
-                            width: 'auto',
-                            background: 'rgba(255,59,48,0.12)',
-                            borderColor: 'rgba(255,59,48,0.36)',
-                            color: '#b00020',
-                            fontWeight: '800',
-                          }}
-                          onClick={() => eliminarUsuarioDefinitivo(u)}
-                          disabled={eliminandoUsuarioId === u.id}
+
+                    {mostrandoAsignar && (
+                      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--borde-suave)', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <select
+                          className="form-input"
+                          style={{ flex: '1 1 240px' }}
+                          value={correoApoderadoParaAsignar}
+                          onChange={(e) => setCorreoApoderadoParaAsignar(e.target.value)}
                         >
-                          {eliminandoUsuarioId === u.id ? 'Borrando...' : 'Borrar definitivo'}
+                          <option value="">Selecciona un apoderado/socio...</option>
+                          {cuentasApoderadoParaAsignar.map((c) => (
+                            <option key={c.correo} value={c.correo}>{c.nombre} · {c.correo}</option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn-electric"
+                          style={{ width: 'auto' }}
+                          disabled={!correoApoderadoParaAsignar || guardandoAsignacionApoderado}
+                          onClick={() => asignarApoderadoAJugador(u.raw)}
+                        >
+                          {guardandoAsignacionApoderado ? 'Guardando...' : 'Confirmar asignación'}
                         </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
