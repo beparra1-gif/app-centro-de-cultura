@@ -42,6 +42,10 @@ function KioscoPanel({ nombreResponsable = '' }) {
 
   const [egresos, setEgresos] = useState([]);
   const [gastoRegistro, setGastoRegistro] = useState({ desc: '', monto: '' });
+  const [modalEgreso, setModalEgreso] = useState(false);
+  const [receptorEgreso, setReceptorEgreso] = useState({ nombre: '', apellido: '', rut: '' });
+  const [firmaEgreso, setFirmaEgreso] = useState(null);
+  const [registrandoEgreso, setRegistrandoEgreso] = useState(false);
 
   const [nuevoProducto, setNuevoProducto] = useState({ nombre: '', emoji: '', costo: '', precio: '', categoria: 'Bebida' });
   const [productoEditandoId, setProductoEditandoId] = useState(null);
@@ -304,14 +308,46 @@ function KioscoPanel({ nombreResponsable = '' }) {
     }
   };
 
+  const abrirModalEgreso = () => {
+    if (!gastoRegistro.desc || !gastoRegistro.monto) {
+      showToast({ message: 'Ingresa la glosa y el monto del egreso.', type: 'error' });
+      return;
+    }
+    setReceptorEgreso({ nombre: '', apellido: '', rut: '' });
+    setFirmaEgreso(null);
+    setModalEgreso(true);
+  };
+
   const registrarEgreso = async () => {
-    if (!gastoRegistro.desc || !gastoRegistro.monto) return;
+    if (!receptorEgreso.nombre.trim() || !receptorEgreso.apellido.trim() || !receptorEgreso.rut.trim()) {
+      showToast({ message: 'Indica nombre, apellido y RUT de quien recibe el dinero.', type: 'error' });
+      return;
+    }
+    if (!firmaEgreso) {
+      showToast({ message: 'Se requiere la firma de quien recibe el dinero.', type: 'error' });
+      return;
+    }
+    setRegistrandoEgreso(true);
     try {
-      await kioscoAPI.egresos.create({ turno_id: turno?.id || null, descripcion: gastoRegistro.desc, monto: Number(gastoRegistro.monto) });
+      await kioscoAPI.egresos.create({
+        turno_id: turno?.id || null,
+        descripcion: gastoRegistro.desc,
+        monto: Number(gastoRegistro.monto),
+        nombre_receptor: receptorEgreso.nombre.trim(),
+        apellido_receptor: receptorEgreso.apellido.trim(),
+        rut_receptor: receptorEgreso.rut.trim(),
+        firma_receptor: firmaEgreso,
+      });
       setGastoRegistro({ desc: '', monto: '' });
+      setReceptorEgreso({ nombre: '', apellido: '', rut: '' });
+      setFirmaEgreso(null);
+      setModalEgreso(false);
       await cargarEgresosTurno(turno?.id);
+      showToast({ message: 'Egreso registrado correctamente.', type: 'success' });
     } catch (err) {
       showToast({ message: err.message || 'No se pudo registrar el egreso.', type: 'error' });
+    } finally {
+      setRegistrandoEgreso(false);
     }
   };
 
@@ -430,6 +466,13 @@ function KioscoPanel({ nombreResponsable = '' }) {
         salto();
         doc.text(`- ${eg.descripcion}: $${Number(eg.monto || 0).toLocaleString('es-CL')}`, marginX + 10, y);
         y += lineGap;
+        if (eg.nombre_receptor || eg.rut_receptor) {
+          salto();
+          doc.setFontSize(8);
+          doc.text(`  Recibe: ${eg.nombre_receptor || ''} ${eg.apellido_receptor || ''} · RUT ${eg.rut_receptor || 'N/D'}`, marginX + 10, y);
+          doc.setFontSize(10);
+          y += lineGap - 4;
+        }
       });
     }
 
@@ -625,6 +668,42 @@ function KioscoPanel({ nombreResponsable = '' }) {
         </div>
       )}
 
+      {modalEgreso && (
+        <div className="modal-overlay-alert">
+          <div className="modal-alert-card" style={{ maxWidth: '440px' }}>
+            <h3 className="text-center" style={{ marginBottom: '4px' }}>Registrar Egreso</h3>
+            <p className="text-center text-muted" style={{ fontSize: '12px', marginBottom: '15px' }}>
+              {gastoRegistro.desc} · ${Number(gastoRegistro.monto || 0).toLocaleString('es-CL')}
+            </p>
+            <p className="text-center" style={{ fontSize: '12px', marginBottom: '10px', color: 'var(--texto-secundario)' }}>
+              Para dejar registro, indica quién recibe este dinero.
+            </p>
+
+            <div className="input-group mb-10">
+              <label style={{ fontSize: '12px', fontWeight: '800' }}>Nombre</label>
+              <input type="text" className="form-input" value={receptorEgreso.nombre} onChange={(e) => setReceptorEgreso({ ...receptorEgreso, nombre: e.target.value })} placeholder="Nombre" />
+            </div>
+            <div className="input-group mb-10">
+              <label style={{ fontSize: '12px', fontWeight: '800' }}>Apellido</label>
+              <input type="text" className="form-input" value={receptorEgreso.apellido} onChange={(e) => setReceptorEgreso({ ...receptorEgreso, apellido: e.target.value })} placeholder="Apellido" />
+            </div>
+            <div className="input-group mb-10">
+              <label style={{ fontSize: '12px', fontWeight: '800' }}>RUT</label>
+              <input type="text" className="form-input" value={receptorEgreso.rut} onChange={(e) => setReceptorEgreso({ ...receptorEgreso, rut: e.target.value })} placeholder="12345678-9" />
+            </div>
+            <div className="input-group mb-10">
+              <label style={{ fontSize: '12px', fontWeight: '800' }}>Firma</label>
+              <SignaturePad onChange={setFirmaEgreso} />
+            </div>
+
+            <div className="modal-alert-buttons mt-10">
+              <button type="button" className="btn-modal-cancelar" onClick={() => setModalEgreso(false)} disabled={registrandoEgreso}>Cancelar</button>
+              <button type="button" className="btn-modal-confirmar" style={{ background: 'var(--rojo-alerta)' }} onClick={registrarEgreso} disabled={registrandoEgreso}>{registrandoEgreso ? 'Guardando...' : 'Confirmar Egreso'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="scroll-horizontal-menu mb-15">
         <div className="segment-control">
           <button type="button" className={`segment-btn ${vista === 'pos' ? 'active' : ''}`} onClick={() => setVista('pos')}>Vender</button>
@@ -723,8 +802,8 @@ function KioscoPanel({ nombreResponsable = '' }) {
           </div>
           <div className="card mt-15">
             <h4 className="form-subtitle" style={{ color: 'var(--rojo-alerta)' }}><Wallet size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Registrar Egreso (Salida)</h4>
-            <div style={{ display: 'flex', gap: '10px' }} className="mt-10"><input type="text" className="form-input" style={{ flex: 2 }} placeholder="Glosa (Ej: Árbitros)" value={gastoRegistro.desc} onChange={(e) => setGastoRegistro({ ...gastoRegistro, desc: e.target.value })} /><input type="number" className="form-input" style={{ flex: 1 }} placeholder="Monto" value={gastoRegistro.monto} onChange={(e) => setGastoRegistro({ ...gastoRegistro, monto: e.target.value })} /><button className="btn-electric" style={{ background: 'var(--rojo-alerta)', width: 'auto', padding: '0 15px' }} onClick={registrarEgreso}>Restar</button></div>
-            {egresos.length > 0 && (<div className="egresos-list mt-15"><span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>Egresos de Hoy</span>{egresos.map((eg) => (<div key={eg.id} className="egreso-row mt-5"><span className="egreso-desc" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><XCircle size={12} /> {eg.descripcion}</span><span className="egreso-monto">-${Number(eg.monto).toLocaleString('es-CL')}</span></div>))}</div>)}
+            <div style={{ display: 'flex', gap: '10px' }} className="mt-10"><input type="text" className="form-input" style={{ flex: 2 }} placeholder="Glosa (Ej: Árbitros)" value={gastoRegistro.desc} onChange={(e) => setGastoRegistro({ ...gastoRegistro, desc: e.target.value })} /><input type="number" className="form-input" style={{ flex: 1 }} placeholder="Monto" value={gastoRegistro.monto} onChange={(e) => setGastoRegistro({ ...gastoRegistro, monto: e.target.value })} /><button className="btn-electric" style={{ background: 'var(--rojo-alerta)', width: 'auto', padding: '0 15px' }} onClick={abrirModalEgreso}>Restar</button></div>
+            {egresos.length > 0 && (<div className="egresos-list mt-15"><span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>Egresos de Hoy</span>{egresos.map((eg) => (<div key={eg.id} className="egreso-row mt-5"><span className="egreso-desc" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><XCircle size={12} /> {eg.descripcion}</span>{(eg.nombre_receptor || eg.rut_receptor) && (<span style={{ fontSize: '10px', color: 'var(--texto-secundario)', fontWeight: '700' }}>Recibe: {eg.nombre_receptor} {eg.apellido_receptor} {eg.rut_receptor ? `· ${eg.rut_receptor}` : ''}</span>)}</span><span className="egreso-monto">-${Number(eg.monto).toLocaleString('es-CL')}</span></div>))}</div>)}
           </div>
           <button className="btn-secondary mt-15" style={{ background: 'rgba(0,122,255,0.1)' }} onClick={() => exportarCajaPdf([], fiados, { cerradoPor: turno.responsable, firma: null, ticketFinal: ticketActual - 1 })}><FileDown size={18} color="var(--gris-secundario)" strokeWidth={1.5} /> Exportar Reporte Parcial (PDF)</button>
         </div>

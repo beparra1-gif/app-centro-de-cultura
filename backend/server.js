@@ -1536,9 +1536,17 @@ const ensureKioscoTables = async () => {
       turno_id INTEGER REFERENCES kiosco_turnos(id) ON DELETE SET NULL,
       descripcion VARCHAR(255) NOT NULL,
       monto NUMERIC(10,2) NOT NULL,
+      nombre_receptor VARCHAR(120),
+      apellido_receptor VARCHAR(120),
+      rut_receptor VARCHAR(20),
+      firma_receptor TEXT,
       fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await pool.query(`ALTER TABLE kiosco_egresos ADD COLUMN IF NOT EXISTS nombre_receptor VARCHAR(120)`);
+  await pool.query(`ALTER TABLE kiosco_egresos ADD COLUMN IF NOT EXISTS apellido_receptor VARCHAR(120)`);
+  await pool.query(`ALTER TABLE kiosco_egresos ADD COLUMN IF NOT EXISTS rut_receptor VARCHAR(20)`);
+  await pool.query(`ALTER TABLE kiosco_egresos ADD COLUMN IF NOT EXISTS firma_receptor TEXT`);
 
   console.log('🛒 Tablas de kiosco POS verificadas');
 };
@@ -4993,16 +5001,19 @@ app.get('/api/kiosco-egresos', authenticate, requireModule('kiosco'), async (req
 });
 
 app.post('/api/kiosco-egresos', authenticate, requireModule('kiosco'), async (req, res) => {
-  const { turno_id, descripcion, monto } = req.body;
+  const { turno_id, descripcion, monto, nombre_receptor, apellido_receptor, rut_receptor, firma_receptor } = req.body;
   if (!descripcion || !monto) {
     return res.status(400).json({ error: 'Descripción y monto son obligatorios.' });
   }
+  if (!String(nombre_receptor || '').trim() || !String(apellido_receptor || '').trim() || !String(rut_receptor || '').trim() || !firma_receptor) {
+    return res.status(400).json({ error: 'Para registrar un egreso se requiere nombre, apellido, RUT y firma de quien recibe.' });
+  }
   try {
     const result = await pool.query(
-      `INSERT INTO kiosco_egresos (turno_id, descripcion, monto)
-       VALUES ($1, $2, $3)
+      `INSERT INTO kiosco_egresos (turno_id, descripcion, monto, nombre_receptor, apellido_receptor, rut_receptor, firma_receptor)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [turno_id || null, descripcion, monto]
+      [turno_id || null, descripcion, monto, nombre_receptor.trim(), apellido_receptor.trim(), rut_receptor.trim(), firma_receptor]
     );
     res.json(result.rows[0]);
   } catch (err) {

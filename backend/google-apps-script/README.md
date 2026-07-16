@@ -5,7 +5,27 @@ el backend crea, edita o borra algo (jugadores, cuentas, pagos, etc.): qué
 tabla, qué acción, quién lo hizo (RUT) y cuándo. No requiere ninguna cuenta de
 pago ni Google Cloud — usa Google Apps Script, que es gratuito.
 
-## Pasos (una sola vez)
+Desde esta versión, también deja un registro aparte y legible en la pestaña
+**`EGRESOS_KIOSCO_REGISTRO`** cada vez que se registra un egreso de Kiosco:
+fecha, descripción, monto, nombre/apellido/RUT de quien recibió el dinero, y
+si quedó firma. (El script crea esa pestaña solo, la primera vez que llega un
+egreso.)
+
+## ⚠️ Si ya tenías el script desplegado antes
+
+Ya lo instalaste una vez y ahora agregamos la parte de egresos de Kiosco.
+Solo necesitas:
+1. Abre el Google Sheet → **Extensiones → Apps Script** (tu proyecto ya existente).
+2. Reemplaza el contenido completo por el de [`Code.gs`](./Code.gs) — **pero
+   antes de guardar, vuelve a poner tu token real** en la línea
+   `var SECRET_TOKEN = 'REEMPLAZA_CON_TU_TOKEN';` (el mismo que ya tenías).
+3. Guarda.
+4. **Implementar → Gestionar implementaciones → ícono de lápiz (editar) →
+   Versión: Nueva versión → Implementar.** (Esto es necesario para que el
+   cambio aplique a la misma URL que ya tengo configurada — no hace falta
+   crear una implementación nueva ni pasarme una URL distinta.)
+
+## Pasos (una sola vez, si nunca lo has instalado)
 
 1. Abre el Google Sheet **BASE_CCF**.
 2. Ve a **Extensiones → Apps Script**.
@@ -36,5 +56,5 @@ pago ni Google Cloud — usa Google Apps Script, que es gratuito.
 - Si en el futuro editas el código del script, debes volver a
   **Implementar → Gestionar implementaciones → editar (lápiz) → Nueva versión**
   para que los cambios se apliquen a la URL ya existente.
-- Este mecanismo solo agrega filas a `AUDITORIA_CAMBIOS`; nunca modifica
-  `JUGADORES`, `CUENTAS` ni `PAGOS_MENSUALIDADES`.
+- Este mecanismo solo agrega filas a `AUDITORIA_CAMBIOS` y `EGRESOS_KIOSCO_REGISTRO`;
+  nunca modifica `JUGADORES`, `CUENTAS` ni `PAGOS_MENSUALIDADES`.

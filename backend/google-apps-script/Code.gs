@@ -16,11 +16,18 @@
 var SECRET_TOKEN = 'REEMPLAZA_CON_TU_TOKEN';
 
 var HOJA_AUDITORIA = 'AUDITORIA_CAMBIOS';
+var HOJA_EGRESOS_KIOSCO = 'EGRESOS_KIOSCO_REGISTRO';
 
 var ENCABEZADOS = [
   'event_time', 'table', 'action', 'path', 'status_code',
   'actor_id', 'actor_rut', 'actor_rol', 'params_json', 'body_json',
   'note', 'run_at',
+];
+
+var ENCABEZADOS_EGRESOS_KIOSCO = [
+  'fecha_registro', 'turno_id', 'descripcion', 'monto',
+  'nombre_receptor', 'apellido_receptor', 'rut_receptor', 'firma_registrada',
+  'registrado_por_rut',
 ];
 
 function doPost(e) {
@@ -41,7 +48,7 @@ function doPost(e) {
       return respuestaJson({ ok: true, appended: 0 });
     }
 
-    var hoja = obtenerOCrearHoja(HOJA_AUDITORIA);
+    var hoja = obtenerOCrearHoja(HOJA_AUDITORIA, ENCABEZADOS);
     var ahora = new Date().toISOString();
 
     var filas = eventos.map(function (evento) {
@@ -64,20 +71,51 @@ function doPost(e) {
 
     hoja.getRange(hoja.getLastRow() + 1, 1, filas.length, ENCABEZADOS.length).setValues(filas);
 
+    registrarEgresosKiosco(eventos, ahora);
+
     return respuestaJson({ ok: true, appended: filas.length });
   } catch (err) {
     return respuestaJson({ ok: false, error: String(err && err.message || err) }, 500);
   }
 }
 
-function obtenerOCrearHoja(nombre) {
+// Deja un registro legible (sin JSON crudo) de cada egreso de Kiosco, con
+// nombre, apellido y RUT de quien recibió el dinero, para el cierre de caja.
+function registrarEgresosKiosco(eventos, ahora) {
+  var filasEgresos = [];
+
+  eventos.forEach(function (evento) {
+    if (evento.table !== 'kiosco_egresos' || evento.action !== 'POST') return;
+    var body = evento.body || {};
+    var actor = evento.actor || {};
+
+    filasEgresos.push([
+      evento.occurredAt || ahora,
+      body.turno_id || '',
+      body.descripcion || '',
+      body.monto || '',
+      body.nombre_receptor || '',
+      body.apellido_receptor || '',
+      body.rut_receptor || '',
+      body.firma_receptor ? 'Sí' : 'No',
+      actor.rut || '',
+    ]);
+  });
+
+  if (filasEgresos.length === 0) return;
+
+  var hoja = obtenerOCrearHoja(HOJA_EGRESOS_KIOSCO, ENCABEZADOS_EGRESOS_KIOSCO);
+  hoja.getRange(hoja.getLastRow() + 1, 1, filasEgresos.length, ENCABEZADOS_EGRESOS_KIOSCO.length).setValues(filasEgresos);
+}
+
+function obtenerOCrearHoja(nombre, encabezados) {
   var libro = SpreadsheetApp.getActiveSpreadsheet();
   var hoja = libro.getSheetByName(nombre);
   if (!hoja) {
     hoja = libro.insertSheet(nombre);
   }
   if (hoja.getLastRow() === 0) {
-    hoja.getRange(1, 1, 1, ENCABEZADOS.length).setValues([ENCABEZADOS]);
+    hoja.getRange(1, 1, 1, encabezados.length).setValues([encabezados]);
   }
   return hoja;
 }
