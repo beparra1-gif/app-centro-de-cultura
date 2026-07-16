@@ -2607,6 +2607,8 @@ function App() {
             )}
             {puedeVerPantalla('evaluacion_staff') && pantallaActiva === 'evaluacion_staff' && (
               <StaffEvaluacionPanel
+                jugadoresAdmin={jugadoresAdmin}
+                usuarioAutenticado={usuarioAutenticado}
                 evalTiro={evalTiro}
                 setEvalTiro={setEvalTiro}
                 evalDefensa={evalDefensa}

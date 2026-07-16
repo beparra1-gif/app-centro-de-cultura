@@ -1,8 +1,12 @@
+import { useMemo, useState } from 'react';
 import { FileText, Save } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import { showToast } from '../utils/toast';
+import * as api from '../api/client';
 
 function StaffEvaluacionPanel({
+  jugadoresAdmin,
+  usuarioAutenticado,
   evalTiro,
   setEvalTiro,
   evalDefensa,
@@ -14,6 +18,32 @@ function StaffEvaluacionPanel({
   notasEvaluacion,
   setNotasEvaluacion,
 }) {
+  const [filtroRama, setFiltroRama] = useState('Todas');
+  const [filtroCategoria, setFiltroCategoria] = useState('Todas');
+  const [rutJugadorSeleccionado, setRutJugadorSeleccionado] = useState('');
+  const [guardando, setGuardando] = useState(false);
+
+  const ramasDisponibles = useMemo(() => {
+    const set = new Set((jugadoresAdmin || []).map((j) => String(j.rama || '').trim()).filter(Boolean));
+    return Array.from(set).sort();
+  }, [jugadoresAdmin]);
+
+  const categoriasDisponibles = useMemo(() => {
+    const base = (jugadoresAdmin || []).filter((j) => filtroRama === 'Todas' || j.rama === filtroRama);
+    const set = new Set(base.map((j) => String(j.categoria || '').trim()).filter(Boolean));
+    return Array.from(set).sort();
+  }, [jugadoresAdmin, filtroRama]);
+
+  const jugadoresFiltrados = useMemo(() => {
+    return (jugadoresAdmin || []).filter((j) => {
+      const coincideRama = filtroRama === 'Todas' || j.rama === filtroRama;
+      const coincideCategoria = filtroCategoria === 'Todas' || j.categoria === filtroCategoria;
+      return coincideRama && coincideCategoria;
+    });
+  }, [jugadoresAdmin, filtroRama, filtroCategoria]);
+
+  const jugadorSeleccionado = jugadoresFiltrados.find((j) => j.rut_jugador === rutJugadorSeleccionado) || null;
+
   const dataEvalLive = [
     { subject: 'Tiro', score: evalTiro, fullMark: 100 },
     { subject: 'Defensa', score: evalDefensa, fullMark: 100 },
@@ -21,16 +51,67 @@ function StaffEvaluacionPanel({
     { subject: 'Táctica', score: evalTactico, fullMark: 100 },
   ];
 
+  const handleEmitirEvaluacion = async () => {
+    if (!jugadorSeleccionado) {
+      showToast({ message: 'Selecciona un jugador antes de emitir la evaluación.', type: 'error' });
+      return;
+    }
+
+    try {
+      setGuardando(true);
+      await api.evaluacionesAPI.create({
+        rut_jugador: jugadorSeleccionado.rut_jugador,
+        evaluador_rut: usuarioAutenticado?.rut || null,
+        tipo_evaluacion: 'Evaluación Staff',
+        puntaje_tecnica: Number(evalTiro),
+        puntaje_actitud: Number(evalDefensa),
+        puntaje_condicion: Number(evalFisico),
+        puntaje_mental: Number(evalTactico),
+        comentarios: `Fortaleza: ${notasEvaluacion.fortaleza || '-'}\nA mejorar: ${notasEvaluacion.mejora || '-'}\nMetas (1 mes): ${notasEvaluacion.metas || '-'}`,
+      });
+      showToast({ message: `Evaluación guardada para ${jugadorSeleccionado.nombres} ${jugadorSeleccionado.apellido_paterno}.`, type: 'success' });
+      setNotasEvaluacion({ fortaleza: '', mejora: '', metas: '' });
+    } catch (error) {
+      showToast({ message: `No se pudo guardar la evaluación: ${error.message}`, type: 'error' });
+    } finally {
+      setGuardando(false);
+    }
+  };
+
   return (
     <div className="mt-20 fade-in">
       <div className="card mb-15">
         <h4 className="form-subtitle">Selección de Jugador</h4>
         <div style={{ display: 'flex', gap: '10px' }} className="mb-10">
-          <select className="form-input"><option>Femenina</option><option>Masculina</option></select>
-          <select className="form-input"><option>U15</option></select>
+          <select
+            className="form-input"
+            value={filtroRama}
+            onChange={(e) => { setFiltroRama(e.target.value); setFiltroCategoria('Todas'); setRutJugadorSeleccionado(''); }}
+          >
+            <option value="Todas">Todas las ramas</option>
+            {ramasDisponibles.map((rama) => <option key={rama} value={rama}>{rama}</option>)}
+          </select>
+          <select
+            className="form-input"
+            value={filtroCategoria}
+            onChange={(e) => { setFiltroCategoria(e.target.value); setRutJugadorSeleccionado(''); }}
+          >
+            <option value="Todas">Todas las categorías</option>
+            {categoriasDisponibles.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+          </select>
         </div>
-        <select className="form-input" style={{ background: 'rgba(0,122,255,0.05)', borderColor: 'var(--azul-electrico)', color: 'var(--texto-heading)', fontWeight: '800' }}>
-          <option>Selecciona un jugador desde el roster activo</option>
+        <select
+          className="form-input"
+          style={{ background: 'rgba(0,122,255,0.05)', borderColor: 'var(--azul-electrico)', color: 'var(--texto-heading)', fontWeight: '800' }}
+          value={rutJugadorSeleccionado}
+          onChange={(e) => setRutJugadorSeleccionado(e.target.value)}
+        >
+          <option value="">Selecciona un jugador desde el roster activo</option>
+          {jugadoresFiltrados.map((j) => (
+            <option key={j.rut_jugador} value={j.rut_jugador}>
+              {j.nombres} {j.apellido_paterno} · {j.rama} {j.categoria}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -81,8 +162,8 @@ function StaffEvaluacionPanel({
           <textarea className="form-input" rows="3" placeholder="Ej: Aumentar el % de tiros libres." value={notasEvaluacion.metas} onChange={(e) => setNotasEvaluacion({ ...notasEvaluacion, metas: e.target.value })}></textarea>
         </div>
 
-        <button className="btn-electric" onClick={() => showToast({ message: 'Evaluación guardada. Se ha enviado la alerta al Apoderado para firmar el Acuse de Recibo.', type: 'success' })}>
-          <Save size={18} /> Emitir Evaluación Formal
+        <button className="btn-electric" disabled={guardando || !jugadorSeleccionado} onClick={handleEmitirEvaluacion}>
+          <Save size={18} /> {guardando ? 'Guardando...' : 'Emitir Evaluación Formal'}
         </button>
       </div>
     </div>
