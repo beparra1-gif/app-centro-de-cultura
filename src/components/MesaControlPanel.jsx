@@ -3415,50 +3415,65 @@ function MesaControlPanel({
           </div>
 
           {mostrarSelectorTipoFalta && (
-            <div className="mesa-tipo-falta-panel mt-10">
-              <span className="mesa-tipo-falta-titulo">Tipo de falta</span>
-              <div className="mesa-tipo-falta-grid">
-                <button type="button" className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.PERSONAL }); setMostrarSelectorTipoFalta(false); }}>Personal</button>
-                <button type="button" className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.TECNICA }); setMostrarSelectorTipoFalta(false); }}>Técnica</button>
-                <button type="button" className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.ANTIDEPORTIVA }); setMostrarSelectorTipoFalta(false); }}>Antideportiva</button>
-                <button type="button" className="btn-secondary" style={{ color: 'var(--rojo-alerta)' }} onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.DESCALIFICANTE }); setMostrarSelectorTipoFalta(false); }}>Descalificante</button>
+            <div className="mesa-quick-modal-overlay" onClick={() => setMostrarSelectorTipoFalta(false)}>
+              <div className="mesa-tipo-falta-panel" onClick={(e) => e.stopPropagation()}>
+                <div className="mesa-quick-modal-header">
+                  <span className="mesa-tipo-falta-titulo" style={{ margin: 0 }}>Tipo de falta</span>
+                  <button type="button" className="mesa-quick-modal-close" onClick={() => setMostrarSelectorTipoFalta(false)}>✕</button>
+                </div>
+                <div className="mesa-tipo-falta-grid">
+                  <button type="button" className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.PERSONAL }); setMostrarSelectorTipoFalta(false); }}>Personal</button>
+                  <button type="button" className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.TECNICA }); setMostrarSelectorTipoFalta(false); }}>Técnica</button>
+                  <button type="button" className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.ANTIDEPORTIVA }); setMostrarSelectorTipoFalta(false); }}>Antideportiva</button>
+                  <button type="button" className="btn-secondary" style={{ color: 'var(--rojo-alerta)' }} onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.DESCALIFICANTE }); setMostrarSelectorTipoFalta(false); }}>Descalificante</button>
+                </div>
+                <p className="text-muted" style={{ fontSize: '11px', margin: '6px 0 0' }}>Técnica y antideportiva también suman como falta personal. 2 técnicas, 2 antideportivas o 1 descalificante = expulsión.</p>
               </div>
-              <p className="text-muted" style={{ fontSize: '11px', margin: '6px 0 0' }}>Técnica y antideportiva también suman como falta personal. 2 técnicas, 2 antideportivas o 1 descalificante = expulsión.</p>
             </div>
           )}
 
           {mostrarOpcionesTL && !accionEquipoEsVisita && (
-            <div className="mesa-tl-options-panel">
-              <h6>Opciones de Tiro Libre</h6>
-              <div className="mesa-tl-options-grid">
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>2 TL (0/2)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>2 TL (1/2)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 2 }); setMostrarOpcionesTL(false); }}>2 TL (2/2)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>2+1 (TL fallado)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>2+1 (TL convertido)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 3, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>3+1 (TL convertido)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>3 TL (0/3)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>3 TL (1/3)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 2 }); setMostrarOpcionesTL(false); }}>3 TL (2/3)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 3 }); setMostrarOpcionesTL(false); }}>3 TL (3/3)</button>
+            <div className="mesa-quick-modal-overlay" onClick={() => setMostrarOpcionesTL(false)}>
+              <div className="mesa-tl-options-panel" onClick={(e) => e.stopPropagation()}>
+                <div className="mesa-quick-modal-header">
+                  <h6 style={{ margin: 0 }}>Opciones de Tiro Libre</h6>
+                  <button type="button" className="mesa-quick-modal-close" onClick={() => setMostrarOpcionesTL(false)}>✕</button>
+                </div>
+                <div className="mesa-tl-options-grid">
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>2 TL (0/2)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>2 TL (1/2)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 2 }); setMostrarOpcionesTL(false); }}>2 TL (2/2)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>2+1 (TL fallado)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>2+1 (TL convertido)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 3, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>3+1 (TL convertido)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 0 }); setMostrarOpcionesTL(false); }}>3 TL (0/3)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 1 }); setMostrarOpcionesTL(false); }}>3 TL (1/3)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 2 }); setMostrarOpcionesTL(false); }}>3 TL (2/3)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 3 }); setMostrarOpcionesTL(false); }}>3 TL (3/3)</button>
+                </div>
               </div>
             </div>
           )}
 
           {mostrarOpcionesTLVisita && accionEquipoEsVisita && (
-            <div className="mesa-tl-options-panel">
-              <h6>Opciones TL Visita</h6>
-              <div className="mesa-tl-options-grid">
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>2 TL (0/2)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>2 TL (1/2)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 2 }); setMostrarOpcionesTLVisita(false); }}>2 TL (2/2)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>2+1 (TL fallado)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>2+1 (TL convertido)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 3, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>3+1 (TL convertido)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>3 TL (0/3)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>3 TL (1/3)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 2 }); setMostrarOpcionesTLVisita(false); }}>3 TL (2/3)</button>
-                <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 3 }); setMostrarOpcionesTLVisita(false); }}>3 TL (3/3)</button>
+            <div className="mesa-quick-modal-overlay" onClick={() => setMostrarOpcionesTLVisita(false)}>
+              <div className="mesa-tl-options-panel" onClick={(e) => e.stopPropagation()}>
+                <div className="mesa-quick-modal-header">
+                  <h6 style={{ margin: 0 }}>Opciones TL Visita</h6>
+                  <button type="button" className="mesa-quick-modal-close" onClick={() => setMostrarOpcionesTLVisita(false)}>✕</button>
+                </div>
+                <div className="mesa-tl-options-grid">
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>2 TL (0/2)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>2 TL (1/2)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 2, tirosLibresConvertidos: 2 }); setMostrarOpcionesTLVisita(false); }}>2 TL (2/2)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>2+1 (TL fallado)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 2, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>2+1 (TL convertido)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 3, tirosLibresIntentados: 1, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>3+1 (TL convertido)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 0 }); setMostrarOpcionesTLVisita(false); }}>3 TL (0/3)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 1 }); setMostrarOpcionesTLVisita(false); }}>3 TL (1/3)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 2 }); setMostrarOpcionesTLVisita(false); }}>3 TL (2/3)</button>
+                  <button className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('PUNTO', { puntos: 0, tirosLibresIntentados: 3, tirosLibresConvertidos: 3 }); setMostrarOpcionesTLVisita(false); }}>3 TL (3/3)</button>
+                </div>
               </div>
             </div>
           )}

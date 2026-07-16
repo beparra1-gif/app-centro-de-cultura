@@ -2520,6 +2520,52 @@ button,
   box-shadow: 0 20px 44px rgba(15, 23, 42, 0.2);
 }
 
+/* Modal generico para Tiro Libre / Tipo de falta: antes se abrian inline
+   dentro de la tarjeta central y empujaban el resto del contenido hacia
+   abajo (forzando scroll en pantalla completa). Como ventana flotante no
+   mueve nada del layout de atras. */
+.mesa-quick-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 14, 22, 0.66);
+  backdrop-filter: blur(2px);
+  padding: 16px;
+}
+
+.mesa-quick-modal-card {
+  width: min(480px, calc(100vw - 24px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  border-radius: 18px;
+  border: 1px solid rgba(0, 122, 255, 0.35);
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(245,249,255,0.97) 100%);
+  padding: 16px;
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.25);
+}
+
+.mesa-quick-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.mesa-quick-modal-close {
+  border: none;
+  background: rgba(0,0,0,0.06);
+  color: var(--texto-secundario);
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .mesa-oncourt-btn strong {
   font-size: 14px;
   line-height: 1.2;
@@ -2610,11 +2656,14 @@ button,
 }
 
 .mesa-tl-options-panel {
-  margin-top: 10px;
+  width: min(440px, calc(100vw - 24px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   border: 1px solid #dbe3f0;
   border-radius: 12px;
   background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
-  padding: 10px;
+  padding: 14px;
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.25);
 }
 
 .mesa-tl-options-panel h6 {
@@ -2639,10 +2688,14 @@ button,
 }
 
 .mesa-tipo-falta-panel {
+  width: min(400px, calc(100vw - 24px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   border: 1px solid rgba(255,59,48,0.28);
   border-radius: 12px;
   background: linear-gradient(180deg, #fff7f6 0%, #ffeceb 100%);
-  padding: 10px;
+  padding: 14px;
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.25);
 }
 .mesa-tipo-falta-titulo {
   display: block;
