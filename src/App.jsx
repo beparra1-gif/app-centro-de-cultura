@@ -220,9 +220,7 @@ function App() {
   const [usuarioAutenticado, setUsuarioAutenticado] = useState(null);
 
   const [destinatarios, setDestinatarios] = useState({ admin: false, staff: false, socios: true, apoderados: true, deportistas: true });
-  const [cuentaEditando, setCuentaEditando] = useState(null);
-  const [guardandoCuenta, setGuardandoCuenta] = useState(false);
-  
+
   const [busquedaPermisos, setBusquedaPermisos] = useState('');
   const [filtroRolPermisos, setFiltroRolPermisos] = useState('Todos');
   const [permisosPorUsuario, setPermisosPorUsuario] = useState({});
@@ -1157,7 +1155,6 @@ function App() {
     setMostrarFormularioLogin(false);
     setShowSettings(false);
     setVistaAdmin('dashboard');
-    setCuentaEditando(null);
     setIsOnboarding(false);
     setOnboardingPassword('');
     setOnboardingPasswordConfirm('');
@@ -1365,33 +1362,6 @@ function App() {
     });
   };
 
-  const abrirEdicionCuenta = (cuenta) => {
-    setCuentaEditando({
-      id: cuenta.id,
-      correo: cuenta.correo || '',
-      rut: cuenta.rut || '',
-      nombres: cuenta.nombres || '',
-      apellido_paterno: cuenta.apellido_paterno || '',
-      apellido_materno: cuenta.apellido_materno || '',
-      telefono: cuenta.telefono || '',
-      direccion: cuenta.direccion || '',
-      comuna: cuenta.comuna || '',
-      rol: cuenta.rol || 'apoderado',
-      estado_civil: cuenta.estado_civil || '',
-      profesion_oficio: cuenta.profesion_oficio || '',
-      nombre_segundo_contacto: cuenta.nombre_segundo_contacto || '',
-      parentesco_segundo_contacto: cuenta.parentesco_segundo_contacto || '',
-      num_segundo_contacto: cuenta.num_segundo_contacto || '',
-      es_socio: Boolean(cuenta.es_socio),
-      dia_pago_acordado: cuenta.dia_pago_acordado || '',
-    });
-    setVistaAdmin('usuarios');
-  };
-
-  const actualizarCampoCuenta = (campo, valor) => {
-    setCuentaEditando((prev) => ({ ...prev, [campo]: valor }));
-  };
-
   const recargarUsuariosAdmin = async () => {
     const [cuentasRes, cuentasIncompletasRes, jugadoresRes, jugadoresVisitaRes] = await Promise.all([
       api.cuentasAPI.getAll(),
@@ -1436,27 +1406,6 @@ function App() {
         ? construirMorososDesdePagos(pagosRes, jugadoresAdmin)
         : []
     );
-  };
-
-  const guardarCuentaPendiente = async () => {
-    if (!cuentaEditando) return;
-
-    if (!api.validarRutChileno(cuentaEditando.rut)) {
-      showToast({ message: 'El RUT ingresado no es valido. Revisa digito verificador.', type: 'error' });
-      return;
-    }
-
-    try {
-      setGuardandoCuenta(true);
-      await api.cuentasAPI.update(cuentaEditando.id, cuentaEditando);
-      await recargarUsuariosAdmin();
-      showToast({ message: 'Cuenta actualizada correctamente.', type: 'success' });
-      setCuentaEditando(null);
-    } catch (error) {
-      showToast({ message: `No se pudo guardar la cuenta: ${error.message}`, type: 'error' });
-    } finally {
-      setGuardandoCuenta(false);
-    }
   };
 
   const guardarCuentaAdmin = async (payload, id = null) => {
@@ -2663,12 +2612,6 @@ function App() {
                 exportarReportePDF={exportarReportePDF}
                 renderGraficoSVG={renderGraficoSVG}
                 cuentasIncompletas={cuentasIncompletas}
-                abrirEdicionCuenta={abrirEdicionCuenta}
-                cuentaEditando={cuentaEditando}
-                actualizarCampoCuenta={actualizarCampoCuenta}
-                guardarCuentaPendiente={guardarCuentaPendiente}
-                guardandoCuenta={guardandoCuenta}
-                setCuentaEditando={setCuentaEditando}
                 vistaSaludTab={vistaSaludTab}
                 setVistaSaludTab={setVistaSaludTab}
                 alertas={alertas}

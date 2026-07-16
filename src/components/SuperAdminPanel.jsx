@@ -64,12 +64,6 @@ function SuperAdminPanel({
   exportarReportePDF,
   renderGraficoSVG,
   cuentasIncompletas,
-  abrirEdicionCuenta,
-  cuentaEditando,
-  actualizarCampoCuenta,
-  guardarCuentaPendiente,
-  guardandoCuenta,
-  setCuentaEditando,
   vistaSaludTab,
   setVistaSaludTab,
   alertas,
@@ -330,12 +324,6 @@ function SuperAdminPanel({
   const [pagoEditandoId, setPagoEditandoId] = useState(null);
   const [paginaPagosMigrados, setPaginaPagosMigrados] = useState(1);
   const [itemsPorPaginaPagos] = useState(15);
-
-  useEffect(() => {
-    if (vistaAdmin === 'cuentas' || vistaAdmin === 'cuentas_legacy') {
-      setVistaAdmin('usuarios');
-    }
-  }, [vistaAdmin, setVistaAdmin]);
 
   const PERFIL_PRINCIPAL_OPTIONS = [
     { value: 'apoderado', label: 'Apoderado' },
@@ -616,7 +604,7 @@ function SuperAdminPanel({
     filtroCategoriaJugadores,
   ]);
 
-  const cuentaPupilosActiva = cuentaAdminEdit || cuentaEditando || null;
+  const cuentaPupilosActiva = cuentaAdminEdit || null;
 
   const pupilosAsignadosCuenta = useMemo(() => {
     if (!cuentaPupilosActiva) return [];
@@ -3440,203 +3428,6 @@ function SuperAdminPanel({
                 }
               }}
             />
-          )}
-        </div>
-      )}
-
-      {vistaAdmin === 'cuentas_legacy' && (
-        <div className="fade-in">
-          <h3 className="section-title">Cuentas por Actualizar</h3>
-          <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
-            Completa los datos faltantes y valida RUT chileno antes de guardar.
-          </p>
-
-          {cuentasIncompletas.length === 0 && (
-            <div className="card text-center" style={{ fontWeight: '700', color: 'var(--verde-victoria)' }}>
-              Todo bien: no hay cuentas pendientes de completar.
-            </div>
-          )}
-
-          {!cuentaEditando && cuentasIncompletas.map((c) => (
-            <div key={c.id} className="card" style={{ marginBottom: '10px', borderLeft: '4px solid #FF9500' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <div>
-                  <strong style={{ fontSize: '14px' }}>{`${c.nombres || 'Sin nombre'} ${c.apellido_paterno || ''}`.trim()}</strong>
-                  <div className="text-caption">
-                    {c.correo || 'Sin correo'} · {c.rut || 'Sin RUT'}
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                    {(c.campos_faltantes || []).map((f) => (
-                      <span key={f} style={{ fontSize: '11px', background: 'rgba(255,149,0,0.14)', color: '#b36200', padding: '4px 8px', borderRadius: '999px', fontWeight: '800' }}>
-                        Falta: {f}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <button className="btn-pill btn-success cuenta-completar-btn" onClick={() => abrirEdicionCuenta(c)}>
-                  Completar
-                </button>
-              </div>
-            </div>
-          ))}
-
-          {cuentaEditando && (
-            <div className="card cuenta-edit-screen" style={{ marginTop: '14px', border: '1px solid var(--azul-electrico)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <h4 className="form-subtitle" style={{ marginBottom: 0 }}>Editar Cuenta #{cuentaEditando.id}</h4>
-                <button className="btn-secondary" style={{ width: 'auto', padding: '9px 14px' }} onClick={() => setCuentaEditando(null)}>Salir</button>
-              </div>
-              <div style={{ marginTop: '8px', marginBottom: '8px', fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Identidad</div>
-              <div className="grid-auto-220">
-              <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaEditando.correo} onChange={(e) => actualizarCampoCuenta('correo', e.target.value)} /></div>
-              <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaEditando.rut} onChange={(e) => actualizarCampoCuenta('rut', e.target.value)} style={{ borderColor: cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) ? 'var(--rojo-alerta)' : undefined }} /></div>
-              {cuentaEditando.rut && !api.validarRutChileno(cuentaEditando.rut) && <p style={{ fontSize: '12px', color: 'var(--rojo-alerta)', marginTop: '-6px' }}>RUT invalido</p>}
-              <div className="form-group"><label>Nombres</label><input className="form-input" value={cuentaEditando.nombres} onChange={(e) => actualizarCampoCuenta('nombres', e.target.value)} /></div>
-              <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={cuentaEditando.apellido_paterno} onChange={(e) => actualizarCampoCuenta('apellido_paterno', e.target.value)} /></div>
-              <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={cuentaEditando.apellido_materno} onChange={(e) => actualizarCampoCuenta('apellido_materno', e.target.value)} /></div>
-              <div style={{ marginTop: '10px', marginBottom: '8px', fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Contacto</div>
-              <div className="form-group"><label>Telefono</label><input className="form-input" value={cuentaEditando.telefono} onChange={(e) => actualizarCampoCuenta('telefono', e.target.value)} /></div>
-              <div className="form-group"><label>Direccion</label><input className="form-input" value={cuentaEditando.direccion} onChange={(e) => actualizarCampoCuenta('direccion', e.target.value)} /></div>
-              <div className="form-group"><label>Comuna</label><input className="form-input" value={cuentaEditando.comuna} onChange={(e) => actualizarCampoCuenta('comuna', e.target.value)} /></div>
-              <div style={{ marginTop: '10px', marginBottom: '8px', fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gestión</div>
-              <div className="form-group"><label>Rol de acceso</label><select className="form-input" value={cuentaEditando.rol || 'apoderado'} onChange={(e) => actualizarCampoCuenta('rol', e.target.value)}><option value="apoderado">Apoderado</option><option value="staff">Staff</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
-              <div className="form-group"><label>Perfil principal</label><select className="form-input" value={cuentaEditando.perfil_principal || 'apoderado'} onChange={(e) => actualizarCampoCuenta('perfil_principal', e.target.value)}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-cuenta-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
-              <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaEditando.cargo_directiva || ''} onChange={(e) => actualizarCampoCuenta('cargo_directiva', e.target.value)}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`cargo-cuenta-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
-              <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={cuentaEditando.acceso_nivel || 'estandar'} onChange={(e) => actualizarCampoCuenta('acceso_nivel', e.target.value)}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-cuenta-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
-              <div className="form-group"><label>Estado Civil</label><input className="form-input" value={cuentaEditando.estado_civil} onChange={(e) => actualizarCampoCuenta('estado_civil', e.target.value)} /></div>
-              <div className="form-group"><label>Profesion u Oficio</label><input className="form-input" value={cuentaEditando.profesion_oficio} onChange={(e) => actualizarCampoCuenta('profesion_oficio', e.target.value)} /></div>
-              <div className="form-group"><label>Segundo Contacto</label><input className="form-input" value={cuentaEditando.nombre_segundo_contacto} onChange={(e) => actualizarCampoCuenta('nombre_segundo_contacto', e.target.value)} /></div>
-              <div className="form-group"><label>Parentesco Segundo Contacto</label><input className="form-input" value={cuentaEditando.parentesco_segundo_contacto} onChange={(e) => actualizarCampoCuenta('parentesco_segundo_contacto', e.target.value)} /></div>
-              <div className="form-group"><label>Numero Segundo Contacto</label><input className="form-input" value={cuentaEditando.num_segundo_contacto} onChange={(e) => actualizarCampoCuenta('num_segundo_contacto', e.target.value)} /></div>
-              <div className="form-group"><label>Dia Pago Acordado</label><input className="form-input" type="number" min="1" max="31" value={cuentaEditando.dia_pago_acordado} onChange={(e) => actualizarCampoCuenta('dia_pago_acordado', e.target.value)} /></div>
-              <div className="form-group"><label>Valor UTM referencia</label><input className="form-input" type="number" min="1" value={cuentaEditando.utm_valor_referencia || 68000} onChange={(e) => actualizarCampoCuenta('utm_valor_referencia', e.target.value)} /></div>
-              <div className="form-group"><label>Mensualidad base (0,3 UTM)</label><input className="form-input" type="number" value={cuentaEditando.monto_mensual_base || ''} onChange={(e) => actualizarCampoCuenta('monto_mensual_base', e.target.value)} /></div>
-              <div className="form-group"><label>Mensualidad corregida por SuperAdmin</label><input className="form-input" type="number" value={cuentaEditando.monto_mensual_override || ''} onChange={(e) => actualizarCampoCuenta('monto_mensual_override', e.target.value)} /></div>
-              <div className="form-group"><label>Fecha corte UTM (mes anterior)</label><input className="form-input" type="date" value={cuentaEditando.fecha_corte_utm || ''} onChange={(e) => actualizarCampoCuenta('fecha_corte_utm', e.target.value)} /></div>
-              <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={cuentaEditando.condiciones_pago || ''} onChange={(e) => actualizarCampoCuenta('condiciones_pago', e.target.value)}></textarea></div>
-              </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontSize: '13px' }}>
-                <input type="checkbox" checked={Boolean(cuentaEditando.es_socio)} onChange={(e) => actualizarCampoCuenta('es_socio', e.target.checked)} />
-                Es socio
-              </label>
-              <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(cuentaEditando.socio_admin)} onChange={(e) => actualizarCampoCuenta('socio_admin', e.target.checked)} />
-                  Admin entre socios
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(cuentaEditando.aprobado_superadmin)} onChange={(e) => actualizarCampoCuenta('aprobado_superadmin', e.target.checked)} />
-                  Aprobado por SuperAdmin
-                </label>
-                <button
-                  className="btn-secondary"
-                  style={{ width: 'auto', padding: '8px 12px' }}
-                  onClick={() => {
-                    const siguiente = aplicarReglaMensualidad({ ...cuentaEditando, fecha_corte_utm: calcularFechaCorteMesAnterior() });
-                    Object.entries(siguiente).forEach(([k, v]) => actualizarCampoCuenta(k, v));
-                  }}
-                >
-                  Recalcular 0,3 UTM
-                </button>
-              </div>
-
-              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
-                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><Users size={15} /> Pupilos del apoderado</h4>
-                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0 }}>
-                  Asigna o corrige manualmente los hijos/pupilos para esta cuenta usando el correo del apoderado.
-                </p>
-
-                {!String(cuentaEditando.correo || '').trim() && (
-                  <div style={{ fontSize: '12px', color: '#b36200', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '10px', padding: '8px 10px', marginBottom: '10px' }}>
-                    Guarda un correo válido en la cuenta antes de asignar pupilos.
-                  </div>
-                )}
-
-                <div style={{ marginBottom: '10px' }}>
-                  <strong style={{ fontSize: '12px' }}>Pupilos actualmente asociados ({pupilosAsignadosCuenta.length})</strong>
-                  <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {pupilosAsignadosCuenta.map((j) => (
-                      <div key={`pupilo-asig-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'rgba(0,122,255,0.07)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: '10px', padding: '8px' }}>
-                        <div>
-                          <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.categoria || 'Sin categoría'}</div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                          <select
-                            className="form-input"
-                            style={{ width: '220px', padding: '7px 9px' }}
-                            value={destinoApoderadoPorRut[j.rut_jugador] || ''}
-                            onChange={(e) => setDestinoApoderadoPorRut((prev) => ({ ...prev, [j.rut_jugador]: e.target.value }))}
-                            disabled={procesandoPupiloRut === String(j.rut_jugador || '')}
-                          >
-                            <option value="">Mover a apoderado...</option>
-                            {cuentasApoderadoDisponibles
-                              .filter((c) => String(c.correo || '').trim().toLowerCase() !== String(cuentaEditando?.correo || '').trim().toLowerCase())
-                              .map((c) => (
-                                <option key={`dest-${j.rut_jugador}-${c.correo}`} value={c.correo}>{c.nombre} · {c.correo}</option>
-                              ))}
-                          </select>
-                          <button
-                            className="btn-pill"
-                            style={{ width: 'auto', padding: '7px 10px' }}
-                            onClick={() => moverPupiloAOtroApoderado(j, destinoApoderadoPorRut[j.rut_jugador])}
-                            disabled={procesandoPupiloRut === String(j.rut_jugador || '') || !String(destinoApoderadoPorRut[j.rut_jugador] || '').trim()}
-                          >
-                            {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Moviendo...' : 'Mover'}
-                          </button>
-                          <button
-                            className="btn-secondary"
-                            style={{ width: 'auto', padding: '7px 10px' }}
-                            onClick={() => quitarPupiloDeCuenta(j)}
-                            disabled={procesandoPupiloRut === String(j.rut_jugador || '')}
-                          >
-                            {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Quitando...' : 'Quitar'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {pupilosAsignadosCuenta.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin pupilos asociados.</span>}
-                  </div>
-                </div>
-
-                <div>
-                  <strong style={{ fontSize: '12px' }}>Buscar y asignar pupilo</strong>
-                  <input
-                    className="form-input"
-                    style={{ marginTop: '8px' }}
-                    placeholder="Buscar por nombre, RUT, rama o categoría"
-                    value={filtroPupiloManual}
-                    onChange={(e) => setFiltroPupiloManual(e.target.value)}
-                  />
-                  <div style={{ marginTop: '8px', maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {jugadoresDisponiblesAsignacion.slice(0, 30).map((j) => (
-                      <div key={`pupilo-disp-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'var(--fondo-app)', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '10px', padding: '8px' }}>
-                        <div>
-                          <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.rama || 'Sin rama'} · {j.categoria || 'Sin categoría'}</div>
-                        </div>
-                        <button
-                          className="btn-pill btn-success"
-                          style={{ width: 'auto', padding: '7px 11px' }}
-                          onClick={() => asignarPupiloACuenta(j)}
-                          disabled={procesandoPupiloRut === String(j.rut_jugador || '') || !String(cuentaEditando.correo || '').trim()}
-                        >
-                          {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Asignando...' : 'Asignar'}
-                        </button>
-                      </div>
-                    ))}
-                    {jugadoresDisponiblesAsignacion.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>No hay jugadores para asignar con ese filtro.</span>}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button className="btn-electric" onClick={guardarCuentaPendiente} disabled={guardandoCuenta || !api.validarRutChileno(cuentaEditando.rut)}>
-                  {guardandoCuenta ? 'Guardando...' : 'Guardar'}
-                </button>
-                <button className="btn-secondary" onClick={() => setCuentaEditando(null)}>Salir</button>
-              </div>
-            </div>
           )}
         </div>
       )}
