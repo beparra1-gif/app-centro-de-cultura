@@ -481,6 +481,17 @@ export const adminAPI = {
     return handleResponse(response);
   },
 
+  exportSheets: async (token) => {
+    const response = await apiFetch(`${API_BASE_URL}/admin/sync-sheets/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-sync-token': token,
+      },
+    });
+    return handleResponse(response);
+  },
+
   getDataQualityDetails: async (token) => {
     const response = await apiFetch(`${API_BASE_URL}/admin/data-quality/details`, {
       headers: {

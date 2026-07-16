@@ -422,8 +422,17 @@ function App() {
   // 3. LÓGICA BASE Y EFECTOS
   // ==========================================
 
-  const construirMorososDesdePagos = (pagos = [], jugadores = []) => {
+  const construirMorososDesdePagos = (pagos = [], jugadores = [], cuentas = []) => {
     const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+    const normalizarCorreo = (correo = '') => String(correo || '').trim().toLowerCase();
+    const cuentaPorCorreo = new Map();
+    const cuentaPorRut = new Map();
+    (cuentas || []).forEach((cuenta) => {
+      const correo = normalizarCorreo(cuenta?.correo);
+      if (correo) cuentaPorCorreo.set(correo, cuenta);
+      const rut = normalizarRutComparacion(cuenta?.rut);
+      if (rut) cuentaPorRut.set(rut, cuenta);
+    });
     const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
     const ANIO_OBJETIVO = 2026;
     const now = new Date();
@@ -579,6 +588,12 @@ function App() {
       if (mesesDeuda <= 0) return;
 
       const cuotaRef = Number(jugador.valor_mensualidad || 0);
+      const cuentaApoderado = cuentaPorRut.get(normalizarRutComparacion(jugador.rut_apoderado))
+        || cuentaPorCorreo.get(normalizarCorreo(jugador.correo_apoderado));
+      const telefonoCuenta = String(cuentaApoderado?.telefono || '').trim();
+      const telefono = telefonoCuenta
+        ? `${String(cuentaApoderado?.prefijo_tel || '+56').trim()}${telefonoCuenta}`
+        : '';
       morosos.push({
         id: rutJugadorNorm,
         rut: jugador.rut_jugador || rutJugadorNorm,
@@ -586,7 +601,9 @@ function App() {
         tipo: jugador?.rama?.toLowerCase().includes('femen') ? 'apoderado' : 'socio-apoderado',
         mesesDeuda,
         montoDeuda: cuotaRef > 0 ? (mesesDeuda * cuotaRef) : mesesDeuda,
-        contacto: jugador.correo_apoderado || 'Sin contacto',
+        contacto: telefono || jugador.correo_apoderado || 'Sin contacto',
+        telefono,
+        correo: jugador.correo_apoderado || '',
         pupilos: [jugador.nombres || jugador.rut_jugador],
       });
     });
@@ -757,7 +774,7 @@ function App() {
       if (Array.isArray(pagosMensualidadesRes)) {
         setPagosMensualidadesAdmin(pagosMensualidadesRes);
         setPagosPendientesAdmin(pagosMensualidadesRes.filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente'));
-        setMorososAdmin(construirMorososDesdePagos(pagosMensualidadesRes, jugadoresRes));
+        setMorososAdmin(construirMorososDesdePagos(pagosMensualidadesRes, jugadoresRes, cuentasRes));
       }
 
       if (Array.isArray(partidosLiveRes)) {
@@ -1437,7 +1454,7 @@ function App() {
     );
     setMorososAdmin(
       Array.isArray(pagosRes)
-        ? construirMorososDesdePagos(pagosRes, jugadoresAdmin)
+        ? construirMorososDesdePagos(pagosRes, jugadoresAdmin, cuentasAdmin)
         : []
     );
   };
@@ -2673,6 +2690,7 @@ function App() {
                 onCancelEdit={restaurarPermisosAntesCancelacion}
                 onPartidosChanged={recargarPartidosResumen}
                 onComunicacionesChanged={recargarComunicacionesResumen}
+                enviarPorWhatsApp={enviarPorWhatsApp}
               />
             )}
           </>

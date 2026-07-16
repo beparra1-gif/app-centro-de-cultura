@@ -88,6 +88,7 @@ function SuperAdminPanel({
   onCancelEdit,
   onPartidosChanged,
   onComunicacionesChanged,
+  enviarPorWhatsApp,
 }) {
   const enviarAlerta = () => { showToast({ message: 'Notificación enviada por App y Correo a los destinatarios.', type: 'success' }); };
   void enviarAlerta;
@@ -141,6 +142,38 @@ function SuperAdminPanel({
     if (String(m.nombre || '').toLowerCase().includes(q)) return true;
     return (m.pupilos || []).some((p) => String(p || '').toLowerCase().includes(q));
   });
+
+  const construirMensajeRecordatorioMoroso = (m) => {
+    const primerNombre = String(m.nombre || '').trim().split(' ')[0] || m.nombre;
+    return `Hola ${primerNombre}, te recordamos que tienes ${m.mesesDeuda} ${m.mesesDeuda === 1 ? 'mes' : 'meses'} de mensualidad pendiente ($${m.montoDeuda.toLocaleString('es-CL')}) en el Centro de Cultura Física. Por favor regulariza tu pago a la brevedad.\n\n*Centro de Cultura Física*`;
+  };
+
+  const avisarMoroso = async (m) => {
+    if (!m.telefono) {
+      showToast({ message: `${m.nombre} no tiene teléfono registrado en su cuenta.`, type: 'error' });
+      return;
+    }
+    await enviarPorWhatsApp(m.telefono, construirMensajeRecordatorioMoroso(m), 'pago');
+    showToast({ message: `Recordatorio enviado a ${m.nombre} · ${m.telefono}`, type: 'success' });
+  };
+
+  const notificarTodosMorosos = async () => {
+    const conTelefono = morososFiltrados.filter((m) => m.telefono);
+    if (conTelefono.length === 0) {
+      showToast({ message: 'Ningún deudor de esta lista tiene teléfono registrado.', type: 'error' });
+      return;
+    }
+    for (const m of conTelefono) {
+      await enviarPorWhatsApp(m.telefono, construirMensajeRecordatorioMoroso(m), 'pago');
+    }
+    const sinTelefono = morososFiltrados.length - conTelefono.length;
+    showToast({
+      message: sinTelefono > 0
+        ? `Recordatorio enviado a ${conTelefono.length} deudores. ${sinTelefono} sin teléfono registrado.`
+        : `Recordatorio enviado a ${conTelefono.length} deudores.`,
+      type: 'success',
+    });
+  };
 
   const [filtroUsuariosTexto, setFiltroUsuariosTexto] = useState('');
   const [filtroTipoPerfil, setFiltroTipoPerfil] = useState('todos');
@@ -225,6 +258,8 @@ function SuperAdminPanel({
   const [syncToken, setSyncToken] = useState('');
   const [syncSheetsRunning, setSyncSheetsRunning] = useState(false);
   const [syncSheetsResult, setSyncSheetsResult] = useState(null);
+  const [exportSheetsRunning, setExportSheetsRunning] = useState(false);
+  const [exportSheetsResult, setExportSheetsResult] = useState(null);
   const [subiendoFotoJugadorNuevo, setSubiendoFotoJugadorNuevo] = useState(false);
   const [subiendoFotoJugadorEdit, setSubiendoFotoJugadorEdit] = useState(false);
   const edicionCuentaRef = useRef(null);
@@ -638,6 +673,7 @@ function SuperAdminPanel({
       })
       .map((c) => ({
         correo: String(c.correo || '').trim(),
+        rut: String(c.rut || '').trim(),
         nombre: `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || String(c.correo || '').trim(),
       }));
   }, [cuentasAdmin]);
@@ -774,10 +810,11 @@ function SuperAdminPanel({
       showToast({ message: 'Debes guardar un correo válido en la cuenta antes de asignar pupilos.', type: 'error' });
       return;
     }
+    const rutCuenta = String(cuentaPupilosActiva?.rut || '').trim();
 
     try {
       setProcesandoPupiloRut(jugador.rut_jugador || '');
-      await guardarJugadorAdmin({ ...jugador, correo_apoderado: correoCuenta }, jugador.rut_jugador);
+      await guardarJugadorAdmin({ ...jugador, correo_apoderado: correoCuenta, rut_apoderado: rutCuenta || null }, jugador.rut_jugador);
       showToast({ message: `Pupilo asignado a ${correoCuenta}.`, type: 'success' });
     } catch (error) {
       showToast({ message: `No se pudo asignar el pupilo: ${error.message}`, type: 'error' });
@@ -797,7 +834,7 @@ function SuperAdminPanel({
   const quitarPupiloDeCuenta = async (jugador) => {
     try {
       setProcesandoPupiloRut(jugador.rut_jugador || '');
-      await guardarJugadorAdmin({ ...jugador, correo_apoderado: '' }, jugador.rut_jugador);
+      await guardarJugadorAdmin({ ...jugador, correo_apoderado: '', rut_apoderado: '' }, jugador.rut_jugador);
       showToast({ message: 'Pupilo desasignado correctamente.', type: 'success' });
     } catch (error) {
       showToast({ message: `No se pudo quitar el pupilo: ${error.message}`, type: 'error' });
@@ -812,10 +849,11 @@ function SuperAdminPanel({
       showToast({ message: 'Selecciona un apoderado destino para mover el pupilo.', type: 'error' });
       return;
     }
+    const rutDestino = String(cuentasApoderadoDisponibles.find((c) => c.correo === destino)?.rut || '').trim();
 
     try {
       setProcesandoPupiloRut(jugador.rut_jugador || '');
-      await guardarJugadorAdmin({ ...jugador, correo_apoderado: destino }, jugador.rut_jugador);
+      await guardarJugadorAdmin({ ...jugador, correo_apoderado: destino, rut_apoderado: rutDestino || null }, jugador.rut_jugador);
       setDestinoApoderadoPorRut((prev) => ({ ...prev, [jugador.rut_jugador]: '' }));
       showToast({ message: `Pupilo movido a ${destino}.`, type: 'success' });
     } catch (error) {
@@ -1364,6 +1402,26 @@ function SuperAdminPanel({
     }
   };
 
+  const ejecutarExportSheets = async () => {
+    const token = syncToken.trim();
+    if (!token) {
+      showToast({ message: 'Ingresa el token de sincronización antes de continuar.', type: 'error' });
+      return;
+    }
+
+    try {
+      setExportSheetsRunning(true);
+      const resultado = await api.adminAPI.exportSheets(token);
+      setExportSheetsResult(resultado);
+      const tablasOk = (resultado?.results || []).filter((r) => r.ok).length;
+      showToast({ message: `Hojas actualizadas: ${tablasOk} de ${resultado?.total ?? 0} tablas.`, type: 'success' });
+    } catch (error) {
+      showToast({ message: `No se pudo exportar al Google Sheet: ${error.message}`, type: 'error' });
+    } finally {
+      setExportSheetsRunning(false);
+    }
+  };
+
   const subirFotoJugadorDesdeGaleria = async (file, target = 'nuevo') => {
     if (!file) return;
 
@@ -1632,7 +1690,9 @@ function SuperAdminPanel({
               <div>
                 <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><RefreshCcw size={16} /> Sincronización Google Sheets</h4>
                 <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
-                  Ejecuta una carga real desde la hoja maestra hacia PostgreSQL y refresca los datos del panel al terminar.
+                  "Sincronizar ahora" trae filas nuevas desde la hoja maestra hacia PostgreSQL. "Exportar cambios al Sheet"
+                  hace lo inverso: reescribe JUGADORES, CUENTAS y PAGOS_MENSUALIDADES en el Sheet con el estado actual del
+                  app (los cambios del app también se exportan solos, poco después de guardarse).
                 </p>
               </div>
               <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '6px 10px', borderRadius: '999px' }}>
@@ -1655,8 +1715,22 @@ function SuperAdminPanel({
                 <button className="btn-electric sync-action-btn" onClick={ejecutarSyncSheets} disabled={syncSheetsRunning}>
                   <RefreshCcw size={15} /> {syncSheetsRunning ? 'Sincronizando...' : 'Sincronizar ahora'}
                 </button>
+                <button className="btn-secondary sync-action-btn" onClick={ejecutarExportSheets} disabled={exportSheetsRunning}>
+                  <RefreshCcw size={15} /> {exportSheetsRunning ? 'Exportando...' : 'Exportar cambios al Sheet'}
+                </button>
               </div>
             </div>
+
+            {exportSheetsResult && (
+              <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span>Exportación: {exportSheetsResult.ok ? 'completa' : (exportSheetsResult.reason || 'con errores')}</span>
+                {Array.isArray(exportSheetsResult.results) && exportSheetsResult.results.length > 0 && (
+                  <span>
+                    Tablas exportadas: {exportSheetsResult.results.filter((r) => r.ok).map((r) => r.sheet || r.table).join(', ') || 'ninguna'}
+                  </span>
+                )}
+              </div>
+            )}
 
             {syncSheetsResult && (
               <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
@@ -1750,7 +1824,7 @@ function SuperAdminPanel({
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 className="section-title" style={{ margin: 0 }}>Morosos</h3>
-            <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={() => showToast({ message: `Notificación masiva enviada a ${(morososAdmin || []).length} deudores.`, type: 'success' })}>
+            <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={notificarTodosMorosos}>
               <Bell size={13} /> Notificar Todos
             </button>
           </div>
@@ -1797,13 +1871,21 @@ function SuperAdminPanel({
                     <span className="moroso-tipo-badge" style={{ background: bg, color }}>{labelTipo}</span>
                     {m.pupilos.length > 0 && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><User size={11} /> {m.pupilos.join(' · ')}</span>}
                   </div>
-                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}><Phone size={11} /> {m.contacto}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
+                    {m.telefono ? <><Phone size={11} /> {m.telefono}</> : <>{m.correo || 'Sin contacto'}</>}
+                  </span>
                 </div>
                 <div className="moroso-deuda">
                   <span className="moroso-monto">${m.montoDeuda.toLocaleString('es-CL')}</span>
                   <span className="moroso-meses" style={{ color: gravedad }}>{m.mesesDeuda} {m.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
                 </div>
-                <button className="btn-notificar" onClick={() => showToast({ message: `Notificación enviada a ${m.nombre} · ${m.contacto}`, type: 'success' })}>
+                <button
+                  className="btn-notificar"
+                  onClick={() => avisarMoroso(m)}
+                  disabled={!m.telefono}
+                  title={m.telefono ? `Enviar recordatorio por WhatsApp a ${m.telefono}` : 'Sin teléfono registrado en la cuenta'}
+                  style={!m.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                >
                   <Bell size={13} /> Avisar
                 </button>
               </div>

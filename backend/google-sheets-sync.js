@@ -59,13 +59,38 @@ const getOrderByClause = async (pool, tableName) => {
   return col ? ` ORDER BY ${quoteIdent(col)} DESC` : '';
 };
 
+// Los paneles de variables de entorno (DigitalOcean, etc.) suelen corromper
+// claves privadas PEM multilinea: agregan comillas envolventes, colapsan
+// saltos de linea reales a \r\n, o dejan \n como texto literal en vez de
+// salto real. Normalizamos todo eso antes de pasarla a la libreria de auth.
+const normalizePrivateKey = (rawValue) => {
+  let key = String(rawValue || '').trim();
+
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1).trim();
+  }
+
+  key = key.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  return key.trim();
+};
+
 const buildSheetsClient = ({ googleServiceEmail, googleServicePrivateKey }) => {
   const email = String(googleServiceEmail || '').trim();
-  const privateKeyRaw = String(googleServicePrivateKey || '').trim();
-  const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+  const privateKey = normalizePrivateKey(googleServicePrivateKey);
 
   if (!email || !privateKey) {
     throw new Error('Faltan GOOGLE_SERVICE_ACCOUNT_EMAIL y/o GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY para escribir en Google Sheets.');
+  }
+
+  if (!privateKey.includes('BEGIN PRIVATE KEY')) {
+    throw new Error(
+      'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY no tiene formato PEM valido (falta "BEGIN PRIVATE KEY"). ' +
+      'Revisa que se haya copiado completa desde el JSON de la cuenta de servicio, sin comillas extra.'
+    );
   }
 
   const auth = new google.auth.JWT(
