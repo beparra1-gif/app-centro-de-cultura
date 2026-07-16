@@ -3143,8 +3143,9 @@ button,
   }
 
   .fiba-container .mesa-live-zone-center .fiba-botones-grid .btn-fiba {
-    padding: 8px 4px;
-    font-size: 11px;
+    padding: 6px 4px;
+    font-size: 10px;
+    border-radius: 10px;
   }
 
   .fiba-container .mesa-oncourt-grid-two-cols {
@@ -3200,8 +3201,14 @@ button,
   }
 
   .fiba-container .mesa-live-zone-center .fiba-botones-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .fiba-container .mesa-live-zone-center .sub-caja-title {
+    margin: 8px 0 6px;
+    padding-bottom: 4px;
+    font-size: 11px;
   }
 
   .fiba-container .mesa-live-zone-center .mesa-tl-options-grid {
