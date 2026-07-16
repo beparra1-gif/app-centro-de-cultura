@@ -300,6 +300,17 @@ function AcademiaPanel({
     if (opcion === quizActivo.respuestaCorrecta) {
       setAnimacionXP(true);
       setTimeout(() => setAnimacionXP(false), 2000);
+
+      if (pupiloActivo?.rut) {
+        api.gamificacionAPI.create({
+          rut_jugador: pupiloActivo.rut,
+          tipo_logro: 'quiz_correcto',
+          puntos_obtenidos: 50,
+          descripcion: `Respuesta correcta: ${quizActivo.titulo || quizActivo.pregunta || 'Quiz'}`,
+        }).catch(() => {
+          // Los puntos son un extra cosmetico; si falla el guardado no bloqueamos el quiz.
+        });
+      }
     }
   };
 

@@ -2480,6 +2480,62 @@ function MesaControlPanel({
     }));
   };
 
+  // Guarda el resultado final y el box score por jugador en sus tablas propias
+  // (resultados/estadisticas), ademas del payload JSON que ya queda en
+  // partidos_live. Es un extra sobre el guardado principal: si algo falla aca
+  // no debe bloquear la finalizacion del partido, que ya quedo persistida.
+  const persistirResultadoYEstadisticas = async (idPartido) => {
+    const operadorNombre = normalizarTexto(operadoresMesa[rolOperadorActivo]) || 'Mesa';
+    const nombreLocal = liveScore.equipoLocalNombre || equipoLocal?.nombre || 'Local';
+    const nombreVisita = liveScore.equipoVisitaNombre || equipoVisita?.nombre || 'Visita';
+    const equipoGanador = liveScore.ptsLocal === liveScore.ptsVisita
+      ? 'Empate'
+      : (liveScore.ptsLocal > liveScore.ptsVisita ? nombreLocal : nombreVisita);
+
+    try {
+      await api.resultadosAPI.create({
+        id_partido: idPartido,
+        equipo_ganador: equipoGanador,
+        puntos_local: liveScore.ptsLocal,
+        puntos_visitante: liveScore.ptsVisita,
+        validado_por: operadorNombre,
+      });
+    } catch {
+      // No bloquea: el resultado ya quedo en partidos_live via finalizarMesa.
+    }
+
+    // Jugadoras/es agregadas manualmente (visita sin roster propio en el club)
+    // usan un rut sintetico "manual-*" que no existe en la tabla jugadores;
+    // estadisticas.rut_jugador tiene FK a jugadores, asi que se excluyen.
+    const jugadoresConEstadistica = [...rosterLocal, ...rosterVisita].filter(
+      (j) => !String(j.rut_jugador || j.rut || '').startsWith('manual-')
+    );
+
+    await Promise.all(jugadoresConEstadistica.map((j) => {
+      const eff = calcularEff({
+        pts: numero(j.pts),
+        reb: numero(j.reb),
+        ast: numero(j.ast),
+        stl: numero(j.stl),
+        blk: numero(j.blk),
+        to: numero(j.to),
+      });
+      return api.estadisticasAPI.create({
+        id_partido: idPartido,
+        rut_jugador: j.rut_jugador || j.rut,
+        puntos: numero(j.pts),
+        rebotes: numero(j.reb),
+        asistencias: numero(j.ast),
+        robos: numero(j.stl),
+        tapones: numero(j.blk),
+        faltas_cometidas: numero(j.flt),
+        porcentaje_efectividad: eff,
+      }).catch(() => {
+        // Un jugador con error no debe tumbar el resto del box score.
+      });
+    }));
+  };
+
   const guardarEstadisticaPartido = async ({ guardarEnBaseHistorica = true } = {}) => {
     const payload = {
       id: nextId(),
@@ -2564,6 +2620,7 @@ function MesaControlPanel({
           pts_visitante: liveScore.ptsVisita,
           });
           await recargarHistorialRemoto();
+          await persistirResultadoYEstadisticas(idPersistido);
         }
       }
       return true;
