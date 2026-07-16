@@ -19,9 +19,16 @@ const MESA_SESSION_KEY = 'mesa_live_session_v2';
 // descendientes position:fixed, atrapando el overlay de pantalla completa de
 // Mesa por debajo del header de la app en vez de cubrirlo. El portal evita
 // ese problema por completo sin tocar la animacion global de .ios-main.
+//
+// Mantenemos la clase fiba-container en este nodo aunque quede fuera del
+// <div className="fiba-container"> original: casi todos los ajustes de
+// layout de Mesa (grillas de tablet, tarjeta de control, etc.) usan
+// selectores ".fiba-container ..." que exigen ese ancestro. Sin la clase
+// aca, el portal los deja de matchear por completo y el contenido cae a los
+// estilos base sin adaptarse a pantalla completa.
 function LiveWrapPortal({ activo, innerRef, children }) {
   const contenido = (
-    <div ref={innerRef} className={`mesa-live-wrap ${activo ? 'mesa-live-wrap-activo' : ''}`}>
+    <div ref={innerRef} className={`fiba-container mesa-live-wrap ${activo ? 'mesa-live-wrap-activo' : ''}`}>
       {children}
     </div>
   );
