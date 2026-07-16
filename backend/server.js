@@ -4812,6 +4812,24 @@ app.put('/api/kiosco-turnos/:id/cerrar', authenticate, requireModule('kiosco'), 
   }
 });
 
+// Solo permite borrar turnos ya cerrados (el actual/abierto no se puede eliminar
+// desde el historial). Las ventas/egresos asociados no se borran: quedan con
+// turno_id en null (ON DELETE SET NULL), preservando el registro de cada venta.
+app.delete('/api/kiosco-turnos/:id', authenticate, requireModule('kiosco'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM kiosco_turnos WHERE id = $1 AND estado = 'cerrado' RETURNING id`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Turno no encontrado o no está cerrado (no se puede borrar el turno activo).' });
+    }
+    res.json({ ok: true, deleted: { id: result.rows[0].id } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/kiosco-ventas', authenticate, requireModule('kiosco'), async (req, res) => {
   const { turno_id, desde, hasta } = req.query;
   try {

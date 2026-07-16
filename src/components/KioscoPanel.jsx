@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown, Lock, User, Ticket, Trash2, Banknote, Smartphone, NotebookPen, BookOpen, XCircle, Search, PlusCircle, History, AlertTriangle, BarChart3, Pencil, Check } from 'lucide-react';
+import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown, Lock, User, Ticket, Trash2, Banknote, Smartphone, NotebookPen, BookOpen, XCircle, Search, PlusCircle, History, AlertTriangle, BarChart3, Pencil, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { getColorPorCategoria } from '../utils/appHelpers';
 import { showToast } from '../utils/toast';
@@ -8,6 +8,40 @@ import { kioscoAPI } from '../api/client';
 import SignaturePad from './SignaturePad';
 
 const hoyISO = () => new Date().toISOString().slice(0, 10);
+
+let logoClubDataUrlCache = null;
+const LOGO_PDF_TAMANO_PX = 160; // suficiente para nitidez a 46pt de ancho en el PDF, sin inflar el archivo
+const cargarLogoClubDataUrl = () => {
+  if (logoClubDataUrlCache) return Promise.resolve(logoClubDataUrlCache);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = LOGO_PDF_TAMANO_PX;
+        canvas.height = LOGO_PDF_TAMANO_PX;
+        const ctx = canvas.getContext('2d');
+        const escala = Math.min(LOGO_PDF_TAMANO_PX / img.naturalWidth, LOGO_PDF_TAMANO_PX / img.naturalHeight);
+        const anchoDestino = img.naturalWidth * escala;
+        const altoDestino = img.naturalHeight * escala;
+        ctx.drawImage(
+          img,
+          (LOGO_PDF_TAMANO_PX - anchoDestino) / 2,
+          (LOGO_PDF_TAMANO_PX - altoDestino) / 2,
+          anchoDestino,
+          altoDestino
+        );
+        logoClubDataUrlCache = canvas.toDataURL('image/png');
+        resolve(logoClubDataUrlCache);
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = '/logos/club-logo.png';
+  });
+};
 
 const inicioSemanaISO = () => {
   const d = new Date();
@@ -69,6 +103,12 @@ function KioscoPanel({ nombreResponsable = '' }) {
 
   const [historialTurnos, setHistorialTurnos] = useState([]);
   const [cargandoHistorial, setCargandoHistorial] = useState(false);
+  const [historialDesde, setHistorialDesde] = useState('');
+  const [historialHasta, setHistorialHasta] = useState('');
+  const [turnoDetalleId, setTurnoDetalleId] = useState(null);
+  const [detalleTurno, setDetalleTurno] = useState({ egresos: [], ventas: [] });
+  const [cargandoDetalleTurno, setCargandoDetalleTurno] = useState(false);
+  const [exportandoTurnoId, setExportandoTurnoId] = useState(null);
 
   const totalCarrito = carrito.reduce((a, b) => a + (b.precio * b.cant), 0);
   const totalGastos = egresos.reduce((a, b) => a + Number(b.monto || 0), 0);
@@ -131,7 +171,10 @@ function KioscoPanel({ nombreResponsable = '' }) {
     (async () => {
       try {
         setCargandoHistorial(true);
-        const data = await kioscoAPI.turnos.getAll({ estado: 'cerrado' });
+        const filtros = { estado: 'cerrado' };
+        if (historialDesde) filtros.desde = historialDesde;
+        if (historialHasta) filtros.hasta = historialHasta;
+        const data = await kioscoAPI.turnos.getAll(filtros);
         setHistorialTurnos(data);
       } catch (err) {
         showToast({ message: err.message || 'No se pudo cargar el historial.', type: 'error' });
@@ -139,7 +182,78 @@ function KioscoPanel({ nombreResponsable = '' }) {
         setCargandoHistorial(false);
       }
     })();
-  }, [vista]);
+  }, [vista, historialDesde, historialHasta]);
+
+  const alternarDetalleTurno = async (turnoHist) => {
+    if (turnoDetalleId === turnoHist.id) {
+      setTurnoDetalleId(null);
+      return;
+    }
+    setTurnoDetalleId(turnoHist.id);
+    setCargandoDetalleTurno(true);
+    try {
+      const [egresosData, ventasData] = await Promise.all([
+        kioscoAPI.egresos.getAll({ turno_id: turnoHist.id }),
+        kioscoAPI.ventas.getAll({ turno_id: turnoHist.id }),
+      ]);
+      setDetalleTurno({ egresos: egresosData, ventas: ventasData });
+    } catch (err) {
+      showToast({ message: err.message || 'No se pudo cargar el detalle del turno.', type: 'error' });
+    } finally {
+      setCargandoDetalleTurno(false);
+    }
+  };
+
+  const exportarTurnoHistorial = async (turnoHist) => {
+    setExportandoTurnoId(turnoHist.id);
+    try {
+      const [egresosData, ventasData] = await Promise.all([
+        kioscoAPI.egresos.getAll({ turno_id: turnoHist.id }),
+        kioscoAPI.ventas.getAll({ turno_id: turnoHist.id }),
+      ]);
+      await exportarCajaPdf({
+        dia: turnoHist.dia,
+        responsable: turnoHist.responsable,
+        montoInicial: turnoHist.monto_inicial,
+        cerradoPor: turnoHist.cerrado_por,
+        firma: turnoHist.firma_base64,
+        ticketFinal: turnoHist.ticket_final,
+        cajaEfectivoKiosco: turnoHist.total_efectivo_ventas,
+        cajaTransferKiosco: turnoHist.total_transferencia_ventas,
+        cajaEfectivoEntradas: 0,
+        cajaTransferEntradas: 0,
+        totalEgresos: turnoHist.total_egresos,
+        cajaNetaFinal: turnoHist.caja_neta_final,
+        totalPendientes: turnoHist.total_pendientes,
+        egresosDetalle: egresosData,
+        fiadosDetalle: [],
+        ventasParaRanking: ventasData,
+      });
+    } catch (err) {
+      showToast({ message: err.message || 'No se pudo exportar el cierre.', type: 'error' });
+    } finally {
+      setExportandoTurnoId(null);
+    }
+  };
+
+  const eliminarTurnoHistorial = async (turnoHist) => {
+    if (!(await confirmAction({
+      title: 'Eliminar cierre del historial',
+      message: `¿Eliminar el cierre del ${String(turnoHist.dia).slice(0, 10)} (cerrado por ${turnoHist.cerrado_por || 'N/D'})? Las ventas y egresos de ese turno se conservan, solo se borra el registro del cierre.`,
+      danger: true,
+      confirmText: 'Eliminar',
+    }))) {
+      return;
+    }
+    try {
+      await kioscoAPI.turnos.remove(turnoHist.id);
+      setHistorialTurnos((prev) => prev.filter((t) => t.id !== turnoHist.id));
+      if (turnoDetalleId === turnoHist.id) setTurnoDetalleId(null);
+      showToast({ message: 'Cierre eliminado del historial.', type: 'success' });
+    } catch (err) {
+      showToast({ message: err.message || 'No se pudo eliminar el cierre.', type: 'error' });
+    }
+  };
 
   const rankingVentas = useMemo(() => {
     const acumulado = new Map();
@@ -424,72 +538,132 @@ function KioscoPanel({ nombreResponsable = '' }) {
     }
   };
 
-  const exportarCajaPdf = (ventasParaRanking, fiadosAlCierre, totalesCierre) => {
+  // Recibe todos los datos explicitos (no lee estado en vivo) para poder generar
+  // tanto el PDF del cierre recien hecho como el de un turno pasado del historial.
+  const exportarCajaPdf = async (datos) => {
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     const marginX = 40;
-    let y = 50;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const colorMarino = [11, 29, 58];
+    const colorVerde = [52, 199, 89];
+    const colorRojo = [255, 59, 48];
+    const colorNaranja = [255, 149, 0];
+    const colorGrisTexto = [90, 98, 110];
+    const colorGrisClaro = [242, 244, 247];
+
+    let y = 100;
     const lineGap = 16;
 
-    const salto = () => {
-      if (y > 780) { doc.addPage(); y = 50; }
+    const salto = (extra = 0) => {
+      if (y > 770 - extra) { doc.addPage(); dibujarEncabezado(); y = 100; }
     };
 
+    const dibujarEncabezado = () => {
+      doc.setFillColor(...colorMarino);
+      doc.rect(0, 0, pageWidth, 70, 'F');
+      if (logoDataUrl) {
+        try { doc.addImage(logoDataUrl, 'PNG', marginX, 12, 46, 46); } catch { /* logo no disponible, se omite */ }
+      }
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('CENTRO DE CULTURA FÍSICA', marginX + (logoDataUrl ? 58 : 0), 32);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.text('Reporte de cierre de caja · Kiosco', marginX + (logoDataUrl ? 58 : 0), 48);
+      doc.setTextColor(0, 0, 0);
+    };
+
+    const filaResumen = (label, valor, color = null, negrita = false) => {
+      salto();
+      doc.setFont('helvetica', negrita ? 'bold' : 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(...colorGrisTexto);
+      doc.text(label, marginX, y);
+      doc.setTextColor(...(color || [20, 24, 32]));
+      doc.text(String(valor), pageWidth - marginX, y, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+      y += lineGap;
+    };
+
+    const tituloSeccion = (texto) => {
+      y += 10; salto(20);
+      doc.setFillColor(...colorGrisClaro);
+      doc.rect(marginX, y - 12, pageWidth - marginX * 2, 20, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(...colorMarino);
+      doc.text(texto, marginX + 6, y + 2);
+      doc.setTextColor(0, 0, 0);
+      y += 22;
+    };
+
+    const logoDataUrl = await cargarLogoClubDataUrl();
+    dibujarEncabezado();
+
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text('CENTRO DE CULTURA FISICA - REPORTE DE CIERRE DE CAJA', marginX, y);
+    doc.setFontSize(12);
+    doc.text(`Cierre del ${datos.dia ? String(datos.dia).slice(0, 10) : hoyISO()}`, marginX, y);
     y += lineGap + 4;
 
-    doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    const resumen = [
-      `Fecha: ${turno?.dia ? String(turno.dia).slice(0, 10) : hoyISO()}`,
-      `Responsable de apertura: ${turno?.responsable || 'N/D'}`,
-      `Cerrado por: ${totalesCierre.cerradoPor || 'N/D'}`,
-      `Ticket final: #${(totalesCierre.ticketFinal || 0).toString().padStart(3, '0')}`,
-      '---',
-      `Apertura: $${Number(turno?.monto_inicial || 0).toLocaleString('es-CL')}`,
-      `Kiosco efectivo: $${Number(cajaEfectivoKiosco || 0).toLocaleString('es-CL')}`,
-      `Kiosco transferencia: $${Number(cajaTransferKiosco || 0).toLocaleString('es-CL')}`,
-      `Entradas efectivo: $${Number(cajaEfectivoEntradas || 0).toLocaleString('es-CL')}`,
-      `Entradas transferencia: $${Number(cajaTransferEntradas || 0).toLocaleString('es-CL')}`,
-      `Total egresos: $${Number(totalGastos || 0).toLocaleString('es-CL')}`,
-      `Caja neta final (efectivo): $${Number(cajaNetaFinal || 0).toLocaleString('es-CL')}`,
-      `Total pendientes (fiados abiertos): $${Number(fiadosAlCierre.reduce((a, b) => a + Number(b.monto_total || 0), 0)).toLocaleString('es-CL')}`,
-    ];
-    resumen.forEach((line) => { salto(); doc.text(line, marginX, y); y += lineGap; });
+    filaResumen('Responsable de apertura', datos.responsable || 'N/D');
+    filaResumen('Cerrado por', datos.cerradoPor || 'N/D');
+    filaResumen('Ticket final', `#${(datos.ticketFinal || 0).toString().padStart(3, '0')}`);
 
-    if (egresos.length > 0) {
-      y += 8; salto();
-      doc.setFont('helvetica', 'bold'); doc.text('Detalle de egresos:', marginX, y); y += lineGap;
-      doc.setFont('helvetica', 'normal');
-      egresos.forEach((eg) => {
+    tituloSeccion('Resumen financiero');
+    filaResumen('Apertura de caja', `$${Number(datos.montoInicial || 0).toLocaleString('es-CL')}`);
+    filaResumen('Kiosco · Efectivo', `$${Number(datos.cajaEfectivoKiosco || 0).toLocaleString('es-CL')}`);
+    filaResumen('Kiosco · Transferencia', `$${Number(datos.cajaTransferKiosco || 0).toLocaleString('es-CL')}`);
+    filaResumen('Entradas · Efectivo', `$${Number(datos.cajaEfectivoEntradas || 0).toLocaleString('es-CL')}`);
+    filaResumen('Entradas · Transferencia', `$${Number(datos.cajaTransferEntradas || 0).toLocaleString('es-CL')}`);
+    filaResumen('Total egresos', `-$${Number(datos.totalEgresos || 0).toLocaleString('es-CL')}`, colorRojo);
+    filaResumen('Pendientes (fiados)', `$${Number(datos.totalPendientes || 0).toLocaleString('es-CL')}`, colorNaranja);
+    filaResumen('Caja neta final (efectivo)', `$${Number(datos.cajaNetaFinal || 0).toLocaleString('es-CL')}`, colorVerde, true);
+
+    const egresosDetalle = datos.egresosDetalle || [];
+    if (egresosDetalle.length > 0) {
+      tituloSeccion('Detalle de egresos');
+      doc.setFontSize(10);
+      egresosDetalle.forEach((eg) => {
         salto();
-        doc.text(`- ${eg.descripcion}: $${Number(eg.monto || 0).toLocaleString('es-CL')}`, marginX + 10, y);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(20, 24, 32);
+        doc.text(`• ${eg.descripcion}`, marginX + 4, y);
+        doc.setTextColor(...colorRojo);
+        doc.text(`-$${Number(eg.monto || 0).toLocaleString('es-CL')}`, pageWidth - marginX, y, { align: 'right' });
+        doc.setTextColor(0, 0, 0);
         y += lineGap;
         if (eg.nombre_receptor || eg.rut_receptor) {
           salto();
           doc.setFontSize(8);
-          doc.text(`  Recibe: ${eg.nombre_receptor || ''} ${eg.apellido_receptor || ''} · RUT ${eg.rut_receptor || 'N/D'}`, marginX + 10, y);
+          doc.setTextColor(...colorGrisTexto);
+          doc.text(`   Recibe: ${eg.nombre_receptor || ''} ${eg.apellido_receptor || ''} · RUT ${eg.rut_receptor || 'N/D'}`, marginX + 4, y);
+          doc.setTextColor(0, 0, 0);
           doc.setFontSize(10);
           y += lineGap - 4;
         }
       });
     }
 
-    if (fiadosAlCierre.length > 0) {
-      y += 8; salto();
-      doc.setFont('helvetica', 'bold'); doc.text('Cuentas pendientes (fiados) al cierre:', marginX, y); y += lineGap;
+    const fiadosDetalle = datos.fiadosDetalle || [];
+    if (fiadosDetalle.length > 0) {
+      tituloSeccion('Cuentas pendientes (fiados) al cierre');
       doc.setFont('helvetica', 'normal');
-      fiadosAlCierre.forEach((f) => {
+      doc.setFontSize(10);
+      fiadosDetalle.forEach((f) => {
         salto();
-        doc.text(`- ${f.nombre}: $${Number(f.monto_total || 0).toLocaleString('es-CL')}`, marginX + 10, y);
+        doc.text(`• ${f.nombre}`, marginX + 4, y);
+        doc.setTextColor(...colorNaranja);
+        doc.text(`$${Number(f.monto_total || 0).toLocaleString('es-CL')}`, pageWidth - marginX, y, { align: 'right' });
+        doc.setTextColor(0, 0, 0);
         y += lineGap;
       });
     }
 
     const ranking = (() => {
       const acumulado = new Map();
-      ventasParaRanking.forEach((v) => {
+      (datos.ventasParaRanking || []).forEach((v) => {
         const prev = acumulado.get(v.producto_nombre) || { nombre: v.producto_nombre, cantidad: 0 };
         prev.cantidad += Number(v.cantidad || 0);
         acumulado.set(v.producto_nombre, prev);
@@ -498,23 +672,34 @@ function KioscoPanel({ nombreResponsable = '' }) {
     })();
 
     if (ranking.length > 0) {
-      y += 8; salto();
-      doc.setFont('helvetica', 'bold'); doc.text('Ranking de ventas del turno:', marginX, y); y += lineGap;
+      tituloSeccion('Ranking de ventas del turno');
       doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
       ranking.forEach((r, i) => {
         salto();
-        doc.text(`${i + 1}. ${r.nombre}: ${r.cantidad} ud.`, marginX + 10, y);
+        doc.text(`${i + 1}. ${r.nombre}`, marginX + 4, y);
+        doc.text(`${r.cantidad} ud.`, pageWidth - marginX, y, { align: 'right' });
         y += lineGap;
       });
     }
 
-    if (totalesCierre.firma) {
-      y += 12; salto();
-      doc.setFont('helvetica', 'bold'); doc.text('Firma de cierre:', marginX, y); y += 6;
-      try { doc.addImage(totalesCierre.firma, 'PNG', marginX, y, 160, 60); } catch { /* firma corrupta, se omite */ }
+    if (datos.firma) {
+      tituloSeccion('Firma de cierre');
+      salto(70);
+      try { doc.addImage(datos.firma, 'PNG', marginX, y, 160, 60); } catch { /* firma corrupta, se omite */ }
+      y += 70;
     }
 
-    doc.save(`reporte-caja-${turno?.dia ? String(turno.dia).slice(0, 10) : hoyISO()}.pdf`);
+    const totalPaginas = doc.internal.getNumberOfPages();
+    for (let p = 1; p <= totalPaginas; p += 1) {
+      doc.setPage(p);
+      doc.setFontSize(8);
+      doc.setTextColor(...colorGrisTexto);
+      doc.text(`Centro de Cultura Física · Página ${p} de ${totalPaginas}`, pageWidth / 2, 820, { align: 'center' });
+      doc.setTextColor(0, 0, 0);
+    }
+
+    doc.save(`reporte-caja-${datos.dia ? String(datos.dia).slice(0, 10) : hoyISO()}.pdf`);
   };
 
   const abrirModalCierre = () => {
@@ -536,7 +721,6 @@ function KioscoPanel({ nombreResponsable = '' }) {
     try {
       const ventasDelTurno = await kioscoAPI.ventas.getAll({ turno_id: turno.id });
       const ticketFinal = ticketActual - 1;
-      const totalesCierre = { cerradoPor: nombreCierre.trim(), firma: firmaCierre, ticketFinal };
 
       await kioscoAPI.turnos.cerrar(turno.id, {
         total_efectivo_ventas: cajaEfectivoKiosco + cajaEfectivoEntradas,
@@ -549,7 +733,24 @@ function KioscoPanel({ nombreResponsable = '' }) {
         ticket_final: ticketFinal,
       });
 
-      exportarCajaPdf(ventasDelTurno, fiados, totalesCierre);
+      await exportarCajaPdf({
+        dia: turno.dia,
+        responsable: turno.responsable,
+        montoInicial: turno.monto_inicial,
+        cerradoPor: nombreCierre.trim(),
+        firma: firmaCierre,
+        ticketFinal,
+        cajaEfectivoKiosco,
+        cajaTransferKiosco,
+        cajaEfectivoEntradas,
+        cajaTransferEntradas,
+        totalEgresos: totalGastos,
+        cajaNetaFinal,
+        totalPendientes,
+        egresosDetalle: egresos,
+        fiadosDetalle: fiados,
+        ventasParaRanking: ventasDelTurno,
+      });
 
       setModalCierre(false);
       setTurno(null);
@@ -805,7 +1006,28 @@ function KioscoPanel({ nombreResponsable = '' }) {
             <div style={{ display: 'flex', gap: '10px' }} className="mt-10"><input type="text" className="form-input" style={{ flex: 2 }} placeholder="Glosa (Ej: Árbitros)" value={gastoRegistro.desc} onChange={(e) => setGastoRegistro({ ...gastoRegistro, desc: e.target.value })} /><input type="number" className="form-input" style={{ flex: 1 }} placeholder="Monto" value={gastoRegistro.monto} onChange={(e) => setGastoRegistro({ ...gastoRegistro, monto: e.target.value })} /><button className="btn-electric" style={{ background: 'var(--rojo-alerta)', width: 'auto', padding: '0 15px' }} onClick={abrirModalEgreso}>Restar</button></div>
             {egresos.length > 0 && (<div className="egresos-list mt-15"><span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>Egresos de Hoy</span>{egresos.map((eg) => (<div key={eg.id} className="egreso-row mt-5"><span className="egreso-desc" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><XCircle size={12} /> {eg.descripcion}</span>{(eg.nombre_receptor || eg.rut_receptor) && (<span style={{ fontSize: '10px', color: 'var(--texto-secundario)', fontWeight: '700' }}>Recibe: {eg.nombre_receptor} {eg.apellido_receptor} {eg.rut_receptor ? `· ${eg.rut_receptor}` : ''}</span>)}</span><span className="egreso-monto">-${Number(eg.monto).toLocaleString('es-CL')}</span></div>))}</div>)}
           </div>
-          <button className="btn-secondary mt-15" style={{ background: 'rgba(0,122,255,0.1)' }} onClick={() => exportarCajaPdf([], fiados, { cerradoPor: turno.responsable, firma: null, ticketFinal: ticketActual - 1 })}><FileDown size={18} color="var(--gris-secundario)" strokeWidth={1.5} /> Exportar Reporte Parcial (PDF)</button>
+          <button
+            className="btn-secondary mt-15"
+            style={{ background: 'rgba(0,122,255,0.1)' }}
+            onClick={() => exportarCajaPdf({
+              dia: turno.dia,
+              responsable: turno.responsable,
+              montoInicial: turno.monto_inicial,
+              cerradoPor: turno.responsable,
+              firma: null,
+              ticketFinal: ticketActual - 1,
+              cajaEfectivoKiosco,
+              cajaTransferKiosco,
+              cajaEfectivoEntradas,
+              cajaTransferEntradas,
+              totalEgresos: totalGastos,
+              cajaNetaFinal,
+              totalPendientes,
+              egresosDetalle: egresos,
+              fiadosDetalle: fiados,
+              ventasParaRanking: [],
+            })}
+          ><FileDown size={18} color="var(--gris-secundario)" strokeWidth={1.5} /> Exportar Reporte Parcial (PDF)</button>
         </div>
       )}
 
@@ -939,16 +1161,36 @@ function KioscoPanel({ nombreResponsable = '' }) {
       {vista === 'historial' && (
         <div className="fade-in">
           <h3 className="section-title"><BarChart3 size={18} /> Historial de Cierres</h3>
+
+          <div className="card mb-15" style={{ padding: '12px' }}>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div className="input-group" style={{ flex: '1 1 140px' }}>
+                <label style={{ fontSize: '11px', fontWeight: '800' }}>Desde</label>
+                <input type="date" className="form-input mt-5" value={historialDesde} onChange={(e) => setHistorialDesde(e.target.value)} />
+              </div>
+              <div className="input-group" style={{ flex: '1 1 140px' }}>
+                <label style={{ fontSize: '11px', fontWeight: '800' }}>Hasta</label>
+                <input type="date" className="form-input mt-5" value={historialHasta} onChange={(e) => setHistorialHasta(e.target.value)} />
+              </div>
+              {(historialDesde || historialHasta) && (
+                <button className="btn-secondary" style={{ width: 'auto' }} onClick={() => { setHistorialDesde(''); setHistorialHasta(''); }}>Limpiar</button>
+              )}
+            </div>
+          </div>
+
           {cargandoHistorial && <p className="text-muted text-center">Cargando...</p>}
-          {!cargandoHistorial && historialTurnos.length === 0 && <p className="text-center text-muted card" style={{ fontStyle: 'italic' }}>Aún no hay turnos cerrados.</p>}
+          {!cargandoHistorial && historialTurnos.length === 0 && <p className="text-center text-muted card" style={{ fontStyle: 'italic' }}>No hay cierres para este rango.</p>}
           {!cargandoHistorial && historialTurnos.map((t) => (
             <div key={t.id} className="card mb-10" style={{ padding: '15px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => alternarDetalleTurno(t)}>
                 <div>
                   <strong style={{ color: 'var(--texto-principal)' }}>{String(t.dia).slice(0, 10)}</strong>
                   <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>Responsable: {t.responsable} · Cerrado por: {t.cerrado_por || 'N/D'}</p>
                 </div>
-                <span style={{ fontWeight: '900', color: 'var(--verde-victoria)', fontSize: '16px' }}>${Number(t.caja_neta_final).toLocaleString('es-CL')}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontWeight: '900', color: 'var(--verde-victoria)', fontSize: '16px' }}>${Number(t.caja_neta_final).toLocaleString('es-CL')}</span>
+                  {turnoDetalleId === t.id ? <ChevronUp size={18} color="var(--gris-secundario)" /> : <ChevronDown size={18} color="var(--gris-secundario)" />}
+                </div>
               </div>
               <div className="caja-doble-grid mt-10" style={{ gap: '8px' }}>
                 <div className="desglose-row"><span>Efectivo</span><strong>${Number(t.total_efectivo_ventas).toLocaleString('es-CL')}</strong></div>
@@ -956,6 +1198,50 @@ function KioscoPanel({ nombreResponsable = '' }) {
                 <div className="desglose-row"><span>Egresos</span><strong style={{ color: 'var(--rojo-alerta)' }}>-${Number(t.total_egresos).toLocaleString('es-CL')}</strong></div>
                 <div className="desglose-row"><span>Pendientes al cierre</span><strong style={{ color: '#FF9500' }}>${Number(t.total_pendientes).toLocaleString('es-CL')}</strong></div>
               </div>
+
+              {turnoDetalleId === t.id && (
+                <div className="mt-15" style={{ borderTop: '1px dashed var(--borde-suave)', paddingTop: '12px' }}>
+                  {cargandoDetalleTurno && <p className="text-muted text-center" style={{ fontSize: '12px' }}>Cargando detalle...</p>}
+                  {!cargandoDetalleTurno && (
+                    <>
+                      <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>Egresos del turno ({detalleTurno.egresos.length})</span>
+                      {detalleTurno.egresos.length === 0 && <p className="text-muted" style={{ fontSize: '12px', fontStyle: 'italic', margin: '4px 0 0' }}>Sin egresos registrados.</p>}
+                      {detalleTurno.egresos.map((eg) => (
+                        <div key={eg.id} className="egreso-row mt-5">
+                          <span className="egreso-desc" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span>{eg.descripcion}</span>
+                            {(eg.nombre_receptor || eg.rut_receptor) && (
+                              <span style={{ fontSize: '10px', color: 'var(--texto-secundario)', fontWeight: '700' }}>Recibe: {eg.nombre_receptor} {eg.apellido_receptor} · {eg.rut_receptor}</span>
+                            )}
+                          </span>
+                          <span className="egreso-monto">-${Number(eg.monto).toLocaleString('es-CL')}</span>
+                        </div>
+                      ))}
+
+                      <span className="mt-15" style={{ display: 'block', fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)' }}>Ventas del turno ({detalleTurno.ventas.length})</span>
+                      {detalleTurno.ventas.length === 0 && <p className="text-muted" style={{ fontSize: '12px', fontStyle: 'italic', margin: '4px 0 0' }}>Sin ventas registradas.</p>}
+                    </>
+                  )}
+
+                  <div className="mt-15" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn-secondary"
+                      style={{ width: 'auto', background: 'rgba(0,122,255,0.1)' }}
+                      disabled={exportandoTurnoId === t.id}
+                      onClick={() => exportarTurnoHistorial(t)}
+                    >
+                      <FileDown size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> {exportandoTurnoId === t.id ? 'Exportando...' : 'Exportar PDF'}
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      style={{ width: 'auto', background: 'rgba(255,59,48,0.1)', color: 'var(--rojo-alerta)' }}
+                      onClick={() => eliminarTurnoHistorial(t)}
+                    >
+                      <Trash2 size={16} /> Eliminar cierre
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -1240,6 +1240,12 @@ export const kioscoAPI = {
       });
       return handleResponse(response);
     },
+    remove: async (id) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-turnos/${id}`, {
+        method: 'DELETE',
+      });
+      return handleResponse(response);
+    },
   },
   ventas: {
     getAll: async (filtros = {}) => {
