@@ -3179,7 +3179,30 @@ function MesaControlPanel({
       <div className="caja-doble-grid landscape-mode mesa-live-layout-grid">
         <div className="card mesa-team-card mesa-live-zone-local" style={{ padding: '15px', borderRadius: '24px' }}>
           <h5 className="sub-caja-title">Roster Local ({rosterLocal.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
-          <div className="mesa-team-split-grid">
+          <div className="mesa-team-split-grid mesa-team-split-grid-local">
+            <div className="mesa-team-col mesa-team-col-exterior">
+              <h6 className="sub-caja-title" style={{ marginTop: 0, fontSize: '12px' }}>Banco Local ({bancoLocal.length})</h6>
+              <div className="mesa-banco-grid">
+                {bancoLocal.map((j) => {
+                  const bloqueada = j._bloqueado || j.expulsado || numero(j.flt) >= 5;
+                  return (
+                    <button
+                      key={`banca-${j.id}`}
+                      type="button"
+                      disabled={bloqueada}
+                      className={`mesa-banco-btn ${cambioIngresoId === j.id ? 'selected' : ''} ${bloqueada ? 'bloqueado' : ''}`}
+                      onClick={() => { if (!bloqueada) setCambioIngresoId(j.id); }}
+                      title={bloqueada ? 'No disponible (expulsada/o o bloqueada/o)' : 'Seleccionar para ingreso'}
+                      style={{ borderColor: colorLocal, background: colorLocal, color: colorTextoContraste(colorLocal) }}
+                    >
+                      <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
+                    </button>
+                  );
+                })}
+                {bancoLocal.length === 0 && <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es de banca.</p>}
+              </div>
+            </div>
+
             <div className="mesa-team-col mesa-team-col-interior">
               <h6 className="sub-caja-title" style={{ marginTop: 0, fontSize: '12px' }}>En Cancha (5) · Local</h6>
               <div className="mesa-oncourt-grid mesa-oncourt-grid-two-cols">
@@ -3209,29 +3232,6 @@ function MesaControlPanel({
                     <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: 'var(--texto-secundario)' }}>--</span>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            <div className="mesa-team-col mesa-team-col-exterior">
-              <h6 className="sub-caja-title" style={{ marginTop: 0, fontSize: '12px' }}>Banco Local ({bancoLocal.length})</h6>
-              <div className="mesa-banco-grid">
-                {bancoLocal.map((j) => {
-                  const bloqueada = j._bloqueado || j.expulsado || numero(j.flt) >= 5;
-                  return (
-                    <button
-                      key={`banca-${j.id}`}
-                      type="button"
-                      disabled={bloqueada}
-                      className={`mesa-banco-btn ${cambioIngresoId === j.id ? 'selected' : ''} ${bloqueada ? 'bloqueado' : ''}`}
-                      onClick={() => { if (!bloqueada) setCambioIngresoId(j.id); }}
-                      title={bloqueada ? 'No disponible (expulsada/o o bloqueada/o)' : 'Seleccionar para ingreso'}
-                      style={{ borderColor: colorLocal, background: colorLocal, color: colorTextoContraste(colorLocal) }}
-                    >
-                      <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
-                    </button>
-                  );
-                })}
-                {bancoLocal.length === 0 && <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es de banca.</p>}
               </div>
             </div>
           </div>

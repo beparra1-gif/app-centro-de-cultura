@@ -2099,6 +2099,22 @@ button,
   border-radius: 0;
   border: none;
   background: linear-gradient(145deg, #0a0e16 0%, #191f2d 100%);
+  /* El portal escapa de .ios-app-container[data-theme], que es donde viven
+     las variables de color del tema (claro/oscuro). Sin esto, textos como
+     los titulos "En Cancha"/"Banco" o "Cambio Local/Visita" heredan un color
+     por defecto que no contrasta contra este fondo siempre oscuro — quedan
+     ilegibles sin importar el tema que tenga el usuario en el resto del app.
+     Se fijan directo los valores del tema oscuro, ya que este fondo nunca
+     cambia con el tema. */
+  --texto-principal: #FFFFFF;
+  --texto-secundario: #C2C7D0;
+  --texto-heading: #C8DCFF;
+  --azul-marino: #1a2a42;
+  --borde-suave: rgba(255,255,255,0.16);
+  --fondo-input: #242428;
+  --blanco-tarjeta: #1C1C1E;
+  --fondo-card-sutil: rgba(36,36,38,0.98);
+  --fondo-card-tintado: rgba(20,32,52,0.96);
 }
 
 .mesa-live-wrap:fullscreen {
@@ -2314,6 +2330,14 @@ button,
   grid-template-rows: minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
+}
+
+/* Local queda a la izquierda de toda la pantalla: se invierte el orden para
+   que "en cancha" quede pegado al centro (interior) y "banco" hacia el borde
+   exterior de la pantalla. Visita no se toca — ya queda con cancha hacia el
+   centro de forma natural por estar a la derecha. */
+.mesa-team-split-grid-local {
+  grid-template-columns: minmax(96px, 0.72fr) minmax(0, 1.08fr);
 }
 
 .mesa-team-col {
@@ -3124,16 +3148,18 @@ button,
   }
 
   .fiba-container .mesa-oncourt-grid-two-cols {
-    gap: 8px;
+    gap: 6px;
   }
 
+  /* Reducido lo suficiente para que las 5 tarjetas (3 filas de a 2) entren en
+     el mismo alto disponible que ocupa la columna de banca al lado. */
   .fiba-container .mesa-oncourt-btn {
-    min-height: 66px;
-    padding: 8px 6px;
+    min-height: 52px;
+    padding: 6px;
   }
 
   .fiba-container .mesa-oncourt-dorsal-flat {
-    font-size: 1.15rem;
+    font-size: 1.05rem;
   }
 
   /* Banca: solo hace falta ver el dorsal para seleccionar quien entra, asi
@@ -3148,9 +3174,21 @@ button,
     font-size: 0.85rem;
   }
 
+  /* Forzado a 2 columnas (en vez de auto-fill) para que 7 en banca entren en
+     4 filas en vez de 7 — clave para que quepa todo sin scroll. */
   .fiba-container .mesa-banco-grid {
-    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 5px;
+  }
+
+  .fiba-container .mesa-team-col {
+    padding: 8px;
+  }
+
+  .fiba-container .mesa-team-col .sub-caja-title {
+    margin-bottom: 6px;
+    padding-bottom: 5px;
+    font-size: 11px;
   }
 
   .fiba-container .mesa-control-tiempo-grid {
