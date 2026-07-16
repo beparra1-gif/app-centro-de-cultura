@@ -4665,6 +4665,23 @@ app.put('/api/kiosco-productos/:id', authenticate, requireModule('kiosco'), asyn
   }
 });
 
+// Baja lógica (activo=false) en vez de DELETE físico: conserva la trazabilidad
+// de kiosco_ventas.producto_id de ventas históricas de ese producto.
+app.delete('/api/kiosco-productos/:id', authenticate, requireModule('kiosco'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE kiosco_productos SET activo = false, updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado.' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/kiosco-turnos/actual', authenticate, requireModule('kiosco'), async (req, res) => {
   try {
     const result = await pool.query(

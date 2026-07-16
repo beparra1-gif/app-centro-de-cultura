@@ -1210,6 +1210,10 @@ export const kioscoAPI = {
       });
       return handleResponse(response);
     },
+    remove: async (id) => {
+      const response = await apiFetch(`${API_BASE_URL}/kiosco-productos/${id}`, { method: 'DELETE' });
+      return handleResponse(response);
+    },
   },
   turnos: {
     getActual: async () => {

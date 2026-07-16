@@ -167,8 +167,10 @@ button,
   .fiba-botones-grid { grid-template-columns: repeat(4, 1fr) !important; }
   .checkbox-grid { grid-template-columns: repeat(3, 1fr) !important; }
 
-  /* Kiosco: productos + carrito lado a lado */
+  /* Kiosco: productos + carrito lado a lado; el carrito es sidebar, se pega arriba */
   .kiosco-tablet-layout { display: grid !important; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; }
+  .kiosco-cart { position: sticky !important; top: 12px; bottom: auto; }
+  .kiosco-grid { max-height: none; overflow: visible; }
 
   /* Noticias en 2 columnas */
   .noticias-grid-tablet { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -233,8 +235,10 @@ button,
   .fiba-botones-grid { grid-template-columns: repeat(4, 1fr) !important; }
   .checkbox-grid { grid-template-columns: repeat(4, 1fr) !important; }
 
-  /* Layout del kiosco 2 columnas en escritorio */
+  /* Layout del kiosco 2 columnas en escritorio; el carrito es sidebar, se pega arriba */
   .kiosco-tablet-layout { display: grid !important; grid-template-columns: 1fr 420px; gap: 24px; align-items: start; }
+  .kiosco-cart { position: sticky !important; top: 12px; bottom: auto; }
+  .kiosco-grid { max-height: none; overflow: visible; }
 
   /* Noticias en 3 columnas */
   .noticias-grid-tablet { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
@@ -289,6 +293,18 @@ button,
   .landscape-mode { display: flex; flex-direction: row !important; gap: 20px; }
   .landscape-mode .card { flex: 1; margin-bottom: 0; }
   .ios-header { padding-top: 15px !important; min-height: 50px !important; }
+}
+
+/* Landscape muy bajo (celular acostado, ~375-430px de alto): el aviso de modo
+   local no debe competir con el contenido por espacio vertical — se reduce a
+   una sola línea compacta sin la descripción larga. */
+@media (orientation: landscape) and (max-height: 460px) {
+  .local-preview-banner {
+    margin: 4px 10px 0;
+    padding: 5px 10px;
+    gap: 6px;
+  }
+  .local-preview-banner span { display: none; }
 }
 
 .ios-main { 
@@ -1813,11 +1829,30 @@ button,
   box-shadow: 0 4px 16px rgba(0,0,0,0.06);
 }
 
+/* Layout Vender: el ticket (con los botones de pago) queda "pegado" a la vista
+   con position:sticky en vez de forzar todo dentro de una altura fija — así se
+   adapta a cualquier alto de pantalla sin depender de calcular el header/banner.
+   En móvil se pega abajo (como una barra de checkout); en tablet/escritorio,
+   donde el carrito vive en su propia columna al lado de la grilla, se pega
+   arriba (patrón de sidebar sticky clásico). El scroll ocurre dentro de
+   .ios-main, así que sticky se ancla correctamente a esa área visible. */
+.kiosco-cart {
+  position: sticky;
+  bottom: 8px;
+  z-index: 5;
+  box-shadow: 0 -10px 28px rgba(15,23,42,0.16);
+}
+
 /* --- Cuadrícula de Productos --- */
 .kiosco-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
+  max-height: 50vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 4px 2px 2px;
+  scrollbar-width: thin;
 }
 .kiosco-item {
   border-radius: 22px;
@@ -1899,6 +1934,7 @@ button,
 }
 .btn-borrar-carrito:hover { background: rgba(255,59,48,0.18); transform: scale(1.04); }
 .btn-borrar-carrito:active { transform: scale(0.94); }
+.cart-items-list-scroll { max-height: 26vh; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
 .cart-items-list { display: flex; flex-direction: column; gap: 10px; }
 .cart-item-row {
   display: flex; justify-content: space-between; align-items: center;
@@ -1928,11 +1964,11 @@ button,
 .cart-total-row span { font-weight: 800; color: var(--texto-secundario); font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
 .cart-total-row h2 { margin: 0; color: var(--azul-marino); font-weight: 900; font-size: 32px; letter-spacing: -1px; }
 
-.cart-pay-buttons { display: flex; gap: 12px; margin-top: 20px;}
-.btn-pago { 
-  flex: 1; padding: 18px; border-radius: 16px; border: none; font-weight: 900; 
-  color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; 
-  gap: 8px; font-size: 15px; box-shadow: 0 6px 15px rgba(0,0,0,0.15); transition: 0.2s;
+.cart-pay-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px;}
+.btn-pago {
+  flex: 1 1 96px; min-width: 0; padding: 14px 8px; border-radius: 16px; border: none; font-weight: 900;
+  color: white; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  gap: 6px; font-size: 13px; white-space: nowrap; box-shadow: 0 6px 15px rgba(0,0,0,0.15); transition: 0.2s;
 }
 .btn-pago:active { transform: scale(0.95); }
 .btn-pago.efectivo { background: var(--verde-victoria); }
@@ -2385,6 +2421,26 @@ button,
   box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.22);
 }
 
+.mesa-banco-btn.bloqueado,
+.mesa-banco-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mesa-cambio-obligatorio-banco-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.mesa-cambio-obligatorio-banco-grid .mesa-banco-btn {
+  flex-direction: column;
+  gap: 4px;
+  min-height: 60px;
+  padding: 10px 8px;
+}
+
 .mesa-banco-dorsal {
   display: inline-flex;
   align-items: center;
@@ -2438,6 +2494,32 @@ button,
   width: 100%;
   margin: 0;
   font-size: .83rem;
+  font-weight: 800;
+  padding: 8px 6px;
+}
+
+.mesa-tipo-falta-panel {
+  border: 1px solid rgba(255,59,48,0.28);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff7f6 0%, #ffeceb 100%);
+  padding: 10px;
+}
+.mesa-tipo-falta-titulo {
+  display: block;
+  margin: 0 0 8px 0;
+  font-size: 0.95rem;
+  color: #7a1712;
+  font-weight: 800;
+}
+.mesa-tipo-falta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+.mesa-tipo-falta-grid .btn-secondary {
+  width: 100%;
+  margin: 0;
+  font-size: 0.83rem;
   font-weight: 800;
   padding: 8px 6px;
 }
@@ -2501,6 +2583,40 @@ button,
 .mesa-control-tiempo-grid .btn-secondary {
   width: 100%;
   margin: 0;
+}
+
+/* Reloj centrado: Iniciar/Pausar al medio y bien visible, ajustes de tiempo
+   y periodo a los costados — así el ojo va directo al control más usado. */
+.mesa-control-tiempo-grid-central {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 1.3fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.mesa-control-tiempo-lado {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mesa-control-tiempo-lado .btn-secondary {
+  width: 100%;
+  margin: 0;
+  font-size: 12px;
+  padding: 8px 6px;
+}
+
+.mesa-btn-reloj-principal {
+  width: 100%;
+  margin: 0;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .mesa-live-zone-center .fiba-botones-grid {
@@ -2878,6 +2994,10 @@ button,
 
   .fiba-container .mesa-control-tiempo-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .fiba-container .mesa-control-tiempo-grid-central {
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 1fr) minmax(0, 1fr);
   }
 
   .fiba-container .mesa-live-zone-center .fiba-botones-grid {

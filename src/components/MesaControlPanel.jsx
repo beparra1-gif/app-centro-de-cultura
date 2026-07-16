@@ -559,7 +559,6 @@ function MesaControlPanel({
   const [staffVisita, setStaffVisita] = useState({ entrenador: '', asistente: '', delegado: '' });
   const [cambioSalidaId, setCambioSalidaId] = useState('');
   const [cambioIngresoId, setCambioIngresoId] = useState('');
-  const [cambioIngresoPorSalida, setCambioIngresoPorSalida] = useState({});
   const [nominaLocalIds, setNominaLocalIds] = useState([]);
   const [nominaVisitaIds, setNominaVisitaIds] = useState([]);
   const [quintetoLocalValidado, setQuintetoLocalValidado] = useState(false);
@@ -572,7 +571,12 @@ function MesaControlPanel({
   const [forzarPantallaCompletaLive, setForzarPantallaCompletaLive] = useState(true);
   const [cronometroActivo, setCronometroActivo] = useState(false);
   const [cambioObligatorioJugadorId, setCambioObligatorioJugadorId] = useState(null);
+  const [cambioObligatorioEquipo, setCambioObligatorioEquipo] = useState('local');
+  const [cambioObligatorioIngresoId, setCambioObligatorioIngresoId] = useState('');
   const [mostrarModalCambioObligatorio, setMostrarModalCambioObligatorio] = useState(false);
+  const [mostrarSelectorTipoFalta, setMostrarSelectorTipoFalta] = useState(false);
+  const [cambioSalidaVisitaId, setCambioSalidaVisitaId] = useState('');
+  const [cambioIngresoVisitaId, setCambioIngresoVisitaId] = useState('');
   const [jugadorVisitaSeleccionadoId, setJugadorVisitaSeleccionadoId] = useState('');
   const [equipoAccionActivo, setEquipoAccionActivo] = useState('local');
   const [mostrarOpcionesTL, setMostrarOpcionesTL] = useState(false);
@@ -1206,6 +1210,7 @@ function MesaControlPanel({
   }, [rosterVisitaCompleto]);
 
   useEffect(() => {
+    if (partidoIniciado) return;
     const habilitados = rosterLocal.filter((j) => !j._bloqueado && j.flt < 5).map((j) => j.id);
     setQuintetoLocalIds((prev) => {
       const vigente = prev.filter((id) => habilitados.includes(id));
@@ -1214,9 +1219,10 @@ function MesaControlPanel({
       const extras = habilitados.filter((id) => !vigente.includes(id)).slice(0, faltan);
       return [...vigente, ...extras].slice(0, 5);
     });
-  }, [rosterLocal]);
+  }, [rosterLocal, partidoIniciado]);
 
   useEffect(() => {
+    if (partidoIniciado) return;
     const habilitados = rosterVisita.filter((j) => !j._bloqueado && j.flt < 5).map((j) => j.id);
     setQuintetoVisitaIds((prev) => {
       const vigente = prev.filter((id) => habilitados.includes(id));
@@ -1225,7 +1231,7 @@ function MesaControlPanel({
       const extras = habilitados.filter((id) => !vigente.includes(id)).slice(0, faltan);
       return [...vigente, ...extras].slice(0, 5);
     });
-  }, [rosterVisita]);
+  }, [rosterVisita, partidoIniciado]);
 
   const alternarTitular = ({ tipo, jugadorId }) => {
     const esLocal = tipo === 'local';
@@ -1441,10 +1447,15 @@ function MesaControlPanel({
     [rosterVisita, quintetoVisitaIds]
   );
 
-  const jugadorCambioObligatorio = useMemo(
-    () => rosterLocalCompleto.find((j) => String(j.id) === String(cambioObligatorioJugadorId)) || null,
-    [rosterLocalCompleto, cambioObligatorioJugadorId]
-  );
+  const jugadorCambioObligatorio = useMemo(() => {
+    const roster = cambioObligatorioEquipo === 'visita' ? rosterVisitaCompleto : rosterLocalCompleto;
+    return roster.find((j) => String(j.id) === String(cambioObligatorioJugadorId)) || null;
+  }, [rosterLocalCompleto, rosterVisitaCompleto, cambioObligatorioEquipo, cambioObligatorioJugadorId]);
+
+  const bancoParaCambioObligatorio = useMemo(() => {
+    const banco = cambioObligatorioEquipo === 'visita' ? bancoVisita : bancoLocal;
+    return banco.filter((j) => !j._bloqueado && numero(j.flt) < 5 && !j.expulsado);
+  }, [cambioObligatorioEquipo, bancoLocal, bancoVisita]);
 
   const registrarEventoJuego = ({ tipo, detalle, equipo = 'local', jugadorId = null, valor = 0 }) => {
     const operadorNombre = normalizarTexto(operadoresMesa[rolOperadorActivo]) || 'Operador sin nombre';
@@ -1468,43 +1479,51 @@ function MesaControlPanel({
     setEventosPartido((prev) => [evento, ...prev].slice(0, 400));
   };
 
-  const ejecutarCambioJugadorLocal = (salidaIdManual, ingresoIdManual) => {
+  const ejecutarCambioJugador = (equipo, salidaIdManual, ingresoIdManual) => {
     if (!partidoIniciado) return;
-    const salidaIdObjetivo = String(salidaIdManual ?? cambioSalidaId ?? '');
-    const ingresoIdObjetivo = String(ingresoIdManual ?? cambioIngresoId ?? '');
-    const salida = rosterLocalCompleto.find((j) => String(j.id) === salidaIdObjetivo);
-    const ingreso = rosterLocalCompleto.find((j) => String(j.id) === ingresoIdObjetivo);
+    const esVisita = equipo === 'visita';
+    const rosterCompleto = esVisita ? rosterVisitaCompleto : rosterLocalCompleto;
+    const quintetoIds = esVisita ? quintetoVisitaIds : quintetoLocalIds;
+    const setQuintetoIds = esVisita ? setQuintetoVisitaIds : setQuintetoLocalIds;
+    const salidaState = esVisita ? cambioSalidaVisitaId : cambioSalidaId;
+    const ingresoState = esVisita ? cambioIngresoVisitaId : cambioIngresoId;
+
+    const salidaIdObjetivo = String(salidaIdManual ?? salidaState ?? '');
+    const ingresoIdObjetivo = String(ingresoIdManual ?? ingresoState ?? '');
+    const salida = rosterCompleto.find((j) => String(j.id) === salidaIdObjetivo);
+    const ingreso = rosterCompleto.find((j) => String(j.id) === ingresoIdObjetivo);
     if (!salida || !ingreso) return;
-    if (!quintetoLocalIds.includes(salida.id)) { showToast({ message: 'La jugadora/o de salida debe estar en cancha.', type: 'error' }); return; }
-    if (cambioObligatorioJugadorId && String(cambioObligatorioJugadorId) !== String(salida.id)) {
-      showToast({ message: 'Debes sacar primero a la jugadora/o que llegó a 5 faltas.', type: 'error' });
+    if (!quintetoIds.map((id) => String(id)).includes(String(salida.id))) { showToast({ message: 'La jugadora/o de salida debe estar en cancha.', type: 'error' }); return; }
+    if (cambioObligatorioJugadorId && cambioObligatorioEquipo === equipo && String(cambioObligatorioJugadorId) !== String(salida.id)) {
+      showToast({ message: 'Debes sacar primero a la jugadora/o expulsada.', type: 'error' });
       return;
     }
-    if (quintetoLocalIds.includes(ingreso.id)) { showToast({ message: 'La jugadora/o de ingreso ya está en cancha.', type: 'error' }); return; }
-    if (ingreso._bloqueado || ingreso.flt >= 5) { showToast({ message: 'La jugadora/o de ingreso está bloqueada/o.', type: 'error' }); return; }
+    if (quintetoIds.map((id) => String(id)).includes(String(ingreso.id))) { showToast({ message: 'La jugadora/o de ingreso ya está en cancha.', type: 'error' }); return; }
+    if (ingreso._bloqueado || numero(ingreso.flt) >= 5 || ingreso.expulsado) { showToast({ message: 'La jugadora/o de ingreso está bloqueada/o.', type: 'error' }); return; }
 
-    setQuintetoLocalIds((prev) => prev.filter((id) => id !== salida.id).concat(ingreso.id).slice(0, 5));
-    const detalle = `Cambio Local: sale #${salida.dorsal} ${salida.nombre}, entra #${ingreso.dorsal} ${ingreso.nombre}`;
+    setQuintetoIds((prev) => prev.filter((id) => String(id) !== String(salida.id)).concat(esVisita ? ingreso.id : ingreso.id).slice(0, 5));
+    const detalle = `Cambio ${esVisita ? 'Visita' : 'Local'}: sale #${salida.dorsal} ${salida.nombre}, entra #${ingreso.dorsal} ${ingreso.nombre}`;
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `🔁 ${detalle}` }, ...prev]);
-    registrarEventoJuego({ tipo: 'CAMBIO', detalle, equipo: 'local', jugadorId: ingreso.id, valor: 0 });
-    if (cambioObligatorioJugadorId && String(cambioObligatorioJugadorId) === String(salida.id)) {
+    registrarEventoJuego({ tipo: 'CAMBIO', detalle, equipo, jugadorId: ingreso.id, valor: 0 });
+    if (cambioObligatorioJugadorId && cambioObligatorioEquipo === equipo && String(cambioObligatorioJugadorId) === String(salida.id)) {
       setCambioObligatorioJugadorId(null);
+      setCambioObligatorioIngresoId('');
     }
-    setCambioIngresoPorSalida((prev) => {
-      const next = { ...prev };
-      delete next[String(salida.id)];
-      return next;
-    });
-    setCambioSalidaId('');
-    setCambioIngresoId('');
+    if (esVisita) {
+      setCambioSalidaVisitaId('');
+      setCambioIngresoVisitaId('');
+    } else {
+      setCambioSalidaId('');
+      setCambioIngresoId('');
+    }
   };
 
   const confirmarCambioObligatorio = () => {
-    if (!cambioSalidaId || !cambioIngresoId) {
-      showToast({ message: 'Selecciona quién sale y quién entra para confirmar el cambio obligatorio.', type: 'error' });
+    if (!cambioObligatorioJugadorId || !cambioObligatorioIngresoId) {
+      showToast({ message: 'Selecciona quién entra para confirmar el cambio obligatorio.', type: 'error' });
       return;
     }
-    ejecutarCambioJugadorLocal();
+    ejecutarCambioJugador(cambioObligatorioEquipo, cambioObligatorioJugadorId, cambioObligatorioIngresoId);
     setMostrarModalCambioObligatorio(false);
   };
 
@@ -1564,11 +1583,50 @@ function MesaControlPanel({
     registrarEventoJuego({ tipo: 'PERIODO', detalle, equipo: 'local' });
   };
 
+  // Reglas FIBA de expulsión: 5 faltas personales, 2 faltas técnicas, 2 faltas
+  // antideportivas, o 1 falta descalificante obligan a la jugadora/or a salir
+  // de cancha. Las técnicas y antideportivas también suman al total de faltas
+  // personales (afectan el bono de tiros libres del equipo).
+  const TIPOS_FALTA = { PERSONAL: 'personal', TECNICA: 'tecnica', ANTIDEPORTIVA: 'antideportiva', DESCALIFICANTE: 'descalificante' };
+
+  const calcularEstadoFalta = (jugador, tipoFalta) => {
+    const flt = numero(jugador.flt);
+    const tecnicas = numero(jugador.tecnicas);
+    const antideportivas = numero(jugador.antideportivas);
+
+    if (tipoFalta === TIPOS_FALTA.DESCALIFICANTE) {
+      return { flt, tecnicas, antideportivas, expulsado: true, motivo: 'falta descalificante' };
+    }
+    const nuevoFlt = flt + 1;
+    const nuevasTecnicas = tipoFalta === TIPOS_FALTA.TECNICA ? tecnicas + 1 : tecnicas;
+    const nuevasAntideportivas = tipoFalta === TIPOS_FALTA.ANTIDEPORTIVA ? antideportivas + 1 : antideportivas;
+
+    let motivo = '';
+    if (nuevasTecnicas >= 2) motivo = '2 faltas técnicas';
+    else if (nuevasAntideportivas >= 2) motivo = '2 faltas antideportivas';
+    else if (nuevoFlt >= 5) motivo = '5 faltas';
+
+    return {
+      flt: nuevoFlt,
+      tecnicas: nuevasTecnicas,
+      antideportivas: nuevasAntideportivas,
+      expulsado: Boolean(motivo),
+      motivo,
+    };
+  };
+
+  const etiquetaTipoFalta = (tipoFalta) => {
+    if (tipoFalta === TIPOS_FALTA.TECNICA) return 'FALTA TÉCNICA';
+    if (tipoFalta === TIPOS_FALTA.ANTIDEPORTIVA) return 'FALTA ANTIDEPORTIVA';
+    if (tipoFalta === TIPOS_FALTA.DESCALIFICANTE) return 'FALTA DESCALIFICANTE';
+    return 'FALTA';
+  };
+
   const ejecutarAccionFIBA = (tipo, payload = {}) => {
     if (!partidoIniciado) { showToast({ message: 'Valida y comienza el partido antes de capturar eventos.', type: 'error' }); return; }
     if (!jugadorSeleccionadoLive) { showToast({ message: 'Selecciona un jugador del Roster primero.', type: 'error' }); return; }
-    if (cambioObligatorioJugadorId && String(cambioObligatorioJugadorId) !== String(jugadorSeleccionadoLive)) {
-      showToast({ message: 'Hay un cambio obligatorio pendiente por 5 faltas. Debes resolverlo antes de continuar.', type: 'error' });
+    if (cambioObligatorioJugadorId && cambioObligatorioEquipo === 'local' && String(cambioObligatorioJugadorId) !== String(jugadorSeleccionadoLive)) {
+      showToast({ message: 'Hay un cambio obligatorio pendiente por expulsión. Debes resolverlo antes de continuar.', type: 'error' });
       return;
     }
     if (!quintetoLocalIds.includes(jugadorSeleccionadoLive)) {
@@ -1577,9 +1635,11 @@ function MesaControlPanel({
     }
     let nombreJugador = '';
     let expulsionNombre = '';
+    let expulsionMotivo = '';
     let puntosAnotados = 0;
     let detalleAccion;
 
+    const tipoFalta = tipo === 'FALTA' ? (payload.tipoFalta || TIPOS_FALTA.PERSONAL) : null;
     const tirosLibresIntentados = limitar(Number(payload.tirosLibresIntentados || 0), 0, 3);
     const tirosLibresConvertidos = limitar(Number(payload.tirosLibresConvertidos || 0), 0, tirosLibresIntentados);
     const es2Pts = tipo === 'PUNTO' && Number(payload.puntos || 0) === 2;
@@ -1590,9 +1650,11 @@ function MesaControlPanel({
     setRosterEquipo((prev) => prev.map((j) => {
       if (j.id === jugadorSeleccionadoLive) {
         nombreJugador = `#${j.dorsal} ${j.nombre}`;
-        const nuevoFlt = tipo === 'FALTA' ? numero(j.flt) + 1 : numero(j.flt);
-        const expulsado = nuevoFlt >= 5;
-        if (expulsado) expulsionNombre = `${nombreJugador}`;
+        const estadoFalta = tipo === 'FALTA' ? calcularEstadoFalta(j, tipoFalta) : null;
+        if (estadoFalta?.expulsado) {
+          expulsionNombre = nombreJugador;
+          expulsionMotivo = estadoFalta.motivo;
+        }
 
         const ftmActual = numero(j.ftm);
         const ftaActual = numero(j.fta);
@@ -1607,7 +1669,9 @@ function MesaControlPanel({
           reb: tipo === 'REB' ? numero(j.reb) + 1 : numero(j.reb),
           ast: tipo === 'AST' ? numero(j.ast) + 1 : numero(j.ast),
           stl: tipo === 'ROBO' ? numero(j.stl) + 1 : numero(j.stl),
-          flt: nuevoFlt,
+          flt: estadoFalta ? estadoFalta.flt : numero(j.flt),
+          tecnicas: estadoFalta ? estadoFalta.tecnicas : numero(j.tecnicas),
+          antideportivas: estadoFalta ? estadoFalta.antideportivas : numero(j.antideportivas),
           to: tipo === 'PERDIDA' ? numero(j.to) + 1 : numero(j.to),
           ftm: ftmActual + tirosLibresConvertidos,
           fta: ftaActual + tirosLibresIntentados,
@@ -1615,8 +1679,8 @@ function MesaControlPanel({
           fg2a: fg2aActual + (es2Pts ? 1 : 0),
           fg3m: fg3mActual + (es3Pts ? 1 : 0),
           fg3a: fg3aActual + (es3Pts ? 1 : 0),
-          expulsado,
-          _expulsado: expulsado,
+          expulsado: estadoFalta ? estadoFalta.expulsado || j.expulsado : j.expulsado,
+          _expulsado: estadoFalta ? estadoFalta.expulsado || j._expulsado : j._expulsado,
         };
       }
       return j;
@@ -1636,7 +1700,7 @@ function MesaControlPanel({
         detalleAccion = `${nombreJugador} anota ${puntosBase} pts`;
       }
     } else if (tipo === 'FALTA') {
-      detalleAccion = `${nombreJugador} comete FALTA (${numero(payload.faltaNumero || 0) || ''})`.replace(/\s\(\)/, '');
+      detalleAccion = `${nombreJugador} comete ${etiquetaTipoFalta(tipoFalta)}`;
     } else {
       detalleAccion = `${nombreJugador} registra ${tipo}`;
     }
@@ -1645,13 +1709,12 @@ function MesaControlPanel({
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: logTexto }, ...prev]);
     registrarEventoJuego({ tipo, detalle: logTexto, equipo: 'local', jugadorId: jugadorSeleccionadoLive, valor: puntosAnotados });
     if (expulsionNombre) {
-      setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `⚠ ${expulsionNombre} llega a 5 faltas y debe salir.` }, ...prev]);
+      setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `⚠ ${expulsionNombre} queda fuera del partido (${expulsionMotivo}).` }, ...prev]);
+      setCambioObligatorioEquipo('local');
       setCambioObligatorioJugadorId(jugadorSeleccionadoLive);
-      setCambioSalidaId(String(jugadorSeleccionadoLive));
-      const primerIngresoValido = bancoLocal.find((j) => !j._bloqueado && numero(j.flt) < 5);
-      setCambioIngresoId(primerIngresoValido ? String(primerIngresoValido.id) : '');
+      setCambioObligatorioIngresoId('');
       setMostrarModalCambioObligatorio(true);
-      showToast({ message: `${expulsionNombre} llegó a 5 faltas. Cambio obligatorio inmediato.`, type: 'warning' });
+      showToast({ message: `${expulsionNombre} queda fuera del partido (${expulsionMotivo}). Elige quién entra.`, type: 'warning' });
     }
     if (!expulsionNombre) setJugadorSeleccionadoLive(null);
   };
@@ -1730,15 +1793,22 @@ function MesaControlPanel({
     if (!partidoIniciado) { showToast({ message: 'Valida y comienza el partido antes de capturar eventos.', type: 'error' }); return; }
     if (modoAnalisis !== 'dos') return;
     if (!jugadorVisitaSeleccionadoId) { showToast({ message: 'Selecciona una jugadora/o visita primero.', type: 'error' }); return; }
+    if (cambioObligatorioJugadorId && cambioObligatorioEquipo === 'visita' && String(cambioObligatorioJugadorId) !== String(jugadorVisitaSeleccionadoId)) {
+      showToast({ message: 'Hay un cambio obligatorio pendiente por expulsión. Debes resolverlo antes de continuar.', type: 'error' });
+      return;
+    }
     if (!quintetoVisitaIds.map((id) => String(id)).includes(String(jugadorVisitaSeleccionadoId))) {
       showToast({ message: 'La accion visita solo se permite para jugadoras/es titulares en cancha.', type: 'error' });
       return;
     }
 
     let nombreJugador = '';
+    let expulsionNombre = '';
+    let expulsionMotivo = '';
     let puntosAnotados = 0;
     let detalleAccion;
 
+    const tipoFalta = tipo === 'FALTA' ? (payload.tipoFalta || TIPOS_FALTA.PERSONAL) : null;
     const tirosLibresIntentados = limitar(Number(payload.tirosLibresIntentados || 0), 0, 3);
     const tirosLibresConvertidos = limitar(Number(payload.tirosLibresConvertidos || 0), 0, tirosLibresIntentados);
     const es2Pts = tipo === 'PUNTO' && Number(payload.puntos || 0) === 2;
@@ -1750,6 +1820,11 @@ function MesaControlPanel({
     setRosterEquipo((prev) => prev.map((j) => {
       if (Number(j.id) !== idSeleccionado) return j;
       nombreJugador = `#${j.dorsal} ${j.nombre}`;
+      const estadoFalta = tipo === 'FALTA' ? calcularEstadoFalta(j, tipoFalta) : null;
+      if (estadoFalta?.expulsado) {
+        expulsionNombre = nombreJugador;
+        expulsionMotivo = estadoFalta.motivo;
+      }
 
       const ftmActual = numero(j.ftm);
       const ftaActual = numero(j.fta);
@@ -1764,7 +1839,9 @@ function MesaControlPanel({
         reb: tipo === 'REB' ? numero(j.reb) + 1 : numero(j.reb),
         ast: tipo === 'AST' ? numero(j.ast) + 1 : numero(j.ast),
         stl: tipo === 'ROBO' ? numero(j.stl) + 1 : numero(j.stl),
-        flt: tipo === 'FALTA' ? numero(j.flt) + 1 : numero(j.flt),
+        flt: estadoFalta ? estadoFalta.flt : numero(j.flt),
+        tecnicas: estadoFalta ? estadoFalta.tecnicas : numero(j.tecnicas),
+        antideportivas: estadoFalta ? estadoFalta.antideportivas : numero(j.antideportivas),
         to: tipo === 'PERDIDA' ? numero(j.to) + 1 : numero(j.to),
         ftm: ftmActual + tirosLibresConvertidos,
         fta: ftaActual + tirosLibresIntentados,
@@ -1772,6 +1849,8 @@ function MesaControlPanel({
         fg2a: fg2aActual + (es2Pts ? 1 : 0),
         fg3m: fg3mActual + (es3Pts ? 1 : 0),
         fg3a: fg3aActual + (es3Pts ? 1 : 0),
+        expulsado: estadoFalta ? estadoFalta.expulsado || j.expulsado : j.expulsado,
+        _expulsado: estadoFalta ? estadoFalta.expulsado || j._expulsado : j._expulsado,
       };
     }));
 
@@ -1789,13 +1868,22 @@ function MesaControlPanel({
         detalleAccion = `${nombreJugador} anota ${puntosBase} pts (Visita)`;
       }
     } else if (tipo === 'FALTA') {
-      detalleAccion = `${nombreJugador} comete FALTA (Visita)`;
+      detalleAccion = `${nombreJugador} comete ${etiquetaTipoFalta(tipoFalta)} (Visita)`;
     } else {
       detalleAccion = `${nombreJugador} registra ${tipo} (Visita)`;
     }
 
     setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: detalleAccion }, ...prev]);
     registrarEventoJuego({ tipo, detalle: detalleAccion, equipo: 'visita', jugadorId: idSeleccionado, valor: puntosAnotados });
+    if (expulsionNombre) {
+      setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj, texto: `⚠ ${expulsionNombre} (Visita) queda fuera del partido (${expulsionMotivo}).` }, ...prev]);
+      setCambioObligatorioEquipo('visita');
+      setCambioObligatorioJugadorId(jugadorVisitaSeleccionadoId);
+      setCambioObligatorioIngresoId('');
+      setMostrarModalCambioObligatorio(true);
+      showToast({ message: `${expulsionNombre} (Visita) queda fuera del partido (${expulsionMotivo}). Elige quién entra.`, type: 'warning' });
+    }
+    if (!expulsionNombre) setJugadorVisitaSeleccionadoId('');
   };
 
   const accionEquipoEsVisita = modoAnalisis === 'dos' && equipoAccionActivo === 'visita';
@@ -2628,7 +2716,7 @@ function MesaControlPanel({
           <div className="mesa-team-config-card" style={{ borderColor: colorConAlpha(colorLocal, '99'), background: `linear-gradient(180deg, ${colorConAlpha(colorLocal, '22')} 0%, rgba(255,255,255,0.02) 65%)` }}>
             <div className="mesa-team-config-header">
               <strong>Equipo Local</strong>
-              <button className="mesa-color-chip" type="button" style={{ background: colorLocal }} onClick={() => setSelectorColorAbierto((prev) => ({ ...prev, local: !prev.local }))}>
+              <button className="mesa-color-chip" type="button" style={{ background: colorLocal, color: colorTextoContraste(colorLocal) }} onClick={() => setSelectorColorAbierto((prev) => ({ ...prev, local: !prev.local }))}>
                 {colorLocal}
               </button>
             </div>
@@ -2663,7 +2751,7 @@ function MesaControlPanel({
             <div className="mesa-team-config-card" style={{ borderColor: colorConAlpha(colorVisita, '99'), background: `linear-gradient(180deg, ${colorConAlpha(colorVisita, '22')} 0%, rgba(255,255,255,0.02) 65%)` }}>
               <div className="mesa-team-config-header">
                 <strong>Equipo Visita</strong>
-                <button className="mesa-color-chip" type="button" style={{ background: colorVisita }} onClick={() => setSelectorColorAbierto((prev) => ({ ...prev, visita: !prev.visita }))}>
+                <button className="mesa-color-chip" type="button" style={{ background: colorVisita, color: colorTextoContraste(colorVisita) }} onClick={() => setSelectorColorAbierto((prev) => ({ ...prev, visita: !prev.visita }))}>
                   {colorVisita}
                 </button>
               </div>
@@ -2989,21 +3077,31 @@ function MesaControlPanel({
       {mostrarModalCambioObligatorio && jugadorCambioObligatorio && (
         <div className="mesa-cambio-obligatorio-overlay">
           <div className="mesa-cambio-obligatorio-card">
-            <h5 style={{ margin: 0, color: 'var(--rojo-alerta)' }}>Cambio Obligatorio</h5>
+            <h5 style={{ margin: 0, color: 'var(--rojo-alerta)' }}>Cambio Obligatorio ({cambioObligatorioEquipo === 'visita' ? 'Visita' : 'Local'})</h5>
             <p style={{ margin: '8px 0 0 0' }}>
-              #{jugadorCambioObligatorio.dorsal} {jugadorCambioObligatorio.nombre} acumula 5 faltas y debe salir.
+              #{jugadorCambioObligatorio.dorsal} {jugadorCambioObligatorio.nombre} debe salir de cancha. Toca a la jugadora/or de banca que entra:
             </p>
-            <label className="mesa-filter-item" style={{ marginTop: '8px' }}>
-              <span>Jugadora/o que reemplaza</span>
-              <select className="form-input" value={cambioIngresoId} onChange={(e) => setCambioIngresoId(e.target.value)}>
-                <option value="">Seleccionar ingreso...</option>
-                {bancoLocal.filter((j) => !j._bloqueado && numero(j.flt) < 5).map((j) => (
-                  <option key={`reemplazo-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
-                ))}
-              </select>
-            </label>
+            <div className="mesa-cambio-obligatorio-banco-grid mt-10">
+              {bancoParaCambioObligatorio.map((j) => (
+                <button
+                  type="button"
+                  key={`reemplazo-${j.id}`}
+                  className={`mesa-banco-btn ${String(cambioObligatorioIngresoId) === String(j.id) ? 'selected' : ''}`}
+                  onClick={() => setCambioObligatorioIngresoId(j.id)}
+                  style={{
+                    borderColor: cambioObligatorioEquipo === 'visita' ? colorVisita : colorLocal,
+                    background: cambioObligatorioEquipo === 'visita' ? colorVisita : colorLocal,
+                    color: colorTextoContraste(cambioObligatorioEquipo === 'visita' ? colorVisita : colorLocal),
+                  }}
+                >
+                  <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(cambioObligatorioEquipo === 'visita' ? colorVisita : colorLocal) }}>#{j.dorsal}</span>
+                  <span style={{ fontSize: '11px', fontWeight: '700' }}>{j.nombre}</span>
+                </button>
+              ))}
+              {bancoParaCambioObligatorio.length === 0 && <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es disponibles en banca.</p>}
+            </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' }}>
-              <button className="btn-secondary" style={{ width: 'auto' }} onClick={confirmarCambioObligatorio}>Confirmar cambio</button>
+              <button className="btn-secondary" style={{ width: 'auto' }} disabled={!cambioObligatorioIngresoId} onClick={confirmarCambioObligatorio}>Confirmar cambio</button>
             </div>
           </div>
         </div>
@@ -3022,12 +3120,12 @@ function MesaControlPanel({
                     type="button"
                     title={`#${j.dorsal} ${j.nombre}`}
                     onClick={() => {
-                      if (j._bloqueado || j.flt >= 5) return;
+                      if (j._bloqueado || j.expulsado || numero(j.flt) >= 5) return;
                       setJugadorSeleccionadoLive(j.id);
                       setEquipoAccionActivo('local');
                       setCambioSalidaId(j.id);
                     }}
-                    className={`mesa-oncourt-btn mesa-oncourt-main-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.flt >= 5 ? 'bloqueado' : ''}`}
+                    className={`mesa-oncourt-btn mesa-oncourt-main-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.expulsado || numero(j.flt) >= 5 ? 'bloqueado' : ''}`}
                     style={{
                       borderColor: colorLocal,
                       background: colorLocal,
@@ -3039,7 +3137,7 @@ function MesaControlPanel({
                 ))}
                 {Array.from({ length: Math.max(0, 5 - quintetoLocalEnCancha.length) }).map((_, idx) => (
                   <div key={`vacante-${idx}`} className="mesa-oncourt-btn mesa-oncourt-empty" style={{ borderColor: colorConAlpha(colorLocal, '88'), background: colorConAlpha(colorLocal, '22') }}>
-                    <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>--</span>
+                    <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: 'var(--texto-secundario)' }}>--</span>
                   </div>
                 ))}
               </div>
@@ -3048,21 +3146,41 @@ function MesaControlPanel({
             <div className="mesa-team-col mesa-team-col-exterior">
               <h6 className="sub-caja-title" style={{ marginTop: 0, fontSize: '12px' }}>Banco Local ({bancoLocal.length})</h6>
               <div className="mesa-banco-grid">
-                {bancoLocal.map((j) => (
-                  <button
-                    key={`banca-${j.id}`}
-                    type="button"
-                    className={`mesa-banco-btn ${cambioIngresoId === j.id ? 'selected' : ''}`}
-                    onClick={() => setCambioIngresoId(j.id)}
-                    title="Seleccionar para ingreso"
-                    style={{ borderColor: colorLocal, background: colorLocal, color: colorTextoContraste(colorLocal) }}
-                  >
-                    <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
-                  </button>
-                ))}
+                {bancoLocal.map((j) => {
+                  const bloqueada = j._bloqueado || j.expulsado || numero(j.flt) >= 5;
+                  return (
+                    <button
+                      key={`banca-${j.id}`}
+                      type="button"
+                      disabled={bloqueada}
+                      className={`mesa-banco-btn ${cambioIngresoId === j.id ? 'selected' : ''} ${bloqueada ? 'bloqueado' : ''}`}
+                      onClick={() => { if (!bloqueada) setCambioIngresoId(j.id); }}
+                      title={bloqueada ? 'No disponible (expulsada/o o bloqueada/o)' : 'Seleccionar para ingreso'}
+                      style={{ borderColor: colorLocal, background: colorLocal, color: colorTextoContraste(colorLocal) }}
+                    >
+                      <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
+                    </button>
+                  );
+                })}
                 {bancoLocal.length === 0 && <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es de banca.</p>}
               </div>
             </div>
+          </div>
+          <div className="mesa-visitor-actions mt-10">
+            <h6>Cambio Local (en cancha ↔ banco)</h6>
+            <select className="form-input" value={cambioSalidaId} onChange={(e) => setCambioSalidaId(e.target.value)}>
+              <option value="">Selecciona quién sale...</option>
+              {quintetoLocalEnCancha.map((j) => (
+                <option key={`sale-local-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
+              ))}
+            </select>
+            <select className="form-input" value={cambioIngresoId} onChange={(e) => setCambioIngresoId(e.target.value)}>
+              <option value="">Selecciona quién entra...</option>
+              {bancoLocal.filter((j) => !j._bloqueado && !j.expulsado && numero(j.flt) < 5).map((j) => (
+                <option key={`entra-local-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
+              ))}
+            </select>
+            <button className="btn-secondary" disabled={!partidoIniciado || !cambioSalidaId || !cambioIngresoId} onClick={() => ejecutarCambioJugador('local', cambioSalidaId, cambioIngresoId)}>Cambiar</button>
           </div>
           <div className="mesa-add-player mt-10">
             <input className="form-input" placeholder="Nombre jugadora/or" value={nuevoNombreLocal} onChange={(e) => setNuevoNombreLocal(e.target.value)} />
@@ -3083,10 +3201,12 @@ function MesaControlPanel({
                       key={`cancha-visita-${j.id}`}
                       type="button"
                       title={`#${j.dorsal} ${j.nombre}`}
-                      className={`mesa-oncourt-btn mesa-oncourt-main-btn ${String(jugadorVisitaSeleccionadoId) === String(j.id) ? 'selected' : ''}`}
+                      className={`mesa-oncourt-btn mesa-oncourt-main-btn ${String(jugadorVisitaSeleccionadoId) === String(j.id) ? 'selected' : ''} ${j._bloqueado || j.expulsado || numero(j.flt) >= 5 ? 'bloqueado' : ''}`}
                       onClick={() => {
+                        if (j._bloqueado || j.expulsado || numero(j.flt) >= 5) return;
                         setJugadorVisitaSeleccionadoId(j.id);
                         setEquipoAccionActivo('visita');
+                        setCambioSalidaVisitaId(j.id);
                       }}
                       style={{
                         borderColor: colorVisita,
@@ -3099,7 +3219,7 @@ function MesaControlPanel({
                   ))}
                   {Array.from({ length: Math.max(0, 5 - quintetoVisitaEnCancha.length) }).map((_, idx) => (
                     <div key={`vacante-visita-${idx}`} className="mesa-oncourt-btn mesa-oncourt-empty" style={{ borderColor: colorConAlpha(colorVisita, '88'), background: colorConAlpha(colorVisita, '22') }}>
-                      <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: colorTextoContraste(colorVisita) }}>--</span>
+                      <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: 'var(--texto-secundario)' }}>--</span>
                     </div>
                   ))}
                 </div>
@@ -3108,24 +3228,41 @@ function MesaControlPanel({
               <div className="mesa-team-col mesa-team-col-exterior">
                 <h6 className="sub-caja-title" style={{ marginTop: 0, fontSize: '12px' }}>Banco Visita ({bancoVisita.length})</h6>
                 <div className="mesa-banco-grid">
-                  {bancoVisita.map((j) => (
-                    <button
-                      key={`banca-visita-${j.id}`}
-                      type="button"
-                      className={`mesa-banco-btn ${String(jugadorVisitaSeleccionadoId) === String(j.id) ? 'selected' : ''}`}
-                      onClick={() => {
-                        setJugadorVisitaSeleccionadoId(j.id);
-                        setEquipoAccionActivo('visita');
-                      }}
-                      title="Seleccionar jugadora/o visita"
-                      style={{ borderColor: colorVisita, background: colorVisita, color: colorTextoContraste(colorVisita) }}
-                    >
-                      <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorVisita) }}>#{j.dorsal}</span>
-                    </button>
-                  ))}
+                  {bancoVisita.map((j) => {
+                    const bloqueada = j._bloqueado || j.expulsado || numero(j.flt) >= 5;
+                    return (
+                      <button
+                        key={`banca-visita-${j.id}`}
+                        type="button"
+                        disabled={bloqueada}
+                        className={`mesa-banco-btn ${cambioIngresoVisitaId === j.id ? 'selected' : ''} ${bloqueada ? 'bloqueado' : ''}`}
+                        onClick={() => { if (!bloqueada) setCambioIngresoVisitaId(j.id); }}
+                        title={bloqueada ? 'No disponible (expulsada/o o bloqueada/o)' : 'Seleccionar para ingreso'}
+                        style={{ borderColor: colorVisita, background: colorVisita, color: colorTextoContraste(colorVisita) }}
+                      >
+                        <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorVisita) }}>#{j.dorsal}</span>
+                      </button>
+                    );
+                  })}
                   {bancoVisita.length === 0 && <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es de banca.</p>}
                 </div>
               </div>
+            </div>
+            <div className="mesa-visitor-actions mt-10">
+              <h6>Cambio Visita (en cancha ↔ banco)</h6>
+              <select className="form-input" value={cambioSalidaVisitaId} onChange={(e) => setCambioSalidaVisitaId(e.target.value)}>
+                <option value="">Selecciona quién sale...</option>
+                {quintetoVisitaEnCancha.map((j) => (
+                  <option key={`sale-visita-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
+                ))}
+              </select>
+              <select className="form-input" value={cambioIngresoVisitaId} onChange={(e) => setCambioIngresoVisitaId(e.target.value)}>
+                <option value="">Selecciona quién entra...</option>
+                {bancoVisita.filter((j) => !j._bloqueado && !j.expulsado && numero(j.flt) < 5).map((j) => (
+                  <option key={`entra-visita-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
+                ))}
+              </select>
+              <button className="btn-secondary" disabled={!partidoIniciado || !cambioSalidaVisitaId || !cambioIngresoVisitaId} onClick={() => ejecutarCambioJugador('visita', cambioSalidaVisitaId, cambioIngresoVisitaId)}>Cambiar</button>
             </div>
             <div className="mesa-add-player mt-10">
               <input className="form-input" placeholder="Nombre jugadora/or" value={nuevoNombreVisita} onChange={(e) => setNuevoNombreVisita(e.target.value)} />
@@ -3139,27 +3276,16 @@ function MesaControlPanel({
           <div className="mesa-control-tiempo-card">
             <h6>Control de Partido</h6>
             <div className="mesa-control-tiempo-meta">{etiquetaPeriodo(liveScore.periodo)} · {liveScore.reloj}</div>
-            <div className="mesa-control-tiempo-grid">
-              <button className="btn-secondary" disabled={!partidoIniciado} onClick={alternarCronometro}>{cronometroActivo ? 'Pausar reloj' : 'Iniciar reloj'}</button>
-              <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => ajustarRelojLive(60)}>+1:00</button>
-              <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => ajustarRelojLive(-60)}>-1:00</button>
-              <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => cambiarPeriodoLive(-1)}>Periodo -</button>
-              <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => cambiarPeriodoLive(1)}>Periodo +</button>
-            </div>
-          </div>
-
-          <div className="mesa-visitor-actions" style={{ marginBottom: '10px' }}>
-            <h6>Cambio Local (en cancha ↔ banco)</h6>
-            <div className="mesa-visitor-actions-grid" style={{ gridTemplateColumns: '1fr 1fr 120px' }}>
-              <select className="form-input" value={cambioSalidaId} onChange={(e) => setCambioSalidaId(e.target.value)}>
-                <option value="">Sale...</option>
-                {quintetoLocalEnCancha.map((j) => <option key={`sale-local-${j.id}`} value={j.id}>#{j.dorsal}</option>)}
-              </select>
-              <select className="form-input" value={cambioIngresoId} onChange={(e) => setCambioIngresoId(e.target.value)}>
-                <option value="">Entra...</option>
-                {bancoLocal.filter((j) => !j._bloqueado && numero(j.flt) < 5).map((j) => <option key={`entra-local-${j.id}`} value={j.id}>#{j.dorsal}</option>)}
-              </select>
-              <button className="btn-secondary" disabled={!partidoIniciado || !cambioSalidaId || !cambioIngresoId} onClick={() => ejecutarCambioJugadorLocal(cambioSalidaId, cambioIngresoId)}>Cambiar</button>
+            <div className="mesa-control-tiempo-grid-central">
+              <div className="mesa-control-tiempo-lado">
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => ajustarRelojLive(60)}>+1:00</button>
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => ajustarRelojLive(-60)}>-1:00</button>
+              </div>
+              <button className="btn-electric mesa-btn-reloj-principal" disabled={!partidoIniciado} onClick={alternarCronometro}>{cronometroActivo ? '⏸ Pausar' : '▶ Iniciar'}</button>
+              <div className="mesa-control-tiempo-lado">
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => cambiarPeriodoLive(-1)}>Periodo -</button>
+                <button className="btn-secondary" disabled={!partidoIniciado} onClick={() => cambiarPeriodoLive(1)}>Periodo +</button>
+              </div>
             </div>
           </div>
 
@@ -3226,8 +3352,21 @@ function MesaControlPanel({
             <button className="btn-fiba st" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('AST')}>AST</button>
             <button className="btn-fiba st" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('ROBO')}>ROBO</button>
             <button className="btn-fiba err" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('PERDIDA')}>PÉRDIDA</button>
-            <button className="btn-fiba err" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('FALTA', { faltaNumero: 1 })}>FALTA</button>
+            <button className="btn-fiba err" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => setMostrarSelectorTipoFalta((v) => !v)}>FALTA</button>
           </div>
+
+          {mostrarSelectorTipoFalta && (
+            <div className="mesa-tipo-falta-panel mt-10">
+              <span className="mesa-tipo-falta-titulo">Tipo de falta</span>
+              <div className="mesa-tipo-falta-grid">
+                <button type="button" className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.PERSONAL }); setMostrarSelectorTipoFalta(false); }}>Personal</button>
+                <button type="button" className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.TECNICA }); setMostrarSelectorTipoFalta(false); }}>Técnica</button>
+                <button type="button" className="btn-secondary" onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.ANTIDEPORTIVA }); setMostrarSelectorTipoFalta(false); }}>Antideportiva</button>
+                <button type="button" className="btn-secondary" style={{ color: 'var(--rojo-alerta)' }} onClick={() => { ejecutarAccionEquipoActivo('FALTA', { tipoFalta: TIPOS_FALTA.DESCALIFICANTE }); setMostrarSelectorTipoFalta(false); }}>Descalificante</button>
+              </div>
+              <p className="text-muted" style={{ fontSize: '11px', margin: '6px 0 0' }}>Técnica y antideportiva también suman como falta personal. 2 técnicas, 2 antideportivas o 1 descalificante = expulsión.</p>
+            </div>
+          )}
 
           {mostrarOpcionesTL && !accionEquipoEsVisita && (
             <div className="mesa-tl-options-panel">

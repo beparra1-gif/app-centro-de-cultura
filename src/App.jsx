@@ -2560,6 +2560,8 @@ function App() {
             {puedeVerPantalla('perfil') && pantallaActiva === 'perfil' && (
               <PerfilTesoreriaPanel
                 pupiloActivo={pupiloActivo}
+                setPupiloActivo={setPupiloActivo}
+                rolUsuario={rolUsuario}
                 pupilosDisponibles={pupilosDisponibles}
                 cuentasAdmin={cuentasAdmin}
                 pagosMensualidadesAdmin={pagosMensualidadesAdmin}

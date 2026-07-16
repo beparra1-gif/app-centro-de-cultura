@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown, Lock, User, Ticket, Trash2, Banknote, Smartphone, NotebookPen, BookOpen, XCircle, Search, PlusCircle, History, AlertTriangle, BarChart3 } from 'lucide-react';
+import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown, Lock, User, Ticket, Trash2, Banknote, Smartphone, NotebookPen, BookOpen, XCircle, Search, PlusCircle, History, AlertTriangle, BarChart3, Pencil, Check } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { getColorPorCategoria } from '../utils/appHelpers';
 import { showToast } from '../utils/toast';
@@ -44,6 +44,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
   const [gastoRegistro, setGastoRegistro] = useState({ desc: '', monto: '' });
 
   const [nuevoProducto, setNuevoProducto] = useState({ nombre: '', emoji: '', costo: '', precio: '', categoria: 'Bebida' });
+  const [productoEditandoId, setProductoEditandoId] = useState(null);
 
   const [fiados, setFiados] = useState([]);
   const [fiadoModo, setFiadoModo] = useState('nueva');
@@ -351,6 +352,29 @@ function KioscoPanel({ nombreResponsable = '' }) {
     }
   };
 
+  const actualizarCampoProducto = async (prod, campo, valor) => {
+    try {
+      await kioscoAPI.productos.update(prod.id, { [campo]: valor });
+      await cargarProductos();
+    } catch (err) {
+      showToast({ message: err.message || 'No se pudo actualizar el producto.', type: 'error' });
+    }
+  };
+
+  const eliminarProducto = async (prod) => {
+    if (!(await confirmAction({ title: 'Eliminar producto', message: `¿Eliminar "${prod.nombre}" del catálogo? Ya no aparecerá para vender, pero las ventas ya registradas se conservan.`, danger: true, confirmText: 'Eliminar' }))) {
+      return;
+    }
+    try {
+      await kioscoAPI.productos.remove(prod.id);
+      setCarrito((prev) => prev.filter((i) => i.id !== prod.id));
+      await cargarProductos();
+      showToast({ message: 'Producto eliminado del catálogo.', type: 'success' });
+    } catch (err) {
+      showToast({ message: err.message || 'No se pudo eliminar el producto.', type: 'error' });
+    }
+  };
+
   const borrarHistorialVentas = async () => {
     if (!(await confirmAction({ title: 'Borrar historial de ventas', message: 'Esto elimina permanentemente todas las ventas registradas (afecta la analítica y los rankings). Los turnos cerrados y sus totales no se ven afectados. ¿Continuar?', danger: true, confirmText: 'Borrar todo' }))) {
       return;
@@ -653,20 +677,24 @@ function KioscoPanel({ nombreResponsable = '' }) {
             </div>
             {carrito.length === 0 && <p className="text-center text-muted" style={{ fontStyle: 'italic', margin: '20px 0' }}>Carrito vacío.</p>}
             {carrito.length > 0 && (
-              <div className="cart-items-list">
-                {carrito.map((item) => (
-                  <div key={item.id} className="cart-item-row">
-                    <div className="cart-item-info"><span className="cart-item-cant">{item.cant}x</span><span className="cart-item-name">{item.nombre}</span></div>
-                    <div className="cart-item-actions"><span className="cart-item-subtotal">${(item.precio * item.cant).toLocaleString('es-CL')}</span><button className="cart-btn-restar" onClick={() => { if (item.cant === 1) setCarrito(carrito.filter((i) => i.id !== item.id)); else setCarrito(carrito.map((i) => (i.id === item.id ? { ...i, cant: i.cant - 1 } : i))); }}>-</button></div>
+              <>
+                <div className="cart-items-list-scroll">
+                  <div className="cart-items-list">
+                    {carrito.map((item) => (
+                      <div key={item.id} className="cart-item-row">
+                        <div className="cart-item-info"><span className="cart-item-cant">{item.cant}x</span><span className="cart-item-name">{item.nombre}</span></div>
+                        <div className="cart-item-actions"><span className="cart-item-subtotal">${(item.precio * item.cant).toLocaleString('es-CL')}</span><button className="cart-btn-restar" onClick={() => { if (item.cant === 1) setCarrito(carrito.filter((i) => i.id !== item.id)); else setCarrito(carrito.map((i) => (i.id === item.id ? { ...i, cant: i.cant - 1 } : i))); }}>-</button></div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
                 <div className="cart-total-row mt-15"><span>TOTAL A PAGAR</span><h2>${totalCarrito.toLocaleString('es-CL')}</h2></div>
                 <div className="cart-pay-buttons mt-15">
                   <button className="btn-pago efectivo" onClick={() => abrirModalPago('efectivo')}><Banknote size={16} /> Efectivo</button>
                   <button className="btn-pago transferencia" onClick={() => abrirModalPago('transferencia')}><Smartphone size={16} /> Transfer</button>
                   <button className="btn-pago" style={{ background: '#FF9500' }} onClick={() => abrirModalPago('fiado')}><NotebookPen size={16} /> Fiado</button>
                 </div>
-              </div>
+              </>
             )}
           </div>
         </div>
@@ -721,22 +749,45 @@ function KioscoPanel({ nombreResponsable = '' }) {
           <div className="card">
             <h4 className="form-subtitle">Stock Actual</h4>
             <div className="roster-list mt-10">
-              {productos.map((prod) => (
-                <div key={prod.id} className="roster-item" style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(0,0,0,0.05)', alignItems: 'center' }}>
-                  <div><span style={{ fontSize: '24px', marginRight: '10px' }}>{prod.emoji}</span><strong style={{ color: 'var(--texto-principal)' }}>{prod.nombre}</strong><br /><span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: 'bold' }}>Costo: ${prod.costo} | Venta: ${prod.precio}</span></div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <button className="btn-circle btn-danger" onClick={() => actualizarStock(prod, Number(prod.stock) - 1)}>-</button>
-                      <input type="number" style={{ width: '50px', textAlign: 'center', padding: '4px 4px', border: '1.5px solid var(--borde-suave)', borderRadius: '999px', background: 'var(--fondo-input)', color: Number(prod.stock) <= 5 ? 'var(--rojo-alerta)' : 'var(--texto-principal)', fontWeight: '900', fontSize: '14px' }} value={prod.stock} onChange={(e) => actualizarStock(prod, parseInt(e.target.value, 10) || 0)} />
-                      <button className="btn-circle btn-success" onClick={() => actualizarStock(prod, Number(prod.stock) + 1)}>+</button>
+              {productos.map((prod) => {
+                const editando = productoEditandoId === prod.id;
+                return (
+                  <div key={prod.id} className="roster-item" style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px 0', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                      {editando ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: '54px 1fr', gap: '6px', flex: 1 }}>
+                          <input type="text" className="form-input" style={{ padding: '6px', textAlign: 'center', fontSize: '18px' }} value={prod.emoji} onChange={(e) => actualizarCampoProducto(prod, 'emoji', e.target.value)} />
+                          <input type="text" className="form-input" style={{ padding: '6px', fontSize: '13px', fontWeight: '800' }} value={prod.nombre} onChange={(e) => actualizarCampoProducto(prod, 'nombre', e.target.value)} />
+                          <select className="form-input" style={{ gridColumn: '1 / -1', padding: '6px', fontSize: '12px' }} value={prod.categoria} onChange={(e) => actualizarCampoProducto(prod, 'categoria', e.target.value)}>
+                            <option value="Bebida">Bebida</option><option value="Comida">Comida</option><option value="Entradas">Entradas/Otros</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <div><span style={{ fontSize: '24px', marginRight: '10px' }}>{prod.emoji}</span><strong style={{ color: 'var(--texto-principal)' }}>{prod.nombre}</strong><br /><span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: 'bold' }}>Costo: ${prod.costo} | Venta: ${prod.precio} | {prod.categoria}</span></div>
+                      )}
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        <button type="button" className="btn-circle" style={{ background: editando ? 'var(--verde-victoria)' : 'rgba(0,122,255,0.12)', color: editando ? 'white' : 'var(--azul-electrico)' }} title={editando ? 'Listo' : 'Editar'} onClick={() => setProductoEditandoId(editando ? null : prod.id)}>
+                          {editando ? <Check size={14} /> : <Pencil size={14} />}
+                        </button>
+                        <button type="button" className="btn-circle btn-danger" title="Eliminar" onClick={() => eliminarProducto(prod)}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--fondo-input)', padding: '4px 8px', borderRadius: '999px', border: '1.5px solid var(--borde-suave)' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800' }}>$</span>
-                      <input type="number" style={{ width: '64px', border: 'none', background: 'transparent', color: 'var(--texto-principal)', fontWeight: '900', fontSize: '13px', textAlign: 'center', outline: 'none' }} value={prod.precio} onChange={(e) => actualizarPrecio(prod, parseInt(e.target.value, 10) || 0)} />
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button className="btn-circle btn-danger" onClick={() => actualizarStock(prod, Number(prod.stock) - 1)}>-</button>
+                        <input type="number" style={{ width: '50px', textAlign: 'center', padding: '4px 4px', border: '1.5px solid var(--borde-suave)', borderRadius: '999px', background: 'var(--fondo-input)', color: Number(prod.stock) <= 5 ? 'var(--rojo-alerta)' : 'var(--texto-principal)', fontWeight: '900', fontSize: '14px' }} value={prod.stock} onChange={(e) => actualizarStock(prod, parseInt(e.target.value, 10) || 0)} />
+                        <button className="btn-circle btn-success" onClick={() => actualizarStock(prod, Number(prod.stock) + 1)}>+</button>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--fondo-input)', padding: '4px 8px', borderRadius: '999px', border: '1.5px solid var(--borde-suave)' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800' }}>$</span>
+                        <input type="number" style={{ width: '64px', border: 'none', background: 'transparent', color: 'var(--texto-principal)', fontWeight: '900', fontSize: '13px', textAlign: 'center', outline: 'none' }} value={prod.precio} onChange={(e) => actualizarPrecio(prod, parseInt(e.target.value, 10) || 0)} />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {productos.length === 0 && <p className="text-muted text-center">Sin productos aún.</p>}
             </div>
           </div>

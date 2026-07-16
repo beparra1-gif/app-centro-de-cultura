@@ -1,11 +1,13 @@
-import { useState } from 'react';
-import { AlertTriangle, Camera, Clock, LayoutGrid, List } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { AlertTriangle, Camera, Clock, LayoutGrid, List, Search, User, X } from 'lucide-react';
 import { getUTMLastDayPreviousMonth } from '../utils/appHelpers';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 
 function PerfilTesoreriaPanel({
   pupiloActivo,
+  setPupiloActivo,
+  rolUsuario,
   pupilosDisponibles,
   cuentasAdmin,
   pagosMensualidadesAdmin,
@@ -25,6 +27,48 @@ function PerfilTesoreriaPanel({
   const [archivoComprobante, setArchivoComprobante] = useState(null);
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
   const [errorComprobante, setErrorComprobante] = useState('');
+  const [busquedaCuenta, setBusquedaCuenta] = useState('');
+
+  const esVistaAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
+
+  const normalizarTextoBusqueda = (texto = '') => String(texto || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  const resultadosBusqueda = useMemo(() => {
+    const termino = normalizarTextoBusqueda(busquedaCuenta);
+    if (!esVistaAdmin || termino.length < 2) return [];
+
+    const cuentasPorCorreo = new Map(
+      (Array.isArray(cuentasAdmin) ? cuentasAdmin : []).map((c) => [String(c.correo || '').trim().toLowerCase(), c])
+    );
+
+    return (Array.isArray(pupilosDisponibles) ? pupilosDisponibles : [])
+      .filter((j) => {
+        const cuenta = cuentasPorCorreo.get(String(j.correo_apoderado || '').trim().toLowerCase());
+        const camposTexto = [
+          j.nombre,
+          j.rut,
+          cuenta?.nombres,
+          cuenta?.apellido_paterno,
+          cuenta?.correo,
+          cuenta?.rut,
+        ].map(normalizarTextoBusqueda).join(' ');
+        return camposTexto.includes(termino);
+      })
+      .slice(0, 20)
+      .map((j) => ({
+        jugador: j,
+        cuenta: cuentasPorCorreo.get(String(j.correo_apoderado || '').trim().toLowerCase()) || null,
+      }));
+  }, [busquedaCuenta, esVistaAdmin, cuentasAdmin, pupilosDisponibles]);
+
+  const seleccionarResultadoBusqueda = (jugador) => {
+    if (typeof setPupiloActivo === 'function') setPupiloActivo(jugador);
+    setBusquedaCuenta('');
+  };
 
   const mesesBase = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const anioObjetivo = 2026;
@@ -33,11 +77,13 @@ function PerfilTesoreriaPanel({
       const correoCuenta = String(cuenta.correo || '').trim().toLowerCase();
       const correoApoderado = String(pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
       return correoCuenta && correoApoderado && correoCuenta === correoApoderado;
-    }) || cuentasAdmin[0] || null
+    }) || null
     : null;
-  const pupilosActivos = Array.isArray(pupilosDisponibles) && pupilosDisponibles.length > 0
-    ? pupilosDisponibles
-    : (pupiloActivo ? [pupiloActivo] : []);
+  const pupilosActivos = esVistaAdmin
+    ? (pupiloActivo ? [pupiloActivo] : [])
+    : (Array.isArray(pupilosDisponibles) && pupilosDisponibles.length > 0
+      ? pupilosDisponibles
+      : (pupiloActivo ? [pupiloActivo] : []));
   const rutPupiloActivo = pupiloActivo?.rut || pupilosActivos[0]?.rut;
   const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
   const rutPupiloActivoNormalizado = normalizarRutComparacion(rutPupiloActivo);
@@ -148,7 +194,7 @@ function PerfilTesoreriaPanel({
 
   const pagosJugador = (pagosMensualidadesAdmin || []).filter((p) => {
     if (esPagoInvalidoLegacy(p)) return false;
-    if (!rutPupiloActivo) return true;
+    if (!rutPupiloActivo) return false;
     const rutJugadorPago = normalizarRutComparacion(p.rut_jugador);
     const rutPagadorPago = normalizarRutComparacion(p.rut_pagos);
     if (rutJugadorPago && rutJugadorPago === rutPupiloActivoNormalizado) return true;
@@ -347,6 +393,72 @@ function PerfilTesoreriaPanel({
 
   return (
     <div className="fade-in">
+      {esVistaAdmin && (
+        <div className="card" style={{ borderRadius: '22px', padding: '14px', position: 'relative' }}>
+          <label style={{ fontSize: '12px', fontWeight: '900', color: 'var(--texto-heading)', display: 'block', marginBottom: '8px' }}>
+            Buscar jugador, socio o apoderado
+          </label>
+          <div style={{ position: 'relative' }}>
+            <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+            <input
+              type="text"
+              className="form-input"
+              style={{ paddingLeft: '36px', paddingRight: busquedaCuenta ? '36px' : undefined }}
+              placeholder="Nombre, RUT o correo del jugador, socio o apoderado..."
+              value={busquedaCuenta}
+              onChange={(e) => setBusquedaCuenta(e.target.value)}
+            />
+            {busquedaCuenta && (
+              <button
+                type="button"
+                onClick={() => setBusquedaCuenta('')}
+                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
+                aria-label="Limpiar búsqueda"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          {resultadosBusqueda.length > 0 && (
+            <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '260px', overflowY: 'auto' }}>
+              {resultadosBusqueda.map((r) => (
+                <button
+                  type="button"
+                  key={r.jugador.rut || r.jugador.id}
+                  onClick={() => seleccionarResultadoBusqueda(r.jugador)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '14px', border: '1px solid var(--borde-suave)', background: 'rgba(0,122,255,0.04)', cursor: 'pointer', textAlign: 'left' }}
+                >
+                  <User size={18} color="var(--azul-electrico)" />
+                  <div style={{ minWidth: 0 }}>
+                    <strong style={{ display: 'block', fontSize: '13px', color: 'var(--texto-principal)' }}>{r.jugador.nombre || 'Jugador'}</strong>
+                    <span style={{ display: 'block', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      {r.jugador.rut || 'Sin RUT'}{r.cuenta ? ` · Apoderado: ${r.cuenta.nombres || ''} ${r.cuenta.apellido_paterno || ''}`.trim() : ''}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          {busquedaCuenta.length >= 2 && resultadosBusqueda.length === 0 && (
+            <p style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>Sin resultados para "{busquedaCuenta}".</p>
+          )}
+
+          {pupiloActivo && (
+            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--borde-suave)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                Revisando cuenta de: <strong style={{ color: 'var(--texto-principal)' }}>{pupiloActivo.nombre}</strong>
+              </span>
+              <button type="button" className="btn-secondary" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={() => setPupiloActivo(null)}>
+                Cambiar búsqueda
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(!esVistaAdmin || pupiloActivo) ? (
+        <>
       <div className="status-account-card payment-overview-card mt-15" style={{ borderRadius: '28px', boxShadow: '0 16px 34px rgba(15,23,42,0.10)' }}>
         <div className="status-header">
           <div>
@@ -597,6 +709,16 @@ function PerfilTesoreriaPanel({
           </div>
         )}
       </div>
+        </>
+      ) : (
+        <div className="card mt-15 text-center" style={{ padding: '40px 20px', borderRadius: '22px' }}>
+          <Search size={36} color="var(--gris-secundario)" strokeWidth={1.5} style={{ margin: '0 auto' }} />
+          <h3 style={{ margin: '15px 0 8px 0', fontSize: '16px', fontWeight: '900', color: 'var(--texto-heading)' }}>Busca una cuenta para revisar</h3>
+          <p style={{ fontSize: '13px', margin: 0, color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
+            Usa el buscador de arriba para encontrar por nombre, RUT o correo de un jugador, socio o apoderado.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
