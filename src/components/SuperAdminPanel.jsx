@@ -2055,9 +2055,19 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Nombres</label><input className="form-input" value={cuentaAdminEdit.nombres || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
                 <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={cuentaAdminEdit.apellido_paterno || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
                 <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={cuentaAdminEdit.apellido_materno || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                <div className="form-group"><label>Prefijo teléfono</label><input className="form-input" value={cuentaAdminEdit.prefijo_tel || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, prefijo_tel: e.target.value }))} placeholder="+56" /></div>
                 <div className="form-group"><label>Teléfono</label><input className="form-input" value={cuentaAdminEdit.telefono || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, telefono: e.target.value }))} /></div>
                 <div className="form-group"><label>Dirección</label><input className="form-input" value={cuentaAdminEdit.direccion || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, direccion: e.target.value }))} /></div>
                 <div className="form-group"><label>Comuna</label><input className="form-input" value={cuentaAdminEdit.comuna || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, comuna: e.target.value }))} /></div>
+                <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(cuentaAdminEdit.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, fecha_nacimiento: e.target.value }))} /></div>
+                <div className="form-group"><label>Estado civil</label><input className="form-input" value={cuentaAdminEdit.estado_civil || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado_civil: e.target.value }))} /></div>
+                <div className="form-group"><label>Profesión / oficio</label><input className="form-input" value={cuentaAdminEdit.profesion_oficio || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, profesion_oficio: e.target.value }))} /></div>
+                <div className="form-group"><label>Nombre segundo contacto</label><input className="form-input" value={cuentaAdminEdit.nombre_segundo_contacto || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, nombre_segundo_contacto: e.target.value }))} /></div>
+                <div className="form-group"><label>Parentesco segundo contacto</label><input className="form-input" value={cuentaAdminEdit.parentesco_segundo_contacto || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, parentesco_segundo_contacto: e.target.value }))} /></div>
+                <div className="form-group"><label>Teléfono segundo contacto</label><input className="form-input" value={cuentaAdminEdit.num_segundo_contacto || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, num_segundo_contacto: e.target.value }))} /></div>
+                <div className="form-group"><label>Fecha ingreso socio</label><input type="date" className="form-input" value={String(cuentaAdminEdit.fecha_ingreso_socio || '').slice(0, 10)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, fecha_ingreso_socio: e.target.value }))} /></div>
+                <div className="form-group"><label>Día de pago acordado</label><input type="number" min="1" max="31" className="form-input" value={cuentaAdminEdit.dia_pago_acordado || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, dia_pago_acordado: e.target.value }))} /></div>
+                <div className="form-group"><label>Foto de perfil (URL)</label><input className="form-input" value={cuentaAdminEdit.foto_perfil_url || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, foto_perfil_url: e.target.value }))} /></div>
                 <div className="form-group"><label>Rol de acceso</label><select className="form-input" value={cuentaAdminEdit.rol || 'apoderado'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rol: e.target.value }))}><option value="apoderado">Apoderado</option><option value="staff">Staff</option><option value="jugador">Deportista / Jugador</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
                 <div className="form-group"><label>Perfil principal</label><select className="form-input" value={cuentaAdminEdit.perfil_principal || 'apoderado'} onChange={(e) => actualizarCuentaAdminEdit({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
@@ -2085,6 +2095,14 @@ function SuperAdminPanel({
                 <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(cuentaAdminEdit.requiere_foto_perfil)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
                   Solicitar foto de perfil en onboarding
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.forzar_clave)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, forzar_clave: e.target.checked }))} />
+                  Forzar cambio de clave
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.autorizacion_imagen)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, autorizacion_imagen: e.target.checked }))} />
+                  Autoriza derechos de imagen
                 </label>
               </div>
 
@@ -2204,19 +2222,66 @@ function SuperAdminPanel({
           {editandoTipo === 'jugador' && jugadorAdminEdit && (
             <div ref={edicionJugadorRef} className="card">
               <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
+
+              <h5 className="sub-caja-title">Identidad y vínculo</h5>
               <div className="grid-auto-220">
                 <div className="form-group"><label>RUT Jugador</label><input className="form-input" value={jugadorAdminEdit.rut_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
+                <div className="form-group"><label>RUT Apoderado</label><input className="form-input" value={jugadorAdminEdit.rut_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_apoderado: e.target.value }))} /></div>
                 <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={jugadorAdminEdit.correo_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
+                <div className="form-group"><label>Parentesco apoderado</label><input className="form-input" value={jugadorAdminEdit.parentesco_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, parentesco_apoderado: e.target.value }))} /></div>
+                <div className="form-group"><label>Correo Jugador</label><input className="form-input" value={jugadorAdminEdit.correo_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_jugador: e.target.value }))} /></div>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.forzar_clave_jugador)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, forzar_clave_jugador: e.target.checked }))} /> Forzar cambio de clave</label>
                 <div className="form-group"><label>Nombres</label><input className="form-input" value={jugadorAdminEdit.nombres || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
                 <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={jugadorAdminEdit.apellido_paterno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
                 <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={jugadorAdminEdit.apellido_materno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_nacimiento: e.target.value }))} /></div>
+                <div className="form-group"><label>Año de nacimiento</label><input type="number" className="form-input" value={jugadorAdminEdit.año_nacimiento || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, año_nacimiento: e.target.value }))} /></div>
+                <div className="form-group"><label>Colegio</label><input className="form-input" value={jugadorAdminEdit.colegio || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, colegio: e.target.value }))} /></div>
+              </div>
+
+              <h5 className="sub-caja-title mt-15">Deportivo</h5>
+              <div className="grid-auto-220">
                 <div className="form-group"><label>Rama</label><select className="form-input" value={jugadorAdminEdit.rama || 'MASCULINA'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
                 <div className="form-group"><label>Categoría</label><input className="form-input" value={jugadorAdminEdit.categoria || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, categoria: e.target.value }))} /></div>
+                <div className="form-group"><label>Posición de juego</label><input className="form-input" value={jugadorAdminEdit.posicion_de_juego || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, posicion_de_juego: e.target.value }))} /></div>
+                <div className="form-group"><label>Número camiseta</label><input type="number" className="form-input" value={jugadorAdminEdit.numero_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, numero_camiseta: e.target.value }))} /></div>
+                <div className="form-group"><label>Estatura</label><input className="form-input" value={jugadorAdminEdit.estatura || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estatura: e.target.value }))} /></div>
+                <div className="form-group"><label>Peso</label><input className="form-input" value={jugadorAdminEdit.peso || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, peso: e.target.value }))} /></div>
+                <div className="form-group"><label>Mano hábil</label><input className="form-input" value={jugadorAdminEdit.mano_habil || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mano_habil: e.target.value }))} /></div>
+                <div className="form-group"><label>Club anterior</label><input className="form-input" value={jugadorAdminEdit.club_anterior || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, club_anterior: e.target.value }))} /></div>
+                <div className="form-group"><label>Talla camiseta</label><input className="form-input" value={jugadorAdminEdit.talla_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, talla_camiseta: e.target.value }))} /></div>
+                <div className="form-group"><label>Talla short</label><input className="form-input" value={jugadorAdminEdit.talla_short || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, talla_short: e.target.value }))} /></div>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.polera_entregada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, polera_entregada: e.target.checked }))} /> Polera entregada</label>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.poleron_entregado)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, poleron_entregado: e.target.checked }))} /> Polerón entregado</label>
+                <div className="form-group"><label>Estado deportivo</label><input className="form-input" value={jugadorAdminEdit.estado_deportivo || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado_deportivo: e.target.value }))} placeholder="Activo" /></div>
+                <div className="form-group"><label>Fecha inicio baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_inicio_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_inicio_baja: e.target.value }))} /></div>
+                <div className="form-group"><label>Fecha fin baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_fin_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_fin_baja: e.target.value }))} /></div>
+                <div className="form-group"><label>XP puntos</label><input type="number" className="form-input" value={jugadorAdminEdit.xp_puntos || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, xp_puntos: e.target.value }))} /></div>
                 <div className="form-group"><label>Foto jugador (URL)</label><input className="form-input" value={jugadorAdminEdit.foto_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, foto_jugador: e.target.value }))} /></div>
                 <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'edit')} /></div>
                 <div className="form-group"><label>Estado</label><select className="form-input" value={jugadorAdminEdit.estado || 'ACTIVO'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option><option value="BAJA">Baja</option></select></div>
               </div>
               {subiendoFotoJugadorEdit && <p className="text-caption">Subiendo foto...</p>}
+
+              <h5 className="sub-caja-title mt-15">Administrativo</h5>
+              <div className="grid-auto-220">
+                <div className="form-group"><label>Fecha de ingreso</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
+                <div className="form-group"><label>Mes inicio cobro</label><input className="form-input" value={jugadorAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
+                <div className="form-group"><label>Beca</label><input className="form-input" value={jugadorAdminEdit.beca || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, beca: e.target.value }))} placeholder="Sin beca" /></div>
+                <div className="form-group"><label>Valor mensualidad</label><input type="number" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} /></div>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.derechos_imagen)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
+              </div>
+
+              <h5 className="sub-caja-title mt-15">Salud y contacto de emergencia</h5>
+              <div className="grid-auto-220">
+                <div className="form-group"><label>Previsión</label><input className="form-input" value={jugadorAdminEdit.prevision || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, prevision: e.target.value }))} /></div>
+                <div className="form-group"><label>Tipo de sangre</label><input className="form-input" value={jugadorAdminEdit.tipo_sangre || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, tipo_sangre: e.target.value }))} /></div>
+                <div className="form-group"><label>Alergias</label><input className="form-input" value={jugadorAdminEdit.alergias || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, alergias: e.target.value }))} /></div>
+                <div className="form-group"><label>Nombre contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.nombre_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombre_emergencia: e.target.value }))} /></div>
+                <div className="form-group"><label>Parentesco contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.parentesco_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, parentesco_emergencia: e.target.value }))} /></div>
+                <div className="form-group"><label>Teléfono contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.num_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, num_emergencia: e.target.value }))} /></div>
+              </div>
 
               {renderPermisosCuenta({
                 cuenta: cuentaAsociadaJugadorEdit,
