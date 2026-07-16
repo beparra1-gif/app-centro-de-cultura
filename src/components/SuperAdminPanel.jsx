@@ -1587,7 +1587,7 @@ function SuperAdminPanel({
   return (
     <div className="admin-container fade-in">
       <div className="scroll-horizontal-menu mb-15">
-        <div className="segment-control" style={{ minWidth: '100%', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+        <div className="segment-control" style={{ gap: '6px' }}>
           <button type="button" className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}><Activity size={14} /> Resumen</button>
           <button type="button" className={`segment-btn ${vistaAdmin === 'usuarios' ? 'active' : ''}`} onClick={() => setVistaAdmin('usuarios')}><Users size={14} /> Usuarios y Cuentas</button>
           <button type="button" className={`segment-btn ${vistaAdmin === 'publicar' ? 'active' : ''}`} onClick={() => setVistaAdmin('publicar')}><Megaphone size={14} /> Publicar</button>
