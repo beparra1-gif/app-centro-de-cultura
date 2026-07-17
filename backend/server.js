@@ -3899,25 +3899,45 @@ cron.schedule('*/5 * * * *', async () => {
 // Sin gate de módulo: casi todos los roles reales (jugador/apoderado vía
 // bootstrap para resolver su propio pupilo, staff, mesa para el roster en
 // vivo, admin) necesitan esta lista hoy. Solo se exige sesión válida.
+// Antes devolvía el roster completo a cualquier cuenta autenticada (un
+// apoderado o socio podía traerse los datos de TODOS los deportistas del
+// club, no solo los suyos, llamando la API directo). Staff/admin/super_admin
+// y cualquier otro rol no listado en ROLES_JUGADORES_ACOTADOS siguen viendo
+// todo, igual que hoy.
 app.get('/api/jugadores', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM jugadores ORDER BY apellido_paterno ASC`
     );
-    res.json(result.rows);
+    if (!ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+      return res.json(result.rows);
+    }
+    const pupilos = await obtenerPupilosDeActor(req.actor);
+    const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
+    res.json(result.rows.filter((j) => rutsPupilos.has(normalizarRutParaComparar(j.rut_jugador))));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET: Jugador por RUT
+// GET: Jugador por RUT — mismo criterio de acotamiento que la lista de arriba.
 app.get('/api/jugadores/:rut', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM jugadores WHERE rut_jugador = $1',
       [req.params.rut]
     );
-    res.json(result.rows[0] || {});
+    const jugador = result.rows[0];
+    if (!jugador) return res.json({});
+
+    if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+      const pupilos = await obtenerPupilosDeActor(req.actor);
+      const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
+      if (!rutsPupilos.has(normalizarRutParaComparar(jugador.rut_jugador))) {
+        return res.status(403).json({ error: 'No tienes acceso a este deportista.' });
+      }
+    }
+    res.json(jugador);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4591,16 +4611,32 @@ const barrerCitacionesVencidas = async () => {
 // Trae los RUT de los pupilos del actor (apoderado) o el propio RUT si el
 // actor es un jugador con cuenta propia, junto a su rama/categoría — base
 // para filtrar qué citaciones puede ver un usuario no administrativo.
+// Además de rut_apoderado/rut_jugador, hace fallback por correo_apoderado:
+// mismo criterio que ya usa el frontend (pupilosDisponibles en App.jsx) y
+// resolverDestinatariosCitacion, porque no todo jugador tiene rut_apoderado
+// completo (el backfill de esa columna no cubre el 100% de los casos) —
+// sin este fallback, un apoderado que solo calza por correo vería CERO
+// pupilos en vez de los suyos al filtrar por rol.
 const obtenerPupilosDeActor = async (actor) => {
   const rutActor = normalizarRutParaComparar(actor.rut);
+  const cuentaActor = await pool.query('SELECT correo FROM cuentas WHERE rut = $1', [actor.rut]);
+  const correoActor = String(cuentaActor.rows[0]?.correo || '').trim().toLowerCase();
+
   const result = await pool.query(
     `SELECT rut_jugador, rama, categoria FROM jugadores
      WHERE REPLACE(REPLACE(UPPER(rut_apoderado), '.', ''), '-', '') = $1
-        OR REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = $1`,
-    [rutActor]
+        OR REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = $1
+        OR ($2 <> '' AND LOWER(TRIM(correo_apoderado)) = $2)`,
+    [rutActor, correoActor]
   );
   return result.rows;
 };
+
+// Roles cuyo acceso a /api/jugadores debe quedar acotado a sus propios
+// pupilos (mismo criterio que esJugadorAutenticado/esPerfilFamiliar en
+// App.jsx). Cualquier otro rol (staff, admin, super_admin, mesa, visita,
+// etc.) mantiene el comportamiento actual sin cambios.
+const ROLES_JUGADORES_ACOTADOS = ['jugador', 'apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'];
 
 const citacionEsVisibleParaPupilos = (citacion, pupilos) => {
   const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
