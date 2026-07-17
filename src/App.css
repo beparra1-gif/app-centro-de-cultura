@@ -2416,6 +2416,7 @@ button,
 }
 
 .mesa-oncourt-btn {
+  position: relative;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -2429,6 +2430,38 @@ button,
   cursor: pointer;
   transition: transform 0.16s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   text-align: left;
+}
+
+/* Contador de faltas por dorsal (inspirado en InGame by NBN23): badge chico
+   en la esquina de cada tarjeta de jugador/a, en cancha y en banca, para ver
+   sus faltas sin tener que abrir nada mas. */
+.mesa-jugador-faltas-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(10, 14, 22, 0.75);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  line-height: 1;
+  z-index: 1;
+}
+
+.mesa-jugador-faltas-badge.alta {
+  background: #FF9500;
+}
+
+.mesa-jugador-faltas-badge.critica {
+  background: #FF3B30;
 }
 
 .mesa-oncourt-main-btn {
@@ -2589,6 +2622,7 @@ button,
 }
 
 .mesa-banco-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3144,11 +3178,11 @@ button,
     gap: 6px !important;
   }
 
-  .mesa-live-wrap > div[style*='margin-bottom: 20px'] {
+  .mesa-live-wrap > div[style*='margin-bottom: 10px'] {
     margin-bottom: 6px !important;
   }
 
-  .mesa-live-wrap > div[style*='margin-bottom: 20px'] button {
+  .mesa-live-wrap > div[style*='margin-bottom: 10px'] button {
     padding: 8px !important;
   }
 

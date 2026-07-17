@@ -39,6 +39,15 @@ function LiveWrapPortal({ activo, innerRef, children }) {
 const numero = (valor) => Number(valor || 0);
 const limitar = (valor, min, max) => Math.max(min, Math.min(max, valor));
 
+// Badge de faltas por jugador/a (inspirado en InGame by NBN23): se muestra
+// en cada dorsal, tanto en cancha como en banca, para verlo sin tener que
+// abrir nada mas.
+const BadgeFaltas = ({ jugador }) => {
+  const faltas = numero(jugador?.flt);
+  const severidad = faltas >= 5 ? 'critica' : faltas >= 4 ? 'alta' : '';
+  return <span className={`mesa-jugador-faltas-badge ${severidad}`}>{faltas}</span>;
+};
+
 const relojASegundos = (reloj = '10:00') => {
   const match = String(reloj || '10:00').match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return 600;
@@ -3020,63 +3029,71 @@ function MesaControlPanel({
         </div>
       )}
 
-      <div className="checkout-total-box mb-15" style={{ background: 'linear-gradient(180deg, #1C1C1E 0%, #101114 100%)', border: '2px solid rgba(0,122,255,0.2)', display: 'flex', flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', padding: '20px 10px', borderRadius: '24px', boxShadow: '0 16px 34px rgba(15,23,42,0.12)', opacity: partidoIniciado ? 1 : 0.65 }}>
-        <div className="text-center" style={{ flex: 1, border: `1px solid ${colorConAlpha(colorLocal, '88')}`, borderRadius: '14px', padding: '10px', background: colorConAlpha(colorLocal, '14') }}>
-          <span style={{ fontSize: '12px', color: colorLocal, fontWeight: '800' }}>LOCAL {liveScore.flecha === 'LOCAL' && '◀'}</span>
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '8px', marginBottom: '4px' }}>
-            {!!normalizarTexto(liveScore.equipoLocalLogoUrl) && <img src={liveScore.equipoLocalLogoUrl} alt={liveScore.equipoLocalNombre || 'Local'} style={{ width: '62px', height: '62px', objectFit: 'contain' }} />}
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ color: '#d1d5db', fontSize: '12px', fontWeight: 800 }}>{liveScore.equipoLocalNombre || 'Centro de Cultura Física'}</div>
-              <h1 style={{ fontSize: '52px', margin: 0, color: 'white', fontFamily: 'Orbitron' }}>{liveScore.ptsLocal}</h1>
+      {/* Barra de marcador compacta en una sola fila (inspirada en InGame by
+          NBN23): nombre+logo+puntaje+faltas+tiempos de cada equipo a los
+          costados, periodo/reloj al centro. Antes cada lado apilaba 4 filas
+          (nombre, logo+puntaje, faltas, tiempos) y ocupaba mucho alto util. */}
+      <div className="checkout-total-box mb-15" style={{ background: 'linear-gradient(180deg, #1C1C1E 0%, #101114 100%)', border: '2px solid rgba(0,122,255,0.2)', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '16px', boxShadow: '0 16px 34px rgba(15,23,42,0.12)', opacity: partidoIniciado ? 1 : 0.65 }}>
+        <div style={{ flex: 1, minWidth: 0, border: `1px solid ${colorConAlpha(colorLocal, '88')}`, borderRadius: '10px', padding: '5px 8px', background: colorConAlpha(colorLocal, '14') }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {!!normalizarTexto(liveScore.equipoLocalLogoUrl) && <img src={liveScore.equipoLocalLogoUrl} alt={liveScore.equipoLocalNombre || 'Local'} style={{ width: '36px', height: '36px', objectFit: 'contain', flexShrink: 0 }} />}
+            <div style={{ textAlign: 'left', flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '10px', color: colorLocal, fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>LOCAL {liveScore.flecha === 'LOCAL' && '◀'}</div>
+              <div style={{ color: '#d1d5db', fontSize: '10px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{liveScore.equipoLocalNombre || 'Centro de Cultura Física'}</div>
             </div>
+            <h1 style={{ fontSize: '28px', margin: 0, color: 'white', fontFamily: 'Orbitron', flexShrink: 0 }}>{liveScore.ptsLocal}</h1>
           </div>
-          <span style={{ fontSize: '11px', color: 'var(--rojo-alerta)', fontWeight: '800', display: 'block' }}>FALTAS: {liveScore.faltasLocal}</span>
-          <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', marginTop: '8px' }}>
-            {[...Array(3)].map((_, i) => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i < liveScore.timeoutsLocal ? '#FFD700' : '#333' }}></div>)}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+            <span style={{ fontSize: '10px', color: 'var(--rojo-alerta)', fontWeight: '800' }}>F: {liveScore.faltasLocal}</span>
+            <div style={{ display: 'flex', gap: '3px' }}>
+              {[...Array(3)].map((_, i) => <div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', background: i < liveScore.timeoutsLocal ? '#FFD700' : '#333' }}></div>)}
+            </div>
           </div>
         </div>
 
-        <div className="text-center" style={{ flex: 1, border: `1px solid ${colorConAlpha(colorVisita, '88')}`, borderRadius: '14px', padding: '10px', background: colorConAlpha(colorVisita, '14') }}>
-          <span className="mesa-competicion-chip">{filtroCompeticionActiva || 'Competición abierta'}</span>
-          {!!normalizarTexto(competenciaLogoUrl) && (
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
+        <div style={{ flexShrink: 0, textAlign: 'center', padding: '0 4px' }}>
+          <span className="mesa-competicion-chip" style={{ fontSize: '9px', padding: '3px 8px' }}>{filtroCompeticionActiva || 'Competición abierta'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '4px' }}>
+            {!!normalizarTexto(competenciaLogoUrl) && (
               <LogoAvatar
                 nombre={filtroCompeticionActiva || 'Competencia'}
                 logoUrl={competenciaLogoUrl}
-                size={28}
+                size={18}
                 borderRadius="999px"
               />
-            </div>
-          )}
-          <span style={{ fontSize: '16px', color: 'var(--verde-victoria)', fontWeight: '900', background: 'rgba(52,199,89,0.1)', padding: '8px 20px', borderRadius: '12px', border: '1px solid var(--verde-victoria)' }}>{liveScore.reloj}</span>
-          <h4 style={{ margin: '10px 0 0 0', color: 'white', fontSize: '18px' }}>{etiquetaPeriodo(liveScore.periodo)}</h4>
+            )}
+            <span style={{ fontSize: '13px', color: 'var(--verde-victoria)', fontWeight: '900', background: 'rgba(52,199,89,0.1)', padding: '4px 10px', borderRadius: '10px', border: '1px solid var(--verde-victoria)' }}>{liveScore.reloj}</span>
+          </div>
+          <h4 style={{ margin: '4px 0 0 0', color: 'white', fontSize: '13px' }}>{etiquetaPeriodo(liveScore.periodo)}</h4>
           {normalizarTexto(canchaSede) && (
-            <span style={{ display: 'block', marginTop: '8px', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800' }}>
+            <span style={{ display: 'block', marginTop: '2px', fontSize: '9px', color: 'var(--texto-secundario)', fontWeight: '800' }}>
               {canchaSede}
             </span>
           )}
         </div>
 
-        <div className="text-center" style={{ flex: 1 }}>
-          <span style={{ fontSize: '12px', color: colorVisita, fontWeight: '800' }}>{liveScore.flecha === 'VISITA' && '▶'} VISITA</span>
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '8px', marginBottom: '4px' }}>
-            {!!normalizarTexto(liveScore.equipoVisitaLogoUrl) && <img src={liveScore.equipoVisitaLogoUrl} alt={liveScore.equipoVisitaNombre || 'Visita'} style={{ width: '62px', height: '62px', objectFit: 'contain' }} />}
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ color: '#d1d5db', fontSize: '12px', fontWeight: 800 }}>{liveScore.equipoVisitaNombre || 'Visitante'}</div>
-              <h1 style={{ fontSize: '52px', margin: 0, color: 'white', fontFamily: 'Orbitron' }}>{modoAnalisis === 'dos' ? liveScore.ptsVisita : '-'}</h1>
+        <div style={{ flex: 1, minWidth: 0, border: `1px solid ${colorConAlpha(colorVisita, '88')}`, borderRadius: '10px', padding: '5px 8px', background: colorConAlpha(colorVisita, '14') }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <h1 style={{ fontSize: '28px', margin: 0, color: 'white', fontFamily: 'Orbitron', flexShrink: 0 }}>{modoAnalisis === 'dos' ? liveScore.ptsVisita : '-'}</h1>
+            <div style={{ textAlign: 'right', flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '10px', color: colorVisita, fontWeight: '800', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{liveScore.flecha === 'VISITA' && '▶'} VISITA</div>
+              <div style={{ color: '#d1d5db', fontSize: '10px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{liveScore.equipoVisitaNombre || 'Visitante'}</div>
             </div>
+            {!!normalizarTexto(liveScore.equipoVisitaLogoUrl) && <img src={liveScore.equipoVisitaLogoUrl} alt={liveScore.equipoVisitaNombre || 'Visita'} style={{ width: '36px', height: '36px', objectFit: 'contain', flexShrink: 0 }} />}
           </div>
-          <span style={{ fontSize: '11px', color: 'var(--rojo-alerta)', fontWeight: '800', display: 'block' }}>FALTAS: {liveScore.faltasVisita}</span>
-          <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', marginTop: '8px' }}>
-            {[...Array(3)].map((_, i) => <div key={i} style={{ width: '10px', height: '10px', borderRadius: '50%', background: i < liveScore.timeoutsVisita ? '#FFD700' : '#333' }}></div>)}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+            <div style={{ display: 'flex', gap: '3px' }}>
+              {[...Array(3)].map((_, i) => <div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', background: i < liveScore.timeoutsVisita ? '#FFD700' : '#333' }}></div>)}
+            </div>
+            <span style={{ fontSize: '10px', color: 'var(--rojo-alerta)', fontWeight: '800' }}>F: {liveScore.faltasVisita}</span>
           </div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsLocal: Math.max(0, liveScore.timeoutsLocal - 1) })}>TM Local</button>
-        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', background: 'var(--azul-marino)', color: 'white' }} onClick={() => setLiveScore({ ...liveScore, flecha: liveScore.flecha === 'LOCAL' ? 'VISITA' : 'LOCAL' })}><ArrowRightLeft size={16} color="var(--gris-secundario)" strokeWidth={1.5} /></button>
-        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '12px', fontSize: '12px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsVisita: Math.max(0, liveScore.timeoutsVisita - 1) })}>TM Visita</button>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '8px', fontSize: '11px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsLocal: Math.max(0, liveScore.timeoutsLocal - 1) })}>TM Local</button>
+        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '8px', fontSize: '11px', background: 'var(--azul-marino)', color: 'white' }} onClick={() => setLiveScore({ ...liveScore, flecha: liveScore.flecha === 'LOCAL' ? 'VISITA' : 'LOCAL' })}><ArrowRightLeft size={16} color="var(--gris-secundario)" strokeWidth={1.5} /></button>
+        <button disabled={!partidoIniciado} className="btn-secondary" style={{ padding: '8px', fontSize: '11px', fontWeight: '800' }} onClick={() => setLiveScore({ ...liveScore, timeoutsVisita: Math.max(0, liveScore.timeoutsVisita - 1) })}>TM Visita</button>
       </div>
 
       {cambioObligatorioJugadorId && (
@@ -3139,6 +3156,7 @@ function MesaControlPanel({
                       style={{ borderColor: colorLocal, background: colorLocal, color: colorTextoContraste(colorLocal) }}
                     >
                       <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
+                      <BadgeFaltas jugador={j} />
                     </button>
                   );
                 })}
@@ -3168,6 +3186,7 @@ function MesaControlPanel({
                     }}
                   >
                     <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
+                    <BadgeFaltas jugador={j} />
                   </button>
                 ))}
                 {Array.from({ length: Math.max(0, 5 - quintetoLocalEnCancha.length) }).map((_, idx) => (
@@ -3222,6 +3241,7 @@ function MesaControlPanel({
                       }}
                     >
                       <span className="mesa-oncourt-dorsal mesa-oncourt-dorsal-flat" style={{ color: colorTextoContraste(colorVisita) }}>#{j.dorsal}</span>
+                      <BadgeFaltas jugador={j} />
                     </button>
                   ))}
                   {Array.from({ length: Math.max(0, 5 - quintetoVisitaEnCancha.length) }).map((_, idx) => (
@@ -3248,6 +3268,7 @@ function MesaControlPanel({
                         style={{ borderColor: colorVisita, background: colorVisita, color: colorTextoContraste(colorVisita) }}
                       >
                         <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorVisita) }}>#{j.dorsal}</span>
+                        <BadgeFaltas jugador={j} />
                       </button>
                     );
                   })}
