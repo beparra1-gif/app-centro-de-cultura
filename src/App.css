@@ -2172,67 +2172,13 @@ button,
   border: 1px solid rgba(0, 122, 255, 0.38);
 }
 
-.mesa-visitor-actions {
-  margin-top: 14px;
-  border-top: 1px dashed var(--borde-suave);
-  padding-top: 12px;
-}
-
-.mesa-visitor-actions h6 {
-  margin: 0 0 8px;
-  font-size: 12px;
-  color: var(--texto-secundario);
-  font-weight: 900;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.mesa-visitor-actions-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-
-/* Cambio de jugador (en cancha <-> banco): es una accion ocasional frente a
-   anotar/faltas, que se usan constantemente durante el partido. Se baja de
-   enfasis para que no compita visualmente con los controles de juego. */
-.mesa-cambio-sutil {
+/* Cambio de jugador (en cancha <-> banco): un unico boton debajo de Control
+   de Acciones, reutiliza la jugadora/or ya seleccionada como quien sale y
+   abre una ventana con la banca del equipo activo para tocar quien entra. */
+.mesa-btn-cambio-unico {
   margin-top: 10px;
-  padding-top: 8px;
-}
-
-.mesa-cambio-sutil h6 {
-  font-size: 10px;
-  opacity: 0.8;
-}
-
-.mesa-cambio-sutil select {
-  font-size: 12px;
-  padding: 8px 10px;
-}
-
-.btn-cambio-sutil {
-  margin-top: 6px;
-  width: auto;
-  padding: 7px 14px;
-  font-size: 12px;
-  font-weight: 700;
-  border-radius: 999px;
-  background: transparent;
-  border: 1px solid var(--borde-suave);
-  color: var(--texto-secundario);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-cambio-sutil:hover:not(:disabled) {
-  border-color: rgba(0, 122, 255, 0.35);
-  color: var(--azul-electrico);
-}
-
-.btn-cambio-sutil:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+  font-size: 13px;
+  padding: 10px;
 }
 
 .mesa-team-config-grid {
@@ -2848,10 +2794,6 @@ button,
 
 .mesa-live-zone-center .fiba-botones-grid {
   margin-top: 10px;
-}
-
-.mesa-live-zone-center .mesa-visitor-actions {
-  margin-top: 14px;
 }
 
 .mesa-historial-actions {

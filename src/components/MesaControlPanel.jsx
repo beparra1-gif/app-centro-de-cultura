@@ -577,8 +577,6 @@ function MesaControlPanel({
   const [selectorColorAbierto, setSelectorColorAbierto] = useState({ local: false, visita: false });
   const [staffLocal, setStaffLocal] = useState({ entrenador: '', asistente: '', delegado: '' });
   const [staffVisita, setStaffVisita] = useState({ entrenador: '', asistente: '', delegado: '' });
-  const [cambioSalidaId, setCambioSalidaId] = useState('');
-  const [cambioIngresoId, setCambioIngresoId] = useState('');
   const [nominaLocalIds, setNominaLocalIds] = useState([]);
   const [nominaVisitaIds, setNominaVisitaIds] = useState([]);
   const [quintetoLocalValidado, setQuintetoLocalValidado] = useState(false);
@@ -595,8 +593,7 @@ function MesaControlPanel({
   const [cambioObligatorioIngresoId, setCambioObligatorioIngresoId] = useState('');
   const [mostrarModalCambioObligatorio, setMostrarModalCambioObligatorio] = useState(false);
   const [mostrarSelectorTipoFalta, setMostrarSelectorTipoFalta] = useState(false);
-  const [cambioSalidaVisitaId, setCambioSalidaVisitaId] = useState('');
-  const [cambioIngresoVisitaId, setCambioIngresoVisitaId] = useState('');
+  const [mostrarSelectorCambio, setMostrarSelectorCambio] = useState(false);
   const [jugadorVisitaSeleccionadoId, setJugadorVisitaSeleccionadoId] = useState('');
   const [equipoAccionActivo, setEquipoAccionActivo] = useState('local');
   const [mostrarOpcionesTL, setMostrarOpcionesTL] = useState(false);
@@ -1504,17 +1501,15 @@ function MesaControlPanel({
     setEventosPartido((prev) => [evento, ...prev].slice(0, 400));
   };
 
-  const ejecutarCambioJugador = (equipo, salidaIdManual, ingresoIdManual) => {
+  const ejecutarCambioJugador = (equipo, salidaId, ingresoId) => {
     if (!partidoIniciado) return;
     const esVisita = equipo === 'visita';
     const rosterCompleto = esVisita ? rosterVisitaCompleto : rosterLocalCompleto;
     const quintetoIds = esVisita ? quintetoVisitaIds : quintetoLocalIds;
     const setQuintetoIds = esVisita ? setQuintetoVisitaIds : setQuintetoLocalIds;
-    const salidaState = esVisita ? cambioSalidaVisitaId : cambioSalidaId;
-    const ingresoState = esVisita ? cambioIngresoVisitaId : cambioIngresoId;
 
-    const salidaIdObjetivo = String(salidaIdManual ?? salidaState ?? '');
-    const ingresoIdObjetivo = String(ingresoIdManual ?? ingresoState ?? '');
+    const salidaIdObjetivo = String(salidaId ?? '');
+    const ingresoIdObjetivo = String(ingresoId ?? '');
     const salida = rosterCompleto.find((j) => String(j.id) === salidaIdObjetivo);
     const ingreso = rosterCompleto.find((j) => String(j.id) === ingresoIdObjetivo);
     if (!salida || !ingreso) return;
@@ -1533,13 +1528,6 @@ function MesaControlPanel({
     if (cambioObligatorioJugadorId && cambioObligatorioEquipo === equipo && String(cambioObligatorioJugadorId) === String(salida.id)) {
       setCambioObligatorioJugadorId(null);
       setCambioObligatorioIngresoId('');
-    }
-    if (esVisita) {
-      setCambioSalidaVisitaId('');
-      setCambioIngresoVisitaId('');
-    } else {
-      setCambioSalidaId('');
-      setCambioIngresoId('');
     }
   };
 
@@ -3150,9 +3138,8 @@ function MesaControlPanel({
                       key={`banca-${j.id}`}
                       type="button"
                       disabled={bloqueada}
-                      className={`mesa-banco-btn ${cambioIngresoId === j.id ? 'selected' : ''} ${bloqueada ? 'bloqueado' : ''}`}
-                      onClick={() => { if (!bloqueada) setCambioIngresoId(j.id); }}
-                      title={bloqueada ? 'No disponible (expulsada/o o bloqueada/o)' : 'Seleccionar para ingreso'}
+                      className={`mesa-banco-btn ${bloqueada ? 'bloqueado' : ''}`}
+                      title={bloqueada ? 'No disponible (expulsada/o o bloqueada/o)' : `#${j.dorsal} ${j.nombre}`}
                       style={{ borderColor: colorLocal, background: colorLocal, color: colorTextoContraste(colorLocal) }}
                     >
                       <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorLocal) }}>#{j.dorsal}</span>
@@ -3176,7 +3163,6 @@ function MesaControlPanel({
                       if (j._bloqueado || j.expulsado || numero(j.flt) >= 5) return;
                       setJugadorSeleccionadoLive(j.id);
                       setEquipoAccionActivo('local');
-                      setCambioSalidaId(j.id);
                     }}
                     className={`mesa-oncourt-btn mesa-oncourt-main-btn ${jugadorSeleccionadoLive === j.id ? 'selected' : ''} ${j._bloqueado || j.expulsado || numero(j.flt) >= 5 ? 'bloqueado' : ''}`}
                     style={{
@@ -3197,22 +3183,6 @@ function MesaControlPanel({
               </div>
             </div>
           </div>
-          <div className="mesa-visitor-actions mesa-cambio-sutil mt-10">
-            <h6>Cambio Local (en cancha ↔ banco)</h6>
-            <select className="form-input" value={cambioSalidaId} onChange={(e) => setCambioSalidaId(e.target.value)}>
-              <option value="">Selecciona quién sale...</option>
-              {quintetoLocalEnCancha.map((j) => (
-                <option key={`sale-local-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
-              ))}
-            </select>
-            <select className="form-input" value={cambioIngresoId} onChange={(e) => setCambioIngresoId(e.target.value)}>
-              <option value="">Selecciona quién entra...</option>
-              {bancoLocal.filter((j) => !j._bloqueado && !j.expulsado && numero(j.flt) < 5).map((j) => (
-                <option key={`entra-local-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
-              ))}
-            </select>
-            <button className="btn-cambio-sutil" disabled={!partidoIniciado || !cambioSalidaId || !cambioIngresoId} onClick={() => ejecutarCambioJugador('local', cambioSalidaId, cambioIngresoId)}>Cambiar</button>
-          </div>
         </div>
 
         {modoAnalisis === 'dos' && (
@@ -3232,7 +3202,6 @@ function MesaControlPanel({
                         if (j._bloqueado || j.expulsado || numero(j.flt) >= 5) return;
                         setJugadorVisitaSeleccionadoId(j.id);
                         setEquipoAccionActivo('visita');
-                        setCambioSalidaVisitaId(j.id);
                       }}
                       style={{
                         borderColor: colorVisita,
@@ -3262,9 +3231,8 @@ function MesaControlPanel({
                         key={`banca-visita-${j.id}`}
                         type="button"
                         disabled={bloqueada}
-                        className={`mesa-banco-btn ${cambioIngresoVisitaId === j.id ? 'selected' : ''} ${bloqueada ? 'bloqueado' : ''}`}
-                        onClick={() => { if (!bloqueada) setCambioIngresoVisitaId(j.id); }}
-                        title={bloqueada ? 'No disponible (expulsada/o o bloqueada/o)' : 'Seleccionar para ingreso'}
+                        className={`mesa-banco-btn ${bloqueada ? 'bloqueado' : ''}`}
+                        title={bloqueada ? 'No disponible (expulsada/o o bloqueada/o)' : `#${j.dorsal} ${j.nombre}`}
                         style={{ borderColor: colorVisita, background: colorVisita, color: colorTextoContraste(colorVisita) }}
                       >
                         <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(colorVisita) }}>#{j.dorsal}</span>
@@ -3275,22 +3243,6 @@ function MesaControlPanel({
                   {bancoVisita.length === 0 && <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es de banca.</p>}
                 </div>
               </div>
-            </div>
-            <div className="mesa-visitor-actions mesa-cambio-sutil mt-10">
-              <h6>Cambio Visita (en cancha ↔ banco)</h6>
-              <select className="form-input" value={cambioSalidaVisitaId} onChange={(e) => setCambioSalidaVisitaId(e.target.value)}>
-                <option value="">Selecciona quién sale...</option>
-                {quintetoVisitaEnCancha.map((j) => (
-                  <option key={`sale-visita-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
-                ))}
-              </select>
-              <select className="form-input" value={cambioIngresoVisitaId} onChange={(e) => setCambioIngresoVisitaId(e.target.value)}>
-                <option value="">Selecciona quién entra...</option>
-                {bancoVisita.filter((j) => !j._bloqueado && !j.expulsado && numero(j.flt) < 5).map((j) => (
-                  <option key={`entra-visita-${j.id}`} value={j.id}>#{j.dorsal} {j.nombre}</option>
-                ))}
-              </select>
-              <button className="btn-cambio-sutil" disabled={!partidoIniciado || !cambioSalidaVisitaId || !cambioIngresoVisitaId} onClick={() => ejecutarCambioJugador('visita', cambioSalidaVisitaId, cambioIngresoVisitaId)}>Cambiar</button>
             </div>
           </div>
         )}
@@ -3377,6 +3329,56 @@ function MesaControlPanel({
             <button className="btn-fiba err" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => ejecutarAccionEquipoActivo('PERDIDA')}>PÉRDIDA</button>
             <button className="btn-fiba err" disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado} onClick={() => setMostrarSelectorTipoFalta((v) => !v)}>FALTA</button>
           </div>
+
+          <button
+            type="button"
+            className="btn-secondary mesa-btn-cambio-unico"
+            disabled={!jugadorAccionSeleccionadoValido || !partidoIniciado}
+            onClick={() => setMostrarSelectorCambio(true)}
+          >
+            <ArrowRightLeft size={14} strokeWidth={2} /> Cambio
+          </button>
+
+          {mostrarSelectorCambio && jugadorAccionSeleccionadoValido && (
+            <div className="mesa-quick-modal-overlay" onClick={() => setMostrarSelectorCambio(false)}>
+              <div className="mesa-quick-modal-card" onClick={(e) => e.stopPropagation()}>
+                <div className="mesa-quick-modal-header">
+                  <h6 style={{ margin: 0 }}>
+                    Cambio {accionEquipoEsVisita ? 'Visita' : 'Local'} · sale #{
+                      accionEquipoEsVisita
+                        ? quintetoVisitaEnCancha.find((j) => String(j.id) === String(jugadorVisitaSeleccionadoId))?.dorsal
+                        : quintetoLocalEnCancha.find((j) => j.id === jugadorSeleccionadoLive)?.dorsal
+                    }
+                  </h6>
+                  <button type="button" className="mesa-quick-modal-close" onClick={() => setMostrarSelectorCambio(false)}>✕</button>
+                </div>
+                <p className="text-muted" style={{ margin: '0 0 10px', fontSize: '11px' }}>Toca a la jugadora/or de banca que entra:</p>
+                <div className="mesa-cambio-obligatorio-banco-grid">
+                  {(accionEquipoEsVisita ? bancoVisita : bancoLocal).filter((j) => !j._bloqueado && !j.expulsado && numero(j.flt) < 5).map((j) => (
+                    <button
+                      key={`cambio-manual-${j.id}`}
+                      type="button"
+                      className="mesa-banco-btn"
+                      style={{
+                        borderColor: accionEquipoEsVisita ? colorVisita : colorLocal,
+                        background: accionEquipoEsVisita ? colorVisita : colorLocal,
+                        color: colorTextoContraste(accionEquipoEsVisita ? colorVisita : colorLocal),
+                      }}
+                      onClick={() => {
+                        ejecutarCambioJugador(accionEquipoEsVisita ? 'visita' : 'local', accionEquipoEsVisita ? jugadorVisitaSeleccionadoId : jugadorSeleccionadoLive, j.id);
+                        setMostrarSelectorCambio(false);
+                      }}
+                    >
+                      <span className="mesa-banco-dorsal mesa-banco-dorsal-flat" style={{ color: colorTextoContraste(accionEquipoEsVisita ? colorVisita : colorLocal) }}>#{j.dorsal}</span>
+                    </button>
+                  ))}
+                  {(accionEquipoEsVisita ? bancoVisita : bancoLocal).filter((j) => !j._bloqueado && !j.expulsado && numero(j.flt) < 5).length === 0 && (
+                    <p className="text-muted" style={{ margin: 0 }}>Sin jugadoras/es disponibles en banca.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {mostrarSelectorTipoFalta && (
             <div className="mesa-quick-modal-overlay" onClick={() => setMostrarSelectorTipoFalta(false)}>
