@@ -62,6 +62,33 @@ const authenticate = (req, res, next) => {
   }
 };
 
+// Como authenticate, pero nunca bloquea: si no hay token o es inválido,
+// req.actor queda null y la ruta sigue (para endpoints que deben servir
+// contenido público a la vez que dan más visibilidad a quien sí tiene sesión
+// — ej. GET /api/comunicaciones, que alimenta el feed público de noticias
+// pero también las publicaciones de Academia, que no deben ser públicas).
+const authenticateOpcional = (req, res, next) => {
+  const header = String(req.headers.authorization || '');
+  const [scheme, token] = header.split(' ');
+
+  if (scheme !== 'Bearer' || !token) {
+    req.actor = null;
+    return next();
+  }
+
+  try {
+    const payload = jwt.verify(token, getJwtSecret());
+    req.actor = {
+      id: payload.id ?? null,
+      rut: payload.rut || '',
+      rol: normalizarRol(payload.rol),
+    };
+  } catch {
+    req.actor = null;
+  }
+  return next();
+};
+
 const requireRole = (...roles) => {
   const permitidos = new Set(roles.map((rol) => normalizarRol(rol)));
   return (req, res, next) => {
@@ -73,13 +100,42 @@ const requireRole = (...roles) => {
   };
 };
 
-const requireModule = (moduloId) => (req, res, next) => {
+// El JWT solo lleva {id, rut, rol} (ver signToken/authenticate arriba) — el
+// permisos_override por cuenta (JSONB en cuentas, editable desde el panel de
+// SuperAdmin) vive en la BD y hay que resolverlo en cada request. poolRef se
+// inyecta una sola vez desde server.js via setPool(pool) al arrancar, para no
+// tener que cambiar la firma de requireModule('id') en sus ~30 usos actuales.
+let poolRef = null;
+const setPool = (poolInstance) => { poolRef = poolInstance; };
+
+const obtenerOverrideDeCuenta = async (rut) => {
+  const rutLimpio = String(rut || '').trim();
+  if (!poolRef || !rutLimpio) return {};
+  try {
+    const result = await poolRef.query('SELECT permisos_override FROM cuentas WHERE rut = $1', [rutLimpio]);
+    return result.rows[0]?.permisos_override || {};
+  } catch (err) {
+    console.error('❌ Error resolviendo permisos_override:', err.message);
+    return {};
+  }
+};
+
+// Único punto de resolución de los permisos "reales" de un actor autenticado
+// (rol base + su override individual). Úsalo en vez de llamar
+// obtenerPermisosEfectivos({rol}) directo en cualquier código nuevo que
+// necesite respetar el override configurado por un admin.
+const resolverPermisosDeActor = async (actor) => obtenerPermisosEfectivos({
+  rol: actor?.rol,
+  override: await obtenerOverrideDeCuenta(actor?.rut),
+});
+
+const requireModule = (moduloId) => async (req, res, next) => {
   const actor = req.actor;
   if (!actor) {
     return res.status(401).json({ error: 'Falta token de autenticación.' });
   }
 
-  const permisos = obtenerPermisosEfectivos({ rol: actor.rol });
+  const permisos = await resolverPermisosDeActor(actor);
   if (!permisos[moduloId]) {
     return res.status(403).json({ error: 'No tienes acceso a este módulo.' });
   }
@@ -89,13 +145,13 @@ const requireModule = (moduloId) => (req, res, next) => {
 // Permite el acceso si el actor tiene AL MENOS UNO de los módulos dados
 // (recursos compartidos por varios roles, ej. el roster de jugadores lo
 // consultan tanto admin_dashboard como asistencia_staff/evaluacion_staff).
-const requireAnyModule = (...moduloIds) => (req, res, next) => {
+const requireAnyModule = (...moduloIds) => async (req, res, next) => {
   const actor = req.actor;
   if (!actor) {
     return res.status(401).json({ error: 'Falta token de autenticación.' });
   }
 
-  const permisos = obtenerPermisosEfectivos({ rol: actor.rol });
+  const permisos = await resolverPermisosDeActor(actor);
   if (!moduloIds.some((moduloId) => permisos[moduloId])) {
     return res.status(403).json({ error: 'No tienes acceso a este módulo.' });
   }
@@ -206,6 +262,7 @@ module.exports = {
   verifyPassword,
   signToken,
   authenticate,
+  authenticateOpcional,
   requireRole,
   requireModule,
   requireAnyModule,
@@ -215,4 +272,6 @@ module.exports = {
   stripFieldsUnlessModule,
   isBcryptHash,
   normalizarRutParaComparar,
+  setPool,
+  resolverPermisosDeActor,
 };

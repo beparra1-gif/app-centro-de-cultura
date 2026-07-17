@@ -956,6 +956,20 @@ export const quizAPI = {
       body: JSON.stringify(datos)
     });
     return handleResponse(response);
+  },
+
+  actualizar: async (id, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/quiz/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+
+  borrar: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/quiz/${id}`, { method: 'DELETE' });
+    return handleResponse(response);
   }
 };
 
@@ -1169,6 +1183,14 @@ export const academiaVideosAPI = {
       xhr.send(formData);
     });
   },
+  actualizar: async (id, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/academia-videos/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
   borrar: async (id) => {
     const response = await apiFetch(`${API_BASE_URL}/academia-videos/${id}`, { method: 'DELETE' });
     return handleResponse(response);
@@ -1186,6 +1208,14 @@ export const academiaPizarrasAPI = {
     const response = await apiFetch(`${API_BASE_URL}/academia-pizarras`, {
       method: 'POST',
       body: formData,
+    });
+    return handleResponse(response);
+  },
+  actualizar: async (id, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/academia-pizarras/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
     });
     return handleResponse(response);
   },

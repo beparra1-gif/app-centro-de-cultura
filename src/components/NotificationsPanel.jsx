@@ -19,7 +19,7 @@ function NotificationsPanel({
               </span>
               <button onClick={() => setNotificaciones(notifs => notifs.filter(n => n.id !== notif.id))} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '30px', height: '30px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={14} /></button>
             </div>
-            <p style={{ margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.3' }}>{notif.descripcion}</p>
+            <p style={{ margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.3' }}>{notif.mensaje}</p>
           </div>
         ))
       )}

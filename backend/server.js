@@ -20,6 +20,7 @@ const {
   verifyPassword,
   signToken,
   authenticate,
+  authenticateOpcional,
   requireRole,
   requireModule,
   requireAnyModule,
@@ -28,8 +29,10 @@ const {
   requireApoderadoDeJugador,
   stripFieldsUnlessModule,
   normalizarRutParaComparar,
+  setPool,
+  resolverPermisosDeActor,
 } = require('./security/auth');
-const { obtenerPermisosEfectivos } = require('./security/accessControl');
+const { obtenerPermisosEfectivos, normalizarRol } = require('./security/accessControl');
 
 const app = express();
 let isSheetsSyncRunning = false;
@@ -846,6 +849,8 @@ pool.on('error', (err) => {
   console.error('Error en pool:', err);
 });
 
+setPool(pool);
+
 const sheetsSyncManager = createSheetsSyncManager({
   pool,
   logger: console,
@@ -1420,6 +1425,17 @@ const ensureComunicacionesExtendedColumns = async () => {
     // material (independiente del campo "categoria" singular ya usado por
     // otras comunicaciones); vacío = visible para todas (comportamiento igual al anterior).
     `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS categorias_objetivo JSONB DEFAULT '[]'::jsonb`,
+    // creado_por: RUT de quien publicó, seteado por el servidor (nunca por el
+    // cliente) — habilita el panel "Mis Publicaciones" de Academia y el
+    // chequeo de dueño en PUT/DELETE.
+    `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS creado_por VARCHAR(255)`,
+    // academia_video_id: enlaza la comunicación autogenerada al subir un
+    // video con su fila real en academia_videos (sin FK, mismo estilo que
+    // citacion_id de arriba), para poder editar/borrar ambas juntas y para
+    // que el frontend distinga "video subido" de "link externo" sin adivinar por tipo.
+    `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS academia_video_id INTEGER`,
+    // activo: publicado/despublicado. Todo lo existente queda publicado (true).
+    `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true`,
   ];
 
   for (const statement of ddl) {
@@ -1546,6 +1562,7 @@ const ensureAcademiaVideosTable = async () => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await pool.query(`ALTER TABLE academia_videos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true`);
   console.log('🎬 Tabla academia_videos verificada');
 };
 
@@ -1569,7 +1586,18 @@ const ensureAcademiaPizarrasTable = async () => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await pool.query(`ALTER TABLE academia_pizarras ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true`);
   console.log('🏀 Tabla academia_pizarras verificada');
+};
+
+// quiz_preguntas se creó en migrations/init.js sin dueño ni targeting
+// multi-categoría (solo una "categoria" singular, nunca usada por el
+// formulario de creación). Se deja esa columna vieja intacta y se agrega
+// categorias_objetivo (mismo criterio que materiales/pizarras) + creado_por.
+const ensureQuizExtendedColumns = async () => {
+  await pool.query(`ALTER TABLE quiz_preguntas ADD COLUMN IF NOT EXISTS creado_por VARCHAR(255)`);
+  await pool.query(`ALTER TABLE quiz_preguntas ADD COLUMN IF NOT EXISTS categorias_objetivo JSONB DEFAULT '[]'::jsonb`);
+  console.log('🧠 Columnas extendidas de quiz_preguntas verificadas');
 };
 
 // Kiosco POS: el módulo vivía 100% en memoria del navegador (sin backend detrás),
@@ -1726,6 +1754,15 @@ const ensureCitacionesTables = async () => {
       UNIQUE(citacion_id, rut_jugador)
     )
   `);
+
+  // hora_maxima_confirmacion: fecha+hora libre (no necesariamente el mismo
+  // dia_citacion, ej. "10pm del día anterior") a partir de la cual un
+  // convocado 'pendiente' se marca 'no' automáticamente (ver barrerCitacionesVencidas).
+  await pool.query(`ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS hora_maxima_confirmacion TIMESTAMP`);
+  // Distingue un rechazo real del apoderado (siempre con justificación) de
+  // uno generado por el barrido de vencimiento (sin justificación), para el
+  // desglose "confirmó / rechazó justificando / rechazó por no responder".
+  await pool.query(`ALTER TABLE citacion_convocados ADD COLUMN IF NOT EXISTS respondido_automaticamente BOOLEAN NOT NULL DEFAULT false`);
 
   console.log('📋 Tablas de citaciones verificadas');
 };
@@ -1908,10 +1945,13 @@ app.post('/api/academia-videos', authenticate, requireRole('staff', 'admin', 'su
 
     const comunicacion = await pool.query(
       `INSERT INTO comunicaciones
-        (titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia, reacciones, asistencias, categorias_objetivo)
-       VALUES ($1,$2,'Academia-Video',$3,$4,'Baja',false,'{}','[]',$5)
+        (titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia, reacciones, asistencias, categorias_objetivo, creado_por, academia_video_id)
+       VALUES ($1,$2,'Academia-Video',$3,$4,'Baja',false,'{}','[]',$5,$6,$7)
        RETURNING *`,
-      [titulo, urlVideo, req.body.rama || 'General', req.body.categoria || 'General', JSON.stringify(JSON.parse(req.body.categorias_objetivo || '[]'))]
+      [
+        titulo, urlVideo, req.body.rama || 'General', req.body.categoria || 'General',
+        JSON.stringify(JSON.parse(req.body.categorias_objetivo || '[]')), req.actor.rut, video.id,
+      ]
     );
 
     return res.status(201).json({ video, comunicacion: comunicacion.rows[0] });
@@ -1922,11 +1962,15 @@ app.post('/api/academia-videos', authenticate, requireRole('staff', 'admin', 'su
 
 // GET: sirve el video con soporte de Range para que el <video> del navegador
 // pueda buscar/adelantar sin descargar el archivo completo de una vez.
+// Sin "authenticate": esta URL se usa directo en <video><source>, que el
+// navegador no puede acompañar con header Authorization (ídem <img> de
+// pizarras arriba) — mismo criterio: no servir un video despublicado, el
+// listado autenticado sigue siendo el control de acceso principal.
 app.get('/api/academia-videos/file/:id', async (req, res) => {
   try {
-    const result = await pool.query('SELECT mime_type, file_data FROM academia_videos WHERE id = $1', [req.params.id]);
+    const result = await pool.query('SELECT mime_type, file_data, activo FROM academia_videos WHERE id = $1', [req.params.id]);
     const row = result.rows?.[0];
-    if (!row) {
+    if (!row || row.activo === false) {
       return res.status(404).json({ error: 'Video no encontrado.' });
     }
 
@@ -1957,12 +2001,77 @@ app.get('/api/academia-videos/file/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/academia-videos/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+// PUT: actualiza metadata del video (título/publicado) y, si existe, sincroniza
+// la comunicación enlazada (título/rama/categoría/categorías/publicado). Para
+// reemplazar el archivo hay que borrar y volver a subir.
+app.put('/api/academia-videos/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  const { titulo, rama, categoria, categorias_objetivo, activo } = req.body;
   try {
-    await pool.query('DELETE FROM academia_videos WHERE id = $1', [req.params.id]);
+    const existente = await pool.query('SELECT subido_por FROM academia_videos WHERE id = $1', [req.params.id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Video no encontrado.' });
+    }
+    const esAdminOSuper = ['admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
+    if (!esAdminOSuper) {
+      const rutSubio = normalizarRutParaComparar(existente.rows[0].subido_por || '');
+      if (!rutSubio || rutSubio !== normalizarRutParaComparar(req.actor.rut)) {
+        return res.status(403).json({ error: 'No puedes editar contenido de otro profesor.' });
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE academia_videos SET titulo = COALESCE($1, titulo), activo = COALESCE($2, activo) WHERE id = $3
+       RETURNING id, titulo, filename, tamano_bytes, activo, created_at`,
+      [titulo ?? null, activo !== undefined ? Boolean(activo) : null, req.params.id]
+    );
+
+    const comunicacionVinculada = await pool.query('SELECT id FROM comunicaciones WHERE academia_video_id = $1', [req.params.id]);
+    if (comunicacionVinculada.rows.length > 0) {
+      await pool.query(
+        `UPDATE comunicaciones SET
+           titulo = COALESCE($1, titulo), rama = COALESCE($2, rama), categoria = COALESCE($3, categoria),
+           categorias_objetivo = COALESCE($4::jsonb, categorias_objetivo), activo = COALESCE($5, activo), updated_at = NOW()
+         WHERE id = $6`,
+        [
+          titulo ?? null, rama ?? null, categoria ?? null,
+          categorias_objetivo !== undefined ? JSON.stringify(categorias_objetivo) : null,
+          activo !== undefined ? Boolean(activo) : null,
+          comunicacionVinculada.rows[0].id,
+        ]
+      );
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'No se pudo actualizar el video.' });
+  }
+});
+
+app.delete('/api/academia-videos/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const existente = await client.query('SELECT subido_por FROM academia_videos WHERE id = $1', [req.params.id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Video no encontrado.' });
+    }
+    const esAdminOSuper = ['admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
+    if (!esAdminOSuper) {
+      const rutSubio = normalizarRutParaComparar(existente.rows[0].subido_por || '');
+      if (!rutSubio || rutSubio !== normalizarRutParaComparar(req.actor.rut)) {
+        return res.status(403).json({ error: 'No puedes eliminar contenido de otro profesor.' });
+      }
+    }
+
+    await client.query('BEGIN');
+    await client.query('DELETE FROM comunicaciones WHERE academia_video_id = $1', [req.params.id]);
+    await client.query('DELETE FROM academia_videos WHERE id = $1', [req.params.id]);
+    await client.query('COMMIT');
     res.json({ ok: true });
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     res.status(500).json({ error: error.message || 'No se pudo borrar el video.' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1979,13 +2088,22 @@ const uploadPizarraMemoria = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
+// Staff/super_admin ven todo sin filtrar (incluye no publicado, para poder
+// gestionarlo desde "Mis Publicaciones"). El resto solo ve lo publicado y
+// dirigido a la rama/categoría de sus propios pupilos.
 app.get('/api/academia-pizarras', authenticate, requireAnyModule('academia'), async (req, res) => {
   try {
+    const esProfesor = ['staff', 'super_admin'].includes(normalizarRol(req.actor.rol));
     const result = await pool.query(
-      `SELECT id, nombre_tactica, descripcion, imagen_filename, rama, categorias_objetivo, creado_por, created_at
-       FROM academia_pizarras ORDER BY created_at DESC LIMIT 50`
+      `SELECT id, nombre_tactica, descripcion, imagen_filename, rama, categorias_objetivo, creado_por, activo, created_at
+       FROM academia_pizarras ORDER BY created_at DESC LIMIT 300`
     );
-    res.json(result.rows);
+    if (esProfesor) {
+      return res.json(result.rows);
+    }
+    const pizarrasActivas = result.rows.filter((p) => p.activo !== false);
+    const pupilos = await obtenerPupilosDeActor(req.actor);
+    res.json(pizarrasActivas.filter((p) => academiaContenidoEsVisibleParaPupilos(p, pupilos)));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2024,14 +2142,20 @@ app.post('/api/academia-pizarras', authenticate, requireRole('staff', 'admin', '
   }
 });
 
+// Sin "authenticate": esta URL se usa directo en <img src>, que el navegador
+// no puede acompañar con header Authorization — exigir token acá rompería la
+// carga de imagen para cualquier usuario, logueado o no. Como mitigación
+// real (en vez de un candado que no puede funcionar aquí), no se sirve una
+// pizarra despublicada; el listado (GET /api/academia-pizarras, ese sí
+// autenticado y filtrado) sigue siendo el control de acceso principal.
 app.get('/api/academia-pizarras/imagen/:id', async (req, res) => {
   try {
-    const result = await pool.query('SELECT imagen_mime_type, imagen_data FROM academia_pizarras WHERE id = $1', [req.params.id]);
+    const result = await pool.query('SELECT imagen_mime_type, imagen_data, activo FROM academia_pizarras WHERE id = $1', [req.params.id]);
     const row = result.rows?.[0];
-    if (!row || !row.imagen_data) {
+    if (!row || !row.imagen_data || row.activo === false) {
       return res.status(404).json({ error: 'Imagen no encontrada.' });
     }
-    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.setHeader('Cache-Control', 'private, max-age=604800');
     res.contentType(row.imagen_mime_type || 'image/png');
     return res.send(row.imagen_data);
   } catch (error) {
@@ -2039,8 +2163,55 @@ app.get('/api/academia-pizarras/imagen/:id', async (req, res) => {
   }
 });
 
+// PUT: solo metadata (nombre/descripción/rama/categorías/publicado). Para
+// cambiar la imagen capturada hay que borrar y crear de nuevo.
+app.put('/api/academia-pizarras/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  const { nombre_tactica, descripcion, rama, categorias_objetivo, activo } = req.body;
+  try {
+    const existente = await pool.query('SELECT creado_por FROM academia_pizarras WHERE id = $1', [req.params.id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Pizarra no encontrada.' });
+    }
+    const esAdminOSuper = ['admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
+    if (!esAdminOSuper) {
+      const rutCreador = normalizarRutParaComparar(existente.rows[0].creado_por || '');
+      if (!rutCreador || rutCreador !== normalizarRutParaComparar(req.actor.rut)) {
+        return res.status(403).json({ error: 'No puedes editar contenido de otro profesor.' });
+      }
+    }
+    const result = await pool.query(
+      `UPDATE academia_pizarras SET
+         nombre_tactica = COALESCE($1, nombre_tactica), descripcion = COALESCE($2, descripcion),
+         rama = COALESCE($3, rama), categorias_objetivo = COALESCE($4::jsonb, categorias_objetivo),
+         activo = COALESCE($5, activo)
+       WHERE id = $6
+       RETURNING id, nombre_tactica, descripcion, imagen_filename, rama, categorias_objetivo, creado_por, activo, created_at`,
+      [
+        nombre_tactica ?? null, descripcion ?? null, rama ?? null,
+        categorias_objetivo !== undefined ? JSON.stringify(categorias_objetivo) : null,
+        activo !== undefined ? Boolean(activo) : null,
+        req.params.id,
+      ]
+    );
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'No se pudo actualizar la pizarra.' });
+  }
+});
+
 app.delete('/api/academia-pizarras/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
   try {
+    const existente = await pool.query('SELECT creado_por FROM academia_pizarras WHERE id = $1', [req.params.id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Pizarra no encontrada.' });
+    }
+    const esAdminOSuper = ['admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
+    if (!esAdminOSuper) {
+      const rutCreador = normalizarRutParaComparar(existente.rows[0].creado_por || '');
+      if (!rutCreador || rutCreador !== normalizarRutParaComparar(req.actor.rut)) {
+        return res.status(403).json({ error: 'No puedes eliminar contenido de otro profesor.' });
+      }
+    }
     await pool.query('DELETE FROM academia_pizarras WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   } catch (error) {
@@ -2734,7 +2905,29 @@ app.post('/api/auth/change-password', authRateLimiter, async (req, res) => {
 // ==========================================
 
 // GET: Todas las comunicaciones
-app.get('/api/comunicaciones', async (req, res) => {
+const ACADEMIA_TIPOS_LOWER = new Set(['academia-video', 'academia-imagen', 'academia-documento']);
+
+// Sin sesión (visitante del feed público de Noticias) o con sesión pero sin
+// módulo staff: nunca ve contenido de Academia sin publicar ni fuera de la
+// rama/categoría de sus propios pupilos. Antes esta ruta era 100% pública y
+// sin filtrar — cualquiera con la URL veía todo, incluido material docente.
+const filtrarComunicacionesParaActor = async (filas, actor) => {
+  const esProfesor = actor && ['staff', 'super_admin'].includes(normalizarRol(actor.rol));
+  if (esProfesor) return filas;
+
+  if (!actor) {
+    return filas.filter((f) => !ACADEMIA_TIPOS_LOWER.has(String(f.tipo || '').toLowerCase()));
+  }
+
+  const pupilos = await obtenerPupilosDeActor(actor);
+  return filas.filter((f) => {
+    if (!ACADEMIA_TIPOS_LOWER.has(String(f.tipo || '').toLowerCase())) return true;
+    if (f.activo === false) return false;
+    return academiaContenidoEsVisibleParaPupilos(f, pupilos);
+  });
+};
+
+app.get('/api/comunicaciones', authenticateOpcional, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT
@@ -2742,11 +2935,12 @@ app.get('/api/comunicaciones', async (req, res) => {
         solicita_asistencia, reacciones, asistencias,
         citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad,
         responsable_nombre, responsable_rol, categorias_objetivo,
+        creado_por, academia_video_id, activo,
         created_at as fecha
       FROM comunicaciones
       ORDER BY created_at DESC
     `);
-    res.json(result.rows);
+    res.json(await filtrarComunicacionesParaActor(result.rows, req.actor));
   } catch (err) {
     console.error('Error:', err);
     res.status(500).json({ error: err.message });
@@ -2754,13 +2948,16 @@ app.get('/api/comunicaciones', async (req, res) => {
 });
 
 // GET: Comunicación por ID
-app.get('/api/comunicaciones/:id', async (req, res) => {
+app.get('/api/comunicaciones/:id', authenticateOpcional, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM comunicaciones WHERE id = $1',
       [req.params.id]
     );
-    res.json(result.rows[0] || {});
+    const fila = result.rows[0];
+    if (!fila) return res.json({});
+    const visibles = await filtrarComunicacionesParaActor([fila], req.actor);
+    res.json(visibles[0] || {});
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2779,13 +2976,13 @@ app.post('/api/comunicaciones', authenticate, requireRole('staff', 'admin', 'sup
     const result = await pool.query(
       `INSERT INTO comunicaciones
        (titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia, reacciones, asistencias,
-        citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad, responsable_nombre, responsable_rol, categorias_objetivo)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad, responsable_nombre, responsable_rol, categorias_objetivo, creado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING *`,
       [
         titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia || false, '{}', '[]',
         citacion_id || null, JSON.stringify(convocatoria_ruts || []), JSON.stringify(convocatoria_alertas_morosidad || []),
-        responsable_nombre || null, responsable_rol || null, JSON.stringify(categorias_objetivo || []),
+        responsable_nombre || null, responsable_rol || null, JSON.stringify(categorias_objetivo || []), req.actor.rut,
       ]
     );
     res.json(result.rows[0]);
@@ -2794,16 +2991,42 @@ app.post('/api/comunicaciones', authenticate, requireRole('staff', 'admin', 'sup
   }
 });
 
-// PUT: Actualizar comunicación
-app.put('/api/comunicaciones/:id', authenticate, requireModule('admin_dashboard'), async (req, res) => {
-  const { titulo, cuerpo_texto, urgencia } = req.body;
+// PUT: Actualizar comunicación. requireRole (no requireModule('admin_dashboard'))
+// para que 'staff' pueda editar SU material de Academia — solo lo puede tocar
+// quien lo creó (creado_por) o un admin/super_admin.
+app.put('/api/comunicaciones/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  const { titulo, cuerpo_texto, urgencia, rama, categoria, categorias_objetivo, activo } = req.body;
   try {
+    const existente = await pool.query('SELECT creado_por FROM comunicaciones WHERE id = $1', [req.params.id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Comunicación no encontrada.' });
+    }
+    const esAdminOSuper = ['admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
+    if (!esAdminOSuper) {
+      const rutCreador = normalizarRutParaComparar(existente.rows[0].creado_por || '');
+      if (!rutCreador || rutCreador !== normalizarRutParaComparar(req.actor.rut)) {
+        return res.status(403).json({ error: 'No puedes editar contenido de otro profesor.' });
+      }
+    }
+
     const result = await pool.query(
-      `UPDATE comunicaciones 
-       SET titulo = $1, cuerpo_texto = $2, urgencia = $3, updated_at = NOW()
-       WHERE id = $4
+      `UPDATE comunicaciones
+       SET titulo = COALESCE($1, titulo),
+           cuerpo_texto = COALESCE($2, cuerpo_texto),
+           urgencia = COALESCE($3, urgencia),
+           rama = COALESCE($4, rama),
+           categoria = COALESCE($5, categoria),
+           categorias_objetivo = COALESCE($6::jsonb, categorias_objetivo),
+           activo = COALESCE($7, activo),
+           updated_at = NOW()
+       WHERE id = $8
        RETURNING *`,
-      [titulo, cuerpo_texto, urgencia, req.params.id]
+      [
+        titulo ?? null, cuerpo_texto ?? null, urgencia ?? null, rama ?? null, categoria ?? null,
+        categorias_objetivo !== undefined ? JSON.stringify(categorias_objetivo) : null,
+        activo !== undefined ? Boolean(activo) : null,
+        req.params.id,
+      ]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -2811,9 +3034,20 @@ app.put('/api/comunicaciones/:id', authenticate, requireModule('admin_dashboard'
   }
 });
 
-// DELETE: Eliminar comunicación
-app.delete('/api/comunicaciones/:id', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+// DELETE: Eliminar comunicación. Mismo criterio de dueño que el PUT de arriba.
+app.delete('/api/comunicaciones/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
   try {
+    const existente = await pool.query('SELECT creado_por FROM comunicaciones WHERE id = $1', [req.params.id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Comunicación no encontrada.' });
+    }
+    const esAdminOSuper = ['admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
+    if (!esAdminOSuper) {
+      const rutCreador = normalizarRutParaComparar(existente.rows[0].creado_por || '');
+      if (!rutCreador || rutCreador !== normalizarRutParaComparar(req.actor.rut)) {
+        return res.status(403).json({ error: 'No puedes eliminar contenido de otro profesor.' });
+      }
+    }
     await pool.query('DELETE FROM comunicaciones WHERE id = $1', [req.params.id]);
     res.json({ message: 'Comunicación eliminada' });
   } catch (err) {
@@ -3642,9 +3876,19 @@ cron.schedule('0 2 * * *', async () => {
 cron.schedule('0 3 * * 0', async () => {
   console.log('[CRON] Limpiando notificaciones antiguas...');
   await pool.query(`
-    DELETE FROM notificaciones 
+    DELETE FROM notificaciones
     WHERE created_at < NOW() - INTERVAL '30 days'
   `);
+});
+
+// Marca 'no asiste' automáticamente a quien no respondió una citación antes
+// de su hora_maxima_confirmacion (ver barrerCitacionesVencidas).
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    await barrerCitacionesVencidas();
+  } catch (err) {
+    console.error('[CRON] Error en barrido de citaciones vencidas:', err.message);
+  }
 });
 
 // ==========================================
@@ -4294,6 +4538,56 @@ const resolverDestinatariosCitacion = async (convocados) => {
   return ruts;
 };
 
+// Destinatarios de un evento de RSVP (confirmación/rechazo, manual o
+// automático por vencimiento de plazo): el responsable de la citación
+// (quien la creó) más toda cuenta admin/super_admin, para que el club
+// siempre se entere aunque no haya sido ese admin quien la creó.
+const resolverDestinatariosRSVP = async (responsableRut) => {
+  const ruts = new Set();
+  if (responsableRut) ruts.add(normalizarRutParaComparar(responsableRut));
+  const admins = await pool.query("SELECT rut FROM cuentas WHERE LOWER(rol) IN ('admin', 'super_admin', 'superadmin')");
+  admins.rows.forEach((row) => { if (row.rut) ruts.add(normalizarRutParaComparar(row.rut)); });
+  return ruts;
+};
+
+// Barrido idempotente: cualquier convocado 'pendiente' cuya citación ya pasó
+// su hora_maxima_confirmacion se marca 'no' automáticamente (sin
+// justificación, respondido_automaticamente=true). Se puede correr tantas
+// veces como se quiera: una segunda corrida no vuelve a tocar filas que ya
+// dejaron de estar 'pendiente'. Se llama desde un cron (cada 5 min) y además
+// al inicio de los GET de citaciones, para que la vista se vea correcta al
+// instante aunque el cron no haya corrido todavía.
+const barrerCitacionesVencidas = async () => {
+  const result = await pool.query(`
+    UPDATE citacion_convocados cc
+    SET respuesta = 'no', respondido_automaticamente = true, actualizado_en = NOW()
+    FROM citaciones c
+    WHERE cc.citacion_id = c.id
+      AND cc.respuesta = 'pendiente'
+      AND c.hora_maxima_confirmacion IS NOT NULL
+      AND c.hora_maxima_confirmacion <= NOW()
+    RETURNING cc.id, cc.citacion_id, cc.nombre, c.responsable_rut, c.tipo_competencia, c.competencia_nombre, c.rival_nombre, c.dia_citacion
+  `);
+  if (result.rows.length === 0) return;
+
+  const porCitacion = new Map();
+  result.rows.forEach((row) => {
+    const lista = porCitacion.get(row.citacion_id) || [];
+    lista.push(row);
+    porCitacion.set(row.citacion_id, lista);
+  });
+
+  for (const [citacionId, filas] of porCitacion) {
+    const info = filas[0];
+    const destinatarios = await resolverDestinatariosRSVP(info.responsable_rut);
+    const titulo = `Plazo vencido: ${filas.length} sin responder`;
+    const cuerpo = `${filas.length} deportista(s) fueron marcados automáticamente como "no asiste" por no responder antes del plazo — ${info.tipo_competencia || ''} ${info.competencia_nombre || ''} vs ${info.rival_nombre || ''} (${formatearFechaCitacion(info.dia_citacion)}).`;
+    await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
+      rut, tipo: 'citacion_rsvp_automatico', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: citacionId,
+    })));
+  }
+};
+
 // Trae los RUT de los pupilos del actor (apoderado) o el propio RUT si el
 // actor es un jugador con cuenta propia, junto a su rama/categoría — base
 // para filtrar qué citaciones puede ver un usuario no administrativo.
@@ -4323,11 +4617,51 @@ const citacionEsVisibleParaPupilos = (citacion, pupilos) => {
   });
 };
 
+// Mismo criterio que ya usaba el frontend para materiales (AcademiaPanel.jsx
+// materialesVisibles): rama 'General' o sin categorias_objetivo = visible
+// para toda la rama del pupilo; con categorias_objetivo, el pupilo debe
+// calzar. Se usa para dar filtrado real en el servidor a pizarras y quiz,
+// que antes no filtraban nada.
+const academiaContenidoEsVisibleParaPupilos = (contenido, pupilos) => {
+  const ramaContenido = String(contenido.rama || 'General').toLowerCase();
+  const categoriasObjetivo = Array.isArray(contenido.categorias_objetivo)
+    ? contenido.categorias_objetivo.map((c) => String(c).toLowerCase())
+    : [];
+  return pupilos.some((p) => {
+    const ramaCoincide = ramaContenido === 'general' || ramaContenido === String(p.rama || '').toLowerCase();
+    if (!ramaCoincide) return false;
+    if (categoriasObjetivo.length === 0) return true;
+    return categoriasObjetivo.includes(String(p.categoria || '').toLowerCase());
+  });
+};
+
+// Lista explícita de columnas de "citaciones" (en vez de SELECT/RETURNING *)
+// para poder castear hora_maxima_confirmacion con to_char: es un TIMESTAMP
+// sin timezone que pg parsearía a un JS Date interpretándolo con el timezone
+// del PROCESO NODE (no el de la sesión de Postgres) — verificado que en un
+// host con timezone distinta a Chile eso desfasa la hora al serializar a
+// JSON. to_char devuelve el valor guardado tal cual, sin conversión alguna.
+const CITACION_COLUMNAS_SQL = `
+  id, tipo_competencia, competencia_nombre, competencia_logo_url,
+  dia_citacion, hora_citacion, hora_presentacion,
+  rival_nombre, rival_logo_url, rama, categoria_base, categorias_apoyo,
+  responsable_nombre, responsable_rut, responsable_correo, responsable_rol,
+  estado, creado_en, updated_at,
+  to_char(hora_maxima_confirmacion, 'YYYY-MM-DD"T"HH24:MI') AS hora_maxima_confirmacion
+`;
+
 const cargarCitacionConConvocados = async (id) => {
-  const citacionRes = await pool.query('SELECT * FROM citaciones WHERE id = $1', [id]);
+  const citacionRes = await pool.query(`SELECT ${CITACION_COLUMNAS_SQL} FROM citaciones WHERE id = $1`, [id]);
   if (citacionRes.rows.length === 0) return null;
+  // Se agrega jugadores.rut_apoderado (no vive en citacion_convocados) para
+  // que el frontend identifique al apoderado por la MISMA columna que ya usa
+  // requireApoderadoDeJugador para autorizar el RSVP, en vez de adivinar por correo.
   const convocadosRes = await pool.query(
-    'SELECT * FROM citacion_convocados WHERE citacion_id = $1 ORDER BY nombre ASC',
+    `SELECT cc.*, j.rut_apoderado
+     FROM citacion_convocados cc
+     LEFT JOIN jugadores j ON j.rut_jugador = cc.rut_jugador
+     WHERE cc.citacion_id = $1
+     ORDER BY cc.nombre ASC`,
     [id]
   );
   return { ...citacionRes.rows[0], convocados: convocadosRes.rows };
@@ -4338,7 +4672,7 @@ const cargarCitacionConConvocados = async (id) => {
 app.post('/api/citaciones', authenticate, requireModule('citaciones'), async (req, res) => {
   const {
     tipo_competencia, competencia_nombre, competencia_logo_url,
-    dia_citacion, hora_citacion, hora_presentacion,
+    dia_citacion, hora_citacion, hora_presentacion, hora_maxima_confirmacion,
     rival_nombre, rival_logo_url,
     rama, categoria_base, categorias_apoyo,
     convocados,
@@ -4361,13 +4695,15 @@ app.post('/api/citaciones', authenticate, requireModule('citaciones'), async (re
     const citacionRes = await client.query(
       `INSERT INTO citaciones
         (tipo_competencia, competencia_nombre, competencia_logo_url, dia_citacion, hora_citacion, hora_presentacion,
+         hora_maxima_confirmacion,
          rival_nombre, rival_logo_url, rama, categoria_base, categorias_apoyo,
          responsable_nombre, responsable_rut, responsable_correo, responsable_rol)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-       RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       RETURNING ${CITACION_COLUMNAS_SQL}`,
       [
         tipo_competencia || null, competencia_nombre, competencia_logo_url || null,
         dia_citacion || null, hora_citacion || null, hora_presentacion || null,
+        hora_maxima_confirmacion || null,
         rival_nombre, rival_logo_url || null, rama || 'todas', categoria_base || 'todas',
         JSON.stringify(Array.isArray(categorias_apoyo) ? categorias_apoyo : []),
         responsableNombre, req.actor.rut, actorCuenta.correo || null, actorCuenta.rol || req.actor.rol,
@@ -4408,13 +4744,21 @@ app.post('/api/citaciones', authenticate, requireModule('citaciones'), async (re
   }
 });
 
-// GET: lista de citaciones visibles para el actor. Admin/staff con módulo
-// citaciones ven todas; el resto solo las suyas (convocado) o las de la
-// rama/categoría de sus pupilos (visibilidad, no necesariamente convocado).
+// GET: lista de citaciones visibles para el actor. Admin/super_admin con
+// módulo citaciones ven todas; cualquier otra cuenta con el módulo (ej. un
+// profesor con permiso individual) ve solo las que creó; el resto solo las
+// suyas como convocado o las de la rama/categoría de sus pupilos.
 app.get('/api/citaciones', authenticate, async (req, res) => {
   try {
-    const citacionesRes = await pool.query('SELECT * FROM citaciones ORDER BY dia_citacion DESC NULLS LAST, hora_citacion ASC');
-    const convocadosRes = await pool.query('SELECT * FROM citacion_convocados ORDER BY nombre ASC');
+    await barrerCitacionesVencidas();
+
+    const citacionesRes = await pool.query(`SELECT ${CITACION_COLUMNAS_SQL} FROM citaciones ORDER BY dia_citacion DESC NULLS LAST, hora_citacion ASC`);
+    const convocadosRes = await pool.query(
+      `SELECT cc.*, j.rut_apoderado
+       FROM citacion_convocados cc
+       LEFT JOIN jugadores j ON j.rut_jugador = cc.rut_jugador
+       ORDER BY cc.nombre ASC`
+    );
     const convocadosPorCitacion = new Map();
     convocadosRes.rows.forEach((c) => {
       const lista = convocadosPorCitacion.get(c.citacion_id) || [];
@@ -4423,9 +4767,14 @@ app.get('/api/citaciones', authenticate, async (req, res) => {
     });
     const citaciones = citacionesRes.rows.map((c) => ({ ...c, convocados: convocadosPorCitacion.get(c.id) || [] }));
 
-    const permisos = obtenerPermisosEfectivos({ rol: req.actor.rol });
-    if (permisos.citaciones) {
+    const permisos = await resolverPermisosDeActor(req.actor);
+    const esAdminOSuper = ['admin', 'super_admin', 'superadmin'].includes(normalizarRol(req.actor.rol));
+    if (permisos.citaciones && esAdminOSuper) {
       return res.json(citaciones);
+    }
+    if (permisos.citaciones) {
+      const rutActor = normalizarRutParaComparar(req.actor.rut);
+      return res.json(citaciones.filter((c) => normalizarRutParaComparar(c.responsable_rut) === rutActor));
     }
 
     const pupilos = await obtenerPupilosDeActor(req.actor);
@@ -4439,15 +4788,27 @@ app.get('/api/citaciones', authenticate, async (req, res) => {
 // GET: detalle de una citación (mismas reglas de visibilidad que la lista).
 app.get('/api/citaciones/:id', authenticate, async (req, res) => {
   try {
+    await barrerCitacionesVencidas();
+
     const citacion = await cargarCitacionConConvocados(req.params.id);
     if (!citacion) return res.status(404).json({ error: 'Citación no encontrada.' });
 
-    const permisos = obtenerPermisosEfectivos({ rol: req.actor.rol });
-    if (!permisos.citaciones) {
-      const pupilos = await obtenerPupilosDeActor(req.actor);
-      if (!citacionEsVisibleParaPupilos(citacion, pupilos)) {
+    const permisos = await resolverPermisosDeActor(req.actor);
+    const esAdminOSuper = ['admin', 'super_admin', 'superadmin'].includes(normalizarRol(req.actor.rol));
+    if (permisos.citaciones && esAdminOSuper) {
+      return res.json(citacion);
+    }
+    if (permisos.citaciones) {
+      const rutActor = normalizarRutParaComparar(req.actor.rut);
+      if (normalizarRutParaComparar(citacion.responsable_rut) !== rutActor) {
         return res.status(403).json({ error: 'No tienes acceso a esta citación.' });
       }
+      return res.json(citacion);
+    }
+
+    const pupilos = await obtenerPupilosDeActor(req.actor);
+    if (!citacionEsVisibleParaPupilos(citacion, pupilos)) {
+      return res.status(403).json({ error: 'No tienes acceso a esta citación.' });
     }
     res.json(citacion);
   } catch (err) {
@@ -4531,6 +4892,7 @@ app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireApode
         mensaje_profesor = COALESCE($3, mensaje_profesor),
         excepcion_solicitada = COALESCE($4, excepcion_solicitada),
         estado_excepcion = CASE WHEN $4 THEN 'solicitada' ELSE estado_excepcion END,
+        respondido_automaticamente = CASE WHEN $1 IS NOT NULL THEN false ELSE respondido_automaticamente END,
         actualizado_en = NOW()
        WHERE citacion_id = $5 AND rut_jugador = $6
        RETURNING *`,
@@ -4539,7 +4901,28 @@ app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireApode
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'No se encontró ese convocado en la citación.' });
     }
-    res.json(result.rows[0]);
+    const convocado = result.rows[0];
+
+    // Notifica al profesor que creó la citación y a todo admin/superadmin —
+    // solo cuando esta llamada realmente cambió sí/no (no en un guardado de
+    // solo mensaje_profesor).
+    if (hayRespuesta) {
+      const citacionInfo = (await pool.query(
+        'SELECT responsable_rut, tipo_competencia, competencia_nombre, rival_nombre, dia_citacion FROM citaciones WHERE id = $1',
+        [req.params.id]
+      )).rows[0];
+      const destinatarios = await resolverDestinatariosRSVP(citacionInfo?.responsable_rut);
+      const estado = convocado.respuesta === 'si'
+        ? 'confirmó asistencia'
+        : `rechazó la citación (${convocado.justificacion ? 'con justificación' : 'sin justificación'})`;
+      const titulo = `Respuesta de citación: ${convocado.nombre || req.params.rut}`;
+      const cuerpo = `${convocado.nombre || 'El deportista'} ${estado} — ${citacionInfo?.tipo_competencia || ''} ${citacionInfo?.competencia_nombre || ''} vs ${citacionInfo?.rival_nombre || ''} (${formatearFechaCitacion(citacionInfo?.dia_citacion)}).`;
+      await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
+        rut, tipo: 'citacion_rsvp', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: Number(req.params.id),
+      })));
+    }
+
+    res.json(convocado);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -5200,28 +5583,99 @@ app.post('/api/resultados', authenticate, requireModule('scoreboard_live'), asyn
 // ==========================================
 
 // GET: Todas las preguntas
+// Staff/super_admin ven todas las preguntas activas (para gestionarlas). El
+// resto solo ve las dirigidas a la rama/categoría de sus propios pupilos.
 app.get('/api/quiz', authenticate, requireModule('academia'), async (req, res) => {
   try {
+    const esProfesor = ['staff', 'super_admin'].includes(normalizarRol(req.actor.rol));
     const result = await pool.query(
       `SELECT * FROM quiz_preguntas WHERE activo = true ORDER BY dificultad ASC`
     );
-    res.json(result.rows);
+    if (esProfesor) {
+      return res.json(result.rows);
+    }
+    const pupilos = await obtenerPupilosDeActor(req.actor);
+    res.json(result.rows.filter((q) => academiaContenidoEsVisibleParaPupilos(q, pupilos)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST: Crear pregunta
-app.post('/api/quiz', authenticate, requireModule('academia'), async (req, res) => {
-  const { titulo, tipo_quiz, rama, pregunta, opciones_json, respuesta_correcta, dificultad } = req.body;
+// POST: Crear pregunta. requireRole en vez de requireModule('academia'): ese
+// módulo también lo tienen jugadores/apoderados, que antes podían crear
+// preguntas llamando la API directo aunque ninguna pantalla lo permitiera.
+app.post('/api/quiz', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  const { titulo, tipo_quiz, rama, pregunta, opciones_json, respuesta_correcta, dificultad, categorias_objetivo } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO quiz_preguntas (titulo, tipo_quiz, rama, pregunta, opciones_json, respuesta_correcta, dificultad)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO quiz_preguntas (titulo, tipo_quiz, rama, pregunta, opciones_json, respuesta_correcta, dificultad, categorias_objetivo, creado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [titulo, tipo_quiz, rama, pregunta, JSON.stringify(opciones_json), respuesta_correcta, dificultad]
+      [
+        titulo, tipo_quiz, rama, pregunta, JSON.stringify(opciones_json), respuesta_correcta, dificultad,
+        JSON.stringify(categorias_objetivo || []), req.actor.rut,
+      ]
     );
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT/DELETE: la PK real de quiz_preguntas es id_pregunta (no id) — la ruta
+// usa :id por convención pero filtra por id_pregunta.
+app.put('/api/quiz/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  const { titulo, tipo_quiz, rama, categorias_objetivo, pregunta, opciones_json, respuesta_correcta, dificultad, activo } = req.body;
+  try {
+    const existente = await pool.query('SELECT creado_por FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Pregunta no encontrada.' });
+    }
+    const esAdminOSuper = ['admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
+    if (!esAdminOSuper) {
+      const rutCreador = normalizarRutParaComparar(existente.rows[0].creado_por || '');
+      if (!rutCreador || rutCreador !== normalizarRutParaComparar(req.actor.rut)) {
+        return res.status(403).json({ error: 'No puedes editar contenido de otro profesor.' });
+      }
+    }
+    const result = await pool.query(
+      `UPDATE quiz_preguntas SET
+         titulo = COALESCE($1, titulo), tipo_quiz = COALESCE($2, tipo_quiz), rama = COALESCE($3, rama),
+         categorias_objetivo = COALESCE($4::jsonb, categorias_objetivo), pregunta = COALESCE($5, pregunta),
+         opciones_json = COALESCE($6::json, opciones_json), respuesta_correcta = COALESCE($7, respuesta_correcta),
+         dificultad = COALESCE($8, dificultad), activo = COALESCE($9, activo), updated_at = NOW()
+       WHERE id_pregunta = $10
+       RETURNING *`,
+      [
+        titulo ?? null, tipo_quiz ?? null, rama ?? null,
+        categorias_objetivo !== undefined ? JSON.stringify(categorias_objetivo) : null,
+        pregunta ?? null, opciones_json !== undefined ? JSON.stringify(opciones_json) : null,
+        respuesta_correcta ?? null, dificultad ?? null,
+        activo !== undefined ? Boolean(activo) : null,
+        req.params.id,
+      ]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/quiz/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  try {
+    const existente = await pool.query('SELECT creado_por FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Pregunta no encontrada.' });
+    }
+    const esAdminOSuper = ['admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
+    if (!esAdminOSuper) {
+      const rutCreador = normalizarRutParaComparar(existente.rows[0].creado_por || '');
+      if (!rutCreador || rutCreador !== normalizarRutParaComparar(req.actor.rut)) {
+        return res.status(403).json({ error: 'No puedes eliminar contenido de otro profesor.' });
+      }
+    }
+    await pool.query('DELETE FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id]);
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -6172,6 +6626,10 @@ app.listen(PORT, () => {
 
   ensureComunicacionesExtendedColumns().catch((error) => {
     console.error('❌ Error verificando columnas extendidas de comunicaciones:', error.message);
+  });
+
+  ensureQuizExtendedColumns().catch((error) => {
+    console.error('❌ Error verificando columnas extendidas de quiz_preguntas:', error.message);
   });
 
   ensureAsistenciaExtendedColumns().catch((error) => {

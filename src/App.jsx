@@ -7,8 +7,8 @@ import {
   Save, Monitor, Activity, ArrowRight, ArrowLeft, AlertTriangle, 
   FileText, Flag, QrCode, Lock, Camera, ChevronRight, ChevronLeft, 
   ShieldAlert, Zap, Clock, FileDown, RefreshCw,
-  History, CheckSquare, 
-  XSquare
+  History, CheckSquare,
+  XSquare, UserPlus
 } from 'lucide-react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
@@ -103,8 +103,10 @@ function App() {
   const [sesionToken, setSesionToken] = useState(null);
 
   // --- ESTADOS: GAMIFICACIÓN Y PERFIL ---
-  const [quizCompletado, setQuizCompletado] = useState(false);
-  const [opcionSeleccionada, setOpcionSeleccionada] = useState(null);
+  // Antes escalares (un solo quiz "activo" global) — con varios quiz
+  // simultáneos filtrados por categoría, cada uno lleva su propio estado de
+  // respuesta: { [quizId]: { opcionSeleccionada, completado } }.
+  const [respuestasQuiz, setRespuestasQuiz] = useState({});
   const [animacionXP, setAnimacionXP] = useState(false); // Efecto Partículas
 
   // --- ESTADOS: MURO Y RRSS ---
@@ -201,13 +203,7 @@ function App() {
   const [morososAdmin, setMorososAdmin] = useState([]);
   const [materialesAcademia, setMaterialesAcademia] = useState([]);
   const [pizarrasAcademia, setPizarrasAcademia] = useState([]);
-  const [quizActivo, setQuizActivo] = useState({
-    titulo: 'Sin desafío activo',
-    pregunta: 'No hay quiz táctico publicado en este momento.',
-    opciones: ['-', '-', '-'],
-    respuestaCorrecta: 'A',
-    explicacion: 'Cuando el staff publique un quiz, aparecerá aquí.',
-  });
+  const [quizList, setQuizList] = useState([]);
 
   // Kiosco POS: el panel ahora es autocontenido (fetch propio a /api/kiosco-*),
   // ver src/components/KioscoPanel.jsx — ya no vive acá como estado prop-drilled.
@@ -337,6 +333,10 @@ function App() {
       convocatoria_alertas_morosidad: c.convocatoria_alertas_morosidad || [],
       responsable_nombre: c.responsable_nombre || '',
       responsable_rol: c.responsable_rol || '',
+      categorias_objetivo: Array.isArray(c.categorias_objetivo) ? c.categorias_objetivo : [],
+      creado_por: c.creado_por || '',
+      academia_video_id: c.academia_video_id || null,
+      activo: c.activo !== false,
     }));
   };
 
@@ -623,6 +623,52 @@ function App() {
     hora_presentacion: normalizarHora(cita?.hora_presentacion),
   });
 
+  // Compartida entre la carga inicial (cargarDatos) y el polling periódico
+  // de abajo, para que ambos caminos actualicen nominaCita/notificaciones
+  // exactamente igual.
+  const aplicarCitacionesYNotificaciones = (citacionesRes, notificacionesAppRes) => {
+    if (Array.isArray(citacionesRes)) {
+      setNominaCita(citacionesRes.map(normalizarCitacion));
+    }
+
+    if (Array.isArray(notificacionesAppRes) && notificacionesAppRes.length > 0) {
+      const pendientes = notificacionesAppRes.filter((n) => !n.leida);
+      if (pendientes.length > 0) {
+        setNotificaciones((prev) => {
+          const idsExistentes = new Set(prev.map((n) => n.origenId).filter(Boolean));
+          const nuevas = pendientes
+            .filter((n) => !idsExistentes.has(n.id))
+            .map((n) => ({
+              id: nextId(),
+              origenId: n.id,
+              tipo: n.tipo || 'citacion',
+              titulo: n.titulo || 'Notificación',
+              mensaje: n.cuerpo || '',
+              leida: false,
+              firmada: false,
+            }));
+          return [...nuevas, ...prev];
+        });
+      }
+    }
+  };
+
+  // Refresco periódico (ver useEffect de polling más abajo): sin esto, el
+  // muro y el progreso de una citación solo se actualizaban en la carga
+  // inicial de la sesión, quedando desincronizados cuando otra persona
+  // respondía en otra sesión/dispositivo.
+  const cargarCitacionesYNotificaciones = async () => {
+    try {
+      const [citacionesRes, notificacionesAppRes] = await Promise.all([
+        api.citacionesAPI.getAll(),
+        api.notificacionesAppAPI.getAll(),
+      ]);
+      aplicarCitacionesYNotificaciones(citacionesRes, notificacionesAppRes);
+    } catch {
+      // Un fallo puntual del poll no debe interrumpir la UI.
+    }
+  };
+
   const cargarDatos = async ({ manual = false } = {}) => {
     if (manual) setApiRetrying(true);
 
@@ -801,47 +847,27 @@ function App() {
         })));
       }
 
-      if (Array.isArray(quizRes) && quizRes.length > 0) {
-        const primera = quizRes[0];
-        const opcionesQuiz = Array.isArray(primera.opciones_json)
-          ? primera.opciones_json
-          : (typeof primera.opciones_json === 'string'
-            ? JSON.parse(primera.opciones_json)
-            : []);
-
-        setQuizActivo({
-          titulo: primera.titulo || 'Desafío semanal',
-          pregunta: primera.pregunta || 'Pregunta no disponible',
-          opciones: opcionesQuiz,
-          respuestaCorrecta: primera.respuesta_correcta || 'A',
-          explicacion: primera.explicacion || 'Revisa la respuesta con tu entrenador.',
-        });
+      if (Array.isArray(quizRes)) {
+        setQuizList(quizRes.map((q) => {
+          const opcionesQuiz = Array.isArray(q.opciones_json)
+            ? q.opciones_json
+            : (typeof q.opciones_json === 'string' ? JSON.parse(q.opciones_json || '[]') : []);
+          return {
+            id: q.id_pregunta,
+            titulo: q.titulo || 'Desafío semanal',
+            pregunta: q.pregunta || 'Pregunta no disponible',
+            opciones: opcionesQuiz,
+            respuestaCorrecta: q.respuesta_correcta || 'A',
+            explicacion: q.explicacion || 'Revisa la respuesta con tu entrenador.',
+            rama: q.rama || 'General',
+            categorias_objetivo: Array.isArray(q.categorias_objetivo) ? q.categorias_objetivo : [],
+            activo: q.activo !== false,
+            creado_por: q.creado_por || '',
+          };
+        }));
       }
 
-      if (Array.isArray(citacionesRes)) {
-        setNominaCita(citacionesRes.map(normalizarCitacion));
-      }
-
-      if (Array.isArray(notificacionesAppRes) && notificacionesAppRes.length > 0) {
-        const pendientes = notificacionesAppRes.filter((n) => !n.leida);
-        if (pendientes.length > 0) {
-          setNotificaciones((prev) => {
-            const idsExistentes = new Set(prev.map((n) => n.origenId).filter(Boolean));
-            const nuevas = pendientes
-              .filter((n) => !idsExistentes.has(n.id))
-              .map((n) => ({
-                id: nextId(),
-                origenId: n.id,
-                tipo: n.tipo || 'citacion',
-                titulo: n.titulo || 'Notificación',
-                mensaje: n.cuerpo || '',
-                leida: false,
-                firmada: false,
-              }));
-            return [...nuevas, ...prev];
-          });
-        }
-      }
+      aplicarCitacionesYNotificaciones(citacionesRes, notificacionesAppRes);
 
       try {
         const pizarrasRes = await api.academiaPizarrasAPI.getAll();
@@ -1352,6 +1378,18 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Sin este refresco, el muro y "Control de Citaciones" solo se actualizaban
+  // en la carga inicial de la sesión: si otra persona respondía una citación
+  // en otra sesión, no se veía hasta recargar la página manualmente.
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void cargarCitacionesYNotificaciones();
+    }, 120000);
+
+    return () => window.clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!showSettings && !mostrarNotificaciones) return;
 
@@ -1573,11 +1611,12 @@ function App() {
     await cargarDatos({ manual: true });
   };
 
-  const crearQuizAcademia = async ({ titulo, pregunta, opciones, respuestaCorrecta }) => {
+  const crearQuizAcademia = async ({ titulo, pregunta, opciones, respuestaCorrecta, rama, categorias }) => {
     await api.quizAPI.create({
       titulo,
       tipo_quiz: 'academia',
-      rama: 'General',
+      rama: rama || 'General',
+      categorias_objetivo: Array.isArray(categorias) ? categorias : [],
       pregunta,
       opciones_json: opciones,
       respuesta_correcta: respuestaCorrecta,
@@ -1596,6 +1635,57 @@ function App() {
     formData.append('categorias_objetivo', JSON.stringify(Array.isArray(categorias) ? categorias : []));
 
     await api.academiaPizarrasAPI.guardar(formData);
+    await cargarDatos({ manual: true });
+  };
+
+  // Edición/borrado para el panel "Mis Publicaciones" de Academia — mismo
+  // patrón que los 4 handlers de arriba (llamar API, recargar datos).
+  const actualizarMaterialAcademia = async ({ id, titulo, url, rama, categorias, activo }) => {
+    await api.comunicacionesAPI.update(id, {
+      titulo, cuerpo_texto: url, rama, categorias_objetivo: Array.isArray(categorias) ? categorias : [], activo,
+    });
+    await cargarDatos({ manual: true });
+  };
+
+  const eliminarMaterialAcademia = async (id) => {
+    await api.comunicacionesAPI.delete(id);
+    await cargarDatos({ manual: true });
+  };
+
+  const actualizarVideoAcademia = async ({ id, titulo, rama, categorias, activo }) => {
+    await api.academiaVideosAPI.actualizar(id, {
+      titulo, rama, categorias_objetivo: Array.isArray(categorias) ? categorias : [], activo,
+    });
+    await cargarDatos({ manual: true });
+  };
+
+  const eliminarVideoAcademia = async (id) => {
+    await api.academiaVideosAPI.borrar(id);
+    await cargarDatos({ manual: true });
+  };
+
+  const actualizarPizarraAcademia = async ({ id, nombre_tactica, descripcion, rama, categorias, activo }) => {
+    await api.academiaPizarrasAPI.actualizar(id, {
+      nombre_tactica, descripcion, rama, categorias_objetivo: Array.isArray(categorias) ? categorias : [], activo,
+    });
+    await cargarDatos({ manual: true });
+  };
+
+  const eliminarPizarraAcademia = async (id) => {
+    await api.academiaPizarrasAPI.borrar(id);
+    await cargarDatos({ manual: true });
+  };
+
+  const actualizarQuizAcademia = async ({ id, titulo, pregunta, opciones, respuestaCorrecta, rama, categorias, activo }) => {
+    await api.quizAPI.actualizar(id, {
+      titulo, pregunta, opciones_json: opciones, respuesta_correcta: respuestaCorrecta,
+      rama, categorias_objetivo: Array.isArray(categorias) ? categorias : [], activo,
+    });
+    await cargarDatos({ manual: true });
+  };
+
+  const eliminarQuizAcademia = async (id) => {
+    await api.quizAPI.borrar(id);
     await cargarDatos({ manual: true });
   };
 
@@ -2547,19 +2637,26 @@ function App() {
                 pupilosDisponibles={pupilosDisponibles}
                 jugadoresAdmin={jugadoresAdmin}
                 rolUsuario={rolUsuario}
+                rutUsuarioAutenticado={rutUsuarioAutenticado}
                 animacionXP={animacionXP}
                 setAnimacionXP={setAnimacionXP}
-                quizCompletado={quizCompletado}
-                setQuizCompletado={setQuizCompletado}
-                opcionSeleccionada={opcionSeleccionada}
-                setOpcionSeleccionada={setOpcionSeleccionada}
-                quizActivo={quizActivo}
+                respuestasQuiz={respuestasQuiz}
+                setRespuestasQuiz={setRespuestasQuiz}
+                quizList={quizList}
                 materialesAcademia={materialesAcademia}
                 pizarrasAcademia={pizarrasAcademia}
                 publicarMaterialAcademia={publicarMaterialAcademia}
                 subirVideoAcademia={subirVideoAcademia}
                 crearQuizAcademia={crearQuizAcademia}
                 guardarPizarraAcademia={guardarPizarraAcademia}
+                actualizarMaterialAcademia={actualizarMaterialAcademia}
+                eliminarMaterialAcademia={eliminarMaterialAcademia}
+                actualizarVideoAcademia={actualizarVideoAcademia}
+                eliminarVideoAcademia={eliminarVideoAcademia}
+                actualizarPizarraAcademia={actualizarPizarraAcademia}
+                eliminarPizarraAcademia={eliminarPizarraAcademia}
+                actualizarQuizAcademia={actualizarQuizAcademia}
+                eliminarQuizAcademia={eliminarQuizAcademia}
               />
             )}
             {puedeVerPantalla('perfil') && pantallaActiva === 'perfil' && (
@@ -2643,8 +2740,9 @@ function App() {
                 nombreResponsable={usuarioAutenticado?.nombres || usuarioAutenticado?.nombre || ''}
               />
             )}
-            {puedeVerPantalla('admin_dashboard') && pantallaActiva === 'admin_dashboard' && (
+            {(puedeVerPantalla('admin_dashboard') || puedeVerPantalla('citaciones')) && pantallaActiva === 'admin_dashboard' && (
               <SuperAdminPanel
+                puedeAdminCompleto={puedeVerPantalla('admin_dashboard')}
                 usuarioAutenticado={usuarioAutenticado}
                 vistaAdmin={vistaAdmin}
                 setVistaAdmin={setVistaAdmin}
@@ -2714,7 +2812,7 @@ function App() {
           </>
         ) : rolUsuario === 'mesa' ? (
           <div className="nav-item active" style={{width: '100%'}}><Monitor size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Consola Transmisión</span></div>
-        ) : modulosNavegacionVisibles.length > 0 ? (
+        ) : modulosNavegacionVisibles.length > 0 || (puedeVerPantalla('citaciones') && !puedeVerPantalla('admin_dashboard')) ? (
           <>
             {modulosNavegacionVisibles.map((modulo) => {
               const meta = obtenerMetaModuloNav(modulo);
@@ -2732,6 +2830,21 @@ function App() {
                 </button>
               );
             })}
+            {/* 'citaciones' no es una pantalla propia (vive dentro de admin_dashboard
+                como una sub-vista de SuperAdminPanel), así que no puede pasar por el
+                loop genérico de arriba — se agrega a mano solo para quien tiene el
+                permiso citaciones sin tener admin_dashboard completo (ej. un profesor
+                con el permiso individual activado). */}
+            {puedeVerPantalla('citaciones') && !puedeVerPantalla('admin_dashboard') && (
+              <button
+                type="button"
+                className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`}
+                onClick={() => cambiarPantallaConLoader('admin_dashboard')}
+              >
+                <UserPlus size={26} color="var(--gris-secundario)" strokeWidth={1.5} />
+                <span className="mt-5">Citaciones</span>
+              </button>
+            )}
           </>
         ) : null}
       </nav>

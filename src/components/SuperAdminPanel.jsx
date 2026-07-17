@@ -32,6 +32,7 @@ import LogoPicker from './LogoPicker';
 import PagoForm from './PagoForm';
 import ResultadosCards from './ResultadosCards';
 import { colorTipo } from '../utils/appHelpers';
+import { calcularResumenCitacion } from '../utils/citaciones';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { cuentasDemo } from '../data/demoAccounts';
 import ReportesPanel from './ReportesPanel';
@@ -41,6 +42,7 @@ import SaludTimelinePanel from './SaludTimelinePanel';
 import SettingsPanel from './SettingsPanel';
 
 function SuperAdminPanel({
+  puedeAdminCompleto,
   usuarioAutenticado,
   vistaAdmin,
   setVistaAdmin,
@@ -240,16 +242,34 @@ function SuperAdminPanel({
   const [autorizacionMorosos, setAutorizacionMorosos] = useState({});
   const [citacionActivaId, setCitacionActivaId] = useState(null);
   const [convocadoAAgregarPorCitacion, setConvocadoAAgregarPorCitacion] = useState({});
-  const [citaForm, setCitaForm] = useState(() => ({
-    tipo_competencia: 'Liga',
-    competencia_nombre: '',
-    competencia_logo_url: '',
-    dia_citacion: new Date().toISOString().slice(0, 10),
-    hora_citacion: '16:00',
-    hora_presentacion: '15:30',
-    rival_nombre: '',
-    rival_logo_url: '',
-  }));
+  const [vistaCitaciones, setVistaCitaciones] = useState('crear');
+  const [horaMaximaEditadaManualmente, setHoraMaximaEditadaManualmente] = useState(false);
+  // Sugerencia por defecto para "hora máxima de confirmación": el día
+  // anterior a la citación a las 22:00, editable libremente por el profesor
+  // (ej. si necesita más margen para citar a alguien más).
+  const calcularSugerenciaHoraMaxima = (diaCitacionStr) => {
+    if (!diaCitacionStr) return '';
+    const [y, m, d] = diaCitacionStr.split('-').map(Number);
+    if (!y || !m || !d) return '';
+    const fecha = new Date(y, m - 1, d);
+    fecha.setDate(fecha.getDate() - 1);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T22:00`;
+  };
+  const [citaForm, setCitaForm] = useState(() => {
+    const diaCitacionInicial = new Date().toISOString().slice(0, 10);
+    return {
+      tipo_competencia: 'Liga',
+      competencia_nombre: '',
+      competencia_logo_url: '',
+      dia_citacion: diaCitacionInicial,
+      hora_citacion: '16:00',
+      hora_presentacion: '15:30',
+      hora_maxima_confirmacion: calcularSugerenciaHoraMaxima(diaCitacionInicial),
+      rival_nombre: '',
+      rival_logo_url: '',
+    };
+  });
   const [jugadorVisitaEdit, setJugadorVisitaEdit] = useState(null);
   const [guardandoVisita, setGuardandoVisita] = useState(false);
   const [asignandoApoderadoRut, setAsignandoApoderadoRut] = useState(null);
@@ -468,6 +488,16 @@ function SuperAdminPanel({
   useEffect(() => {
     setCategoriasExtraCitacion((prev) => prev.filter((cat) => categoriasExtraCitacionPermitidas.includes(cat)));
   }, [categoriasExtraCitacionPermitidas]);
+
+  // Una cuenta con el permiso individual de citaciones pero sin admin_dashboard
+  // completo (ej. un profesor) solo debe poder ver la pestaña Citaciones, no
+  // el resto del panel admin — sin esto, el widening del gate en App.jsx la
+  // dejaría entrar a un panel completo que no le corresponde.
+  useEffect(() => {
+    if (!puedeAdminCompleto && vistaAdmin !== 'citaciones') {
+      setVistaAdmin('citaciones');
+    }
+  }, [puedeAdminCompleto, vistaAdmin, setVistaAdmin]);
 
   const pagosPendientesReales = useMemo(
     () => (pagosPendientesAdmin || []).filter((p) => {
@@ -1474,6 +1504,16 @@ function SuperAdminPanel({
     return Boolean(rutActual) && rutActual === rutResponsable;
   };
 
+  // Defensa en profundidad para Control de Citaciones: el backend ya filtra
+  // (admin/superadmin ven todas, cualquier otra cuenta con el módulo solo
+  // ve las que ella misma creó), esto solo evita un parpadeo con datos que
+  // no corresponden mientras nominaCita del resto de la app se recarga.
+  const citacionesVisiblesParaControl = useMemo(() => {
+    if (puedeGestionarCitacionesComoAdmin) return nominaCita || [];
+    const rutActual = String(usuarioAutenticado?.rut || '').trim();
+    return (nominaCita || []).filter((cita) => String(cita?.responsable_rut || '').trim() === rutActual);
+  }, [nominaCita, puedeGestionarCitacionesComoAdmin, usuarioAutenticado]);
+
   const obtenerJugadoresDisponiblesParaCitacion = (cita) => {
     const ramaObjetivo = String(cita?.rama || 'todas').toLowerCase();
     const categoriaBase = String(cita?.categoria_base || 'todas').trim().toLowerCase();
@@ -1606,6 +1646,7 @@ function SuperAdminPanel({
         dia_citacion: citaForm.dia_citacion,
         hora_citacion: citaForm.hora_citacion,
         hora_presentacion: citaForm.hora_presentacion,
+        hora_maxima_confirmacion: citaForm.hora_maxima_confirmacion || null,
         rival_nombre: citaForm.rival_nombre,
         rival_logo_url: citaForm.rival_logo_url || '/logos/club-logo.png',
         rama: citaRama,
@@ -1667,19 +1708,27 @@ function SuperAdminPanel({
     <div className="admin-container fade-in">
       <div className="scroll-horizontal-menu mb-15">
         <div className="segment-control" style={{ gap: '6px' }}>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}><Activity size={14} /> Resumen</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'usuarios' ? 'active' : ''}`} onClick={() => setVistaAdmin('usuarios')}><Users size={14} /> Usuarios y Cuentas</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'publicar' ? 'active' : ''}`} onClick={() => setVistaAdmin('publicar')}><Megaphone size={14} /> Publicar</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'resultados' ? 'active' : ''}`} onClick={() => { setVistaAdmin('resultados'); cargarPartidosAdmin(); }}><Trophy size={14} /> Resultados</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'activos' ? 'active' : ''}`} onClick={() => setVistaAdmin('activos')}><Image size={14} /> Activos</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'demo' ? 'active' : ''}`} onClick={() => setVistaAdmin('demo')}><ShieldCheck size={14} /> Demo</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Validar Pago</button>
+          {puedeAdminCompleto ? (
+            <>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}><Activity size={14} /> Resumen</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'usuarios' ? 'active' : ''}`} onClick={() => setVistaAdmin('usuarios')}><Users size={14} /> Usuarios y Cuentas</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'publicar' ? 'active' : ''}`} onClick={() => setVistaAdmin('publicar')}><Megaphone size={14} /> Publicar</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'resultados' ? 'active' : ''}`} onClick={() => { setVistaAdmin('resultados'); cargarPartidosAdmin(); }}><Trophy size={14} /> Resultados</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'activos' ? 'active' : ''}`} onClick={() => setVistaAdmin('activos')}><Image size={14} /> Activos</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'demo' ? 'active' : ''}`} onClick={() => setVistaAdmin('demo')}><ShieldCheck size={14} /> Demo</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Validar Pago</button>
+            </>
+          ) : null}
           <button type="button" className={`segment-btn ${vistaAdmin === 'citaciones' ? 'active' : ''}`} onClick={() => setVistaAdmin('citaciones')}><UserPlus size={14} /> Citaciones</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'invitados' ? 'active' : ''}`} onClick={() => setVistaAdmin('invitados')}><Users size={14} /> Invitados</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'auditoria' ? 'active' : ''}`} onClick={() => setVistaAdmin('auditoria')}><History size={14} /> Auditoría</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'reportes' ? 'active' : ''}`} onClick={() => setVistaAdmin('reportes')}><FileText size={14} /> Reportes</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'salud' ? 'active' : ''}`} onClick={() => { setVistaAdmin('salud'); generarAlertas(); }}><Stethoscope size={14} /> Salud</button>
-          <button type="button" className={`segment-btn ${vistaAdmin === 'permisos' ? 'active' : ''}`} onClick={() => setVistaAdmin('permisos')}><Filter size={14} /> Ajustes</button>
+          {puedeAdminCompleto ? (
+            <>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'invitados' ? 'active' : ''}`} onClick={() => setVistaAdmin('invitados')}><Users size={14} /> Invitados</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'auditoria' ? 'active' : ''}`} onClick={() => setVistaAdmin('auditoria')}><History size={14} /> Auditoría</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'reportes' ? 'active' : ''}`} onClick={() => setVistaAdmin('reportes')}><FileText size={14} /> Reportes</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'salud' ? 'active' : ''}`} onClick={() => { setVistaAdmin('salud'); generarAlertas(); }}><Stethoscope size={14} /> Salud</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'permisos' ? 'active' : ''}`} onClick={() => setVistaAdmin('permisos')}><Filter size={14} /> Ajustes</button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -2825,7 +2874,13 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'citaciones' && (
         <div className="fade-in">
-          <h3 className="section-title">Creador de Convocatorias</h3>
+          <h3 className="section-title">Citaciones</h3>
+          <div className="segment-control mt-15" style={{ gap: '6px' }}>
+            <button type="button" className={`segment-btn ${vistaCitaciones === 'crear' ? 'active' : ''}`} onClick={() => setVistaCitaciones('crear')}><UserPlus size={14} /> Creador de convocatorias</button>
+            <button type="button" className={`segment-btn ${vistaCitaciones === 'control' ? 'active' : ''}`} onClick={() => setVistaCitaciones('control')}><Users size={14} /> Control de Citaciones</button>
+          </div>
+
+          {vistaCitaciones === 'crear' && (
           <div className="card mt-15">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
               <h4 className="form-subtitle" style={{ margin: 0 }}>Nómina FIBA (Tope 12)</h4>
@@ -2856,7 +2911,19 @@ function SuperAdminPanel({
               />
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Día citación</label>
-                <input type="date" className="form-input" value={citaForm.dia_citacion} onChange={(e) => setCitaForm((p) => ({ ...p, dia_citacion: e.target.value }))} />
+                <input
+                  type="date"
+                  className="form-input"
+                  value={citaForm.dia_citacion}
+                  onChange={(e) => {
+                    const nuevoDia = e.target.value;
+                    setCitaForm((p) => ({
+                      ...p,
+                      dia_citacion: nuevoDia,
+                      hora_maxima_confirmacion: horaMaximaEditadaManualmente ? p.hora_maxima_confirmacion : calcularSugerenciaHoraMaxima(nuevoDia),
+                    }));
+                  }}
+                />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Hora citación</label>
@@ -2865,6 +2932,21 @@ function SuperAdminPanel({
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Hora presentación / llegada</label>
                 <input type="time" className="form-input" value={citaForm.hora_presentacion} onChange={(e) => setCitaForm((p) => ({ ...p, hora_presentacion: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Hora máxima de confirmación</label>
+                <input
+                  type="datetime-local"
+                  className="form-input"
+                  value={citaForm.hora_maxima_confirmacion || ''}
+                  onChange={(e) => {
+                    setHoraMaximaEditadaManualmente(true);
+                    setCitaForm((p) => ({ ...p, hora_maxima_confirmacion: e.target.value }));
+                  }}
+                />
+                <p style={{ marginTop: '6px', marginBottom: 0, fontSize: '11px', color: 'var(--texto-secundario)' }}>
+                  Sugerido: día anterior 22:00 — puedes cambiarlo. Pasada esta hora, quien no respondió queda como "no asiste".
+                </p>
               </div>
               <LogoPicker
                 label="Equipo rival"
@@ -3011,16 +3093,21 @@ function SuperAdminPanel({
             );})}
             <button className="btn-electric mt-20" onClick={crearCitacion}>CONFIRMAR Y CITAR</button>
           </div>
+          )}
 
-          {(nominaCita || []).length > 0 && (
-            <div className="card mt-15">
-              <h4 className="form-subtitle" style={{ marginBottom: '10px' }}>Estado de citaciones enviadas</h4>
-              {(nominaCita || []).map((cita) => {
-                const total = (cita.convocados || []).length;
-                const confirmados = (cita.convocados || []).filter((x) => x.respuesta === 'si').length;
-                const noAsisten = (cita.convocados || []).filter((x) => x.respuesta === 'no').length;
-                const respondidos = confirmados + noAsisten;
-                const progreso = total > 0 ? Math.round((respondidos / total) * 100) : 0;
+          {vistaCitaciones === 'control' && (
+          <div className="card mt-15">
+            <h4 className="form-subtitle" style={{ marginBottom: '10px' }}>Control de Citaciones</h4>
+            <p className="text-muted" style={{ marginTop: 0, marginBottom: '10px', fontSize: '12px' }}>
+              {puedeGestionarCitacionesComoAdmin
+                ? 'Viendo todas las citaciones del club.'
+                : 'Viendo solo las citaciones que creaste.'}
+            </p>
+            {citacionesVisiblesParaControl.length === 0 && (
+              <p className="text-muted text-center italic mt-20">Todavía no hay citaciones para mostrar.</p>
+            )}
+              {citacionesVisiblesParaControl.map((cita) => {
+                const { total, confirmados, justificados, automaticos, pendientes, progreso } = calcularResumenCitacion(cita.convocados || []);
                 const abierta = citacionActivaId === cita.id;
 
                 return (
@@ -3039,7 +3126,7 @@ function SuperAdminPanel({
                     </div>
                     <div className="recaud-bar mt-10"><div className="recaud-bar-fill" style={{ width: `${progreso}%`, background: 'linear-gradient(90deg, var(--azul-electrico), var(--verde-victoria))' }} /></div>
                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                      {progreso}% respondida · Confirmados {confirmados} · Inasistentes {noAsisten} · Pendientes {Math.max(total - respondidos, 0)}
+                      {progreso}% respondida de {total} · Confirmados {confirmados} · Rechazados con justificación {justificados} · Rechazados sin justificar (venció plazo) {automaticos} · Pendientes {pendientes}
                     </div>
 
                     {abierta && puedeEditarNominaCitacion(cita) && (
@@ -3089,6 +3176,11 @@ function SuperAdminPanel({
                             <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
                               Estado de respuesta: {conv.respuesta === 'si' ? 'Confirmado' : conv.respuesta === 'no' ? 'Inasistente' : 'Pendiente'}
                             </div>
+                            {conv.respuesta === 'no' && conv.respondido_automaticamente && (
+                              <div style={{ marginTop: '5px', fontSize: '11px', color: '#b36200', fontWeight: '800' }}>
+                                Automático: no respondió antes de la hora máxima de confirmación
+                              </div>
+                            )}
                             {conv.requiere_excepcion_morosidad && (
                               <div style={{ marginTop: '5px', fontSize: '11px', color: '#b36200', fontWeight: '800' }}>
                                 Moroso: requiere excepción · Estado: {conv.estado_excepcion === 'solicitada' ? 'solicitada' : conv.estado_excepcion === 'aprobada' ? 'aprobada' : 'pendiente'}
