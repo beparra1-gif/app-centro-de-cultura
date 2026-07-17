@@ -21,6 +21,82 @@ const resolverUrlFoto = (foto = '') => {
   return `${origen}${foto}`;
 };
 
+const cargarImagenDesdeBlob = (blob) => new Promise((resolve, reject) => {
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+  img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
+  img.src = url;
+});
+
+// Compone la foto (ya sin fondo) sobre un fondo profesional tipo "tarjeta
+// coleccionable": gradiente de estadio con luces, destellos y una sombra de
+// contacto, ademas de un leve realce de contraste/saturacion sobre la foto
+// misma. Todo corre en el navegador (canvas), sin ningun servicio de IA.
+const crearFotoConFondoProfesional = async (blobSinFondo) => {
+  const img = await cargarImagenDesdeBlob(blobSinFondo);
+  const ANCHO = 720;
+  const ALTO = 900;
+  const canvas = document.createElement('canvas');
+  canvas.width = ANCHO;
+  canvas.height = ALTO;
+  const ctx = canvas.getContext('2d');
+
+  const fondo = ctx.createRadialGradient(ANCHO / 2, ALTO * 0.36, ALTO * 0.05, ANCHO / 2, ALTO * 0.45, ALTO * 0.85);
+  fondo.addColorStop(0, '#2c4d80');
+  fondo.addColorStop(0.45, '#122544');
+  fondo.addColorStop(1, '#04070f');
+  ctx.fillStyle = fondo;
+  ctx.fillRect(0, 0, ANCHO, ALTO);
+
+  ctx.save();
+  ctx.globalAlpha = 0.09;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 46;
+  for (let i = -2; i < 6; i += 1) {
+    ctx.beginPath();
+    ctx.moveTo(-220 + i * 180, ALTO + 120);
+    ctx.lineTo(ANCHO * 0.65 + i * 180, -120);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 46; i += 1) {
+    const x = (i * 137.5) % ANCHO;
+    const y = (i * 97.3) % (ALTO * 0.7);
+    const r = (i % 3) + 1;
+    ctx.globalAlpha = 0.05 + (i % 5) * 0.015;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  const escala = Math.min((ANCHO * 0.82) / img.width, (ALTO * 0.86) / img.height);
+  const wDibujo = img.width * escala;
+  const hDibujo = img.height * escala;
+  const x = (ANCHO - wDibujo) / 2;
+  const y = ALTO - hDibujo - ALTO * 0.05;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(ANCHO / 2, y + hDibujo - 4, wDibujo * 0.32, 16, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 18;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.filter = 'contrast(1.12) saturate(1.18) brightness(1.04)';
+  ctx.drawImage(img, x, y, wDibujo, hDibujo);
+  ctx.restore();
+
+  return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
+};
+
 const DISENOS_MARCO = {
   clasico: { etiqueta: 'Clásico', extraBorder: null, extraShadow: null, extraFilter: null },
   neon: { etiqueta: 'Neón', extraBorder: '2px solid #39FF88', extraShadow: '0 0 4px 1px rgba(57,255,136,0.55), 0 0 26px 6px rgba(57,255,136,0.35)', extraFilter: null },
@@ -335,7 +411,8 @@ function TarjetaJugadorPanel({
       if (quitarFondo) {
         const { removeBackground } = await import('@imgly/background-removal');
         const blobSinFondo = await removeBackground(archivoFoto);
-        archivoParaSubir = new File([blobSinFondo], 'foto-sin-fondo.png', { type: 'image/png' });
+        const blobMejorado = await crearFotoConFondoProfesional(blobSinFondo);
+        archivoParaSubir = new File([blobMejorado], 'foto-mejorada.png', { type: 'image/png' });
       }
       const formData = new FormData();
       formData.append('archivo', archivoParaSubir);
@@ -804,7 +881,7 @@ function TarjetaJugadorPanel({
             </div>
 
             <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
-              Elige la foto que más te guste. Puedes quitarle el fondo automáticamente para que se vea mejor en la tarjeta.
+              Elige la foto que más te guste. Puedes mejorarla automáticamente con un fondo profesional tipo tarjeta coleccionable.
             </p>
 
             <input
@@ -822,7 +899,7 @@ function TarjetaJugadorPanel({
 
             <label className="checkbox-label-row" style={{ marginBottom: '14px' }}>
               <input type="checkbox" checked={quitarFondo} onChange={(e) => setQuitarFondo(e.target.checked)} disabled={procesandoFoto} />
-              <Sparkles size={13} /> Quitar el fondo automáticamente
+              <Sparkles size={13} /> Mejorar foto y ponerle fondo profesional
             </label>
 
             <button
@@ -832,7 +909,7 @@ function TarjetaJugadorPanel({
               disabled={!archivoFoto || procesandoFoto}
             >
               {procesandoFoto ? <Loader2 size={16} className="spin" /> : <Camera size={16} />}
-              {procesandoFoto ? (quitarFondo ? 'Quitando fondo y subiendo...' : 'Subiendo...') : 'Guardar foto'}
+              {procesandoFoto ? (quitarFondo ? 'Mejorando foto y subiendo...' : 'Subiendo...') : 'Guardar foto'}
             </button>
           </div>
         </div>
