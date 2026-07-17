@@ -438,35 +438,6 @@ const sonEquiposCompatibles = (jugador = {}, equipo = null) => {
   return nombreJugador.includes(nombreEquipo) || nombreEquipo.includes(nombreJugador);
 };
 
-const resolverEquipoSeleccionado = ({ equipos = [], key = '', nombre = '', logoUrl = '', evitarKey = '' }) => {
-  if (!Array.isArray(equipos) || equipos.length === 0) return null;
-
-  const keyNormalizada = normalizarTexto(key);
-  if (keyNormalizada) {
-    const porKey = equipos.find((equipo) => equipo.key === keyNormalizada);
-    if (porKey) return porKey;
-  }
-
-  const keyConstruida = construirEquipoKey(nombre, logoUrl);
-  if (normalizarTexto(nombre)) {
-    const porKeyConstruida = equipos.find((equipo) => equipo.key === keyConstruida);
-    if (porKeyConstruida) return porKeyConstruida;
-
-    const canonNombre = canonizarNombreEquipo(nombre);
-    const porCanon = equipos.find((equipo) => (equipo._canon || canonizarNombreEquipo(equipo.nombre || '')) === canonNombre);
-    if (porCanon) return porCanon;
-
-    const nombreNormalizado = normalizarClaveFiltro(nombre);
-    const porNombre = equipos.find((equipo) => {
-      const candidato = normalizarClaveFiltro(equipo.nombre || '');
-      return candidato && nombreNormalizado && (candidato.includes(nombreNormalizado) || nombreNormalizado.includes(candidato));
-    });
-    if (porNombre) return porNombre;
-  }
-
-  const alternativa = equipos.find((equipo) => !evitarKey || equipo.key !== evitarKey);
-  return alternativa || equipos[0] || null;
-};
 
 const crearResumenEquipo = (jugadores = []) => {
   const base = {
@@ -545,8 +516,6 @@ function MesaControlPanel({
   const [canchaSede, setCanchaSede] = useState('');
   const [incluirCategoriasMenores, setIncluirCategoriasMenores] = useState(false);
   const [nivelesCategoriasInferiores, setNivelesCategoriasInferiores] = useState(2);
-  const [equipoLocalKey, setEquipoLocalKey] = useState('LOCAL_DEFAULT');
-  const [equipoVisitaKey, setEquipoVisitaKey] = useState('VISITA_DEFAULT');
   const [clubLocalNombre, setClubLocalNombre] = useState('Centro de Cultura Física');
   const [clubLocalLogoUrl, setClubLocalLogoUrl] = useState('/logos/club-logo.png');
   const [clubVisitaNombre, setClubVisitaNombre] = useState('Visitante');
@@ -752,135 +721,31 @@ function MesaControlPanel({
     return Array.from(set);
   }, [partidos]);
 
-  const equiposDesdeClubPicker = useMemo(() => {
-    const equipos = [];
-    if (normalizarTexto(clubLocalNombre)) {
-      equipos.push({
-        key: construirEquipoKey(clubLocalNombre, clubLocalLogoUrl),
-        nombre: normalizarTexto(clubLocalNombre),
-        logoUrl: normalizarTexto(clubLocalLogoUrl),
-        ramas: [],
-        categorias: [],
-        competiciones: [],
-      });
-    }
-    if (normalizarTexto(clubVisitaNombre)) {
-      equipos.push({
-        key: construirEquipoKey(clubVisitaNombre, clubVisitaLogoUrl),
-        nombre: normalizarTexto(clubVisitaNombre),
-        logoUrl: normalizarTexto(clubVisitaLogoUrl),
-        ramas: [],
-        categorias: [],
-        competiciones: [],
-      });
-    }
-    return equipos;
-  }, [clubLocalNombre, clubLocalLogoUrl, clubVisitaNombre, clubVisitaLogoUrl]);
+  // equipoLocalActivo/equipoVisitaActivo: antes esto se resolvía buscando una
+  // coincidencia dentro del historial de partidos (equiposDisponibles +
+  // resolverEquipoSeleccionado), lo que causaba un bug real — al escribir un
+  // club nuevo en el selector, la key quedaba un render atrás, matcheaba por
+  // key vieja contra "Centro de Cultura Física" (siempre presente en el
+  // historial) y un efecto forzaba ese nombre de vuelta al campo, así que
+  // nunca se podía cambiar el club de Local ni de Visita. Ahora el nombre/logo
+  // tecleado en el LogoPicker (clubLocalNombre/clubVisitaNombre) ES la fuente
+  // de verdad directa, sin resolución contra nada — se puede elegir cualquier
+  // club (de la sugerencia o escrito a mano) y se queda.
+  const equipoLocalActivo = useMemo(() => ({
+    key: construirEquipoKey(clubLocalNombre, clubLocalLogoUrl),
+    nombre: normalizarTexto(clubLocalNombre) || 'Centro de Cultura Física',
+    logoUrl: normalizarTexto(clubLocalLogoUrl) || '/logos/club-logo.png',
+    _canon: canonizarNombreEquipo(clubLocalNombre),
+  }), [clubLocalNombre, clubLocalLogoUrl]);
 
-  const equiposDisponibles = useMemo(() => {
-    const map = new Map();
-    const upsert = ({ key, nombre, logoUrl, ramas = [], categorias = [], competiciones = [] }) => {
-      const nombreLimpio = normalizarTexto(nombre);
-      if (!nombreLimpio) return;
-      const finalKey = key || construirEquipoKey(nombreLimpio, logoUrl);
-      const existente = map.get(finalKey);
+  const equipoVisitaActivo = useMemo(() => ({
+    key: construirEquipoKey(clubVisitaNombre, clubVisitaLogoUrl),
+    nombre: normalizarTexto(clubVisitaNombre) || 'Visitante',
+    logoUrl: normalizarTexto(clubVisitaLogoUrl) || '',
+    _canon: canonizarNombreEquipo(clubVisitaNombre),
+  }), [clubVisitaNombre, clubVisitaLogoUrl]);
 
-      const ramasSet = new Set(existente?.ramas || []);
-      const categoriasSet = new Set(existente?.categorias || []);
-      const competicionesSet = new Set(existente?.competiciones || []);
-      ramas.forEach((r) => normalizarTexto(r) && ramasSet.add(normalizarTexto(r)));
-      categorias.forEach((c) => normalizarTexto(c) && categoriasSet.add(normalizarTexto(c)));
-      competiciones.forEach((c) => normalizarTexto(c) && competicionesSet.add(normalizarTexto(c)));
-
-      map.set(finalKey, {
-        key: finalKey,
-        nombre: nombreLimpio,
-        _canon: canonizarNombreEquipo(nombreLimpio),
-        logoUrl: normalizarTexto(logoUrl) || (existente?.logoUrl || ''),
-        ramas: Array.from(ramasSet),
-        categorias: Array.from(categoriasSet),
-        competiciones: Array.from(competicionesSet),
-      });
-    };
-
-    equiposDesdeClubPicker.forEach((e) => upsert(e));
-    equiposDesdePartidos.forEach((e) => upsert(e));
-
-    rosterNormalizado.forEach((j) => {
-      upsert({
-        key: j._equipoKey,
-        nombre: j._equipoNombre,
-        logoUrl: j._equipoLogoUrl,
-        ramas: [j._rama],
-        categorias: [j._categoria],
-        competiciones: [j._competicion],
-      });
-    });
-
-    if (map.size === 0) {
-      const localDefault = {
-        key: 'LOCAL_DEFAULT',
-        nombre: liveScore.equipoLocalNombre || 'Centro de Cultura Física',
-        logoUrl: liveScore.equipoLocalLogoUrl || '/logos/club-logo.png',
-        ramas: [],
-        categorias: [],
-        competiciones: [],
-      };
-      const visitaDefault = {
-        key: 'VISITA_DEFAULT',
-        nombre: liveScore.equipoVisitaNombre || 'Visitante',
-        logoUrl: liveScore.equipoVisitaLogoUrl || '',
-        ramas: [],
-        categorias: [],
-        competiciones: [],
-      };
-      map.set(localDefault.key, localDefault);
-      map.set(visitaDefault.key, visitaDefault);
-    }
-
-    return Array.from(map.values());
-  }, [equiposDesdePartidos, equiposDesdeClubPicker, rosterNormalizado, liveScore.equipoLocalNombre, liveScore.equipoLocalLogoUrl, liveScore.equipoVisitaNombre, liveScore.equipoVisitaLogoUrl]);
-
-  useEffect(() => {
-    const localKey = construirEquipoKey(clubLocalNombre, clubLocalLogoUrl);
-    if (normalizarTexto(clubLocalNombre) && localKey !== equipoLocalKey) {
-      setEquipoLocalKey(localKey);
-    }
-  }, [clubLocalNombre, clubLocalLogoUrl, equipoLocalKey]);
-
-  useEffect(() => {
-    if (modoAnalisis !== 'dos') return;
-    const visitaKey = construirEquipoKey(clubVisitaNombre, clubVisitaLogoUrl);
-    if (normalizarTexto(clubVisitaNombre) && visitaKey !== equipoVisitaKey) {
-      setEquipoVisitaKey(visitaKey);
-    }
-  }, [clubVisitaNombre, clubVisitaLogoUrl, equipoVisitaKey, modoAnalisis]);
-
-  const equipoLocal = resolverEquipoSeleccionado({
-    equipos: equiposDisponibles,
-    key: equipoLocalKey,
-    nombre: clubLocalNombre,
-    logoUrl: clubLocalLogoUrl,
-  });
-  const equipoVisita = resolverEquipoSeleccionado({
-    equipos: equiposDisponibles,
-    key: equipoVisitaKey,
-    nombre: clubVisitaNombre,
-    logoUrl: clubVisitaLogoUrl,
-    evitarKey: equipoLocal?.key || '',
-  });
   const visitaEsNuestroClub = useMemo(() => esNuestroClub(clubVisitaNombre), [clubVisitaNombre]);
-
-  useEffect(() => {
-    if (!equipoLocal?.key || equipoLocal.key === equipoLocalKey) return;
-    setEquipoLocalKey(equipoLocal.key);
-  }, [equipoLocal, equipoLocalKey]);
-
-  useEffect(() => {
-    if (modoAnalisis !== 'dos') return;
-    if (!equipoVisita?.key || equipoVisita.key === equipoVisitaKey) return;
-    setEquipoVisitaKey(equipoVisita.key);
-  }, [equipoVisita, equipoVisitaKey, modoAnalisis]);
 
   useEffect(() => {
     try {
@@ -908,8 +773,6 @@ function MesaControlPanel({
       setCanchaSede(guardada.canchaSede || '');
       setIncluirCategoriasMenores(Boolean(guardada.incluirCategoriasMenores));
       setNivelesCategoriasInferiores(Number(guardada.nivelesCategoriasInferiores || 2));
-      setEquipoLocalKey(guardada.equipoLocalKey || 'LOCAL_DEFAULT');
-      setEquipoVisitaKey(guardada.equipoVisitaKey || 'VISITA_DEFAULT');
       setClubLocalNombre(guardada.clubLocalNombre || 'Centro de Cultura Física');
       setClubLocalLogoUrl(guardada.clubLocalLogoUrl || '/logos/club-logo.png');
       setClubVisitaNombre(guardada.clubVisitaNombre || 'Visitante');
@@ -967,8 +830,6 @@ function MesaControlPanel({
       canchaSede,
       incluirCategoriasMenores,
       nivelesCategoriasInferiores,
-      equipoLocalKey,
-      equipoVisitaKey,
       clubLocalNombre,
       clubLocalLogoUrl,
       clubVisitaNombre,
@@ -1021,8 +882,6 @@ function MesaControlPanel({
     canchaSede,
     incluirCategoriasMenores,
     nivelesCategoriasInferiores,
-    equipoLocalKey,
-    equipoVisitaKey,
     clubLocalNombre,
     clubLocalLogoUrl,
     clubVisitaNombre,
@@ -1058,27 +917,23 @@ function MesaControlPanel({
     jugadorSeleccionadoLive,
   ]);
 
+  // Sincroniza liveScore (lo que se ve en el marcador) desde los campos
+  // tecleados directamente — sin resolver contra nada ni escribir de vuelta
+  // en clubLocalNombre/clubVisitaNombre, que ahora son la única fuente de verdad.
   useEffect(() => {
-    if (!equipoLocal) return;
-    setClubLocalNombre(equipoLocal.nombre || 'Centro de Cultura Física');
-    setClubLocalLogoUrl(equipoLocal.logoUrl || '/logos/club-logo.png');
-    if (modoAnalisis === 'dos' && equipoVisita) {
-      setClubVisitaNombre(equipoVisita.nombre || 'Visitante');
-      setClubVisitaLogoUrl(equipoVisita.logoUrl || '');
-    }
     setLiveScore((prev) => ({
       ...prev,
-      equipoLocalNombre: equipoLocal.nombre || prev.equipoLocalNombre,
-      equipoLocalLogoUrl: equipoLocal.logoUrl || prev.equipoLocalLogoUrl,
-      equipoVisitaNombre: modoAnalisis === 'dos' ? (equipoVisita?.nombre || prev.equipoVisitaNombre) : 'N/A',
-      equipoVisitaLogoUrl: modoAnalisis === 'dos' ? (equipoVisita?.logoUrl || prev.equipoVisitaLogoUrl) : '',
+      equipoLocalNombre: equipoLocalActivo.nombre || prev.equipoLocalNombre,
+      equipoLocalLogoUrl: equipoLocalActivo.logoUrl || prev.equipoLocalLogoUrl,
+      equipoVisitaNombre: modoAnalisis === 'dos' ? (equipoVisitaActivo.nombre || prev.equipoVisitaNombre) : 'N/A',
+      equipoVisitaLogoUrl: modoAnalisis === 'dos' ? (equipoVisitaActivo.logoUrl || prev.equipoVisitaLogoUrl) : '',
       competenciaNombre: filtroCompeticionActiva || prev.competenciaNombre || '',
       competenciaLogoUrl: normalizarTexto(competenciaLogoUrl) || prev.competenciaLogoUrl || '',
       canchaSede: normalizarTexto(canchaSede) || prev.canchaSede || '',
     }));
   }, [
-    equipoLocal,
-    equipoVisita,
+    equipoLocalActivo,
+    equipoVisitaActivo,
     modoAnalisis,
     setLiveScore,
     filtroCompeticionActiva,
@@ -1103,8 +958,8 @@ function MesaControlPanel({
   ]);
 
   const rosterLocalCompleto = useMemo(
-    () => rosterFiltrado.filter((j) => sonEquiposCompatibles(j, equipoLocal)),
-    [rosterFiltrado, equipoLocal]
+    () => rosterFiltrado.filter((j) => sonEquiposCompatibles(j, equipoLocalActivo)),
+    [rosterFiltrado, equipoLocalActivo]
   );
 
   const rosterLocal = useMemo(
@@ -1113,8 +968,8 @@ function MesaControlPanel({
   );
 
   const rosterVisitaCompleto = useMemo(
-    () => rosterFiltrado.filter((j) => sonEquiposCompatibles(j, equipoVisita)),
-    [rosterFiltrado, equipoVisita]
+    () => rosterFiltrado.filter((j) => sonEquiposCompatibles(j, equipoVisitaActivo)),
+    [rosterFiltrado, equipoVisitaActivo]
   );
 
   const rosterVisita = useMemo(
@@ -1148,7 +1003,7 @@ function MesaControlPanel({
     if (!incluirCategoriasMenores || filtroCategoria === 'Todas') return [];
     const q = normalizarTexto(busquedaInclusionLocal).toLowerCase();
     return rosterNormalizado
-      .filter((j) => sonEquiposCompatibles(j, equipoLocal))
+      .filter((j) => sonEquiposCompatibles(j, equipoLocalActivo))
       .filter((j) => {
         const okRama = filtroRama === 'Todas' || coincideFiltro(j._rama, filtroRama);
         const okComp = !filtroCompeticionActiva || coincideFiltro(j._competicion, filtroCompeticionActiva);
@@ -1164,7 +1019,7 @@ function MesaControlPanel({
     filtroCategoria,
     busquedaInclusionLocal,
     rosterNormalizado,
-    equipoLocal,
+    equipoLocalActivo,
     filtroRama,
     filtroCompeticionActiva,
     nivelesCategoriasInferiores,
@@ -1728,7 +1583,7 @@ function MesaControlPanel({
   // siempre sale de la nómina real, y durante el partido en vivo no se agregan
   // jugadoras/es nuevas/os (eso solo pasa al armar los equipos).
   const agregarJugadorVisitaManual = () => {
-    const equipoTarget = equipoVisita;
+    const equipoTarget = equipoVisitaActivo;
     const nombre = normalizarTexto(nuevoNombreVisita);
     const dorsalTexto = normalizarTexto(nuevoDorsalVisita);
     const dorsal = Number(dorsalTexto);
@@ -2435,8 +2290,8 @@ function MesaControlPanel({
   // no debe bloquear la finalizacion del partido, que ya quedo persistida.
   const persistirResultadoYEstadisticas = async (idPartido) => {
     const operadorNombre = normalizarTexto(operadoresMesa[rolOperadorActivo]) || 'Mesa';
-    const nombreLocal = liveScore.equipoLocalNombre || equipoLocal?.nombre || 'Local';
-    const nombreVisita = liveScore.equipoVisitaNombre || equipoVisita?.nombre || 'Visita';
+    const nombreLocal = liveScore.equipoLocalNombre || equipoLocalActivo?.nombre || 'Local';
+    const nombreVisita = liveScore.equipoVisitaNombre || equipoVisitaActivo?.nombre || 'Visita';
     const equipoGanador = liveScore.ptsLocal === liveScore.ptsVisita
       ? 'Empate'
       : (liveScore.ptsLocal > liveScore.ptsVisita ? nombreLocal : nombreVisita);
@@ -2493,14 +2348,14 @@ function MesaControlPanel({
       operadorActivo: rolOperadorActivo,
       equipos: {
         local: {
-          nombre: liveScore.equipoLocalNombre || equipoLocal?.nombre || 'Local',
-          logoUrl: liveScore.equipoLocalLogoUrl || equipoLocal?.logoUrl || '',
+          nombre: liveScore.equipoLocalNombre || equipoLocalActivo?.nombre || 'Local',
+          logoUrl: liveScore.equipoLocalLogoUrl || equipoLocalActivo?.logoUrl || '',
           roster: rosterLocal,
           resumen: crearResumenEquipo(rosterLocal),
         },
         visita: {
-          nombre: liveScore.equipoVisitaNombre || equipoVisita?.nombre || 'Visita',
-          logoUrl: liveScore.equipoVisitaLogoUrl || equipoVisita?.logoUrl || '',
+          nombre: liveScore.equipoVisitaNombre || equipoVisitaActivo?.nombre || 'Visita',
+          logoUrl: liveScore.equipoVisitaLogoUrl || equipoVisitaActivo?.logoUrl || '',
           roster: rosterVisita,
           resumen: crearResumenEquipo(rosterVisita),
         },
@@ -3455,7 +3310,7 @@ function MesaControlPanel({
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Seguimiento Estadístico (Eficiencia)</h4>
         <div className="mesa-stats-grid">
           <div className="mesa-stats-box">
-            <h6>{equipoLocal?.nombre || 'Local'}</h6>
+            <h6>{equipoLocalActivo?.nombre || 'Local'}</h6>
             <p>EFF Equipo: <strong>{resumenLocal.effTotal}</strong> | Promedio: <strong>{resumenLocal.jugadores ? (resumenLocal.effTotal / resumenLocal.jugadores).toFixed(1) : '0.0'}</strong></p>
             <p>PTS: {resumenLocal.pts} | REB: {resumenLocal.reb} | AST: {resumenLocal.ast} | STL: {resumenLocal.stl}</p>
             <p>TL: {resumenLocal.ftm}/{resumenLocal.fta} ({formatoPct(resumenLocal.ftm, resumenLocal.fta)})</p>
@@ -3463,7 +3318,7 @@ function MesaControlPanel({
           </div>
           {modoAnalisis === 'dos' && (
             <div className="mesa-stats-box">
-              <h6>{equipoVisita?.nombre || 'Visita'}</h6>
+              <h6>{equipoVisitaActivo?.nombre || 'Visita'}</h6>
               <p>EFF Equipo: <strong>{resumenVisita.effTotal}</strong> | Promedio: <strong>{resumenVisita.jugadores ? (resumenVisita.effTotal / resumenVisita.jugadores).toFixed(1) : '0.0'}</strong></p>
               <p>PTS: {resumenVisita.pts} | REB: {resumenVisita.reb} | AST: {resumenVisita.ast} | STL: {resumenVisita.stl}</p>
               <p>TL: {resumenVisita.ftm}/{resumenVisita.fta} ({formatoPct(resumenVisita.ftm, resumenVisita.fta)})</p>
