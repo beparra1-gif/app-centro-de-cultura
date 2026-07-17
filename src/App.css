@@ -3110,22 +3110,46 @@ button,
 }
 
 @media (min-width: 768px) and (max-width: 1199px) {
-  .fiba-container .mesa-live-wrap {
+  /* mesa-live-wrap: NO usar ".fiba-container .mesa-live-wrap" (selector
+     descendiente) aca — cuando esta en pantalla completa, fiba-container y
+     mesa-live-wrap-activo son clases del MISMO nodo (portal a document.body),
+     no ancestro/descendiente, asi que ese selector nunca matchea y la regla
+     queda muerta en el modo que mas importa. Se usa .mesa-live-wrap solo,
+     que si es un ancestro real de todo lo de adentro en ambos modos. */
+  .mesa-live-wrap {
     padding-bottom: 4px;
   }
 
-  .fiba-container .mesa-live-wrap .checkout-total-box {
-    margin-bottom: 10px !important;
-    padding: 14px 8px !important;
-    border-radius: 18px !important;
+  /* El encabezado con el marcador se compacta bastante: el objetivo es
+     dejarle todo el alto posible al roster (cancha/banca), que es lo
+     realmente funcional durante el partido. */
+  .mesa-live-wrap .checkout-total-box {
+    margin-bottom: 6px !important;
+    padding: 8px 8px !important;
+    border-radius: 14px !important;
   }
 
-  .fiba-container .mesa-live-wrap .checkout-total-box h1 {
-    font-size: 42px !important;
+  .mesa-live-wrap .checkout-total-box h1 {
+    font-size: 30px !important;
   }
 
-  .fiba-container .mesa-live-wrap > div[style*='margin-bottom: 20px'] {
-    margin-bottom: 10px !important;
+  .mesa-live-wrap .checkout-total-box img {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .mesa-live-wrap .checkout-total-box > div > div:first-child {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    gap: 6px !important;
+  }
+
+  .mesa-live-wrap > div[style*='margin-bottom: 20px'] {
+    margin-bottom: 6px !important;
+  }
+
+  .mesa-live-wrap > div[style*='margin-bottom: 20px'] button {
+    padding: 8px !important;
   }
 
   .fiba-container .caja-doble-grid.landscape-mode.mesa-live-layout-grid {

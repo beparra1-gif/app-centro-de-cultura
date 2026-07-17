@@ -63,17 +63,6 @@ const etiquetaPeriodo = (periodo = 1) => {
 
  const relojInicialPeriodo = (periodo = 1) => (Number(periodo || 1) > 4 ? '05:00' : '10:00');
 
-const duracionPeriodoSegundos = (periodo = 1) => (Number(periodo || 1) > 4 ? 300 : 600);
-
-const instantePartidoSegundos = (periodo = 1, reloj = '') => {
-  const p = Math.max(1, Number(periodo || 1));
-  const relojInicial = relojInicialPeriodo(p);
-  const segundosRestantes = relojASegundos(reloj || relojInicial);
-  let acumulado = 0;
-  for (let i = 1; i < p; i += 1) acumulado += duracionPeriodoSegundos(i);
-  return acumulado + (duracionPeriodoSegundos(p) - segundosRestantes);
-};
-
 const formatoPct = (convertidos = 0, intentos = 0) => {
   const att = Number(intentos || 0);
   const made = Number(convertidos || 0);
@@ -2002,43 +1991,6 @@ function MesaControlPanel({
       .slice(0, 5);
   }, [eventosPartido]);
 
-  const alertasRiesgoLive = useMemo(() => {
-    if (!partidoIniciado) return [];
-    const ahora = instantePartidoSegundos(liveScore.periodo || 1, liveScore.reloj || relojInicialPeriodo(liveScore.periodo || 1));
-    const ventanaInicio = Math.max(0, ahora - 120);
-    const eventosRecientes = eventosPartido.filter((evento) => {
-      if (!evento?.jugadorId || evento.equipo === 'visita') return false;
-      const instante = instantePartidoSegundos(evento.periodo || 1, evento.reloj || relojInicialPeriodo(evento.periodo || 1));
-      return instante >= ventanaInicio && instante <= ahora;
-    });
-
-    const cargaRecientePorJugador = new Map();
-    eventosRecientes.forEach((evento) => {
-      const key = String(evento.jugadorId);
-      cargaRecientePorJugador.set(key, (cargaRecientePorJugador.get(key) || 0) + 1);
-    });
-
-    const alertas = [];
-    rosterLocal.forEach((jugador) => {
-      const cargaReciente = cargaRecientePorJugador.get(String(jugador.id)) || 0;
-      if (numero(jugador.flt) >= 4) {
-        alertas.push({
-          tipo: 'faltas',
-          severidad: numero(jugador.flt) >= 5 ? 'critica' : 'alta',
-          texto: `⚠ #${jugador.dorsal} ${jugador.nombre} con ${numero(jugador.flt)} faltas.`,
-        });
-      }
-      if (quintetoLocalIds.includes(jugador.id) && cargaReciente >= 4) {
-        alertas.push({
-          tipo: 'fatiga',
-          severidad: 'media',
-          texto: `⏱ Alta carga reciente: #${jugador.dorsal} ${jugador.nombre} (${cargaReciente} acciones en 2:00).`,
-        });
-      }
-    });
-    return alertas;
-  }, [partidoIniciado, liveScore.periodo, liveScore.reloj, eventosPartido, rosterLocal, quintetoLocalIds]);
-
   const jugadoresAnaliticaLocal = useMemo(
     () => [...rosterLocal].sort((a, b) => calcularEff(b) - calcularEff(a)),
     [rosterLocal]
@@ -3131,15 +3083,6 @@ function MesaControlPanel({
         <div className="card mb-15" style={{ borderRadius: '14px', border: '1px solid rgba(255,59,48,0.5)', background: 'rgba(255,59,48,0.09)' }}>
           <strong>⚠ Cambio obligatorio pendiente por 5 faltas.</strong>
           <p style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>Selecciona la jugadora/o de salida (5 faltas) y una de banca, luego presiona Cambiar.</p>
-        </div>
-      )}
-
-      {alertasRiesgoLive.length > 0 && (
-        <div className="card mb-15" style={{ borderRadius: '14px', border: '1px solid rgba(255,149,0,0.5)', background: 'rgba(255,149,0,0.08)' }}>
-          <strong>Alertas automáticas en vivo</strong>
-          {alertasRiesgoLive.slice(0, 5).map((alerta, idx) => (
-            <p key={`alerta-live-${idx}`} style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>{alerta.texto}</p>
-          ))}
         </div>
       )}
 
