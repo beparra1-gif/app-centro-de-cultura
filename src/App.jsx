@@ -3,7 +3,7 @@ import './App.css';
 import { 
   Home, User, Trophy, CreditCard, Shirt, CheckCircle, Bell, LogOut, 
   Settings, LayoutGrid, List, Star, Target, MapPin, 
-  Brain, PlayCircle, BookOpen, Video, Users, Sliders, HeartPulse, 
+  Brain, PlayCircle, BookOpen, Video, Users, HeartPulse,
   Save, Monitor, Activity, ArrowRight, ArrowLeft, AlertTriangle, 
   FileText, Flag, QrCode, Lock, Camera, ChevronRight, ChevronLeft, 
   ShieldAlert, Zap, Clock, FileDown, RefreshCw,
@@ -39,7 +39,6 @@ const SuperAdminPanel = lazy(() => import('./components/SuperAdminPanel'));
 const MesaControlPanel = lazy(() => import('./components/MesaControlPanel'));
 const PerfilTesoreriaPanel = lazy(() => import('./components/PerfilTesoreriaPanel'));
 const StaffAsistenciaPanel = lazy(() => import('./components/StaffAsistenciaPanel'));
-const StaffEvaluacionPanel = lazy(() => import('./components/StaffEvaluacionPanel'));
 const AcademiaPanel = lazy(() => import('./components/AcademiaPanel'));
 const TarjetaJugadorPanel = lazy(() => import('./components/TarjetaJugadorPanel'));
 const PushToast = lazy(() => import('./components/PushToast'));
@@ -932,7 +931,6 @@ function App() {
       case 'perfil': return (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? "Validación Tesorería" : "Mi Cuenta";
       case 'jugador': return "Pase Digital";
       case 'asistencia_staff': return "Control Asistencia";
-      case 'evaluacion_staff': return "Lab Rendimiento";
       case 'scoreboard_live': return "Mesa FIBA Live";
       case 'kiosco': return "Kiosco POS";
       case 'admin_dashboard': return "Administración";
@@ -2300,7 +2298,7 @@ function App() {
   }));
 
   const esPerfilFamiliarNav = ['apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'].includes(rolUsuario);
-  const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'evaluacion_staff', 'scoreboard_live', 'kiosco'];
+  const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco'];
   const modulosNavegacionVisibles = modulosNavegacionOrden.filter((modulo) => puedeVerPantalla(modulo));
   const LOCAL_PREVIEW_LABEL = 'MODO LOCAL · CAMBIOS INMEDIATOS';
   const mostrarApartadoLocal = (() => {
@@ -2327,8 +2325,6 @@ function App() {
         return { label: esPerfilFamiliarNav ? 'Pupilos' : 'Jugador', Icon: User };
       case 'asistencia_staff':
         return { label: 'Lista', Icon: Users };
-      case 'evaluacion_staff':
-        return { label: 'Evaluar', Icon: Sliders };
       case 'scoreboard_live':
         return { label: 'Mesa', Icon: Monitor };
       case 'kiosco':
@@ -2711,22 +2707,6 @@ function App() {
                 setFiltroCatStaff={setFiltroCatStaff}
                 rosterEquipo={rosterEquipo}
                 setRosterEquipo={setRosterEquipo}
-              />
-            )}
-            {puedeVerPantalla('evaluacion_staff') && pantallaActiva === 'evaluacion_staff' && (
-              <StaffEvaluacionPanel
-                jugadoresAdmin={jugadoresAdmin}
-                usuarioAutenticado={usuarioAutenticado}
-                evalTiro={evalTiro}
-                setEvalTiro={setEvalTiro}
-                evalDefensa={evalDefensa}
-                setEvalDefensa={setEvalDefensa}
-                evalFisico={evalFisico}
-                setEvalFisico={setEvalFisico}
-                evalTactico={evalTactico}
-                setEvalTactico={setEvalTactico}
-                notasEvaluacion={notasEvaluacion}
-                setNotasEvaluacion={setNotasEvaluacion}
               />
             )}
             {puedeVerPantalla('scoreboard_live') && pantallaActiva === 'scoreboard_live' && (
