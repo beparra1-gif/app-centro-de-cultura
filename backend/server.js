@@ -4516,7 +4516,7 @@ app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'v
     const esStaffOAdminPago = !ROLES_JUGADORES_ACOTADOS.includes(rolNormalizadoPago);
     if (!esStaffOAdminPago && String(rut_jugador || '').trim()) {
       const jugadorPago = (await pool.query(
-        'SELECT fecha_ingreso, mes_inicio_cobro, anio_ingreso FROM jugadores WHERE rut_jugador = $1',
+        'SELECT fecha_ingreso, mes_inicio_cobro FROM jugadores WHERE rut_jugador = $1',
         [rut_jugador]
       )).rows[0];
       const primerMesCobrable = jugadorPago ? obtenerPrimerMesCobrableJugador(jugadorPago) : null;
