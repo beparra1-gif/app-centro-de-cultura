@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Brain, FileText, Image, Link2, ListChecks, PenSquare, Save, Star, Trash2, Upload } from 'lucide-react';
+import { BarChart3, Brain, ClipboardList, FileText, Image, Link2, ListChecks, PenSquare, Save, Star, Trash2, Upload } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
 import * as api from '../api/client';
 import PupiloSelector from './PupiloSelector';
 import PizarraTacticaCanvas from './PizarraTacticaCanvas';
+import StaffEvaluacionPanel from './StaffEvaluacionPanel';
+import AcademiaDashboardPanel from './AcademiaDashboardPanel';
 import { filtraPorRamaCategoria } from '../utils/academia';
+import { calcularProgresoNivel } from '../utils/gamificacion';
 
 const normalizarRutAcademia = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 
@@ -28,9 +31,18 @@ const resolverUrlVideo = (cuerpoTexto = '') => (
   esVideoInterno(cuerpoTexto) ? `${api.API_BASE_URL_CONFIG}/${cuerpoTexto}` : cuerpoTexto
 );
 
-function ReproductorMaterial({ material }) {
+function ReproductorMaterial({ material, rutJugador }) {
   const url = String(material.CUERPO_TEXTO || '').trim();
   const esVideo = (material.TIPO_COMUNICADO || '').toLowerCase().includes('video');
+
+  // Fire-and-forget: mide alcance real de Academia, no bloquea la reproducción
+  // ni se reintenta si falla. Los embeds de YouTube/Vimeo no tienen una señal
+  // confiable de "play" sin integrar el SDK de cada plataforma, así que
+  // quedan sin tracking por ahora (solo video interno y enlaces externos).
+  const registrarInteraccion = () => {
+    if (!material.id || !rutJugador) return;
+    api.academiaAPI.registrarInteraccion({ comunicacion_id: material.id, rut_jugador: rutJugador }).catch(() => {});
+  };
 
   if (esVideo && esUrlYoutube(url)) {
     const id = obtenerIdYoutube(url);
@@ -68,7 +80,7 @@ function ReproductorMaterial({ material }) {
 
   if (esVideo && esVideoInterno(url)) {
     return (
-      <video controls preload="metadata" style={{ width: '100%', borderRadius: '16px', marginBottom: '8px', background: '#000' }}>
+      <video controls preload="metadata" onPlay={registrarInteraccion} style={{ width: '100%', borderRadius: '16px', marginBottom: '8px', background: '#000' }}>
         <source src={resolverUrlVideo(url)} />
         Tu navegador no soporta reproducción de video.
       </video>
@@ -81,6 +93,7 @@ function ReproductorMaterial({ material }) {
       href={url}
       target="_blank"
       rel="noreferrer"
+      onClick={registrarInteraccion}
       style={{
         display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', color: 'var(--texto-principal)',
         border: '1px solid var(--borde-suave)', borderRadius: '18px', padding: '10px 12px',
@@ -137,6 +150,7 @@ function AcademiaPanel({
   jugadoresAdmin,
   rolUsuario,
   rutUsuarioAutenticado,
+  usuarioAutenticado,
   animacionXP,
   setAnimacionXP,
   respuestasQuiz,
@@ -156,8 +170,18 @@ function AcademiaPanel({
   eliminarPizarraAcademia,
   actualizarQuizAcademia,
   eliminarQuizAcademia,
+  evalTiro,
+  setEvalTiro,
+  evalDefensa,
+  setEvalDefensa,
+  evalFisico,
+  setEvalFisico,
+  evalTactico,
+  setEvalTactico,
+  notasEvaluacion,
+  setNotasEvaluacion,
 }) {
-  const esProfesor = rolUsuario === 'staff' || rolUsuario === 'super_admin';
+  const esProfesor = rolUsuario === 'staff' || rolUsuario === 'admin' || rolUsuario === 'super_admin';
   const [origenMaterial, setOrigenMaterial] = useState('enlace');
   const [materialForm, setMaterialForm] = useState({ tipo: 'video', titulo: '', url: '', rama: 'General', categorias: [] });
   const [archivoVideo, setArchivoVideo] = useState(null);
@@ -241,14 +265,16 @@ function AcademiaPanel({
     () => (pizarrasAcademia || []).filter((p) => normalizarRutAcademia(p.creado_por) === rutStaffActual),
     [pizarrasAcademia, rutStaffActual]
   );
-  const misQuiz = useMemo(
-    () => (quizList || []).filter((q) => normalizarRutAcademia(q.creado_por) === rutStaffActual),
-    [quizList, rutStaffActual]
-  );
+  // A diferencia de materiales/pizarras (dueño o admin), cualquier staff puede
+  // editar/borrar cualquier quiz — así que "Mis Publicaciones" lista todo el
+  // quiz existente, no solo el propio.
+  const todoElQuiz = quizList || [];
 
   if (!pupiloActivo) {
     return <div className="mt-20 fade-in">Cargando datos de academia...</div>;
   }
+
+  const progresoNivel = calcularProgresoNivel(pupiloActivo.xp);
 
   const handlePublicarMaterial = async () => {
     if (!materialForm.titulo.trim() || !materialForm.url.trim()) {
@@ -340,24 +366,21 @@ function AcademiaPanel({
     }
   };
 
-  const handleResponderQuiz = (quiz, opcion) => {
-    if (respuestasQuiz[quiz.id]?.completado) return;
-    setRespuestasQuiz((prev) => ({ ...prev, [quiz.id]: { opcionSeleccionada: opcion, completado: true } }));
-
-    if (opcion === quiz.respuestaCorrecta) {
-      setAnimacionXP(true);
-      setTimeout(() => setAnimacionXP(false), 2000);
-
-      if (pupiloActivo?.rut) {
-        api.gamificacionAPI.create({
-          rut_jugador: pupiloActivo.rut,
-          tipo_logro: 'quiz_correcto',
-          puntos_obtenidos: 50,
-          descripcion: `Respuesta correcta: ${quiz.titulo || quiz.pregunta || 'Quiz'}`,
-        }).catch(() => {
-          // Los puntos son un extra cosmetico; si falla el guardado no bloqueamos el quiz.
-        });
+  // El servidor decide si es correcta y otorga los puntos (no confiamos en el
+  // cliente) y es idempotente vía UNIQUE(id_pregunta, rut_jugador): si el
+  // estado local se perdió (recarga de página) y el jugador "responde" de
+  // nuevo, no se duplican puntos — vuelve la respuesta ya guardada.
+  const handleResponderQuiz = async (quiz, opcion) => {
+    if (respuestasQuiz[quiz.id]?.completado || !pupiloActivo?.rut) return;
+    try {
+      const resultado = await api.quizAPI.responder(quiz.id, { rut_jugador: pupiloActivo.rut, opcion_seleccionada: opcion });
+      setRespuestasQuiz((prev) => ({ ...prev, [quiz.id]: { opcionSeleccionada: resultado.opcion_seleccionada || opcion, completado: true } }));
+      if (resultado.es_correcta && !resultado.duplicado) {
+        setAnimacionXP(true);
+        setTimeout(() => setAnimacionXP(false), 2000);
       }
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo registrar la respuesta.', type: 'error' });
     }
   };
 
@@ -455,70 +478,74 @@ function AcademiaPanel({
         onChangePupilo={setPupiloActivo}
       />
 
-      <div className={`card academy-hero-card gamificacion-card mb-20 ${animacionXP ? 'xp-boost-anim' : ''}`} style={{ background: 'linear-gradient(180deg, rgba(11,29,58,0.98) 0%, rgba(0,122,255,0.92) 55%, rgba(0,199,190,0.90) 100%)', color: 'white', border: 'none', position: 'relative', overflow: 'hidden', borderRadius: '28px', boxShadow: '0 18px 40px rgba(0,0,0,0.18)' }}>
-        {animacionXP && <div className="particulas-xp">✨ +50 XP ✨</div>}
-        <div className="gamificacion-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="nivel-box" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <Star size={34} color="var(--gris-secundario)" strokeWidth={1.5} />
-            <div>
-              <h4 style={{ margin: 0, fontSize: '22px', fontWeight: '900' }}>Nivel {pupiloActivo.nivel}</h4>
-              <span className="xp-totales" style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', fontWeight: 'bold' }}>{pupiloActivo.xp} XP Totales</span>
-            </div>
-          </div>
-        </div>
-        <div className="admin-progress-bg mt-15" style={{ background: 'rgba(255,255,255,0.2)', height: '14px', borderRadius: '999px' }}>
-          <div className="admin-progress-fill" style={{ width: '65%', background: '#00C7BE', height: '100%', borderRadius: '999px' }}></div>
-        </div>
-        <p style={{ textAlign: 'right', margin: '8px 0 0 0', fontSize: '11px', fontWeight: '800' }}>Faltan 150 XP para Lvl {pupiloActivo.nivel + 1}</p>
-      </div>
-
-      {materialesVisibles.length > 0 && (
-        <div className="card mt-15" style={{ borderRadius: '24px' }}>
-          <h4 className="form-subtitle" style={{ marginBottom: '12px', fontWeight: '900' }}>Materiales de Academia</h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {materialesVisibles.slice(0, 6).map((mat, idx) => (
-              <div key={mat.id || `${mat.TITULO || 'material'}-${idx}`}>
-                <ReproductorMaterial material={mat} />
-                <strong style={{ fontSize: '13px', display: 'block', marginTop: '4px' }}>{mat.TITULO}</strong>
-                <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                  {mat.rama || 'General'} · {(Array.isArray(mat.categorias_objetivo) && mat.categorias_objetivo.length > 0) ? mat.categorias_objetivo.join(', ') : 'Todas las categorías'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {quizVisibles.length > 0 && (
+      {!esProfesor && (
         <>
-          <h3 className="section-title mt-20">Desafío{quizVisibles.length > 1 ? 's' : ''} Semanal{quizVisibles.length > 1 ? 'es' : ''}</h3>
-          {quizVisibles.map((quiz) => {
-            const respuesta = respuestasQuiz[quiz.id] || {};
-            return (
-              <div key={quiz.id} className="card academia-card mt-10" style={{ border: '2px solid #FF9500', borderRadius: '26px', boxShadow: '0 14px 34px rgba(15,23,42,0.08)' }}>
-                <div className="academia-header">
-                  <span className="badge-academia" style={{ background: '#FF9500', color: 'white', borderRadius: '999px', padding: '6px 10px' }}><Brain size={12} color="var(--gris-secundario)" strokeWidth={1.5} /> QUIZ TÁCTICO</span>
-                  <span className="xp-recompensa">+50 XP</span>
-                </div>
-                <h4 className="titulo-leccion">{quiz.titulo}</h4>
-
-                <div className="quiz-container mt-15">
-                  <p className="pregunta-texto">{quiz.pregunta}</p>
-                  <div className="opciones-quiz">
-                    <button className={`btn-opcion ${respuesta.opcionSeleccionada === 'A' ? (quiz.respuestaCorrecta === 'A' ? 'correcta' : 'incorrecta') : ''}`} onClick={() => handleResponderQuiz(quiz, 'A')} disabled={respuesta.completado}>A) {quiz.opciones?.[0] || '-'}</button>
-                    <button className={`btn-opcion ${respuesta.opcionSeleccionada === 'B' ? (quiz.respuestaCorrecta === 'B' ? 'correcta' : 'incorrecta') : ''}`} onClick={() => handleResponderQuiz(quiz, 'B')} disabled={respuesta.completado}>B) {quiz.opciones?.[1] || '-'}</button>
-                    <button className={`btn-opcion ${respuesta.opcionSeleccionada === 'C' ? (quiz.respuestaCorrecta === 'C' ? 'correcta' : 'incorrecta') : ''}`} onClick={() => handleResponderQuiz(quiz, 'C')} disabled={respuesta.completado}>C) {quiz.opciones?.[2] || '-'}</button>
-                  </div>
-                  {respuesta.completado && (
-                    <div className={`explicacion-box mt-15 ${respuesta.opcionSeleccionada === quiz.respuestaCorrecta ? 'exito' : 'fallo'}`}>
-                      <strong style={{ fontSize: '14px' }}>{respuesta.opcionSeleccionada === quiz.respuestaCorrecta ? 'Correcto. Sumas XP' : 'Casi... pero no.'}</strong>
-                      <p style={{ margin: '8px 0 0 0', fontSize: '13px' }}>{quiz.explicacion}</p>
-                    </div>
-                  )}
+          <div className={`card academy-hero-card gamificacion-card mb-20 ${animacionXP ? 'xp-boost-anim' : ''}`} style={{ background: 'linear-gradient(180deg, rgba(11,29,58,0.98) 0%, rgba(0,122,255,0.92) 55%, rgba(0,199,190,0.90) 100%)', color: 'white', border: 'none', position: 'relative', overflow: 'hidden', borderRadius: '28px', boxShadow: '0 18px 40px rgba(0,0,0,0.18)' }}>
+            {animacionXP && <div className="particulas-xp">✨ +50 XP ✨</div>}
+            <div className="gamificacion-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="nivel-box" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <Star size={34} color="var(--gris-secundario)" strokeWidth={1.5} />
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '22px', fontWeight: '900' }}>Nivel {progresoNivel.nivel}</h4>
+                  <span className="xp-totales" style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', fontWeight: 'bold' }}>{pupiloActivo.xp} XP Totales</span>
                 </div>
               </div>
-            );
-          })}
+            </div>
+            <div className="admin-progress-bg mt-15" style={{ background: 'rgba(255,255,255,0.2)', height: '14px', borderRadius: '999px' }}>
+              <div className="admin-progress-fill" style={{ width: `${progresoNivel.porcentaje}%`, background: '#00C7BE', height: '100%', borderRadius: '999px' }}></div>
+            </div>
+            <p style={{ textAlign: 'right', margin: '8px 0 0 0', fontSize: '11px', fontWeight: '800' }}>Faltan {progresoNivel.xpFaltante} XP para Lvl {progresoNivel.nivel + 1}</p>
+          </div>
+
+          {materialesVisibles.length > 0 && (
+            <div className="card mt-15" style={{ borderRadius: '24px' }}>
+              <h4 className="form-subtitle" style={{ marginBottom: '12px', fontWeight: '900' }}>Materiales de Academia</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {materialesVisibles.slice(0, 6).map((mat, idx) => (
+                  <div key={mat.id || `${mat.TITULO || 'material'}-${idx}`}>
+                    <ReproductorMaterial material={mat} rutJugador={pupiloActivo.rut} />
+                    <strong style={{ fontSize: '13px', display: 'block', marginTop: '4px' }}>{mat.TITULO}</strong>
+                    <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      {mat.rama || 'General'} · {(Array.isArray(mat.categorias_objetivo) && mat.categorias_objetivo.length > 0) ? mat.categorias_objetivo.join(', ') : 'Todas las categorías'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {quizVisibles.length > 0 && (
+            <>
+              <h3 className="section-title mt-20">Desafío{quizVisibles.length > 1 ? 's' : ''} Semanal{quizVisibles.length > 1 ? 'es' : ''}</h3>
+              {quizVisibles.map((quiz) => {
+                const respuesta = respuestasQuiz[quiz.id] || {};
+                return (
+                  <div key={quiz.id} className="card academia-card mt-10" style={{ border: '2px solid #FF9500', borderRadius: '26px', boxShadow: '0 14px 34px rgba(15,23,42,0.08)' }}>
+                    <div className="academia-header">
+                      <span className="badge-academia" style={{ background: '#FF9500', color: 'white', borderRadius: '999px', padding: '6px 10px' }}><Brain size={12} color="var(--gris-secundario)" strokeWidth={1.5} /> QUIZ TÁCTICO</span>
+                      <span className="xp-recompensa">+50 XP</span>
+                    </div>
+                    <h4 className="titulo-leccion">{quiz.titulo}</h4>
+
+                    <div className="quiz-container mt-15">
+                      <p className="pregunta-texto">{quiz.pregunta}</p>
+                      <div className="opciones-quiz">
+                        <button className={`btn-opcion ${respuesta.opcionSeleccionada === 'A' ? (quiz.respuestaCorrecta === 'A' ? 'correcta' : 'incorrecta') : ''}`} onClick={() => handleResponderQuiz(quiz, 'A')} disabled={respuesta.completado}>A) {quiz.opciones?.[0] || '-'}</button>
+                        <button className={`btn-opcion ${respuesta.opcionSeleccionada === 'B' ? (quiz.respuestaCorrecta === 'B' ? 'correcta' : 'incorrecta') : ''}`} onClick={() => handleResponderQuiz(quiz, 'B')} disabled={respuesta.completado}>B) {quiz.opciones?.[1] || '-'}</button>
+                        <button className={`btn-opcion ${respuesta.opcionSeleccionada === 'C' ? (quiz.respuestaCorrecta === 'C' ? 'correcta' : 'incorrecta') : ''}`} onClick={() => handleResponderQuiz(quiz, 'C')} disabled={respuesta.completado}>C) {quiz.opciones?.[2] || '-'}</button>
+                      </div>
+                      {respuesta.completado && (
+                        <div className={`explicacion-box mt-15 ${respuesta.opcionSeleccionada === quiz.respuestaCorrecta ? 'exito' : 'fallo'}`}>
+                          <strong style={{ fontSize: '14px' }}>{respuesta.opcionSeleccionada === quiz.respuestaCorrecta ? 'Correcto. Sumas XP' : 'Casi... pero no.'}</strong>
+                          <p style={{ margin: '8px 0 0 0', fontSize: '13px' }}>{quiz.explicacion}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </>
       )}
 
@@ -526,12 +553,18 @@ function AcademiaPanel({
         <div className="card mt-20" style={{ border: '2px solid rgba(0,122,255,0.22)', borderRadius: '24px' }}>
           <h4 className="form-subtitle" style={{ marginBottom: '10px', fontWeight: '900' }}>Panel Docente</h4>
 
-          <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
             <button type="button" className="btn-secondary" style={{ width: 'auto', padding: '8px 14px', background: vistaDocente === 'publicar' ? 'var(--azul-electrico)' : undefined, color: vistaDocente === 'publicar' ? 'white' : undefined }} onClick={() => setVistaDocente('publicar')}>
               <Upload size={13} /> Publicar
             </button>
             <button type="button" className="btn-secondary" style={{ width: 'auto', padding: '8px 14px', background: vistaDocente === 'gestionar' ? 'var(--azul-electrico)' : undefined, color: vistaDocente === 'gestionar' ? 'white' : undefined }} onClick={() => setVistaDocente('gestionar')}>
               <ListChecks size={13} /> Mis Publicaciones
+            </button>
+            <button type="button" className="btn-secondary" style={{ width: 'auto', padding: '8px 14px', background: vistaDocente === 'dashboard' ? 'var(--azul-electrico)' : undefined, color: vistaDocente === 'dashboard' ? 'white' : undefined }} onClick={() => setVistaDocente('dashboard')}>
+              <BarChart3 size={13} /> Dashboard
+            </button>
+            <button type="button" className="btn-secondary" style={{ width: 'auto', padding: '8px 14px', background: vistaDocente === 'evaluar' ? 'var(--azul-electrico)' : undefined, color: vistaDocente === 'evaluar' ? 'white' : undefined }} onClick={() => setVistaDocente('evaluar')}>
+              <ClipboardList size={13} /> Evaluar
             </button>
           </div>
 
@@ -638,7 +671,7 @@ function AcademiaPanel({
               Editar, publicar/despublicar o eliminar tus materiales, videos, pizarras y quiz.
             </p>
 
-            {misMateriales.length === 0 && misPizarras.length === 0 && misQuiz.length === 0 && (
+            {misMateriales.length === 0 && misPizarras.length === 0 && todoElQuiz.length === 0 && (
               <p className="text-muted text-center italic">Todavía no has publicado nada.</p>
             )}
 
@@ -730,12 +763,12 @@ function AcademiaPanel({
               </div>
             )}
 
-            {misQuiz.length > 0 && (
+            {todoElQuiz.length > 0 && (
               <div className="mb-15">
                 <h6 style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--texto-secundario)' }}>
-                  Quiz ({misQuiz.length})
+                  Quiz ({todoElQuiz.length})
                 </h6>
-                {misQuiz.map((quiz) => {
+                {todoElQuiz.map((quiz) => {
                   const claveEdicion = `quiz-${quiz.id}`;
                   const editando = itemEnEdicion === claveEdicion;
                   return (
@@ -782,6 +815,27 @@ function AcademiaPanel({
               </div>
             )}
           </div>
+          )}
+
+          {vistaDocente === 'dashboard' && (
+            <AcademiaDashboardPanel jugadoresAdmin={jugadoresAdmin} quizList={quizList} materialesAcademia={materialesAcademia} />
+          )}
+
+          {vistaDocente === 'evaluar' && (
+            <StaffEvaluacionPanel
+              jugadoresAdmin={jugadoresAdmin}
+              usuarioAutenticado={usuarioAutenticado}
+              evalTiro={evalTiro}
+              setEvalTiro={setEvalTiro}
+              evalDefensa={evalDefensa}
+              setEvalDefensa={setEvalDefensa}
+              evalFisico={evalFisico}
+              setEvalFisico={setEvalFisico}
+              evalTactico={evalTactico}
+              setEvalTactico={setEvalTactico}
+              notasEvaluacion={notasEvaluacion}
+              setNotasEvaluacion={setNotasEvaluacion}
+            />
           )}
         </div>
       )}

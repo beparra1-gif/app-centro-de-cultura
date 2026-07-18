@@ -1600,6 +1600,64 @@ const ensureQuizExtendedColumns = async () => {
   console.log('🧠 Columnas extendidas de quiz_preguntas verificadas');
 };
 
+// gamificacion_puntos solo existía en migrations/init.js (script suelto, no se
+// corre solo al arrancar) — el dashboard de Academia y el ranking dependen de
+// que esta tabla exista siempre, así que se agrega acá con el mismo DDL.
+const ensureGamificacionPuntosTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS gamificacion_puntos (
+      id_logro SERIAL PRIMARY KEY,
+      rut_jugador VARCHAR(20) REFERENCES jugadores(rut_jugador),
+      tipo_logro VARCHAR(100),
+      puntos_obtenidos INT,
+      descripcion TEXT,
+      fecha_logro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      validado BOOLEAN DEFAULT false,
+      validador_rut VARCHAR(20),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('🏆 Tabla gamificacion_puntos verificada');
+};
+
+// Registro real de respuestas de quiz (antes solo se guardaba un punto de
+// gamificación cuando la respuesta era correcta, sin decir a qué pregunta
+// correspondía, y nada impedía "re-responder" tras refrescar la página).
+// UNIQUE(id_pregunta, rut_jugador) hace todo upsert-seguro vía ON CONFLICT.
+const ensureQuizRespuestasTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS quiz_respuestas (
+      id SERIAL PRIMARY KEY,
+      id_pregunta INTEGER NOT NULL REFERENCES quiz_preguntas(id_pregunta) ON DELETE CASCADE,
+      rut_jugador VARCHAR(20) NOT NULL REFERENCES jugadores(rut_jugador),
+      opcion_seleccionada VARCHAR(10) NOT NULL,
+      es_correcta BOOLEAN NOT NULL,
+      puntos_obtenidos INT NOT NULL DEFAULT 0,
+      respondido_por VARCHAR(20),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(id_pregunta, rut_jugador)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_quiz_respuestas_pregunta ON quiz_respuestas (id_pregunta)`);
+  console.log('📝 Tabla quiz_respuestas verificada');
+};
+
+// Registro de qué deportista abrió/reprodujo cada material de Academia, para
+// medir alcance real (quién interactuó vs. quién nunca lo vio).
+const ensureAcademiaInteraccionesTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS academia_material_interacciones (
+      id SERIAL PRIMARY KEY,
+      comunicacion_id INTEGER NOT NULL REFERENCES comunicaciones(id) ON DELETE CASCADE,
+      rut_jugador VARCHAR(20) NOT NULL REFERENCES jugadores(rut_jugador),
+      primera_apertura TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(comunicacion_id, rut_jugador)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_academia_material_interacciones_com ON academia_material_interacciones (comunicacion_id)`);
+  console.log('👁️ Tabla academia_material_interacciones verificada');
+};
+
 // Kiosco POS: el módulo vivía 100% en memoria del navegador (sin backend detrás),
 // por lo que turnos, fiados y ventas se perdían al recargar o cerrar sesión.
 // Estas tablas le dan persistencia real: catálogo de productos, turnos de caja
@@ -3904,17 +3962,26 @@ cron.schedule('*/5 * * * *', async () => {
 // club, no solo los suyos, llamando la API directo). Staff/admin/super_admin
 // y cualquier otro rol no listado en ROLES_JUGADORES_ACOTADOS siguen viendo
 // todo, igual que hoy.
+// Nivel de Academia derivado de xp_total (100 XP por nivel). Réplica exacta
+// de calcularNivelDesdeXP en src/utils/gamificacion.js — mantener ambas en sync.
+const calcularNivelDesdeXPTotal = (xpTotal) => Math.floor(Number(xpTotal || 0) / 100) + 1;
+
 app.get('/api/jugadores', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM jugadores ORDER BY apellido_paterno ASC`
+      `SELECT j.*, COALESCE(SUM(gp.puntos_obtenidos), 0) AS xp_total
+       FROM jugadores j
+       LEFT JOIN gamificacion_puntos gp ON gp.rut_jugador = j.rut_jugador
+       GROUP BY j.rut_jugador
+       ORDER BY j.apellido_paterno ASC`
     );
+    const filas = result.rows.map((j) => ({ ...j, xp_total: Number(j.xp_total), nivel_actual: calcularNivelDesdeXPTotal(j.xp_total) }));
     if (!ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
-      return res.json(result.rows);
+      return res.json(filas);
     }
     const pupilos = await obtenerPupilosDeActor(req.actor);
     const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
-    res.json(result.rows.filter((j) => rutsPupilos.has(normalizarRutParaComparar(j.rut_jugador))));
+    res.json(filas.filter((j) => rutsPupilos.has(normalizarRutParaComparar(j.rut_jugador))));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3924,11 +3991,17 @@ app.get('/api/jugadores', authenticate, async (req, res) => {
 app.get('/api/jugadores/:rut', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM jugadores WHERE rut_jugador = $1',
+      `SELECT j.*, COALESCE(SUM(gp.puntos_obtenidos), 0) AS xp_total
+       FROM jugadores j
+       LEFT JOIN gamificacion_puntos gp ON gp.rut_jugador = j.rut_jugador
+       WHERE j.rut_jugador = $1
+       GROUP BY j.rut_jugador`,
       [req.params.rut]
     );
     const jugador = result.rows[0];
     if (!jugador) return res.json({});
+    jugador.xp_total = Number(jugador.xp_total);
+    jugador.nivel_actual = calcularNivelDesdeXPTotal(jugador.xp_total);
 
     if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
       const pupilos = await obtenerPupilosDeActor(req.actor);
@@ -4311,6 +4384,65 @@ app.get('/api/pagos-mensualidades', authenticate, async (req, res) => {
 });
 
 // POST: Crear pago de mensualidad
+const ANIO_OBJETIVO_TESORERIA = 2026;
+const MESES_ABREV_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+const obtenerMesNumeroDesdeTexto = (texto = '') => {
+  const normalizado = String(texto || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+  if (!normalizado) return null;
+  const token = normalizado.slice(0, 3);
+  const idx = MESES_ABREV_ES.findIndex((m) => m === token);
+  return idx >= 0 ? idx + 1 : null;
+};
+
+// Primer mes/año de un pago, tolerante a los dos formatos vigentes:
+// "mar-2026" (autoservicio de apoderado) y "Marzo 2026" / "Marzo-Abril 2026" (form admin).
+const parsearPrimerMesDePago = (mesesCorrespondientes = '') => {
+  const texto = String(mesesCorrespondientes || '').trim();
+  if (!texto) return null;
+  const anioMatch = texto.match(/(20\d{2})/);
+  const anio = anioMatch ? Number(anioMatch[1]) : null;
+  const sinAnio = texto.replace(/20\d{2}/g, '').trim();
+  const primerToken = sinAnio.split(/[-\s]+/).filter(Boolean)[0] || '';
+  const mes = obtenerMesNumeroDesdeTexto(primerToken);
+  if (!mes || !anio) return null;
+  return { mes, anio };
+};
+
+// Primer mes cobrable de un jugador. Si el admin fijó mes_inicio_cobro a mano,
+// ese valor es su criterio final y se respeta tal cual (mismo criterio que ya
+// usa el cálculo de morosos). Si no, se deriva de fecha_ingreso cobrando desde
+// el mes SIGUIENTE al de ingreso (regla de negocio: sin prorrateo del mes de ingreso).
+const obtenerPrimerMesCobrableJugador = (jugador = {}) => {
+  const anioCandidatos = [jugador?.anio_ingreso, jugador?.año_ingreso]
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v >= 2000 && v <= 2100);
+  let anio = anioCandidatos[0] || null;
+
+  const mesDesdeCampo = obtenerMesNumeroDesdeTexto(jugador?.mes_inicio_cobro || '');
+  if (mesDesdeCampo) {
+    if (!anio) {
+      const matchFecha = String(jugador?.fecha_ingreso || '').match(/(20\d{2})/);
+      anio = matchFecha ? Number(matchFecha[1]) : ANIO_OBJETIVO_TESORERIA;
+    }
+    return { anio, mes: mesDesdeCampo };
+  }
+
+  const fechaIngreso = String(jugador?.fecha_ingreso || '').trim();
+  const fecha = fechaIngreso ? new Date(fechaIngreso) : null;
+  if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
+    const anioFecha = anio || fecha.getFullYear();
+    const mesFecha = fecha.getMonth() + 1;
+    return mesFecha >= 12 ? { anio: anioFecha + 1, mes: 1 } : { anio: anioFecha, mes: mesFecha + 1 };
+  }
+
+  return null;
+};
+
 app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'validacion_pagos', 'admin_dashboard'), async (req, res) => {
   const {
     rut_jugador,
@@ -4323,6 +4455,26 @@ app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'v
     comprobante_url,
   } = req.body;
   try {
+    const rolNormalizadoPago = normalizarRol(req.actor.rol);
+    const esStaffOAdminPago = !ROLES_JUGADORES_ACOTADOS.includes(rolNormalizadoPago);
+    if (!esStaffOAdminPago && String(rut_jugador || '').trim()) {
+      const jugadorPago = (await pool.query(
+        'SELECT fecha_ingreso, mes_inicio_cobro, anio_ingreso FROM jugadores WHERE rut_jugador = $1',
+        [rut_jugador]
+      )).rows[0];
+      const primerMesCobrable = jugadorPago ? obtenerPrimerMesCobrableJugador(jugadorPago) : null;
+      const primerMesDelPago = parsearPrimerMesDePago(meses_correspondientes);
+      if (primerMesCobrable && primerMesDelPago) {
+        const ordinalCobrable = primerMesCobrable.anio * 12 + primerMesCobrable.mes;
+        const ordinalPago = primerMesDelPago.anio * 12 + primerMesDelPago.mes;
+        if (ordinalPago < ordinalCobrable) {
+          return res.status(400).json({
+            error: `No se pueden pagar meses anteriores al inicio de cobro (${MESES_ABREV_ES[primerMesCobrable.mes - 1]}-${primerMesCobrable.anio}).`,
+          });
+        }
+      }
+    }
+
     let rutPagosFinal = String(rut_pagos || '').trim();
 
     if (!rutPagosFinal) {
@@ -5659,20 +5811,16 @@ app.post('/api/quiz', authenticate, requireRole('staff', 'admin', 'super_admin')
 });
 
 // PUT/DELETE: la PK real de quiz_preguntas es id_pregunta (no id) — la ruta
-// usa :id por convención pero filtra por id_pregunta.
+// usa :id por convención pero filtra por id_pregunta. A diferencia de
+// materiales/videos/pizarras (dueño o admin), el quiz lo puede editar/borrar
+// cualquier staff/admin/superadmin — con pocas cuentas de staff en el club,
+// tiene más sentido que el banco de preguntas se mantenga entre todos.
 app.put('/api/quiz/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
   const { titulo, tipo_quiz, rama, categorias_objetivo, pregunta, opciones_json, respuesta_correcta, dificultad, activo } = req.body;
   try {
-    const existente = await pool.query('SELECT creado_por FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id]);
+    const existente = await pool.query('SELECT id_pregunta FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id]);
     if (existente.rows.length === 0) {
       return res.status(404).json({ error: 'Pregunta no encontrada.' });
-    }
-    const esAdminOSuper = ['admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
-    if (!esAdminOSuper) {
-      const rutCreador = normalizarRutParaComparar(existente.rows[0].creado_por || '');
-      if (!rutCreador || rutCreador !== normalizarRutParaComparar(req.actor.rut)) {
-        return res.status(403).json({ error: 'No puedes editar contenido de otro profesor.' });
-      }
     }
     const result = await pool.query(
       `UPDATE quiz_preguntas SET
@@ -5699,19 +5847,220 @@ app.put('/api/quiz/:id', authenticate, requireRole('staff', 'admin', 'super_admi
 
 app.delete('/api/quiz/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
   try {
-    const existente = await pool.query('SELECT creado_por FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id]);
+    const existente = await pool.query('SELECT id_pregunta FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id]);
     if (existente.rows.length === 0) {
       return res.status(404).json({ error: 'Pregunta no encontrada.' });
     }
-    const esAdminOSuper = ['admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
-    if (!esAdminOSuper) {
-      const rutCreador = normalizarRutParaComparar(existente.rows[0].creado_por || '');
-      if (!rutCreador || rutCreador !== normalizarRutParaComparar(req.actor.rut)) {
-        return res.status(403).json({ error: 'No puedes eliminar contenido de otro profesor.' });
-      }
-    }
     await pool.query('DELETE FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id]);
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: registra la respuesta de un jugador a una pregunta (una sola vez por
+// pregunta+jugador vía UNIQUE+ON CONFLICT — reintentar tras refrescar la
+// página no duplica ni vuelve a otorgar puntos). Reemplaza el flujo anterior
+// donde el frontend llamaba POST /api/gamificacion por separado sin dejar
+// registro de a qué pregunta correspondía la respuesta.
+app.post('/api/quiz/:id/responder', authenticate, requireModule('academia'), async (req, res) => {
+  const { rut_jugador, opcion_seleccionada } = req.body;
+  const rutJugador = String(rut_jugador || '').trim();
+  if (!rutJugador || !opcion_seleccionada) {
+    return res.status(400).json({ error: 'Falta el deportista o la opción elegida.' });
+  }
+  try {
+    const rolNormalizado = normalizarRol(req.actor.rol);
+    if (ROLES_JUGADORES_ACOTADOS.includes(rolNormalizado)) {
+      const pupilos = await obtenerPupilosDeActor(req.actor);
+      if (!pupilos.some((p) => normalizarRutParaComparar(p.rut_jugador) === normalizarRutParaComparar(rutJugador))) {
+        return res.status(403).json({ error: 'No puedes responder por ese deportista.' });
+      }
+    }
+
+    const pregunta = (await pool.query(
+      'SELECT id_pregunta, titulo, respuesta_correcta FROM quiz_preguntas WHERE id_pregunta = $1 AND activo = true',
+      [req.params.id]
+    )).rows[0];
+    if (!pregunta) {
+      return res.status(404).json({ error: 'Pregunta no encontrada.' });
+    }
+
+    const esCorrecta = opcion_seleccionada === pregunta.respuesta_correcta;
+    const puntos = esCorrecta ? 50 : 0;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const insertado = await client.query(
+        `INSERT INTO quiz_respuestas (id_pregunta, rut_jugador, opcion_seleccionada, es_correcta, puntos_obtenidos, respondido_por)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id_pregunta, rut_jugador) DO NOTHING
+         RETURNING *`,
+        [req.params.id, rutJugador, opcion_seleccionada, esCorrecta, puntos, req.actor.rut]
+      );
+
+      if (insertado.rows.length === 0) {
+        await client.query('ROLLBACK');
+        const previa = (await pool.query(
+          'SELECT * FROM quiz_respuestas WHERE id_pregunta = $1 AND rut_jugador = $2',
+          [req.params.id, rutJugador]
+        )).rows[0];
+        return res.json({ ...previa, duplicado: true });
+      }
+
+      if (esCorrecta) {
+        await client.query(
+          `INSERT INTO gamificacion_puntos (rut_jugador, tipo_logro, puntos_obtenidos, descripcion)
+           VALUES ($1, 'quiz_correcto', $2, $3)`,
+          [rutJugador, puntos, `Respuesta correcta: ${pregunta.titulo || 'Quiz'}`]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.status(201).json({ ...insertado.rows[0], duplicado: false });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: respuestas de una pregunta + quiénes de la audiencia objetivo (misma
+// rama/categoría, vía academiaContenidoEsVisibleParaPupilos) todavía no
+// respondieron. Uso exclusivo del dashboard de staff.
+app.get('/api/quiz/:id/respuestas', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  try {
+    const pregunta = (await pool.query('SELECT * FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id])).rows[0];
+    if (!pregunta) {
+      return res.status(404).json({ error: 'Pregunta no encontrada.' });
+    }
+
+    const respuestas = (await pool.query(
+      `SELECT qr.*, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria
+       FROM quiz_respuestas qr
+       JOIN jugadores j ON j.rut_jugador = qr.rut_jugador
+       WHERE qr.id_pregunta = $1
+       ORDER BY qr.created_at ASC`,
+      [req.params.id]
+    )).rows;
+
+    const todosJugadores = (await pool.query('SELECT rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria FROM jugadores')).rows;
+    const rutsQueRespondieron = new Set(respuestas.map((r) => normalizarRutParaComparar(r.rut_jugador)));
+    const audiencia = todosJugadores.filter((j) => academiaContenidoEsVisibleParaPupilos(pregunta, [{ rut_jugador: j.rut_jugador, rama: j.rama, categoria: j.categoria }]));
+    const pendientes = audiencia.filter((j) => !rutsQueRespondieron.has(normalizarRutParaComparar(j.rut_jugador)));
+
+    res.json({
+      pregunta,
+      respuestas,
+      pendientes,
+      resumen: {
+        totalAudiencia: audiencia.length,
+        totalRespondieron: respuestas.length,
+        totalCorrectas: respuestas.filter((r) => r.es_correcta).length,
+        totalIncorrectas: respuestas.filter((r) => !r.es_correcta).length,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: registra que un jugador abrió/reprodujo un material de Academia
+// (video interno o link externo). Fire-and-forget desde el frontend, no
+// otorga puntos — solo mide alcance real. ON CONFLICT DO NOTHING = idempotente
+// aunque se dispare más de una vez para el mismo material/jugador.
+app.post('/api/academia-material-interacciones', authenticate, requireModule('academia'), async (req, res) => {
+  const { comunicacion_id, rut_jugador } = req.body;
+  const rutJugador = String(rut_jugador || '').trim();
+  const comunicacionId = Number(comunicacion_id);
+  if (!rutJugador || !Number.isFinite(comunicacionId)) {
+    return res.status(400).json({ error: 'Falta el material o el deportista.' });
+  }
+  try {
+    const rolNormalizado = normalizarRol(req.actor.rol);
+    if (ROLES_JUGADORES_ACOTADOS.includes(rolNormalizado)) {
+      const pupilos = await obtenerPupilosDeActor(req.actor);
+      if (!pupilos.some((p) => normalizarRutParaComparar(p.rut_jugador) === normalizarRutParaComparar(rutJugador))) {
+        return res.status(403).json({ error: 'No puedes registrar interacción por ese deportista.' });
+      }
+    }
+    const result = await pool.query(
+      `INSERT INTO academia_material_interacciones (comunicacion_id, rut_jugador)
+       VALUES ($1, $2)
+       ON CONFLICT (comunicacion_id, rut_jugador) DO NOTHING
+       RETURNING *`,
+      [comunicacionId, rutJugador]
+    );
+    res.status(201).json({ ok: true, duplicado: result.rows.length === 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: quiénes interactuaron con un material + quiénes de la audiencia
+// objetivo todavía no. Uso exclusivo del dashboard de staff.
+app.get('/api/academia-material-interacciones/:comunicacionId', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  try {
+    const material = (await pool.query('SELECT * FROM comunicaciones WHERE id = $1', [req.params.comunicacionId])).rows[0];
+    if (!material || !String(material.tipo || '').toLowerCase().startsWith('academia-')) {
+      return res.status(404).json({ error: 'Material no encontrado.' });
+    }
+
+    const interacciones = (await pool.query(
+      `SELECT ai.*, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria
+       FROM academia_material_interacciones ai
+       JOIN jugadores j ON j.rut_jugador = ai.rut_jugador
+       WHERE ai.comunicacion_id = $1
+       ORDER BY ai.primera_apertura ASC`,
+      [req.params.comunicacionId]
+    )).rows;
+
+    const todosJugadores = (await pool.query('SELECT rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria FROM jugadores')).rows;
+    const rutsQueInteractuaron = new Set(interacciones.map((r) => normalizarRutParaComparar(r.rut_jugador)));
+    const audiencia = todosJugadores.filter((j) => academiaContenidoEsVisibleParaPupilos(material, [{ rut_jugador: j.rut_jugador, rama: j.rama, categoria: j.categoria }]));
+    const pendientes = audiencia.filter((j) => !rutsQueInteractuaron.has(normalizarRutParaComparar(j.rut_jugador)));
+
+    res.json({
+      material,
+      interacciones,
+      pendientes,
+      resumen: { totalAudiencia: audiencia.length, totalInteractuaron: interacciones.length },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: ranking de puntos/nivel por jugador, filtrable por rama/categoría.
+// LEFT JOIN para que también aparezcan jugadores con 0 puntos (no solo los
+// que ya tienen registros en gamificacion_puntos).
+app.get('/api/academia/ranking', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+  try {
+    const rama = String(req.query.rama || '').trim() || null;
+    const categoria = String(req.query.categoria || '').trim() || null;
+    const result = await pool.query(
+      `SELECT j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria,
+              COALESCE(SUM(gp.puntos_obtenidos), 0) AS xp_total,
+              COUNT(gp.id_logro) AS logros_totales
+       FROM jugadores j
+       LEFT JOIN gamificacion_puntos gp ON gp.rut_jugador = j.rut_jugador
+       WHERE ($1::text IS NULL OR j.rama = $1) AND ($2::text IS NULL OR j.categoria = $2)
+       GROUP BY j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria
+       ORDER BY xp_total DESC, j.apellido_paterno ASC`,
+      [rama, categoria]
+    );
+    const filas = result.rows.map((fila, idx) => ({
+      ...fila,
+      xp_total: Number(fila.xp_total),
+      posicion: idx + 1,
+      nivel: calcularNivelDesdeXPTotal(fila.xp_total),
+    }));
+    res.json(filas);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -6666,6 +7015,18 @@ app.listen(PORT, () => {
 
   ensureQuizExtendedColumns().catch((error) => {
     console.error('❌ Error verificando columnas extendidas de quiz_preguntas:', error.message);
+  });
+
+  ensureGamificacionPuntosTable().catch((error) => {
+    console.error('❌ Error verificando tabla gamificacion_puntos:', error.message);
+  });
+
+  ensureQuizRespuestasTable().catch((error) => {
+    console.error('❌ Error verificando tabla quiz_respuestas:', error.message);
+  });
+
+  ensureAcademiaInteraccionesTable().catch((error) => {
+    console.error('❌ Error verificando tabla academia_material_interacciones:', error.message);
   });
 
   ensureAsistenciaExtendedColumns().catch((error) => {

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { ShieldAlert, MessageCircle, Trophy, BarChart3, Heart, ThumbsUp, Frown, PartyPopper, ClipboardList, AlertTriangle, Megaphone, Check, X, BarChart2 } from 'lucide-react';
 import { nextId } from '../utils/runtimeId';
 import { showToast } from '../utils/toast';
-import { confirmAction } from '../utils/confirmDialog';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
@@ -37,7 +36,6 @@ function ComunicacionesPanel({
     { id: 'great', nombre: 'Genial', color: '#10b981', icon: ThumbsUp },
     { id: 'sad', nombre: 'No me gusta', color: '#f59315', icon: Frown }
   ];
-  const [draftMensajesProfesor, setDraftMensajesProfesor] = useState({});
   // Borrador de justificación antes de enviarla: "No asiste" solo abre este
   // campo, la respuesta recién se manda al pulsar "Confirmar rechazo" (ver
   // renderRespuestaAsistencia más abajo).
@@ -108,7 +106,6 @@ function ComunicacionesPanel({
     // citado (coincide por su propio RUT) intente responder por sí mismo.
     const esElJugadorCitado = Boolean(rutUsuario) && String(convocado?.rut_jugador || '').trim() === rutUsuario;
     const claveMensaje = obtenerClaveMensaje(comId, convocado?.rut_jugador || actorId);
-    const mensajeProfesor = String(draftMensajesProfesor[claveMensaje] ?? convocado?.mensaje_profesor ?? '').trim();
     const justificacion = respuesta === 'no'
       ? String(justificacionManual || '').trim()
       : '';
@@ -135,22 +132,14 @@ function ComunicacionesPanel({
 
     // Citación real (persistida en backend): responder vía API — solo el
     // apoderado registrado del deportista puede hacerlo, el server lo exige.
+    // La excepción de morosidad ya quedó marcada al crear la citación (ver
+    // INSERT de citacion_convocados) — el apoderado no la solicita, solo
+    // confirma/rechaza asistencia.
     if (citacionVinculada && convocado?.rut_jugador) {
-      const requiereExcepcion = Boolean(convocado?.requiere_excepcion_morosidad);
-      const solicitaExcepcion = requiereExcepcion
-        ? await confirmAction({
-            title: 'Excepción de citación',
-            message: 'Este deportista presenta morosidad. ¿Solicitar excepción de citación para revisión administrativa?',
-            confirmText: 'Solicitar',
-          })
-        : false;
-
       try {
         const actualizado = await api.citacionesAPI.responder(citacionVinculada.id, convocado.rut_jugador, {
           respuesta,
           justificacion: justificacion || undefined,
-          mensaje_profesor: mensajeProfesor || undefined,
-          excepcion_solicitada: solicitaExcepcion,
         });
         setNominaCita((prev) => (prev || []).map((cita) => {
           if (cita.id !== citacionVinculada.id) return cita;
@@ -171,18 +160,6 @@ function ComunicacionesPanel({
 
     // Citación legacy / post de asistencia sin persistencia real: se mantiene
     // el comportamiento anterior (bookkeeping solo en el post local).
-    let solicitaExcepcion = false;
-    if (comunicacionObjetivo) {
-      const requiereExcepcion = Boolean(convocado?.requiere_excepcion_morosidad);
-      solicitaExcepcion = requiereExcepcion
-        ? await confirmAction({
-            title: 'Excepción de citación',
-            message: 'Este deportista presenta morosidad. ¿Solicitar excepción de citación para revisión administrativa?',
-            confirmText: 'Solicitar',
-          })
-        : false;
-    }
-
     setComunicaciones(comunicaciones.map(c => {
       if (c.id === comId) {
         const asistencias = Array.isArray(c.asistencias) ? [...c.asistencias] : [];
@@ -190,12 +167,10 @@ function ComunicacionesPanel({
         const payload = {
           respuesta,
           justificacion,
-          mensaje_profesor: mensajeProfesor,
           timestamp: new Date(),
           actorId,
           rut_jugador: convocado?.rut_jugador || rutUsuario,
           nombre: convocado?.nombre || usuarioAutenticado?.nombres || pupiloActivo?.nombre || 'Usuario',
-          excepcion_solicitada: solicitaExcepcion,
         };
         if (idx >= 0) asistencias[idx] = { ...asistencias[idx], ...payload };
         else asistencias.push(payload);
@@ -275,51 +250,6 @@ function ComunicacionesPanel({
         )}
       </>
     );
-  };
-
-  const guardarMensajeProfesor = async (comId, convocado) => {
-    const claveMensaje = obtenerClaveMensaje(comId, convocado?.rut_jugador || 'sin-rut');
-    const mensajeProfesor = String(draftMensajesProfesor[claveMensaje] ?? '').trim();
-    const comunicacion = comunicaciones.find((item) => item.id === comId);
-    const citacionId = comunicacion?.citacion_id || convocado?.citacion_id || null;
-    const citacionVinculada = citacionId ? (nominaCita || []).find((cita) => cita.id === citacionId) : null;
-
-    // Citación real: el mensaje se guarda en el backend (solo el apoderado
-    // llega hasta aquí, el botón está oculto para el resto de los roles).
-    if (citacionVinculada && convocado?.rut_jugador) {
-      try {
-        const actualizado = await api.citacionesAPI.responder(citacionVinculada.id, convocado.rut_jugador, {
-          mensaje_profesor: mensajeProfesor,
-        });
-        setNominaCita((prev) => (prev || []).map((cita) => {
-          if (cita.id !== citacionVinculada.id) return cita;
-          return {
-            ...cita,
-            convocados: (cita.convocados || []).map((item) => (
-              item.rut_jugador === convocado.rut_jugador ? { ...item, ...actualizado } : item
-            )),
-          };
-        }));
-        showToast({ message: 'Mensaje al profesor actualizado.', type: 'success' });
-      } catch (error) {
-        showToast({ message: error.message || 'No se pudo guardar el mensaje al profesor.', type: 'error' });
-      }
-      return;
-    }
-
-    // Citación legacy sin persistencia real: se mantiene el comportamiento
-    // anterior (bookkeeping solo en el post local).
-    setComunicaciones(comunicaciones.map((c) => {
-      if (c.id !== comId) return c;
-      const asistencias = Array.isArray(c.asistencias) ? [...c.asistencias] : [];
-      const idx = asistencias.findIndex((a) => String(a.rut_jugador || '').trim() === String(convocado?.rut_jugador || '').trim());
-      if (idx >= 0) {
-        asistencias[idx] = { ...asistencias[idx], mensaje_profesor: mensajeProfesor, timestamp: new Date() };
-      }
-      return { ...c, asistencias };
-    }));
-
-    showToast({ message: 'Mensaje al profesor actualizado.', type: 'success' });
   };
 
   const voteEncuesta = (encId, opcion) => {
@@ -596,7 +526,6 @@ function ComunicacionesPanel({
                               const puedeResponder = esPropio && !esElJugadorCitado;
                               const colores = obtenerColorEstado(convocado.respuesta);
                               const claveMensaje = obtenerClaveMensaje(c.id, convocado.rut_jugador);
-                              const mensajeActual = draftMensajesProfesor[claveMensaje] ?? convocado.mensaje_profesor ?? '';
                               return (
                                 <div key={`${c.id}-${convocado.rut_jugador}`} style={{ border: '1px solid rgba(15,23,42,0.08)', borderRadius: '14px', padding: '10px', background: 'rgba(255,255,255,0.72)' }}>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -609,9 +538,9 @@ function ComunicacionesPanel({
                                     </span>
                                   </div>
 
-                                  {convocado.requiere_excepcion_morosidad && puedeResponder && (
+                                  {convocado.requiere_excepcion_morosidad && !esElJugadorCitado && (esPropio || ['staff', 'admin', 'super_admin'].includes(rolUsuario)) && (
                                     <p style={{ margin: '8px 0 0 0', fontSize: '12px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.14)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '10px', padding: '8px 10px' }}>
-                                      Alerta tesorería: deportista moroso. Debes solicitar excepción de citación para confirmar asistencia.
+                                      Alerta tesorería: deportista moroso.
                                     </p>
                                   )}
 
@@ -621,41 +550,17 @@ function ComunicacionesPanel({
                                     </p>
                                   )}
 
-                                  {puedeResponder && (
-                                    <>
-                                      {renderRespuestaAsistencia({
-                                        clave: claveMensaje,
-                                        respuesta: convocado.respuesta,
-                                        respondidoAutomaticamente: convocado.respondido_automaticamente,
-                                        onConfirmar: () => addRSVP(c.id, convocado, 'si'),
-                                        onRechazar: (justificacionDraft) => addRSVP(c.id, convocado, 'no', justificacionDraft),
-                                      })}
-
-                                      <div style={{ marginTop: '8px' }}>
-                                        <textarea
-                                          className="form-input"
-                                          rows="2"
-                                          placeholder="Mensaje opcional al profesor"
-                                          value={mensajeActual}
-                                          onChange={(e) => setDraftMensajesProfesor((prev) => ({ ...prev, [claveMensaje]: e.target.value }))}
-                                        />
-                                      </div>
-                                      <div style={{ marginTop: '8px' }}>
-                                        <button className="btn-secondary" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => guardarMensajeProfesor(c.id, { ...convocado, citacion_id: c.citacion_id })}>
-                                          Guardar mensaje al profesor
-                                        </button>
-                                      </div>
-                                    </>
-                                  )}
+                                  {puedeResponder && renderRespuestaAsistencia({
+                                    clave: claveMensaje,
+                                    respuesta: convocado.respuesta,
+                                    respondidoAutomaticamente: convocado.respondido_automaticamente,
+                                    onConfirmar: () => addRSVP(c.id, convocado, 'si'),
+                                    onRechazar: (justificacionDraft) => addRSVP(c.id, convocado, 'no', justificacionDraft),
+                                  })}
 
                                   {!esPropio && convocado.justificacion && (
                                     <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
                                       Justificación: {convocado.justificacion}
-                                    </div>
-                                  )}
-                                  {!esPropio && convocado.mensaje_profesor && (
-                                    <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
-                                      Mensaje al profesor: {convocado.mensaje_profesor}
                                     </div>
                                   )}
                                 </div>

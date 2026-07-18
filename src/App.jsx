@@ -1384,7 +1384,7 @@ function App() {
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       void cargarCitacionesYNotificaciones();
-    }, 120000);
+    }, 20000);
 
     return () => window.clearInterval(intervalId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2638,6 +2638,7 @@ function App() {
                 jugadoresAdmin={jugadoresAdmin}
                 rolUsuario={rolUsuario}
                 rutUsuarioAutenticado={rutUsuarioAutenticado}
+                usuarioAutenticado={usuarioAutenticado}
                 animacionXP={animacionXP}
                 setAnimacionXP={setAnimacionXP}
                 respuestasQuiz={respuestasQuiz}
@@ -2657,6 +2658,16 @@ function App() {
                 eliminarPizarraAcademia={eliminarPizarraAcademia}
                 actualizarQuizAcademia={actualizarQuizAcademia}
                 eliminarQuizAcademia={eliminarQuizAcademia}
+                evalTiro={evalTiro}
+                setEvalTiro={setEvalTiro}
+                evalDefensa={evalDefensa}
+                setEvalDefensa={setEvalDefensa}
+                evalFisico={evalFisico}
+                setEvalFisico={setEvalFisico}
+                evalTactico={evalTactico}
+                setEvalTactico={setEvalTactico}
+                notasEvaluacion={notasEvaluacion}
+                setNotasEvaluacion={setNotasEvaluacion}
               />
             )}
             {puedeVerPantalla('perfil') && pantallaActiva === 'perfil' && (

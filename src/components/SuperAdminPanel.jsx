@@ -3191,11 +3191,6 @@ function SuperAdminPanel({
                                 Justificación: {conv.justificacion}
                               </div>
                             )}
-                            {conv.mensaje_profesor && (
-                              <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
-                                Mensaje al profesor: {conv.mensaje_profesor}
-                              </div>
-                            )}
                             {puedeEditarNominaCitacion(cita) && (
                               <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
                                 <button

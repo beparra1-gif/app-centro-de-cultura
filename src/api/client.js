@@ -970,6 +970,47 @@ export const quizAPI = {
   borrar: async (id) => {
     const response = await apiFetch(`${API_BASE_URL}/quiz/${id}`, { method: 'DELETE' });
     return handleResponse(response);
+  },
+
+  responder: async (id, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/quiz/${id}/responder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+
+  respuestas: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/quiz/${id}/respuestas`);
+    return handleResponse(response);
+  }
+};
+
+// ========== ACADEMIA: DASHBOARD/TRACKING (staff) ==========
+
+export const academiaAPI = {
+  registrarInteraccion: async (datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/academia-material-interacciones`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+
+  interacciones: async (comunicacionId) => {
+    const response = await apiFetch(`${API_BASE_URL}/academia-material-interacciones/${comunicacionId}`);
+    return handleResponse(response);
+  },
+
+  ranking: async ({ rama, categoria } = {}) => {
+    const params = new URLSearchParams();
+    if (rama) params.set('rama', rama);
+    if (categoria) params.set('categoria', categoria);
+    const query = params.toString();
+    const response = await apiFetch(`${API_BASE_URL}/academia/ranking${query ? `?${query}` : ''}`);
+    return handleResponse(response);
   }
 };
 

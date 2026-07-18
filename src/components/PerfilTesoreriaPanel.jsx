@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Camera, Clock, LayoutGrid, List, Search, User, X } from 'lucide-react';
 import { getUTMLastDayPreviousMonth } from '../utils/appHelpers';
+import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 
@@ -28,6 +29,10 @@ function PerfilTesoreriaPanel({
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
   const [errorComprobante, setErrorComprobante] = useState('');
   const [busquedaCuenta, setBusquedaCuenta] = useState('');
+  // mesesSeleccionados (prop) sigue representando la grilla de Mensualidad
+  // Deportista; la de Cuota Socio es independiente para que el
+  // socio/apoderado pueda pagar solo una, solo la otra, o ambas.
+  const [mesesSocioSeleccionados, setMesesSocioSeleccionados] = useState([]);
 
   const esVistaAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
 
@@ -155,24 +160,36 @@ function PerfilTesoreriaPanel({
     return anioObjetivo;
   };
 
+  // Si el admin fijó mes_inicio_cobro a mano, es su criterio final y se
+  // respeta tal cual. Si no, se deriva de fecha_ingreso cobrando desde el mes
+  // SIGUIENTE al de ingreso (regla de negocio: sin prorrateo del mes de
+  // ingreso — ej. ingresó en marzo, el cobro parte en abril). Debe coincidir
+  // exactamente con obtenerPrimerMesCobrableJugador en backend/server.js.
   const obtenerInicioCobro = (pupilo = {}) => {
     const anioIngreso = getAnioIngreso(pupilo);
     const mesDesdeCampo = getMesNumero(pupilo.mes_inicio_cobro || '');
 
-    let mesIngreso = mesDesdeCampo;
-    if (!mesIngreso) {
-      const fechaIngreso = String(pupilo?.fecha_ingreso || '').trim();
-      const fecha = fechaIngreso ? new Date(fechaIngreso) : null;
-      if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
-        mesIngreso = fecha.getMonth() + 1;
-      }
+    if (mesDesdeCampo) {
+      if (anioIngreso > anioObjetivo) return 13;
+      if (anioIngreso < anioObjetivo) return 1;
+      return mesDesdeCampo;
     }
 
-    if (!mesIngreso) mesIngreso = 1;
+    const fechaIngreso = String(pupilo?.fecha_ingreso || '').trim();
+    const fecha = fechaIngreso ? new Date(fechaIngreso) : null;
+    if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
+      const anioFecha = fecha.getFullYear();
+      const mesFecha = fecha.getMonth() + 1;
+      const anioSiguiente = mesFecha >= 12 ? anioFecha + 1 : anioFecha;
+      const mesSiguiente = mesFecha >= 12 ? 1 : mesFecha + 1;
+      if (anioSiguiente > anioObjetivo) return 13;
+      if (anioSiguiente < anioObjetivo) return 1;
+      return mesSiguiente;
+    }
 
     if (anioIngreso > anioObjetivo) return 13;
     if (anioIngreso < anioObjetivo) return 1;
-    return mesIngreso;
+    return 1;
   };
 
   const monthFromPago = (pago) => {
@@ -234,12 +251,12 @@ function PerfilTesoreriaPanel({
       : (becaActiva && mesNumero <= limiteMesDeuda)
         ? 'pagado'
       : (mesNumero < inicioCobroActivo)
-        ? 'futuro'
+        ? 'futuro-preingreso'
         : (mesNumero > limiteMesDeuda)
-          ? 'futuro'
+          ? 'futuro-calendario'
       : (estadosMes.includes('pendiente') || estadosMes.includes('rechazado'))
         ? 'pendiente'
-        : (mesNumero <= limiteMesDeuda ? 'pendiente' : 'futuro');
+        : (mesNumero <= limiteMesDeuda ? 'pendiente' : 'futuro-calendario');
 
     return { id: mesNumero, mes, estado };
   });
@@ -287,18 +304,31 @@ function PerfilTesoreriaPanel({
   const condicionesPagoPerfil = String(cuentaActual?.condiciones_pago || '').trim();
 
   const tarifaRedondeada = Math.round(tarifaMensual);
-  const totalSeleccionado = tarifaRedondeada * mesesSeleccionados.length;
+  const totalSocioSeleccionado = cuotaSocioAplicada * mesesSocioSeleccionados.length;
+  const totalJugadorSeleccionado = cuotaDeportistas * mesesSeleccionados.length;
+  const totalSeleccionado = totalSocioSeleccionado + totalJugadorSeleccionado;
+  const totalMesesSeleccionados = mesesSocioSeleccionados.length + mesesSeleccionados.length;
   const totalFinalPagar = tipoPago === 'completo' ? totalSeleccionado : (Number(montoAbono) || 0);
 
-  const toggleMes = (idMes, estado) => {
+  // Reutilizable para ambas grillas (socio/deportista): solo 'pendiente' y
+  // 'futuro-calendario' son seleccionables. 'pagado' y 'futuro-preingreso'
+  // quedan bloqueados (mes ya pagado o anterior a la fecha de ingreso).
+  const toggleMesEnLista = (idMes, estado, lista, setLista) => {
     if (estado === 'pagado') return;
-    if (!['pendiente', 'futuro'].includes(estado)) return;
-    if (mesesSeleccionados.includes(idMes)) {
-      setMesesSeleccionados(mesesSeleccionados.filter(m => m !== idMes));
+    if (estado === 'futuro-preingreso') {
+      showToast({ message: 'Ese mes es anterior a la fecha de ingreso: no corresponde cobrarlo.', type: 'error' });
+      return;
+    }
+    if (!['pendiente', 'futuro-calendario'].includes(estado)) return;
+    if (lista.includes(idMes)) {
+      setLista(lista.filter((m) => m !== idMes));
     } else {
-      setMesesSeleccionados([...mesesSeleccionados, idMes]);
+      setLista([...lista, idMes]);
     }
   };
+
+  const toggleMesSocio = (idMes, estado) => toggleMesEnLista(idMes, estado, mesesSocioSeleccionados, setMesesSocioSeleccionados);
+  const toggleMes = (idMes, estado) => toggleMesEnLista(idMes, estado, mesesSeleccionados, setMesesSeleccionados);
 
   const construirNombrePupilo = (pupilo = {}) => {
     return (
@@ -327,8 +357,8 @@ function PerfilTesoreriaPanel({
   });
 
   const enviarComprobantePago = async () => {
-    if (mesesSeleccionados.length === 0) {
-      setErrorComprobante('Selecciona al menos un mes para registrar el pago.');
+    if (totalMesesSeleccionados === 0) {
+      setErrorComprobante('Selecciona al menos un mes (cuota socio, deportista, o ambas) para registrar el pago.');
       return;
     }
 
@@ -359,30 +389,37 @@ function PerfilTesoreriaPanel({
         comprobanteUrl = await convertirArchivoABase64(archivoComprobante);
       }
 
-      const payload = {
+      const payloadBase = {
         rut_jugador: rutPupiloActivo,
         rut_pagos: cuentaActual?.rut || '',
         correo_apoderado: cuentaActual?.correo || pupiloActivo?.correo_apoderado || '',
-        concepto_pago: tipoPago === 'abono' ? 'Abono mensualidad' : 'Pago mensualidades',
         cantidad_meses_pagados: 1,
         comprobante_url: comprobanteUrl,
       };
 
-      const mesesOrdenados = [...mesesSeleccionados].sort((a, b) => a - b);
-      const montoUnitario = tipoPago === 'abono' && mesesOrdenados.length > 0
-        ? Number((monto / mesesOrdenados.length).toFixed(0))
-        : Number((tarifaRedondeada || 0));
+      // Reparto parejo del abono entre TODOS los meses seleccionados de ambas
+      // grillas (misma regla de reparto que ya existía para un solo set de meses).
+      const montoUnitarioAbono = tipoPago === 'abono' && totalMesesSeleccionados > 0
+        ? Number((monto / totalMesesSeleccionados).toFixed(0))
+        : null;
 
       const pagosCreados = [];
-      for (const mesNumero of mesesOrdenados) {
-        const mesTexto = String(mesesBase[mesNumero - 1] || '').toLowerCase();
-        const pagoCreado = await api.pagosMensualidadesAPI.create({
-          ...payload,
-          meses_correspondientes: `${mesTexto}-${anioObjetivo}`,
-          monto_total_pagado: montoUnitario > 0 ? montoUnitario : monto,
-        });
-        pagosCreados.push(pagoCreado);
-      }
+      const crearPagosPara = async (meses, concepto, montoPorDefecto) => {
+        const mesesOrdenados = [...meses].sort((a, b) => a - b);
+        for (const mesNumero of mesesOrdenados) {
+          const mesTexto = String(mesesBase[mesNumero - 1] || '').toLowerCase();
+          const pagoCreado = await api.pagosMensualidadesAPI.create({
+            ...payloadBase,
+            concepto_pago: concepto,
+            meses_correspondientes: `${mesTexto}-${anioObjetivo}`,
+            monto_total_pagado: montoUnitarioAbono !== null && montoUnitarioAbono > 0 ? montoUnitarioAbono : montoPorDefecto,
+          });
+          pagosCreados.push(pagoCreado);
+        }
+      };
+
+      await crearPagosPara(mesesSocioSeleccionados, 'Mensualidad Socio', cuotaSocioAplicada);
+      await crearPagosPara(mesesSeleccionados, 'Mensualidad', cuotaDeportistas);
 
       setComprobanteSubido(true);
       setPagosPendientesAdmin((prev) => [
@@ -563,7 +600,7 @@ function PerfilTesoreriaPanel({
             <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: 'var(--texto-heading)', fontWeight: '800' }}>1. Cuotas de Socio: <span className="payment-chip">Socio activo</span></h4>
             <div className={pagoViewMode === 'grid' ? 'grid-12-meses' : 'lista-12-meses'}>
               {mesesVisuales.map((item) => (
-                <button type="button" key={item.id} onClick={() => toggleMes(item.id, item.estado)} className={`mes-box mes-${item.estado} ${mesesSeleccionados.includes(item.id) ? 'seleccionado' : ''}`}>
+                <button type="button" key={item.id} onClick={() => toggleMesSocio(item.id, item.estado)} className={`mes-box mes-${item.estado} ${mesesSocioSeleccionados.includes(item.id) ? 'seleccionado' : ''}`}>
                   <span className="mes-box-nombre">{item.mes}</span>
                 </button>
               ))}
@@ -596,12 +633,12 @@ function PerfilTesoreriaPanel({
                   : (becaActivaPupilo && mesNumero <= limiteMesDeuda)
                     ? 'pagado'
                   : (mesNumero < inicioCobroPupilo)
-                    ? 'futuro'
+                    ? 'futuro-preingreso'
                     : (mesNumero > limiteMesDeuda)
-                      ? 'futuro'
+                      ? 'futuro-calendario'
                   : (estadosMes.includes('pendiente') || estadosMes.includes('rechazado'))
                     ? 'pendiente'
-                    : (mesNumero <= limiteMesDeuda ? 'pendiente' : 'futuro');
+                    : (mesNumero <= limiteMesDeuda ? 'pendiente' : 'futuro-calendario');
 
                 return (
                 <button
@@ -609,7 +646,7 @@ function PerfilTesoreriaPanel({
                   key={mesNumero + pupilo.id}
                   onClick={() => toggleMes(mesNumero, estadoMes)}
                   className={`mes-box mes-${estadoMes} ${mesesSeleccionados.includes(mesNumero) ? 'seleccionado' : ''}`}
-                  style={{ cursor: estadoMes === 'pagado' ? 'not-allowed' : 'pointer' }}
+                  style={{ cursor: (estadoMes === 'pagado' || estadoMes === 'futuro-preingreso') ? 'not-allowed' : 'pointer' }}
                 >
                   <span className="mes-box-nombre">{mes}</span>
                 </button>
@@ -624,21 +661,21 @@ function PerfilTesoreriaPanel({
             <h4 className="form-subtitle">Resumen de Liquidación</h4>
             <div className="checkbox-grid mb-15">
               {esSocio && cuotaSocioAplicada > 0 && (
-                <label className="checkbox-item"><input type="checkbox" checked readOnly /> Pago Cuota Socio</label>
+                <label className="checkbox-item"><input type="checkbox" checked={mesesSocioSeleccionados.length > 0} readOnly /> Pago Cuota Socio</label>
               )}
-              <label className="checkbox-item"><input type="checkbox" checked readOnly /> Pago Cuota Deportista</label>
+              <label className="checkbox-item"><input type="checkbox" checked={mesesSeleccionados.length > 0} readOnly /> Pago Cuota Deportista</label>
             </div>
 
             <div className="desglose-row"><span>Valor mensual perfil:</span><strong>${tarifaRedondeada.toLocaleString('es-CL')} / mes</strong></div>
             {esSocio && cuotaSocioAplicada > 0 && (
-              <div className="desglose-row"><span>Detalle cuota socio:</span><strong>${cuotaSocioAplicada.toLocaleString('es-CL')}</strong></div>
+              <div className="desglose-row"><span>Cuota socio ({mesesSocioSeleccionados.length} {mesesSocioSeleccionados.length === 1 ? 'mes' : 'meses'}):</span><strong>${totalSocioSeleccionado.toLocaleString('es-CL')}</strong></div>
             )}
-            <div className="desglose-row"><span>Detalle cuota deportista(s):</span><strong>${cuotaDeportistas.toLocaleString('es-CL')}</strong></div>
-            <div className="desglose-row total-calc"><span>Total a Pagar ({mesesSeleccionados.length} meses):</span><strong>${totalSeleccionado.toLocaleString('es-CL')}</strong></div>
+            <div className="desglose-row"><span>Cuota deportista(s) ({mesesSeleccionados.length} {mesesSeleccionados.length === 1 ? 'mes' : 'meses'}):</span><strong>${totalJugadorSeleccionado.toLocaleString('es-CL')}</strong></div>
+            <div className="desglose-row total-calc"><span>Total a Pagar:</span><strong>${totalSeleccionado.toLocaleString('es-CL')}</strong></div>
 
-            {mesesSeleccionados.length === 0 && (
+            {totalMesesSeleccionados === 0 && (
               <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', marginTop: '6px' }}>
-                Selecciona meses pendientes o futuros para calcular y enviar la liquidación.
+                Selecciona meses pendientes o futuros (de la cuota socio, deportista, o ambas) para calcular y enviar la liquidación.
               </div>
             )}
 
@@ -691,7 +728,7 @@ function PerfilTesoreriaPanel({
                 className="btn-pago-cta mt-10"
                 style={{ width: '100%', border: 'none', cursor: subiendoComprobante ? 'wait' : 'pointer', opacity: subiendoComprobante ? 0.8 : 1, padding: '14px 16px', borderRadius: '14px' }}
                 onClick={enviarComprobantePago}
-                disabled={subiendoComprobante || mesesSeleccionados.length === 0}
+                disabled={subiendoComprobante || totalMesesSeleccionados === 0}
               >
                 <Camera size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <div>
@@ -708,7 +745,7 @@ function PerfilTesoreriaPanel({
             <Clock size={40} color="var(--gris-secundario)" strokeWidth={1.5} style={{ margin: '0 auto' }} />
             <h3 style={{ color: '#FF9500', margin: '15px 0 10px 0', fontSize: '20px', fontWeight: '900' }}>Pago en Revisión</h3>
             <p style={{ fontSize: '14px', margin: 0, color: 'var(--texto-secundario)', lineHeight: '1.5' }}>Tesorería ha recibido tu comprobante. Será validado a la brevedad y recibirás una notificación.</p>
-            <button className="btn-secondary mt-20" style={{ color: '#FF9500', background: 'rgba(255,149,0,0.1)' }} onClick={() => { setComprobanteSubido(false); setMesesSeleccionados([]); setMontoAbono(''); setArchivoComprobante(null); setErrorComprobante(''); }}>
+            <button className="btn-secondary mt-20" style={{ color: '#FF9500', background: 'rgba(255,149,0,0.1)' }} onClick={() => { setComprobanteSubido(false); setMesesSeleccionados([]); setMesesSocioSeleccionados([]); setMontoAbono(''); setArchivoComprobante(null); setErrorComprobante(''); }}>
               Entendido, volver
             </button>
           </div>

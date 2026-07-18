@@ -178,6 +178,13 @@ function StaffAsistenciaPanel({
       showToast({ message: 'No hay jugadores para guardar en esta lista.', type: 'error' });
       return;
     }
+    if (!(await confirmAction({
+      title: 'Cerrar asistencia',
+      message: '¿Estás seguro de cerrar la asistencia de esta sesión? Se guardará y la lista quedará lista para una nueva.',
+      confirmText: 'Confirmar y guardar',
+    }))) {
+      return;
+    }
     setGuardandoSesion(true);
     try {
       await api.asistenciaAPI.crearSesion({
@@ -195,6 +202,12 @@ function StaffAsistenciaPanel({
         })),
       });
       showToast({ message: `Asistencia guardada: ${presentes} presentes, ${ausentes} ausentes, ${justificados} justificados.`, type: 'success' });
+      setRosterEquipo(rosterEquipo.map((j) => ({ ...j, estadoAsistencia: 'pendiente' })));
+      setFechaLista(new Date().toISOString().slice(0, 10));
+      setHoraInicio('18:00');
+      setHoraFin('19:30');
+      setCategoriasSeleccionadas([]);
+      cargarSesiones();
     } catch (error) {
       showToast({ message: error.message || 'No se pudo guardar la asistencia.', type: 'error' });
     } finally {

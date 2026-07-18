@@ -1780,7 +1780,8 @@ button,
 
 .mes-pagado { background-color: rgba(52, 199, 89, 0.18); color: #137a39; border: 1px solid rgba(52, 199, 89, 0.35); cursor: not-allowed; }
 .mes-pendiente { background-color: rgba(255, 59, 48, 0.12); color: #b3261e; border: 1px solid rgba(255, 59, 48, 0.28); }
-.mes-futuro { background-color: #f1f4f8; color: #6b7280; border: 1px solid #d5dbe4; }
+.mes-futuro-calendario { background-color: #f1f4f8; color: #6b7280; border: 1px solid #d5dbe4; }
+.mes-futuro-preingreso { background-color: #f1f4f8; color: #9ca3af; border: 1px solid #d5dbe4; cursor: not-allowed; }
 .mes-box.seleccionado { 
   border-color: var(--azul-electrico); background-color: rgba(0, 122, 255, 0.1); 
   color: var(--azul-electrico); transform: scale(1.03); box-shadow: 0 4px 12px rgba(0,122,255,0.2); 
