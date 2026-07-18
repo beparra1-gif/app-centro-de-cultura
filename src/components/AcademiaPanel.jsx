@@ -471,12 +471,14 @@ function AcademiaPanel({
 
   return (
     <div className="mt-20 fade-in">
-      <PupiloSelector
-        pupilos={pupilosDisponibles}
-        pupiloActivo={pupiloActivo}
-        rolUsuario={rolUsuario}
-        onChangePupilo={setPupiloActivo}
-      />
+      {!esProfesor && (
+        <PupiloSelector
+          pupilos={pupilosDisponibles}
+          pupiloActivo={pupiloActivo}
+          rolUsuario={rolUsuario}
+          onChangePupilo={setPupiloActivo}
+        />
+      )}
 
       {!esProfesor && (
         <>
