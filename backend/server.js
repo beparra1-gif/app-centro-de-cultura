@@ -1603,6 +1603,30 @@ const ensureQuizExtendedColumns = async () => {
 // gamificacion_puntos solo existía en migrations/init.js (script suelto, no se
 // corre solo al arrancar) — el dashboard de Academia y el ranking dependen de
 // que esta tabla exista siempre, así que se agrega acá con el mismo DDL.
+// Igual que gamificacion_puntos, esta tabla solo vivía en el script de
+// migración suelto (backend/migrations/init.js) — si un despliegue nunca lo
+// corrió, quedaba inexistente. La copiamos acá para que el boot la garantice.
+const ensureEvaluacionesTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS evaluaciones (
+      id_evaluacion SERIAL PRIMARY KEY,
+      rut_jugador VARCHAR(20) REFERENCES jugadores(rut_jugador),
+      evaluador_rut VARCHAR(20),
+      fecha_evaluacion DATE,
+      tipo_evaluacion VARCHAR(50),
+      puntaje_tecnica INT,
+      puntaje_actitud INT,
+      puntaje_condicion INT,
+      puntaje_mental INT,
+      comentarios TEXT,
+      recomendaciones TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('📋 Tabla evaluaciones verificada');
+};
+
 const ensureGamificacionPuntosTable = async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS gamificacion_puntos (
@@ -1847,7 +1871,32 @@ const ensureNotificacionesAppTable = async () => {
   console.log('🔔 Tabla notificaciones_app verificada');
 };
 
-app.post('/api/logo-assets', authenticate, requireModule('admin_dashboard'), uploadLogoMemoria.single('archivo'), async (req, res) => {
+// Endpoint genérico de subida de imágenes, reutilizado por flujos que NO son
+// de administración: foto de perfil en onboarding (tipo 'perfil') y
+// comprobante de pago en Tesorería (tipo 'comprobante') — ambos los sube el
+// propio apoderado/socio, no un admin. Antes exigía admin_dashboard siempre,
+// lo que rompía la subida de comprobante para cualquier no-admin ("No tienes
+// acceso a este módulo"). El resto de los tipos (logo de club, foto de
+// jugador desde el panel admin, etc.) se mantienen exclusivos de admin.
+// multer debe ir ANTES de leer req.body.tipo: en multipart/form-data el
+// body recién queda poblado después de que multer lo parsea.
+const TIPOS_LOGO_ASSET_AUTOSERVICIO = ['perfil', 'comprobante'];
+app.post('/api/logo-assets', authenticate, uploadLogoMemoria.single('archivo'), (req, res, next) => {
+  const tipo = String(req.body.tipo || 'logo').trim() || 'logo';
+  if (TIPOS_LOGO_ASSET_AUTOSERVICIO.includes(tipo)) {
+    // El nombre lo fija el servidor a partir del actor autenticado, no el
+    // valor que mande el cliente — si no, cualquiera podría forjar el
+    // "nombre" y pisar la foto de perfil o el comprobante de OTRA persona
+    // (el filename final sale de nombre+tipo y el INSERT hace upsert por
+    // filename). El comprobante además lleva timestamp: cada envío es un
+    // archivo nuevo, para no pisar el comprobante de un pago anterior
+    // todavía en revisión.
+    const rutActor = String(req.actor?.rut || 'sin-rut').trim();
+    req.body.nombre = tipo === 'comprobante' ? `${rutActor}-${Date.now()}` : rutActor;
+    return next();
+  }
+  return requireModule('admin_dashboard')(req, res, next);
+}, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Debes seleccionar un archivo de logo.' });
@@ -1891,12 +1940,20 @@ app.post('/api/logo-assets', authenticate, requireModule('admin_dashboard'), upl
   }
 });
 
+// Tipos que NO son logos de equipo/torneo pero comparten esta misma tabla
+// (foto de perfil de onboarding, comprobante de pago, foto de jugador desde
+// el panel admin o desde /api/jugadores/:rut/foto) — se excluyen del listado
+// para no entorpecer la búsqueda de logos reales.
+const TIPOS_LOGO_ASSET_NO_LISTABLES = ['perfil', 'comprobante', 'jugador-foto', 'foto-jugador'];
+
 app.get('/api/logo-assets/list', async (_req, res) => {
   try {
     const result = await pool.query(
       `SELECT filename, nombre, tipo, created_at
        FROM logo_assets
-       ORDER BY created_at DESC, filename ASC`
+       WHERE tipo IS NULL OR NOT (tipo = ANY($1::text[]))
+       ORDER BY created_at DESC, filename ASC`,
+      [TIPOS_LOGO_ASSET_NO_LISTABLES]
     );
 
     const logos = (result.rows || []).map((row) => ({
@@ -5637,9 +5694,18 @@ app.post('/api/estadisticas', authenticate, requireModule('scoreboard_live'), as
 // 16. ENDPOINTS: EVALUACIONES (FASE 2)
 // ==========================================
 
-// GET: Evaluaciones de un jugador
+// GET: Evaluaciones de un jugador. Staff/admin/superadmin ven cualquiera;
+// el resto (apoderado, jugador, socio, etc.) solo puede ver las de sus
+// propios pupilos — antes cualquiera con el módulo 'jugador' podía leer las
+// evaluaciones de CUALQUIER rut solo cambiando el parámetro de la URL.
 app.get('/api/evaluaciones/jugador/:rut', authenticate, requireAnyModule('evaluacion_staff', 'jugador'), async (req, res) => {
   try {
+    if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+      const pupilos = await obtenerPupilosDeActor(req.actor);
+      if (!pupilos.some((p) => normalizarRutParaComparar(p.rut_jugador) === normalizarRutParaComparar(req.params.rut))) {
+        return res.status(403).json({ error: 'No tienes acceso a las evaluaciones de ese deportista.' });
+      }
+    }
     const result = await pool.query(
       `SELECT * FROM evaluaciones WHERE rut_jugador = $1 ORDER BY fecha_evaluacion DESC`,
       [req.params.rut]
@@ -7015,6 +7081,10 @@ app.listen(PORT, () => {
 
   ensureQuizExtendedColumns().catch((error) => {
     console.error('❌ Error verificando columnas extendidas de quiz_preguntas:', error.message);
+  });
+
+  ensureEvaluacionesTable().catch((error) => {
+    console.error('❌ Error verificando tabla evaluaciones:', error.message);
   });
 
   ensureGamificacionPuntosTable().catch((error) => {

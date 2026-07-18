@@ -192,7 +192,10 @@ function App() {
   const [notasEvaluacion, setNotasEvaluacion] = useState({ fortaleza: '', mejora: '', metas: '' });
 
   // --- ESTADOS: TESORERÍA Y VALIDACIONES ---
-  const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
+  // mesesSeleccionados es { [rutPupilo]: number[] } — cada pupilo tiene su
+  // propia selección de meses en la grilla "Mensualidad Deportista" (antes
+  // era un arreglo plano compartido entre todas las tarjetas de pupilo).
+  const [mesesSeleccionados, setMesesSeleccionados] = useState({});
   const [tipoPago, setTipoPago] = useState('completo'); 
   const [montoAbono, setMontoAbono] = useState('');
   const [comprobanteSubido, setComprobanteSubido] = useState(false);

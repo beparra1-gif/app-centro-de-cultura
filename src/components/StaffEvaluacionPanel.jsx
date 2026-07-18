@@ -22,6 +22,8 @@ function StaffEvaluacionPanel({
   const [filtroCategoria, setFiltroCategoria] = useState('Todas');
   const [rutJugadorSeleccionado, setRutJugadorSeleccionado] = useState('');
   const [guardando, setGuardando] = useState(false);
+  const [historialEvaluaciones, setHistorialEvaluaciones] = useState([]);
+  const [cargandoHistorial, setCargandoHistorial] = useState(false);
 
   const ramasDisponibles = useMemo(() => {
     const set = new Set((jugadoresAdmin || []).map((j) => String(j.rama || '').trim()).filter(Boolean));
@@ -43,6 +45,27 @@ function StaffEvaluacionPanel({
   }, [jugadoresAdmin, filtroRama, filtroCategoria]);
 
   const jugadorSeleccionado = jugadoresFiltrados.find((j) => j.rut_jugador === rutJugadorSeleccionado) || null;
+
+  const cargarHistorial = async (rut) => {
+    if (!rut) {
+      setHistorialEvaluaciones([]);
+      return;
+    }
+    setCargandoHistorial(true);
+    try {
+      const datos = await api.evaluacionesAPI.getByJugador(rut);
+      setHistorialEvaluaciones(Array.isArray(datos) ? datos : []);
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo cargar el historial de evaluaciones.', type: 'error' });
+    } finally {
+      setCargandoHistorial(false);
+    }
+  };
+
+  const seleccionarJugador = (rut) => {
+    setRutJugadorSeleccionado(rut);
+    cargarHistorial(rut);
+  };
 
   const dataEvalLive = [
     { subject: 'Tiro', score: evalTiro, fullMark: 100 },
@@ -71,6 +94,7 @@ function StaffEvaluacionPanel({
       });
       showToast({ message: `Evaluación guardada para ${jugadorSeleccionado.nombres} ${jugadorSeleccionado.apellido_paterno}.`, type: 'success' });
       setNotasEvaluacion({ fortaleza: '', mejora: '', metas: '' });
+      cargarHistorial(jugadorSeleccionado.rut_jugador);
     } catch (error) {
       showToast({ message: `No se pudo guardar la evaluación: ${error.message}`, type: 'error' });
     } finally {
@@ -104,7 +128,7 @@ function StaffEvaluacionPanel({
           className="form-input"
           style={{ background: 'rgba(0,122,255,0.05)', borderColor: 'var(--azul-electrico)', color: 'var(--texto-heading)', fontWeight: '800' }}
           value={rutJugadorSeleccionado}
-          onChange={(e) => setRutJugadorSeleccionado(e.target.value)}
+          onChange={(e) => seleccionarJugador(e.target.value)}
         >
           <option value="">Selecciona un jugador desde el roster activo</option>
           {jugadoresFiltrados.map((j) => (
@@ -114,6 +138,37 @@ function StaffEvaluacionPanel({
           ))}
         </select>
       </div>
+
+      {jugadorSeleccionado && (
+        <div className="card mb-15">
+          <h4 className="form-subtitle">Historial de Evaluaciones</h4>
+          {cargandoHistorial && <p className="text-muted">Cargando historial...</p>}
+          {!cargandoHistorial && historialEvaluaciones.length === 0 && (
+            <p className="text-muted text-center italic">Sin evaluaciones registradas todavía para {jugadorSeleccionado.nombres}.</p>
+          )}
+          {!cargandoHistorial && historialEvaluaciones.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
+              {historialEvaluaciones.map((ev) => (
+                <div key={ev.id_evaluacion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <strong style={{ fontSize: '12px' }}>{ev.fecha_evaluacion ? new Date(ev.fecha_evaluacion).toLocaleDateString('es-CL') : 'Sin fecha'}</strong>
+                    <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{ev.tipo_evaluacion || 'Evaluación'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px', fontSize: '11px', fontWeight: '800' }}>
+                    <span>Tiro: {ev.puntaje_tecnica ?? '-'}</span>
+                    <span>Defensa: {ev.puntaje_actitud ?? '-'}</span>
+                    <span>Físico: {ev.puntaje_condicion ?? '-'}</span>
+                    <span>Táctica: {ev.puntaje_mental ?? '-'}</span>
+                  </div>
+                  {ev.comentarios && (
+                    <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--texto-secundario)', whiteSpace: 'pre-line' }}>{ev.comentarios}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card grafico-card-dark" style={{ background: '#1a2a42', borderRadius: '20px', overflow: 'hidden' }}>
         <h4 style={{ color: 'white', textAlign: 'center', margin: '20px 0 0 0' }}>Radar Biomecánico</h4>

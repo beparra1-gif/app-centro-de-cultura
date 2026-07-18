@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { BarChart3, Brain, ClipboardList, FileText, Image, Link2, ListChecks, PenSquare, Save, Star, Trash2, Upload } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { BarChart3, Brain, ChevronDown, ClipboardList, FileText, Image, Link2, ListChecks, PenSquare, PenTool, Save, Star, Trash2, Upload } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
 import * as api from '../api/client';
@@ -143,6 +143,38 @@ function SelectorRamaCategoria({ form, setForm, toggleCategoria, categoriasDispo
   );
 }
 
+// Acordeón: cada tipo de publicación (contenido/quiz/pizarra) parte cerrado
+// y se abre solo el que el docente elige, en vez de mostrar los 3 formularios
+// seguidos y obligar a hacer scroll para encontrar el que se necesita.
+function SeccionPublicar({ id, titulo, subtitulo, Icon, abierta, onToggle, children }) {
+  return (
+    <div className="mb-10" style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '16px', overflow: 'hidden', background: 'rgba(255,255,255,0.86)' }}>
+      <button
+        type="button"
+        onClick={() => onToggle(abierta ? null : id)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+          padding: '14px 16px', background: abierta ? 'rgba(0,122,255,0.06)' : 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Icon size={18} color="var(--azul-electrico)" strokeWidth={1.5} />
+          <span>
+            <strong style={{ display: 'block', fontSize: '14px' }}>{titulo}</strong>
+            {subtitulo && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{subtitulo}</span>}
+          </span>
+        </span>
+        <ChevronDown size={18} color="var(--gris-secundario)" strokeWidth={1.5} style={{ transform: abierta ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
+      </button>
+      {abierta && (
+        <div style={{ padding: '4px 16px 16px 16px' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AcademiaPanel({
   pupiloActivo,
   setPupiloActivo,
@@ -182,6 +214,25 @@ function AcademiaPanel({
   setNotasEvaluacion,
 }) {
   const esProfesor = rolUsuario === 'staff' || rolUsuario === 'admin' || rolUsuario === 'super_admin';
+  const [evaluacionesJugador, setEvaluacionesJugador] = useState([]);
+  const [cargandoEvaluacionesJugador, setCargandoEvaluacionesJugador] = useState(false);
+
+  // El jugador solo ve sus propias evaluaciones (el backend ya acota
+  // GET /api/evaluaciones/jugador/:rut a los pupilos propios del actor).
+  useEffect(() => {
+    if (esProfesor || !pupiloActivo?.rut) {
+      setEvaluacionesJugador([]);
+      return;
+    }
+    let cancelado = false;
+    setCargandoEvaluacionesJugador(true);
+    api.evaluacionesAPI.getByJugador(pupiloActivo.rut)
+      .then((datos) => { if (!cancelado) setEvaluacionesJugador(Array.isArray(datos) ? datos : []); })
+      .catch(() => { if (!cancelado) setEvaluacionesJugador([]); })
+      .finally(() => { if (!cancelado) setCargandoEvaluacionesJugador(false); });
+    return () => { cancelado = true; };
+  }, [esProfesor, pupiloActivo?.rut]);
+
   const [origenMaterial, setOrigenMaterial] = useState('enlace');
   const [materialForm, setMaterialForm] = useState({ tipo: 'video', titulo: '', url: '', rama: 'General', categorias: [] });
   const [archivoVideo, setArchivoVideo] = useState(null);
@@ -204,6 +255,7 @@ function AcademiaPanel({
   // "Mis Publicaciones": panel de gestión del staff (ver/editar/borrar/publicar
   // lo que él mismo subió, en los 4 tipos de contenido).
   const [vistaDocente, setVistaDocente] = useState('publicar');
+  const [seccionPublicarAbierta, setSeccionPublicarAbierta] = useState(null); // 'contenido' | 'quiz' | 'pizarra' | null
   const [itemEnEdicion, setItemEnEdicion] = useState(null); // `${tipo}-${id}` o null
   const [editForm, setEditForm] = useState({ titulo: '', url: '', nombre_tactica: '', descripcion: '', pregunta: '', opcionA: '', opcionB: '', opcionC: '', respuestaCorrecta: 'A', rama: 'General', categorias: [] });
 
@@ -548,6 +600,35 @@ function AcademiaPanel({
               })}
             </>
           )}
+
+          <div className="card mt-15" style={{ borderRadius: '24px' }}>
+            <h4 className="form-subtitle" style={{ marginBottom: '12px', fontWeight: '900' }}>Mis Evaluaciones</h4>
+            {cargandoEvaluacionesJugador && <p className="text-muted">Cargando...</p>}
+            {!cargandoEvaluacionesJugador && evaluacionesJugador.length === 0 && (
+              <p className="text-muted text-center italic">Todavía no tienes evaluaciones registradas.</p>
+            )}
+            {!cargandoEvaluacionesJugador && evaluacionesJugador.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {evaluacionesJugador.map((ev) => (
+                  <div key={ev.id_evaluacion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '12px' }}>{ev.fecha_evaluacion ? new Date(ev.fecha_evaluacion).toLocaleDateString('es-CL') : 'Sin fecha'}</strong>
+                      <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{ev.tipo_evaluacion || 'Evaluación'}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px', fontSize: '11px', fontWeight: '800' }}>
+                      <span>Tiro: {ev.puntaje_tecnica ?? '-'}</span>
+                      <span>Defensa: {ev.puntaje_actitud ?? '-'}</span>
+                      <span>Físico: {ev.puntaje_condicion ?? '-'}</span>
+                      <span>Táctica: {ev.puntaje_mental ?? '-'}</span>
+                    </div>
+                    {ev.comentarios && (
+                      <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--texto-secundario)', whiteSpace: 'pre-line' }}>{ev.comentarios}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
 
@@ -571,9 +652,8 @@ function AcademiaPanel({
           </div>
 
           {vistaDocente === 'publicar' && (
-          <>
-          <h5 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>Publicación de Contenidos</h5>
-
+          <div>
+          <SeccionPublicar id="contenido" titulo="Publicar Contenido" subtitulo="Video, imagen o documento" Icon={Upload} abierta={seccionPublicarAbierta === 'contenido'} onToggle={setSeccionPublicarAbierta}>
           <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
             <button type="button" className="btn-secondary" style={{ width: 'auto', padding: '8px 14px', background: origenMaterial === 'enlace' ? 'var(--azul-electrico)' : undefined, color: origenMaterial === 'enlace' ? 'white' : undefined }} onClick={() => setOrigenMaterial('enlace')}>
               <Link2 size={13} /> Enlace
@@ -627,10 +707,9 @@ function AcademiaPanel({
               )}
             </>
           )}
+          </SeccionPublicar>
 
-          <hr style={{ margin: '18px 0', border: 'none', borderTop: '1px solid var(--borde-suave)' }} />
-
-          <h5 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>Crear Quiz Táctico</h5>
+          <SeccionPublicar id="quiz" titulo="Crear Quiz Táctico" subtitulo="Pregunta de selección múltiple" Icon={Brain} abierta={seccionPublicarAbierta === 'quiz'} onToggle={setSeccionPublicarAbierta}>
           <input className="form-input mb-10" placeholder="Título del quiz" value={quizForm.titulo} onChange={(e) => setQuizForm((prev) => ({ ...prev, titulo: e.target.value }))} />
           <textarea className="form-input mb-10" rows="2" placeholder="Pregunta" value={quizForm.pregunta} onChange={(e) => setQuizForm((prev) => ({ ...prev, pregunta: e.target.value }))}></textarea>
           <input className="form-input mb-10" placeholder="Opción A" value={quizForm.opcionA} onChange={(e) => setQuizForm((prev) => ({ ...prev, opcionA: e.target.value }))} />
@@ -643,10 +722,9 @@ function AcademiaPanel({
           </select>
           <SelectorRamaCategoria form={quizForm} setForm={setQuizForm} toggleCategoria={toggleCategoriaQuiz} categoriasDisponibles={categoriasDisponibles} />
           <button className="btn-secondary" onClick={handleCrearQuiz}>Guardar quiz</button>
+          </SeccionPublicar>
 
-          <hr style={{ margin: '18px 0', border: 'none', borderTop: '1px solid var(--borde-suave)' }} />
-
-          <h5 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>Pizarra Interactiva (Táctica)</h5>
+          <SeccionPublicar id="pizarra" titulo="Pizarra Interactiva" subtitulo="Táctica dibujada en cancha" Icon={PenTool} abierta={seccionPublicarAbierta === 'pizarra'} onToggle={setSeccionPublicarAbierta}>
           <input className="form-input mb-10" placeholder="Nombre de la táctica" value={pizarraForm.nombre_tactica} onChange={(e) => setPizarraForm((prev) => ({ ...prev, nombre_tactica: e.target.value }))} />
           <textarea className="form-input mb-10" rows="2" placeholder="Descripción y objetivos" value={pizarraForm.descripcion} onChange={(e) => setPizarraForm((prev) => ({ ...prev, descripcion: e.target.value }))}></textarea>
 
@@ -663,7 +741,8 @@ function AcademiaPanel({
           <button className="btn-secondary mt-10" onClick={handleGuardarPizarra} disabled={guardandoPizarra}>
             {guardandoPizarra ? 'Guardando...' : 'Guardar pizarra'}
           </button>
-          </>
+          </SeccionPublicar>
+          </div>
           )}
 
           {vistaDocente === 'gestionar' && (

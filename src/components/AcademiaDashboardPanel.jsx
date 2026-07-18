@@ -7,6 +7,17 @@ const normalizarNombreCompleto = (item = {}) => (
   `${item.nombres || ''} ${item.apellido_paterno || ''} ${item.apellido_materno || ''}`.trim() || 'Deportista'
 );
 
+// Filtra por la rama/categoría con la que se publicó el contenido (no por
+// audiencia): "Todas" no filtra, y sin categorías_objetivo = aplica a toda
+// la rama, así que sigue apareciendo aunque se filtre por una categoría.
+const filtrarContenidoPorRamaCategoria = (items = [], filtroRama, filtroCategoria) => (items || []).filter((item) => {
+  const coincideRama = filtroRama === 'Todas' || String(item.rama || 'General') === filtroRama;
+  if (!coincideRama) return false;
+  if (filtroCategoria === 'Todas') return true;
+  const categorias = Array.isArray(item.categorias_objetivo) ? item.categorias_objetivo : [];
+  return categorias.length === 0 || categorias.includes(filtroCategoria);
+});
+
 function FiltroRamaCategoria({ jugadoresAdmin, filtroRama, setFiltroRama, filtroCategoria, setFiltroCategoria }) {
   const ramasDisponibles = useMemo(() => {
     const set = new Set((jugadoresAdmin || []).map((j) => String(j.rama || '').trim()).filter(Boolean));
@@ -78,7 +89,9 @@ function TabRanking({ jugadoresAdmin }) {
   );
 }
 
-function TabQuizzes({ quizList }) {
+function TabQuizzes({ quizList, jugadoresAdmin }) {
+  const [filtroRama, setFiltroRama] = useState('Todas');
+  const [filtroCategoria, setFiltroCategoria] = useState('Todas');
   const [expandidoId, setExpandidoId] = useState(null);
   const [detalle, setDetalle] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -101,13 +114,16 @@ function TabQuizzes({ quizList }) {
     }
   };
 
-  if ((quizList || []).length === 0) {
-    return <p className="text-muted text-center italic">Todavía no hay quiz publicados.</p>;
-  }
+  const quizFiltrado = filtrarContenidoPorRamaCategoria(quizList, filtroRama, filtroCategoria);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      {quizList.map((quiz) => {
+    <div>
+      <FiltroRamaCategoria jugadoresAdmin={jugadoresAdmin} filtroRama={filtroRama} setFiltroRama={setFiltroRama} filtroCategoria={filtroCategoria} setFiltroCategoria={setFiltroCategoria} />
+      {quizFiltrado.length === 0 && (
+        <p className="text-muted text-center italic">{(quizList || []).length === 0 ? 'Todavía no hay quiz publicados.' : 'Sin quiz para este filtro.'}</p>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {quizFiltrado.map((quiz) => {
         const abierto = expandidoId === quiz.id;
         return (
           <div key={quiz.id} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
@@ -164,11 +180,14 @@ function TabQuizzes({ quizList }) {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
 
-function TabMateriales({ materialesAcademia }) {
+function TabMateriales({ materialesAcademia, jugadoresAdmin }) {
+  const [filtroRama, setFiltroRama] = useState('Todas');
+  const [filtroCategoria, setFiltroCategoria] = useState('Todas');
   const [expandidoId, setExpandidoId] = useState(null);
   const [detalle, setDetalle] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -191,13 +210,16 @@ function TabMateriales({ materialesAcademia }) {
     }
   };
 
-  if ((materialesAcademia || []).length === 0) {
-    return <p className="text-muted text-center italic">Todavía no hay materiales publicados.</p>;
-  }
+  const materialesFiltrados = filtrarContenidoPorRamaCategoria(materialesAcademia, filtroRama, filtroCategoria);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      {materialesAcademia.map((mat) => {
+    <div>
+      <FiltroRamaCategoria jugadoresAdmin={jugadoresAdmin} filtroRama={filtroRama} setFiltroRama={setFiltroRama} filtroCategoria={filtroCategoria} setFiltroCategoria={setFiltroCategoria} />
+      {materialesFiltrados.length === 0 && (
+        <p className="text-muted text-center italic">{(materialesAcademia || []).length === 0 ? 'Todavía no hay materiales publicados.' : 'Sin materiales para este filtro.'}</p>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {materialesFiltrados.map((mat) => {
         const abierto = expandidoId === mat.id;
         return (
           <div key={mat.id} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
@@ -246,6 +268,7 @@ function TabMateriales({ materialesAcademia }) {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -268,8 +291,8 @@ function AcademiaDashboardPanel({ jugadoresAdmin, quizList, materialesAcademia }
       </div>
 
       {subVista === 'ranking' && <TabRanking jugadoresAdmin={jugadoresAdmin} />}
-      {subVista === 'quizzes' && <TabQuizzes quizList={quizList || []} />}
-      {subVista === 'materiales' && <TabMateriales materialesAcademia={materialesAcademia || []} />}
+      {subVista === 'quizzes' && <TabQuizzes quizList={quizList || []} jugadoresAdmin={jugadoresAdmin} />}
+      {subVista === 'materiales' && <TabMateriales materialesAcademia={materialesAcademia || []} jugadoresAdmin={jugadoresAdmin} />}
     </div>
   );
 }
