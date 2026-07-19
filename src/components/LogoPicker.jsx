@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import { absolutizarLogoUrl, normalizarSlugLogo } from '../utils/logoResolver';
+import { showToast } from '../utils/toast';
 
 /**
  * LogoPicker — selects a logo URL by entity name, without manual URL input.
@@ -32,6 +33,7 @@ function LogoPicker({
   const [clubes, setClubes] = useState([]);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
   const [cargando, setCargando] = useState(false);
+  const [guardandoClub, setGuardandoClub] = useState(false);
   const esAliasNuestroClub = (valor = '') => {
     const slug = normalizarSlugLogo(valor);
     return [
@@ -80,7 +82,7 @@ function LogoPicker({
     for (const c of clubes) {
       const key = normalizarSlugLogo(c.nombre_club);
       if (key && !byNombre.has(key)) {
-        byNombre.set(key, { nombre: c.nombre_club, logoUrl: absolutizarLogoUrl(c.logo_url || c.club_logo_url || '') });
+        byNombre.set(key, { nombre: c.nombre_club, logoUrl: absolutizarLogoUrl(c.logo_url || '') });
       }
     }
 
@@ -143,6 +145,31 @@ function LogoPicker({
     setMostrarSugerencias(false);
   };
 
+  // clubesAPI.create existía en el backend pero nada en la app la llamaba
+  // nunca — el directorio de clubes (tabla clubes) nunca crecía, y el
+  // autocompletado solo vivía de logos sueltos subidos a /logos. Esto le da
+  // a cualquier pantalla que use LogoPicker (Citaciones, Resultados) una
+  // forma de guardar un rival nuevo en el directorio reutilizable en vez de
+  // repetir nombre+logo cada vez que aparece.
+  const nombreNormalizado = normalizarSlugLogo(nombre);
+  const yaEnDirectorio = nombreNormalizado
+    ? opciones.some((o) => normalizarSlugLogo(o.nombre) === nombreNormalizado)
+    : true;
+  const puedeGuardarComoClub = tipo === 'club' && nombre.trim().length > 1 && Boolean(logoUrl) && !yaEnDirectorio;
+
+  const guardarComoClubNuevo = async () => {
+    setGuardandoClub(true);
+    try {
+      const nuevoClub = await api.clubesAPI.create({ nombre_club: nombre.trim(), logo_url: logoUrl });
+      setClubes((prev) => [...prev, nuevoClub]);
+      showToast({ message: `"${nombre.trim()}" guardado en el directorio de clubes.`, type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo guardar el club.', type: 'error' });
+    } finally {
+      setGuardandoClub(false);
+    }
+  };
+
   return (
     <div className="form-group" style={{ position: 'relative' }}>
       {label && <label>{label}</label>}
@@ -165,6 +192,18 @@ function LogoPicker({
           autoComplete="off"
         />
       </div>
+
+      {puedeGuardarComoClub && (
+        <button
+          type="button"
+          className="btn-secondary"
+          style={{ width: 'auto', padding: '6px 12px', marginTop: '6px', fontSize: '12px' }}
+          disabled={guardandoClub}
+          onMouseDown={guardarComoClubNuevo}
+        >
+          {guardandoClub ? 'Guardando...' : `+ Guardar "${nombre.trim()}" en el directorio de clubes`}
+        </button>
+      )}
 
       {mostrarSugerencias && sugerencias.length > 0 && (
         <div style={{

@@ -1604,6 +1604,15 @@ const ensureTorneosTable = async () => {
   console.log('🏆 Tabla torneos verificada');
 };
 
+// clubes nunca tuvo columna de logo (LogoPicker ya leía c.logo_url ||
+// c.club_logo_url esperando que existiera, pero ninguna de las dos existía
+// — por eso un club creado desde la app nunca aportaba su logo al
+// autocompletado). Se agrega la real y se deja de lado el fallback muerto.
+const ensureClubesLogoColumn = async () => {
+  await pool.query(`ALTER TABLE clubes ADD COLUMN IF NOT EXISTS logo_url VARCHAR(255)`);
+  console.log('🛡️ Columna logo_url de clubes verificada');
+};
+
 const ensurePagosMensualidadesColumns = async () => {
   const ddl = [
     `ALTER TABLE pagos_mensualidades ADD COLUMN IF NOT EXISTS rut_pagos VARCHAR(20)`,
@@ -7383,15 +7392,18 @@ app.get('/api/clubes', authenticate, requireAnyModule('scoreboard_live', 'admin_
 });
 
 app.post('/api/clubes', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard'), async (req, res) => {
-  const { nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club } = req.body;
+  const { nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club, logo_url } = req.body;
+  if (!String(nombre_club || '').trim()) {
+    return res.status(400).json({ error: 'Falta el nombre del club.' });
+  }
   try {
     const result = await pool.query(
-      `INSERT INTO clubes (nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club, fecha_registro)
-       VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)
+      `INSERT INTO clubes (nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club, logo_url, fecha_registro)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE)
        RETURNING *`,
-      [nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club]
+      [nombre_club, ciudad || null, rama || null, contacto_principal || null, telefono_contacto || null, email_club || null, logo_url || null]
     );
-    res.json(result.rows[0]);
+    res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('[POST /api/clubes]', err);
     res.status(500).json({ error: err.message });
@@ -7639,6 +7651,10 @@ app.listen(PORT, () => {
 
   ensureTorneosTable().catch((error) => {
     console.error('❌ Error verificando tabla torneos:', error.message);
+  });
+
+  ensureClubesLogoColumn().catch((error) => {
+    console.error('❌ Error verificando columna logo_url de clubes:', error.message);
   });
 
   ensurePartidosLiveLogos().catch((error) => {
