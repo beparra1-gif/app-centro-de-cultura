@@ -125,6 +125,7 @@ function TarjetaJugadorPanel({
   const [procesandoFoto, setProcesandoFoto] = useState(false);
   const [guardandoDiseno, setGuardandoDiseno] = useState(false);
   const [resumenAsistencia, setResumenAsistencia] = useState(null);
+  const [ultimaEvaluacion, setUltimaEvaluacion] = useState(null);
 
   // pupiloActivo.asistencia nunca existe (no es un campo real de jugadores)
   // — el resumen se calcula en el backend a partir de las listas que ya
@@ -152,6 +153,39 @@ function TarjetaJugadorPanel({
     };
 
     void cargarResumenAsistencia();
+    return () => {
+      cancelled = true;
+    };
+  }, [pupiloActivo?.rut, rolUsuario]);
+
+  // El radar de Físico/Técnica/Táctica leía detalleJugador.fisico_score/
+  // tecnica_score/tactica_score, campos que jamás existieron — siempre
+  // mostraba 60/58/55 fijos para todos. Se reemplaza por la evaluación real
+  // más reciente del staff (tabla evaluaciones, mismo puntaje 0-100 que ya
+  // usa el formulario de Radar/Evaluación).
+  useEffect(() => {
+    let cancelled = false;
+
+    const cargarUltimaEvaluacion = async () => {
+      const rut = String(pupiloActivo?.rut || '').trim();
+      if (!rut || rolUsuario === 'visita') {
+        setUltimaEvaluacion(null);
+        return;
+      }
+
+      try {
+        const evaluaciones = await api.evaluacionesAPI.getByJugador(rut);
+        if (!cancelled) {
+          setUltimaEvaluacion(Array.isArray(evaluaciones) && evaluaciones.length > 0 ? evaluaciones[0] : null);
+        }
+      } catch {
+        if (!cancelled) {
+          setUltimaEvaluacion(null);
+        }
+      }
+    };
+
+    void cargarUltimaEvaluacion();
     return () => {
       cancelled = true;
     };
@@ -350,19 +384,26 @@ function TarjetaJugadorPanel({
     if (!Number.isFinite(parsed)) return null;
     return Math.max(0, Math.min(100, parsed));
   };
+  // Semáforo: verde ≥80%, amarillo 50-79%, rojo <50%. Sin registros todavía
+  // (nadie ha tomado lista aún) se muestra en gris, no rojo — no es lo mismo
+  // "no hay datos" que "asistencia mala".
+  const colorSemaforoAsistencia = (porcentaje) => {
+    if (!Number.isFinite(porcentaje)) return 'rgba(255,255,255,0.6)';
+    if (porcentaje >= 80) return 'var(--verde-victoria)';
+    if (porcentaje >= 50) return '#FF9500';
+    return 'var(--rojo-alerta)';
+  };
   const asistenciaRadar = Number.isFinite(Number(resumenAsistencia?.porcentaje))
     ? Number(resumenAsistencia.porcentaje)
     : (porcentajeDesdeTexto(pupiloActivo.asistencia) ?? Math.max(20, Math.min(100, rachaActual * 12)));
   const progresoRadar = Math.max(0, Math.min(100, progresoNivel));
-  const fisicoRadar = Number.isFinite(Number(detalleJugador?.fisico_score))
-    ? Math.max(0, Math.min(100, Number(detalleJugador.fisico_score)))
-    : 60;
-  const tecnicaRadar = Number.isFinite(Number(detalleJugador?.tecnica_score))
-    ? Math.max(0, Math.min(100, Number(detalleJugador.tecnica_score)))
-    : 58;
-  const tacticaRadar = Number.isFinite(Number(detalleJugador?.tactica_score))
-    ? Math.max(0, Math.min(100, Number(detalleJugador.tactica_score)))
-    : 55;
+  // puntaje_condicion/tecnica/mental ya vienen 0-100 (mismo rango que llena
+  // el staff en Radar/Evaluación) — sin evaluación real todavía, se muestra
+  // en 0 en vez de un número inventado (ver hayEvaluacionReal más abajo).
+  const hayEvaluacionReal = Boolean(ultimaEvaluacion);
+  const fisicoRadar = hayEvaluacionReal ? Math.max(0, Math.min(100, Number(ultimaEvaluacion.puntaje_condicion) || 0)) : 0;
+  const tecnicaRadar = hayEvaluacionReal ? Math.max(0, Math.min(100, Number(ultimaEvaluacion.puntaje_tecnica) || 0)) : 0;
+  const tacticaRadar = hayEvaluacionReal ? Math.max(0, Math.min(100, Number(ultimaEvaluacion.puntaje_mental) || 0)) : 0;
   const radarGamificacionData = [
     { area: 'Fisico', valor: fisicoRadar },
     { area: 'Tecnica', valor: tecnicaRadar },
@@ -494,18 +535,13 @@ function TarjetaJugadorPanel({
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '8px' }}>
                 <div className="stat-box">
                   <span className="stat-label">Asistencia</span>
-                  <strong className="stat-value" style={{ color: 'var(--verde-victoria)' }}>
+                  <strong className="stat-value" style={{ color: colorSemaforoAsistencia(Number(resumenAsistencia?.porcentaje)) }}>
                     {Number.isFinite(Number(resumenAsistencia?.porcentaje)) ? `${resumenAsistencia.porcentaje}%` : 'Sin registros'}
                   </strong>
-                  {resumenAsistencia?.total > 0 && (
-                    <span style={{ display: 'block', fontSize: '10px', color: 'rgba(255,255,255,0.6)', fontWeight: '700', marginTop: '2px' }}>
-                      {resumenAsistencia.presentes}/{resumenAsistencia.total} listas
-                    </span>
-                  )}
                 </div>
                 <div className="stat-box">
                   <span className="stat-label">Estado</span>
-                  <strong className="stat-value" style={{ color: '#00C7BE' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
+                  <strong className="stat-value" style={{ color: '#00C7BE' }}>{pupiloActivo.estado_deportivo || 'Activo'}</strong>
                 </div>
                 <div className="stat-box">
                   <span className="stat-label">Validacion</span>
@@ -674,7 +710,7 @@ function TarjetaJugadorPanel({
           </div>
           <div className="stat-box">
             <span className="stat-label">Estado</span>
-            <strong className="stat-value">{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
+            <strong className="stat-value">{pupiloActivo.estado_deportivo || 'Activo'}</strong>
           </div>
           <div className="stat-box">
             <span className="stat-label">Estatura</span>
@@ -802,6 +838,11 @@ function TarjetaJugadorPanel({
               </RadarChart>
             </ResponsiveContainer>
           </div>
+          {!hayEvaluacionReal && (
+            <p style={{ margin: '0 0 10px 0', fontSize: '11px', color: 'rgba(255,255,255,0.6)', fontWeight: '700', textAlign: 'center' }}>
+              Física/Técnica/Táctica: aún sin evaluaciones del staff registradas.
+            </p>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
             <div className="stat-box">
@@ -1028,7 +1069,7 @@ function TarjetaJugadorPanel({
               </div>
               <div className="stat-box">
                 <span className="stat-label">Estado</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{pupiloActivo.estado_deportivo || 'Activo'}</strong>
               </div>
             </div>
             <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', opacity: 0.92 }}>
@@ -1136,7 +1177,7 @@ function TarjetaJugadorPanel({
 
               <div style={{ marginTop: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.18)', padding: '10px 12px', background: 'rgba(255,255,255,0.08)' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', fontWeight: '800' }}>
-                  <span>Estado: {pupiloActivo.estadoDeportivo || 'Activo'}</span>
+                  <span>Estado: {pupiloActivo.estado_deportivo || 'Activo'}</span>
                   <span>Beca: {pupiloActivo.beca || 'Sin beca'}</span>
                   <span>XP total: {xpActual}</span>
                   <span>Nivel: {nivelActualNumero}</span>

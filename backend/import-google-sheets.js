@@ -337,7 +337,11 @@ async function upsertRow(client, tableName, mappedPairs, pkColumns, uniqueColumn
       let index = 1;
 
       for (const [column, value] of valuesByCol.entries()) {
-        if (column === 'id') continue;
+        // updated_at se fija siempre a NOW() más abajo — si el Sheet también
+        // trae una columna que mapea a updated_at, incluirla acá duplicaba
+        // la asignación en el mismo UPDATE ("multiple assignments to same
+        // column"), lo que hacía fallar la fila entera.
+        if (column === 'id' || column === 'updated_at') continue;
         updateColumns.push(`${quoteIdent(column)} = $${index}`);
         updateValues.push(value);
         index += 1;
@@ -386,9 +390,19 @@ async function importSheetToTable(client, sheetId, mapping, options = {}) {
       if (result.skipped) skipped += 1;
       else imported += 1;
     } catch (err) {
-      errors += 1;
-      if (errors <= 3) {
-        console.error(`[${sheet}] Error fila:`, err.message);
+      // 23505 = unique_violation. Tablas con más de una columna UNIQUE (ej.
+      // cuentas: rut Y correo) solo pueden declarar UNA como target de ON
+      // CONFLICT — un choque contra la otra columna única no queda cubierto
+      // por ese DO NOTHING y explotaba como error duro en vez de omitirse
+      // como una fila duplicada más (mismo resultado práctico que el ON
+      // CONFLICT ya buscaba: no insertar un duplicado, no romper el import).
+      if (err.code === '23505') {
+        skipped += 1;
+      } else {
+        errors += 1;
+        if (errors <= 3) {
+          console.error(`[${sheet}] Error fila:`, err.message);
+        }
       }
     }
   }
