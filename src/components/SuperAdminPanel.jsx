@@ -3375,18 +3375,31 @@ function SuperAdminPanel({
                       </div>
                     )}
 
-                    {abierta && (
-                      <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {(cita.convocados || []).map((conv) => {
-                          // requiere_excepcion_morosidad es una FOTO tomada al momento de
-                          // convocar (queda guardada en citacion_convocados) y no se
-                          // actualiza sola si el apoderado se pone al día después. Para que
-                          // la alerta refleje el estado de morosidad ACTUAL se recalcula acá
-                          // contra morososAdmin (la misma lista que ya se mantiene al día en
-                          // el resto del panel), en vez de confiar en el valor guardado.
-                          const esMorosoActual = (morososAdmin || []).some((m) => String(m.rut || '').trim() === String(conv.rut_jugador || '').trim());
-                          return (
-                          <div key={`conv-${cita.id}-${conv.rut_jugador}`} style={{ background: 'var(--fondo-app)', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '10px', padding: '8px' }}>
+                    {abierta && (() => {
+                      const convocados = cita.convocados || [];
+                      // "Respuestas recibidas" = ya contestó (si/no, manual o
+                      // automático por vencimiento de plazo); el resto sigue
+                      // pendiente. Pedido del usuario: separar ambos grupos y
+                      // colorear las tarjetas de respuestas recibidas en
+                      // verde (asiste) / rojo (no asiste).
+                      const recibidas = convocados.filter((conv) => conv.respuesta === 'si' || conv.respuesta === 'no');
+                      const pendientes = convocados.filter((conv) => conv.respuesta !== 'si' && conv.respuesta !== 'no');
+
+                      const renderTarjetaConvocado = (conv) => {
+                        // requiere_excepcion_morosidad es una FOTO tomada al momento de
+                        // convocar (queda guardada en citacion_convocados) y no se
+                        // actualiza sola si el apoderado se pone al día después. Para que
+                        // la alerta refleje el estado de morosidad ACTUAL se recalcula acá
+                        // contra morososAdmin (la misma lista que ya se mantiene al día en
+                        // el resto del panel), en vez de confiar en el valor guardado.
+                        const esMorosoActual = (morososAdmin || []).some((m) => String(m.rut || '').trim() === String(conv.rut_jugador || '').trim());
+                        const estiloTarjeta = conv.respuesta === 'si'
+                          ? { background: 'rgba(52,199,89,0.10)', border: '1px solid rgba(52,199,89,0.4)' }
+                          : conv.respuesta === 'no'
+                            ? { background: 'rgba(255,59,48,0.08)', border: '1px solid rgba(255,59,48,0.4)' }
+                            : { background: 'var(--fondo-app)', border: '1px solid rgba(0,0,0,0.06)' };
+                        return (
+                          <div key={`conv-${cita.id}-${conv.rut_jugador}`} style={{ ...estiloTarjeta, borderRadius: '10px', padding: '8px' }}>
                             <div style={{ fontSize: '12px', fontWeight: '800' }}>{conv.nombre} · {conv.rama} · {conv.categoria}</div>
                             <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{conv.correo_apoderado || 'Sin correo apoderado'}</div>
                             <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
@@ -3426,10 +3439,38 @@ function SuperAdminPanel({
                               </div>
                             )}
                           </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                        );
+                      };
+
+                      return (
+                        <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          <div>
+                            <div style={{ fontSize: '11px', fontWeight: '900', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                              Respuestas recibidas ({recibidas.length})
+                            </div>
+                            {recibidas.length === 0 ? (
+                              <p className="text-muted" style={{ fontSize: '12px', fontStyle: 'italic', margin: 0 }}>Todavía nadie ha respondido.</p>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {recibidas.map(renderTarjetaConvocado)}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '11px', fontWeight: '900', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                              Pendientes ({pendientes.length})
+                            </div>
+                            {pendientes.length === 0 ? (
+                              <p className="text-muted" style={{ fontSize: '12px', fontStyle: 'italic', margin: 0 }}>Todos respondieron.</p>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {pendientes.map(renderTarjetaConvocado)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
