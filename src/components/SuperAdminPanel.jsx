@@ -40,18 +40,17 @@ import SaludAlertasPanel from './SaludAlertasPanel';
 import SaludDashboardPanel from './SaludDashboardPanel';
 import SaludTimelinePanel from './SaludTimelinePanel';
 import SettingsPanel from './SettingsPanel';
+import { absolutizarLogoUrl } from '../utils/logoResolver';
 
 // comprobante_url llega en 2 formatos: URL relativa del backend
 // (/api/logo-assets/file/...) para imágenes subidas como archivo, o un data
 // URI base64 completo para PDF (ver convertirArchivoABase64 en
-// PerfilTesoreriaPanel.jsx). Ambos sirven directo como href/src; la relativa
-// solo necesita el host del backend por delante.
-const resolverUrlComprobante = (url = '') => {
-  const valor = String(url || '').trim();
-  if (!valor) return '';
-  if (valor.startsWith('data:') || /^https?:\/\//i.test(valor)) return valor;
-  return `${api.API_BASE_URL_CONFIG}${valor.startsWith('/') ? '' : '/'}${valor}`;
-};
+// PerfilTesoreriaPanel.jsx). La relativa YA incluye el prefijo /api, así que
+// solo hace falta anteponerle el origen (protocolo+host) del backend, no
+// API_BASE_URL_CONFIG completo (que también trae /api y duplicaba la ruta:
+// .../api/api/logo-assets/... → 404). absolutizarLogoUrl (ya usado por
+// LogoAvatar) hace exactamente eso.
+const resolverUrlComprobante = (url = '') => absolutizarLogoUrl(url);
 
 const esComprobanteImagen = (url = '') => /^data:image\//i.test(url) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
 
@@ -232,6 +231,7 @@ function SuperAdminPanel({
     publicado: true,
   });
   const [torneosDisponibles, setTorneosDisponibles] = useState([]);
+  const [comprobanteEnVista, setComprobanteEnVista] = useState(null); // { url, esImagen } | null
 
   // Definir categorías disponibles según rama
   const categoriasDisponibles = {
@@ -2717,28 +2717,27 @@ function SuperAdminPanel({
               {pago.comprobante_url ? (
                 (() => {
                   const urlComprobante = resolverUrlComprobante(pago.comprobante_url);
-                  return esComprobanteImagen(pago.comprobante_url) ? (
-                    <a
-                      href={urlComprobante}
-                      target="_blank"
-                      rel="noreferrer"
+                  const esImagen = esComprobanteImagen(pago.comprobante_url);
+                  return esImagen ? (
+                    <button
+                      type="button"
+                      onClick={() => setComprobanteEnVista({ url: urlComprobante, esImagen: true })}
                       className="mb-15"
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: 'rgba(0,122,255,0.05)', border: '1px solid rgba(0,122,255,0.2)', borderRadius: '14px', textDecoration: 'none' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: 'rgba(0,122,255,0.05)', border: '1px solid rgba(0,122,255,0.2)', borderRadius: '14px', cursor: 'pointer', width: '100%', textAlign: 'left' }}
                     >
                       <img src={urlComprobante} alt="Comprobante de pago" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '10px', border: '1px solid rgba(0,122,255,0.2)' }} />
                       <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--azul-electrico)' }}>Ver comprobante completo</span>
-                    </a>
+                    </button>
                   ) : (
-                    <a
-                      href={urlComprobante}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => setComprobanteEnVista({ url: urlComprobante, esImagen: false })}
                       className="foto-upload-box mb-15"
-                      style={{ padding: '15px', background: 'rgba(0,122,255,0.05)', borderColor: 'rgba(0,122,255,0.2)', textDecoration: 'none' }}
+                      style={{ padding: '15px', background: 'rgba(0,122,255,0.05)', borderColor: 'rgba(0,122,255,0.2)', cursor: 'pointer', width: '100%' }}
                     >
                       <FileText size={24} color="var(--azul-electrico)" />
                       <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--azul-electrico)' }}>Ver comprobante (PDF)</span>
-                    </a>
+                    </button>
                   );
                 })()
               ) : (
@@ -3767,6 +3766,31 @@ function SuperAdminPanel({
             window.location.reload();
           }}
         />
+      )}
+
+      {comprobanteEnVista && (
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', animation: 'fadeIn 0.2s ease' }}
+          onClick={() => setComprobanteEnVista(null)}
+        >
+          <div
+            style={{ background: 'white', borderRadius: '20px', padding: '16px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: '0 20px 50px rgba(0,0,0,0.4)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: '14px' }}>Comprobante de pago</strong>
+              <button onClick={() => setComprobanteEnVista(null)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
+            </div>
+            {comprobanteEnVista.esImagen ? (
+              <img src={comprobanteEnVista.url} alt="Comprobante de pago" style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain', borderRadius: '12px' }} />
+            ) : (
+              <iframe src={comprobanteEnVista.url} title="Comprobante de pago" style={{ width: '80vw', height: '75vh', border: 'none', borderRadius: '12px' }} />
+            )}
+            <a href={comprobanteEnVista.url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--azul-electrico)', textAlign: 'center', fontWeight: '700' }}>
+              Abrir en una pestaña nueva
+            </a>
+          </div>
+        </div>
       )}
     </div>
   );
