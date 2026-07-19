@@ -18,3 +18,20 @@ export const calcularCuotaConBeca = (valorMensualidad, jugador = {}) => {
   if (porcentaje <= 0) return base;
   return Math.round(base * (1 - porcentaje / 100));
 };
+
+// Exento_mensualidad es distinto de beca: es "no paga nada" explícito (ej.
+// hijo de staff), sin usar el mecanismo de % de beca. Existe para no
+// confundir "la celda de mensualidad vino vacía en el Sheet" (que sigue
+// cobrando la tarifa por defecto del club, ver calcularCuotaDeportistas en
+// PerfilTesoreriaPanel) con "este jugador de verdad no debe pagar".
+export const estaExentoDeMensualidad = (jugador = {}) => Boolean(jugador?.exento_mensualidad);
+
+// No debe mensualidad por ningún motivo: exento explícito o beca del 100%.
+export const noDebeMensualidad = (jugador = {}) => estaExentoDeMensualidad(jugador) || tieneBecaCompleta(jugador);
+
+// Punto de entrada único para calcular la cuota real de un jugador — aplica
+// exención primero (gana sobre cualquier otro cálculo) y luego el % de beca.
+export const calcularCuotaFinal = (valorMensualidad, jugador = {}) => {
+  if (estaExentoDeMensualidad(jugador)) return 0;
+  return calcularCuotaConBeca(valorMensualidad, jugador);
+};

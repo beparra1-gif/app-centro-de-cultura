@@ -1384,6 +1384,14 @@ const ensureSuperAdminAccount = async () => {
 const ensureJugadoresExtendedColumns = async () => {
   await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS diseno_marco VARCHAR(20) DEFAULT 'clasico'`);
   console.log('🎴 Columna diseno_marco de jugadores verificada');
+
+  // Distinto de beca: beca es un % de rebaja, exento_mensualidad es "no paga
+  // nada" (ej. hijo de staff) sin necesidad de usar el mecanismo de beca.
+  // Igual que valor_mensualidad vacío no significa $0 (ver
+  // calcularCuotaDeportistas en el frontend), esto da una forma explícita de
+  // marcarlo en vez de dejar la celda de mensualidad en blanco.
+  await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS exento_mensualidad BOOLEAN DEFAULT false`);
+  console.log('🎓 Columna exento_mensualidad de jugadores verificada');
 };
 
 // beca empezó como BOOLEAN (sí/no) pero el club maneja porcentajes de rebaja
@@ -4246,7 +4254,7 @@ app.post('/api/jugadores', authenticate, requireModule('admin_dashboard'), async
 // PUT: Actualizar jugador por RUT
 const CAMPOS_JUGADOR_SOLO_ADMIN = [
   'rut_apoderado', 'correo_apoderado', 'correo_jugador', 'password_jugador', 'forzar_clave_jugador',
-  'rama', 'categoria', 'numero_camiseta', 'fecha_ingreso', 'mes_inicio_cobro', 'beca',
+  'rama', 'categoria', 'numero_camiseta', 'fecha_ingreso', 'mes_inicio_cobro', 'beca', 'exento_mensualidad',
   'valor_mensualidad', 'matricula_pagada', 'polera_entregada', 'poleron_entregado',
   'estado', 'estado_deportivo', 'fecha_inicio_baja', 'fecha_fin_baja', 'xp_puntos',
 ];
@@ -4299,6 +4307,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
     fecha_fin_baja,
     xp_puntos,
     diseno_marco,
+    exento_mensualidad,
   } = req.body;
 
   try {
@@ -4347,8 +4356,9 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
         xp_puntos = COALESCE($41, xp_puntos),
         rut_apoderado = COALESCE($42, rut_apoderado),
         diseno_marco = COALESCE($43, diseno_marco),
+        exento_mensualidad = COALESCE($44, exento_mensualidad),
         updated_at = NOW()
-      WHERE rut_jugador = $44
+      WHERE rut_jugador = $45
       RETURNING *`,
       [
         correo_apoderado ?? null,
@@ -4394,6 +4404,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
         xp_puntos ?? null,
         rut_apoderado ?? null,
         diseno_marco ?? null,
+        exento_mensualidad ?? null,
         req.params.rut,
       ]
     );

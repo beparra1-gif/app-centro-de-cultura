@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
+import { calcularCuotaFinal, noDebeMensualidad } from './utils/beca';
 import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
 import ApiStatusBanner from './components/ApiStatusBanner';
 import ToastContainer from './components/ToastContainer';
@@ -510,17 +511,6 @@ function App() {
       return 1;
     };
 
-    const esBecaActiva = (jugador = {}) => {
-      const valor = String(jugador?.beca || '')
-        .trim()
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '');
-      if (!valor) return false;
-      if (valor.includes('sin beca')) return false;
-      return valor.includes('beca');
-    };
-
     const parseMesesDePago = (pago = {}) => {
       const textoMeses = String(pago.meses_correspondientes || '').trim();
       if (!textoMeses) return [];
@@ -583,8 +573,8 @@ function App() {
       const rutJugadorNorm = normalizarRutComparacion(jugador.rut_jugador || '');
       if (!rutJugadorNorm) return;
 
-      if (esBecaActiva(jugador)) {
-        // Regla de negocio: BECA activa = meses vencidos marcados como pagados (sin deuda).
+      if (noDebeMensualidad(jugador)) {
+        // Regla de negocio: beca 100% o exención = no debe nada, nunca aparece en morosos.
         return;
       }
 
@@ -613,7 +603,10 @@ function App() {
 
       if (mesesDeuda <= 0) return;
 
-      const cuotaRef = Number(jugador.valor_mensualidad || 0);
+      // calcularCuotaFinal aplica el % de beca parcial (si tiene) al monto
+      // base — un jugador con 50% de beca debe aparecer con la mitad de
+      // deuda, no con el precio completo.
+      const cuotaRef = calcularCuotaFinal(Number(jugador.valor_mensualidad || 0), jugador);
       const cuentaApoderado = cuentaPorRut.get(normalizarRutComparacion(jugador.rut_apoderado))
         || cuentaPorCorreo.get(normalizarCorreo(jugador.correo_apoderado));
       const telefonoCuenta = String(cuentaApoderado?.telefono || '').trim();

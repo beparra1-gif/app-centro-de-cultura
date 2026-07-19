@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Camera, Clock, LayoutGrid, List, Search, User, X } from 'lucide-react';
 import { getUTMLastDayPreviousMonth } from '../utils/appHelpers';
-import { calcularCuotaConBeca, tieneBecaCompleta } from '../utils/beca';
+import { calcularCuotaFinal, noDebeMensualidad } from '../utils/beca';
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
@@ -278,13 +278,13 @@ function PerfilTesoreriaPanel({
   const mesesVisuales = mesesBase.map((mes, idx) => {
     const mesNumero = idx + 1;
     const estadosMes = pagosPorMes[mesNumero] || [];
-    // Solo la beca del 100% auto-marca el mes como pagado (no hay nada que
-    // cobrar); una beca parcial sigue el flujo normal de pago a la cuota ya
-    // descontada (ver obtenerCuotaMensualPupilo).
-    const becaCompleta = tieneBecaCompleta(pupiloActivo || pupilosActivos[0] || {});
+    // Solo la beca del 100% o la exención explícita auto-marcan el mes como
+    // pagado (no hay nada que cobrar); una beca parcial sigue el flujo normal
+    // de pago a la cuota ya descontada (ver obtenerCuotaMensualPupilo).
+    const sinCargoMensual = noDebeMensualidad(pupiloActivo || pupilosActivos[0] || {});
     const estado = (estadosMes.includes('aprobado') || estadosMes.includes('validado'))
       ? 'pagado'
-      : (becaCompleta && mesNumero <= limiteMesDeuda)
+      : (sinCargoMensual && mesNumero <= limiteMesDeuda)
         ? 'pagado'
       : (mesNumero < inicioCobroActivo)
         ? 'futuro-preingreso'
@@ -309,15 +309,15 @@ function PerfilTesoreriaPanel({
   const calcularCuotaDeportistas = () => {
     if (cantidadPupilos <= 0) return 0;
 
-    // Los becados al 100% no aportan nada a la suma; los con beca parcial sí
-    // aportan, pero ya descontada (calcularCuotaConBeca).
-    const pupilosConCuota = pupilosActivos.filter((p) => !tieneBecaCompleta(p));
+    // Los becados al 100% y los exentos no aportan nada a la suma; los con
+    // beca parcial sí aportan, pero ya descontada (calcularCuotaFinal).
+    const pupilosConCuota = pupilosActivos.filter((p) => !noDebeMensualidad(p));
     if (pupilosConCuota.length === 0) return 0;
 
     const sumaDesdeSheet = pupilosConCuota.reduce((acc, p) => {
       const monto = Number(p?.valor_mensualidad || 0);
       const base = Number.isFinite(monto) && monto > 0 ? monto : 0;
-      return acc + calcularCuotaConBeca(base, p);
+      return acc + calcularCuotaFinal(base, p);
     }, 0);
     if (sumaDesdeSheet > 0) return Math.round(sumaDesdeSheet);
 
@@ -348,7 +348,7 @@ function PerfilTesoreriaPanel({
   const obtenerCuotaMensualPupilo = (pupilo = {}) => {
     const monto = Number(pupilo?.valor_mensualidad || 0);
     const base = Number.isFinite(monto) && monto > 0 ? monto : cuotaDeportistaReferencial;
-    return calcularCuotaConBeca(base, pupilo);
+    return calcularCuotaFinal(base, pupilo);
   };
 
   const tarifaRedondeada = Math.round(tarifaMensual);
@@ -738,7 +738,7 @@ function PerfilTesoreriaPanel({
               {mesesBase.map((mes, idx) => {
                 const mesNumero = idx + 1;
                 const inicioCobroPupilo = obtenerInicioCobro(pupilo);
-                const becaActivaPupilo = tieneBecaCompleta(pupilo);
+                const becaActivaPupilo = noDebeMensualidad(pupilo);
                 const rutPupiloCardNormalizado = normalizarRutComparacion(pupilo.rut);
                 const pagosDelPupilo = (pagosMensualidadesAdmin || []).filter(
                   (p) => {

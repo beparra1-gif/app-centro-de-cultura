@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Upload, Search, ClipboardList, Check, Pin, Lightbulb, BarChart2 } from 'lucide-react';
 import * as api from '../api/client.js';
-import { calcularCuotaConBeca } from '../utils/beca';
+import { calcularCuotaFinal } from '../utils/beca';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const MESES_ABREV = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -87,8 +87,8 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
     if (formData.rut_jugador) {
       const jugador = jugadores.find(j => j.rut_jugador === formData.rut_jugador);
       if (jugador) {
-        // Traer valor de mensualidad (descontando % de beca si el jugador tiene)
-        const mensualidad = calcularCuotaConBeca(jugador.valor_mensualidad || 25000, jugador);
+        // Traer valor de mensualidad (descontando % de beca o $0 si está exento)
+        const mensualidad = calcularCuotaFinal(jugador.valor_mensualidad || 25000, jugador);
         setValorMensualidad(mensualidad);
         
         // Traer correo apoderado
