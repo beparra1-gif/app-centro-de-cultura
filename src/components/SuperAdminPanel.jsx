@@ -5,6 +5,7 @@ import {
   Bell,
   Check,
   CheckSquare,
+  ChevronDown,
   FileText,
   Filter,
   History,
@@ -51,6 +52,10 @@ import { absolutizarLogoUrl } from '../utils/logoResolver';
 // .../api/api/logo-assets/... → 404). absolutizarLogoUrl (ya usado por
 // LogoAvatar) hace exactamente eso.
 const resolverUrlComprobante = (url = '') => absolutizarLogoUrl(url);
+
+const MESES_ABREV_RECAUDACION = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const NOMBRES_MESES_RECAUDACION = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const ANIO_RECAUDACION = 2026;
 
 const esComprobanteImagen = (url = '') => /^data:image\//i.test(url) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
 
@@ -100,6 +105,7 @@ function SuperAdminPanel({
   guardarJugadorVisitaAdmin,
   validarPagoMensualidad,
   morososAdmin,
+  sociosMorosos,
   pagosMensualidadesAdmin,
   onSheetsSyncComplete,
   onCancelEdit,
@@ -122,29 +128,132 @@ function SuperAdminPanel({
   const totalSocios = (cuentasAdmin || []).filter((c) => Boolean(c.es_socio)).length;
   const totalDeportistas = (jugadoresAdmin || []).length;
 
+  // sociosMorosos/deportistasMorosos ya vienen de listas construidas por
+  // separado en App.jsx (construirSociosMorosos / construirMorososDesdePagos)
+  // — antes acá se adivinaba la morosidad de socios filtrando morososAdmin
+  // (100% derivado de jugadores) por el tipo de cuenta del apoderado, lo que
+  // mezclaba "deportista cuyo apoderado es socio" con "socio realmente al día
+  // o moroso en SU cuota", números sin relación real entre sí.
   const af = {
     totalSocios,
-    sociosMorosos: (morososAdmin || []).filter((m) => m.tipo === 'socio' || m.tipo === 'socio-apoderado').length,
+    sociosMorosos: (sociosMorosos || []).length,
     totalDeportistas,
-    deportistasMorosos: (morososAdmin || []).filter((m) => m.tipo !== 'socio').length,
-    metaSocios: totalSocios * 35000,
-    metaDeportistas: totalDeportistas * 30000,
-    recaudadoSocios: (pagosMensualidadesAdmin || [])
-      .filter((p) => (p.estado_pago || '').toLowerCase() === 'aprobado' && Number(p.monto_total_pagado || 0) <= 35000)
-      .reduce((acc, p) => acc + Number(p.monto_total_pagado || 0), 0),
-    recaudadoDeportistas: (pagosMensualidadesAdmin || [])
-      .filter((p) => (p.estado_pago || '').toLowerCase() === 'aprobado' && Number(p.monto_total_pagado || 0) > 35000)
-      .reduce((acc, p) => acc + Number(p.monto_total_pagado || 0), 0),
+    deportistasMorosos: (morososAdmin || []).length,
   };
 
   af.sociosAlDia = Math.max(af.totalSocios - af.sociosMorosos, 0);
   af.deportistasAlDia = Math.max(af.totalDeportistas - af.deportistasMorosos, 0);
 
-  const pctSocios = af.metaSocios > 0 ? Math.round(af.recaudadoSocios / af.metaSocios * 100) : 0;
-  const pctDep = af.metaDeportistas > 0 ? Math.round(af.recaudadoDeportistas / af.metaDeportistas * 100) : 0;
-  const pctGlobal = (af.metaSocios + af.metaDeportistas) > 0
-    ? Math.round((af.recaudadoSocios + af.recaudadoDeportistas) / (af.metaSocios + af.metaDeportistas) * 100)
-    : 0;
+  // Desglose mes a mes del año: recaudado (aprobado) y cantidad de morosos
+  // por mes, separado en socios/deportistas. Reemplaza el gauge único
+  // "Recaudación Global" que no permitía ver la evolución del año ni el
+  // detalle de quién debe cada mes.
+  const recaudacionMensual = useMemo(() => {
+    const getMesNumero = (texto = '') => {
+      const normalizado = String(texto || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '');
+      if (!normalizado) return null;
+      const token = normalizado.slice(0, 3);
+      const idx = MESES_ABREV_RECAUDACION.findIndex((m) => m === token);
+      return idx >= 0 ? idx + 1 : null;
+    };
+
+    const parseMesesPago = (pago = {}) => {
+      const texto = String(pago.meses_correspondientes || '').trim();
+      if (!texto) return [];
+      const anioMatch = texto.match(/(20\d{2})/);
+      const anio = anioMatch ? Number(anioMatch[1]) : ANIO_RECAUDACION;
+      if (anio !== ANIO_RECAUDACION) return [];
+
+      const partes = texto
+        .replace(/20\d{2}/g, '')
+        .replace(/[,]/g, ' ')
+        .split(/\s+/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      const candidatos = [];
+      partes.forEach((parte) => {
+        if (parte.includes('-')) {
+          const [inicio, fin] = parte.split('-');
+          const mIni = getMesNumero(inicio);
+          const mFin = getMesNumero(fin);
+          if (mIni && mFin && mIni <= mFin) {
+            for (let m = mIni; m <= mFin; m += 1) candidatos.push(m);
+            return;
+          }
+        }
+        const mes = getMesNumero(parte);
+        if (mes) candidatos.push(mes);
+      });
+
+      return [...new Set(candidatos)];
+    };
+
+    const filas = NOMBRES_MESES_RECAUDACION.map((nombre, idx) => ({
+      mes: nombre,
+      numero: idx + 1,
+      recaudadoSocios: 0,
+      recaudadoDeportistas: 0,
+    }));
+
+    (pagosMensualidadesAdmin || []).forEach((pago) => {
+      const estado = String(pago.estado_pago || '').toLowerCase();
+      if (estado !== 'aprobado' && estado !== 'validado') return;
+
+      const conceptoNorm = String(pago.concepto_pago || '').trim().toLowerCase();
+      const esSocio = conceptoNorm.startsWith('mensualidad socio');
+      const esDeportista = conceptoNorm === 'mensualidad';
+      if (!esSocio && !esDeportista) return;
+
+      const meses = parseMesesPago(pago);
+      if (meses.length === 0) return;
+
+      // Un pago puede cubrir varios meses en una sola fila (abono/rango) —
+      // se reparte el monto en partes iguales entre los meses que cubre.
+      const montoPorMes = Number(pago.monto_total_pagado || 0) / meses.length;
+      meses.forEach((mesNumero) => {
+        const fila = filas[mesNumero - 1];
+        if (!fila) return;
+        if (esSocio) fila.recaudadoSocios += montoPorMes;
+        else fila.recaudadoDeportistas += montoPorMes;
+      });
+    });
+
+    filas.forEach((fila) => {
+      fila.recaudadoSocios = Math.round(fila.recaudadoSocios);
+      fila.recaudadoDeportistas = Math.round(fila.recaudadoDeportistas);
+      fila.morososSocios = (sociosMorosos || []).filter((s) => (s.mesesMorosos || []).includes(fila.mes)).length;
+      fila.morososDeportistas = (morososAdmin || []).filter((m) => (m.mesesMorosos || []).includes(fila.mes)).length;
+    });
+
+    return filas;
+  }, [pagosMensualidadesAdmin, sociosMorosos, morososAdmin]);
+
+  const [mesRecaudacionActivo, setMesRecaudacionActivo] = useState(null);
+  const [busquedaSociosMorosos, setBusquedaSociosMorosos] = useState('');
+
+  const sociosMorososFiltrados = (sociosMorosos || []).filter((s) => {
+    const q = busquedaSociosMorosos.trim().toLowerCase();
+    if (!q) return true;
+    return String(s.nombre || '').toLowerCase().includes(q);
+  });
+
+  const construirMensajeRecordatorioSocio = (s) => (
+    `Hola ${String(s.nombre || '').trim().split(' ')[0] || s.nombre}, te recordamos que tienes ${s.mesesDeuda} ${s.mesesDeuda === 1 ? 'mes' : 'meses'} de cuota de socio pendiente ($${s.montoDeuda.toLocaleString('es-CL')}) en el Centro de Cultura Física. Por favor regulariza tu pago a la brevedad.\n\n*Centro de Cultura Física*`
+  );
+
+  const avisarSocioMoroso = async (s) => {
+    if (!s.telefono) {
+      showToast({ message: `${s.nombre} no tiene teléfono registrado en su cuenta.`, type: 'error' });
+      return;
+    }
+    await enviarPorWhatsApp(s.telefono, construirMensajeRecordatorioSocio(s), 'pago');
+    showToast({ message: `Recordatorio enviado a ${s.nombre} · ${s.telefono}`, type: 'success' });
+  };
 
   const [busquedaMorosos, setBusquedaMorosos] = useState('');
   const [filtroRamaMorosos, setFiltroRamaMorosos] = useState('todas');
@@ -1897,145 +2006,162 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'dashboard' && (
         <div className="fade-in">
-          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
-              <div>
-                <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><RefreshCcw size={16} /> Sincronización Google Sheets</h4>
-                <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
-                  "Sincronizar ahora" trae filas nuevas desde la hoja maestra hacia PostgreSQL. "Exportar cambios al Sheet"
-                  hace lo inverso: reescribe JUGADORES, CUENTAS y PAGOS_MENSUALIDADES en el Sheet con el estado actual del
-                  app (los cambios del app también se exportan solos, poco después de guardarse).
-                </p>
-              </div>
-              <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '6px 10px', borderRadius: '999px' }}>
-                Fuente real activa
-              </span>
-            </div>
-
-            <div className="sync-toolbar" style={{ marginTop: '12px' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Token de sincronización</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  placeholder="ADMIN_SYNC_TOKEN"
-                  value={syncToken}
-                  onChange={(e) => setSyncToken(e.target.value)}
-                />
-              </div>
-              <div className="sync-actions">
-                <button className="btn-electric sync-action-btn" onClick={ejecutarSyncSheets} disabled={syncSheetsRunning}>
-                  <RefreshCcw size={15} /> {syncSheetsRunning ? 'Sincronizando...' : 'Sincronizar ahora'}
-                </button>
-                <button className="btn-secondary sync-action-btn" onClick={ejecutarExportSheets} disabled={exportSheetsRunning}>
-                  <RefreshCcw size={15} /> {exportSheetsRunning ? 'Exportando...' : 'Exportar cambios al Sheet'}
-                </button>
-              </div>
-            </div>
-
-            {exportSheetsResult && (
-              <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span>Exportación: {exportSheetsResult.ok ? 'completa' : (exportSheetsResult.reason || 'con errores')}</span>
-                {Array.isArray(exportSheetsResult.results) && exportSheetsResult.results.length > 0 && (
-                  <span>
-                    Tablas exportadas: {exportSheetsResult.results.filter((r) => r.ok).map((r) => r.sheet || r.table).join(', ') || 'ninguna'}
-                  </span>
-                )}
-              </div>
-            )}
-
-            {syncSheetsResult && (
-              <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
-                <div className="admin-stat-pill azul"><span>Total filas</span><h2>{syncSheetsResult.totals?.total ?? 0}</h2></div>
-                <div className="admin-stat-pill verde"><span>Importadas</span><h2>{syncSheetsResult.totals?.importadas ?? 0}</h2></div>
-                <div className="admin-stat-pill rojo"><span>Errores</span><h2>{syncSheetsResult.totals?.errores ?? 0}</h2></div>
-              </div>
-            )}
-
-            {syncSheetsResult && (
-              <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span>Estado: {syncSheetsResult.status || 'desconocido'}</span>
-                {syncSheetsResult.syncedAt && <span>Última sincronización: {new Date(syncSheetsResult.syncedAt).toLocaleString('es-CL')}</span>}
-                {syncSheetsResult.error && <span style={{ color: 'var(--rojo-alerta)' }}>Error: {syncSheetsResult.error}</span>}
-              </div>
-            )}
-
-            {(cuentasIncompletas.length > 0 || jugadoresIncompletos.length > 0 || pagosConCorreccion.length > 0) && (
-              <div className="card" style={{ marginTop: '12px', borderLeft: '4px solid #FF9500', borderRadius: '20px', background: 'rgba(255,149,0,0.08)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <AlertTriangle size={16} color="#b36200" />
-                  <strong style={{ color: '#b36200', fontSize: '13px' }}>Alertas de corrección pendientes</strong>
-                </div>
-                <div style={{ fontSize: '12px', color: '#8a4f00', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span>Perfiles de cuentas incompletos: {cuentasIncompletas.length}</span>
-                  <span>Perfiles de jugadores incompletos: {jugadoresIncompletos.length}</span>
-                  <span>Pagos en revisión/corrección: {pagosConCorreccion.length}</span>
-                </div>
-                <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar cuentas</button>
-                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar jugadores</button>
-                  <button className="btn-secondary" onClick={() => setVistaAdmin('pagos')}>Revisar pagos</button>
-                </div>
-              </div>
-            )}
-
-          </div>
-
-          <div className="card text-center admin-panel-card mb-5" style={{ borderRadius: '28px', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', border: '1px solid rgba(255,255,255,0.72)', boxShadow: '0 14px 34px rgba(15,23,42,0.08)' }}>
-            <h4 className="form-subtitle" style={{ justifyContent: 'center', fontSize: '15px', fontWeight: '900' }}>Recaudación Global — Jul 2026</h4>
-            <div className="radial-progress-container mt-10 mb-10" style={{ position: 'relative', width: '130px', height: '130px', margin: '0 auto' }}>
-              <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
-                <circle cx="50" cy="50" r="45" fill="transparent" stroke="var(--borde-suave)" strokeWidth="10" />
-                <circle cx="50" cy="50" r="45" fill="transparent" stroke="url(#gradG)" strokeWidth="10" strokeDasharray={`${pctGlobal * 2.82} 300`} strokeLinecap="round" style={{ transition: 'stroke-dasharray 1s ease' }} />
-                <defs><linearGradient id="gradG" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="var(--azul-electrico)" /><stop offset="100%" stopColor="var(--verde-victoria)" /></linearGradient></defs>
-              </svg>
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center' }}>
-                <h2 style={{ margin: 0, fontSize: '22px' }}>{pctGlobal}%</h2>
-                <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--texto-secundario)' }}>LOGRADO</span>
-              </div>
-            </div>
-            <h3 style={{ margin: '0 0 4px', fontSize: '20px', color: 'var(--texto-principal)' }}>${(af.recaudadoSocios + af.recaudadoDeportistas).toLocaleString('es-CL')}</h3>
-            <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: 'bold' }}>Meta mensual: ${(af.metaSocios + af.metaDeportistas).toLocaleString('es-CL')}</span>
-          </div>
-
-          <h3 className="section-title mt-20">Socios del Club</h3>
+          <h3 className="section-title mt-0">Socios del Club</h3>
           <div className="caja-triple-grid mb-15">
             <div className="admin-stat-pill verde"><span>Al Día</span><h2>{af.sociosAlDia}</h2></div>
             <div className="admin-stat-pill rojo"><span>Morosos</span><h2>{af.sociosMorosos}</h2></div>
             <div className="admin-stat-pill azul"><span>Total</span><h2>{af.totalSocios}</h2></div>
           </div>
-          <div className="card mb-20" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Recaudación Socios</span>
-              <span style={{ fontWeight: '900', color: 'var(--azul-electrico)', fontSize: '14px' }}>{pctSocios}%</span>
-            </div>
-            <div className="recaud-bar mt-10"><div className="recaud-bar-fill" style={{ width: `${pctSocios}%`, background: 'linear-gradient(90deg, var(--azul-electrico), var(--verde-victoria))' }} /></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--verde-victoria)', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Check size={12} /> ${af.recaudadoSocios.toLocaleString('es-CL')}</span>
-              <span style={{ fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><X size={12} /> ${(af.metaSocios - af.recaudadoSocios).toLocaleString('es-CL')} pendiente</span>
-            </div>
-          </div>
 
           <h3 className="section-title">Deportistas Inscritos</h3>
-          <div className="caja-triple-grid mb-15">
+          <div className="caja-triple-grid mb-20">
             <div className="admin-stat-pill verde"><span>Al Día</span><h2>{af.deportistasAlDia}</h2></div>
             <div className="admin-stat-pill rojo"><span>Morosos</span><h2>{af.deportistasMorosos}</h2></div>
             <div className="admin-stat-pill azul"><span>Total</span><h2>{af.totalDeportistas}</h2></div>
           </div>
-          <div className="card mb-20" style={{ borderLeft: '4px solid #FF9500', borderRadius: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Recaudación Deportistas</span>
-              <span style={{ fontWeight: '900', color: '#FF9500', fontSize: '14px' }}>{pctDep}%</span>
-            </div>
-            <div className="recaud-bar mt-10"><div className="recaud-bar-fill" style={{ width: `${pctDep}%`, background: 'linear-gradient(90deg, #FF9500, var(--verde-victoria))' }} /></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--verde-victoria)', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><Check size={12} /> ${af.recaudadoDeportistas.toLocaleString('es-CL')}</span>
-              <span style={{ fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><X size={12} /> ${(af.metaDeportistas - af.recaudadoDeportistas).toLocaleString('es-CL')} pendiente</span>
-            </div>
+
+          <h3 className="section-title">Recaudación mes a mes — {ANIO_RECAUDACION}</h3>
+          <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
+            Toca un mes para ver el detalle de quién pagó y quién quedó pendiente.
+          </p>
+          <div className="card mb-20" style={{ borderRadius: '20px', padding: '8px' }}>
+            {recaudacionMensual.map((fila) => {
+              const abierto = mesRecaudacionActivo === fila.mes;
+              const sociosDelMes = (sociosMorosos || []).filter((s) => (s.mesesMorosos || []).includes(fila.mes));
+              const deportistasDelMes = (morososAdmin || []).filter((m) => (m.mesesMorosos || []).includes(fila.mes));
+              return (
+                <div key={fila.mes} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setMesRecaudacionActivo(abierto ? null : fila.mes)}
+                    style={{
+                      width: '100%',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '10px 8px',
+                      display: 'grid',
+                      gridTemplateColumns: '46px 1fr 1fr auto',
+                      alignItems: 'center',
+                      gap: '8px',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <strong style={{ fontSize: '13px' }}>{fila.mes}</strong>
+                    <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      Socios: <strong style={{ color: 'var(--verde-victoria)' }}>${fila.recaudadoSocios.toLocaleString('es-CL')}</strong>
+                      {fila.morososSocios > 0 && <span style={{ color: 'var(--rojo-alerta)' }}> · {fila.morososSocios} moroso{fila.morososSocios === 1 ? '' : 's'}</span>}
+                    </span>
+                    <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      Deportistas: <strong style={{ color: 'var(--verde-victoria)' }}>${fila.recaudadoDeportistas.toLocaleString('es-CL')}</strong>
+                      {fila.morososDeportistas > 0 && <span style={{ color: 'var(--rojo-alerta)' }}> · {fila.morososDeportistas} moroso{fila.morososDeportistas === 1 ? '' : 's'}</span>}
+                    </span>
+                    <ChevronDown size={16} style={{ transform: abierto ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', color: 'var(--texto-secundario)' }} />
+                  </button>
+                  {abierto && (
+                    <div style={{ padding: '4px 8px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase' }}>Socios morosos en {fila.mes}</span>
+                        {sociosDelMes.length === 0
+                          ? <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: '4px 0 0' }}>Ninguno.</p>
+                          : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {sociosDelMes.map((s) => (
+                                <span key={`${fila.mes}-socio-${s.id}`} style={{ fontSize: '12px', fontWeight: '700', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span>{s.nombre}</span>
+                                  <span style={{ color: 'var(--rojo-alerta)' }}>${s.montoDeuda.toLocaleString('es-CL')}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase' }}>Deportistas morosos en {fila.mes}</span>
+                        {deportistasDelMes.length === 0
+                          ? <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: '4px 0 0' }}>Ninguno.</p>
+                          : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {deportistasDelMes.map((m) => (
+                                <span key={`${fila.mes}-dep-${m.id}`} style={{ fontSize: '12px', fontWeight: '700', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span>{m.nombre}</span>
+                                  <span style={{ color: 'var(--rojo-alerta)' }}>${m.montoDeuda.toLocaleString('es-CL')}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 className="section-title" style={{ margin: 0 }}>Morosos</h3>
+          <h3 className="section-title">Socios Morosos</h3>
+          <div style={{ position: 'relative', marginBottom: '10px' }}>
+            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+            <input
+              type="text"
+              className="form-input"
+              style={{ paddingLeft: '34px', paddingRight: busquedaSociosMorosos ? '34px' : undefined }}
+              placeholder="Buscar socio..."
+              value={busquedaSociosMorosos}
+              onChange={(e) => setBusquedaSociosMorosos(e.target.value)}
+            />
+            {busquedaSociosMorosos && (
+              <button
+                type="button"
+                onClick={() => setBusquedaSociosMorosos('')}
+                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
+                aria-label="Limpiar búsqueda"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          {sociosMorososFiltrados.length === 0 && (
+            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
+              Sin socios morosos que coincidan con la búsqueda.
+            </p>
+          )}
+          {[...sociosMorososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map((s) => {
+            const gravedad = s.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : s.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
+            return (
+              <div key={s.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: '20px', background: 'rgba(255,255,255,0.72)' }}>
+                <div className="moroso-info">
+                  <span className="moroso-nombre">{s.nombre}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
+                    {s.telefono ? <><Phone size={11} /> {s.telefono}</> : <>{s.correo || 'Sin contacto'}</>}
+                  </span>
+                  {(s.mesesMorosos || []).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                      {s.mesesMorosos.map((mes) => (
+                        <span key={`${s.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: '999px', padding: '2px 7px' }}>
+                          {mes}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="moroso-deuda">
+                  <span className="moroso-monto">${s.montoDeuda.toLocaleString('es-CL')}</span>
+                  <span className="moroso-meses" style={{ color: gravedad }}>{s.mesesDeuda} {s.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
+                </div>
+                <button
+                  className="btn-notificar"
+                  onClick={() => avisarSocioMoroso(s)}
+                  disabled={!s.telefono}
+                  title={s.telefono ? `Enviar recordatorio por WhatsApp a ${s.telefono}` : 'Sin teléfono registrado en la cuenta'}
+                  style={!s.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                >
+                  <Bell size={13} /> Avisar
+                </button>
+              </div>
+            );
+          })}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', marginTop: '20px' }}>
+            <h3 className="section-title" style={{ margin: 0 }}>Deportistas Morosos</h3>
             <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={notificarTodosMorosos}>
               <Bell size={13} /> Notificar Todos
             </button>
@@ -3082,16 +3208,101 @@ function SuperAdminPanel({
       )}
 
       {vistaAdmin === 'auditoria' && (
-        <div className="fade-in card">
-          <h4 className="form-subtitle"><History size={16} /> Log de Movimientos</h4>
-          <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginBottom: '20px' }}>Registro inmutable de acciones críticas del sistema.</p>
-          {logAuditoria.map(log => (
-            <div key={log.id} style={{ borderBottom: '1px dashed rgba(0,0,0,0.1)', paddingBottom: '12px', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong style={{ fontSize: '14px', color: 'var(--texto-heading)' }}>{log.accion}</strong><span style={{ fontSize: '12px', color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{log.hora}</span></div>
-              <div style={{ fontSize: '13px', color: 'var(--texto-principal)', margin: '5px 0' }}>{log.detalle}</div>
-              <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}><User size={11} /> Usuario Auth: {log.usuario}</span>
+        <div className="fade-in">
+          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><RefreshCcw size={16} /> Sincronización Google Sheets</h4>
+                <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
+                  "Sincronizar ahora" trae filas nuevas desde la hoja maestra hacia PostgreSQL. "Exportar cambios al Sheet"
+                  hace lo inverso: reescribe JUGADORES, CUENTAS y PAGOS_MENSUALIDADES en el Sheet con el estado actual del
+                  app (los cambios del app también se exportan solos, poco después de guardarse).
+                </p>
+              </div>
+              <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '6px 10px', borderRadius: '999px' }}>
+                Fuente real activa
+              </span>
             </div>
-          ))}
+
+            <div className="sync-toolbar" style={{ marginTop: '12px' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Token de sincronización</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  placeholder="ADMIN_SYNC_TOKEN"
+                  value={syncToken}
+                  onChange={(e) => setSyncToken(e.target.value)}
+                />
+              </div>
+              <div className="sync-actions">
+                <button className="btn-electric sync-action-btn" onClick={ejecutarSyncSheets} disabled={syncSheetsRunning}>
+                  <RefreshCcw size={15} /> {syncSheetsRunning ? 'Sincronizando...' : 'Sincronizar ahora'}
+                </button>
+                <button className="btn-secondary sync-action-btn" onClick={ejecutarExportSheets} disabled={exportSheetsRunning}>
+                  <RefreshCcw size={15} /> {exportSheetsRunning ? 'Exportando...' : 'Exportar cambios al Sheet'}
+                </button>
+              </div>
+            </div>
+
+            {exportSheetsResult && (
+              <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span>Exportación: {exportSheetsResult.ok ? 'completa' : (exportSheetsResult.reason || 'con errores')}</span>
+                {Array.isArray(exportSheetsResult.results) && exportSheetsResult.results.length > 0 && (
+                  <span>
+                    Tablas exportadas: {exportSheetsResult.results.filter((r) => r.ok).map((r) => r.sheet || r.table).join(', ') || 'ninguna'}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {syncSheetsResult && (
+              <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                <div className="admin-stat-pill azul"><span>Total filas</span><h2>{syncSheetsResult.totals?.total ?? 0}</h2></div>
+                <div className="admin-stat-pill verde"><span>Importadas</span><h2>{syncSheetsResult.totals?.importadas ?? 0}</h2></div>
+                <div className="admin-stat-pill rojo"><span>Errores</span><h2>{syncSheetsResult.totals?.errores ?? 0}</h2></div>
+              </div>
+            )}
+
+            {syncSheetsResult && (
+              <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span>Estado: {syncSheetsResult.status || 'desconocido'}</span>
+                {syncSheetsResult.syncedAt && <span>Última sincronización: {new Date(syncSheetsResult.syncedAt).toLocaleString('es-CL')}</span>}
+                {syncSheetsResult.error && <span style={{ color: 'var(--rojo-alerta)' }}>Error: {syncSheetsResult.error}</span>}
+              </div>
+            )}
+
+            {(cuentasIncompletas.length > 0 || jugadoresIncompletos.length > 0 || pagosConCorreccion.length > 0) && (
+              <div className="card" style={{ marginTop: '12px', borderLeft: '4px solid #FF9500', borderRadius: '20px', background: 'rgba(255,149,0,0.08)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <AlertTriangle size={16} color="#b36200" />
+                  <strong style={{ color: '#b36200', fontSize: '13px' }}>Alertas de corrección pendientes</strong>
+                </div>
+                <div style={{ fontSize: '12px', color: '#8a4f00', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span>Perfiles de cuentas incompletos: {cuentasIncompletas.length}</span>
+                  <span>Perfiles de jugadores incompletos: {jugadoresIncompletos.length}</span>
+                  <span>Pagos en revisión/corrección: {pagosConCorreccion.length}</span>
+                </div>
+                <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar cuentas</button>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar jugadores</button>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('pagos')}>Revisar pagos</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <h4 className="form-subtitle"><History size={16} /> Log de Movimientos</h4>
+            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginBottom: '20px' }}>Registro inmutable de acciones críticas del sistema.</p>
+            {logAuditoria.map(log => (
+              <div key={log.id} style={{ borderBottom: '1px dashed rgba(0,0,0,0.1)', paddingBottom: '12px', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><strong style={{ fontSize: '14px', color: 'var(--texto-heading)' }}>{log.accion}</strong><span style={{ fontSize: '12px', color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{log.hora}</span></div>
+                <div style={{ fontSize: '13px', color: 'var(--texto-principal)', margin: '5px 0' }}>{log.detalle}</div>
+                <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}><User size={11} /> Usuario Auth: {log.usuario}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

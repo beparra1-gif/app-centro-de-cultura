@@ -8,6 +8,7 @@ import BuscadorJugadorAdmin from './BuscadorJugadorAdmin';
 import EditarJugadorModal from './EditarJugadorModal';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
+import { obtenerPorcentajeBeca } from '../utils/beca';
 
 const EXPORT_WIDTH = 750;
 const EXPORT_HEIGHT = 1050;
@@ -541,7 +542,7 @@ function TarjetaJugadorPanel({
                 </div>
                 <div className="stat-box">
                   <span className="stat-label">Estado</span>
-                  <strong className="stat-value" style={{ color: '#00C7BE' }}>{pupiloActivo.estado_deportivo || 'Activo'}</strong>
+                  <strong className="stat-value" style={{ color: '#00C7BE' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
                 </div>
                 <div className="stat-box">
                   <span className="stat-label">Validacion</span>
@@ -702,7 +703,7 @@ function TarjetaJugadorPanel({
         }}>
           <div className="stat-box">
             <span className="stat-label">Posición</span>
-            <strong className="stat-value">{rolUsuario === 'visita' ? 'N/A' : pupiloActivo.posicion}</strong>
+            <strong className="stat-value">{rolUsuario === 'visita' ? 'N/A' : (pupiloActivo.posicion || 'N/A')}</strong>
           </div>
           <div className="stat-box">
             <span className="stat-label">Nivel</span>
@@ -710,7 +711,7 @@ function TarjetaJugadorPanel({
           </div>
           <div className="stat-box">
             <span className="stat-label">Estado</span>
-            <strong className="stat-value">{pupiloActivo.estado_deportivo || 'Activo'}</strong>
+            <strong className="stat-value">{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
           </div>
           <div className="stat-box">
             <span className="stat-label">Estatura</span>
@@ -891,8 +892,8 @@ function TarjetaJugadorPanel({
               <div className="caja-doble-grid mb-15">
               <div className="card sub-caja-card metric-card" style={{ padding: '15px' }}>
                 <h5 className="sub-caja-title" style={{ fontSize: '11px' }}><Shirt size={14} /> Indumentaria (solo administración)</h5>
-                <div className="desglose-row"><span>Camiseta:</span><strong>{pupiloActivo.tallaCamiseta}</strong></div>
-                <div className="desglose-row"><span>Short:</span><strong>{pupiloActivo.tallaShort}</strong></div>
+                <div className="desglose-row"><span>Camiseta:</span><strong>{pupiloActivo.tallaCamiseta || 'N/A'}</strong></div>
+                <div className="desglose-row"><span>Short:</span><strong>{pupiloActivo.tallaShort || 'N/A'}</strong></div>
                 <div className="desglose-row mt-10 text-center">
                   <span className="badge-urgente" style={{ background: pupiloActivo.poleraEntregada ? 'var(--verde-victoria)' : 'var(--rojo-alerta)', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 0' }}>
                     {pupiloActivo.poleraEntregada ? <>ROPA ENTREGADA <BadgeCheck size={13} /></> : 'FALTA ENTREGA'}
@@ -1061,7 +1062,7 @@ function TarjetaJugadorPanel({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
               <div className="stat-box">
                 <span className="stat-label">Posicion</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{rolUsuario === 'visita' ? 'N/A' : pupiloActivo.posicion}</strong>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{rolUsuario === 'visita' ? 'N/A' : (pupiloActivo.posicion || 'N/A')}</strong>
               </div>
               <div className="stat-box">
                 <span className="stat-label">Nivel</span>
@@ -1069,7 +1070,7 @@ function TarjetaJugadorPanel({
               </div>
               <div className="stat-box">
                 <span className="stat-label">Estado</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{pupiloActivo.estado_deportivo || 'Activo'}</strong>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
               </div>
             </div>
             <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', opacity: 0.92 }}>
@@ -1177,8 +1178,8 @@ function TarjetaJugadorPanel({
 
               <div style={{ marginTop: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.18)', padding: '10px 12px', background: 'rgba(255,255,255,0.08)' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', fontWeight: '800' }}>
-                  <span>Estado: {pupiloActivo.estado_deportivo || 'Activo'}</span>
-                  <span>Beca: {pupiloActivo.beca || 'Sin beca'}</span>
+                  <span>Estado: {pupiloActivo.estadoDeportivo || 'Activo'}</span>
+                  <span>Beca: {obtenerPorcentajeBeca(pupiloActivo) > 0 ? `${obtenerPorcentajeBeca(pupiloActivo)}%` : 'Sin beca'}</span>
                   <span>XP total: {xpActual}</span>
                   <span>Nivel: {nivelActualNumero}</span>
                 </div>

@@ -205,6 +205,7 @@ function App() {
   const [pagosMensualidadesAdmin, setPagosMensualidadesAdmin] = useState([]);
   const [partidosResumen, setPartidosResumen] = useState([]);
   const [morososAdmin, setMorososAdmin] = useState([]);
+  const [sociosMorosos, setSociosMorosos] = useState([]);
   const [materialesAcademia, setMaterialesAcademia] = useState([]);
   const [pizarrasAcademia, setPizarrasAcademia] = useState([]);
   const [quizList, setQuizList] = useState([]);
@@ -680,6 +681,156 @@ function App() {
     return morosos.sort((a, b) => b.montoDeuda - a.montoDeuda);
   };
 
+  // Hermana de construirMorososDesdePagos pero para la cuota de SOCIO, que no
+  // depende de tener un jugador asociado (un socio puro no aparece en ninguna
+  // tabla de jugadores). Agrupa pagos por rut_pagos (el rut de la propia
+  // cuenta socia) en vez de rut_jugador, y solo considera concepto_pago
+  // "Mensualidad Socio" (mismo texto que PerfilTesoreriaPanel usa al crear
+  // el pago de cuota social).
+  const construirSociosMorosos = (pagos = [], cuentas = []) => {
+    const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const NOMBRES_MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const ANIO_OBJETIVO = 2026;
+    const now = new Date();
+    const limiteMesDeuda = now.getFullYear() > ANIO_OBJETIVO
+      ? 12
+      : (now.getFullYear() < ANIO_OBJETIVO ? 0 : Math.max(0, now.getMonth()));
+
+    const getMesNumero = (texto = '') => {
+      const normalizado = String(texto || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '');
+      if (!normalizado) return null;
+      const token = normalizado.slice(0, 3);
+      const idx = MESES.findIndex((m) => m === token);
+      return idx >= 0 ? idx + 1 : null;
+    };
+
+    const parseMesesDePago = (pago = {}) => {
+      const textoMeses = String(pago.meses_correspondientes || '').trim();
+      if (!textoMeses) return [];
+
+      const anioMatch = textoMeses.match(/(20\d{2})/);
+      const anio = anioMatch ? Number(anioMatch[1]) : ANIO_OBJETIVO;
+      if (anio !== ANIO_OBJETIVO) return [];
+
+      const partes = textoMeses
+        .replace(/20\d{2}/g, '')
+        .replace(/[,]/g, ' ')
+        .split(/\s+/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      const candidatos = [];
+      partes.forEach((parte) => {
+        if (parte.includes('-')) {
+          const [inicio, fin] = parte.split('-');
+          const mIni = getMesNumero(inicio);
+          const mFin = getMesNumero(fin);
+          if (mIni && mFin && mIni <= mFin) {
+            for (let m = mIni; m <= mFin; m += 1) candidatos.push(m);
+            return;
+          }
+        }
+
+        const mes = getMesNumero(parte);
+        if (mes) candidatos.push(mes);
+      });
+
+      return [...new Set(candidatos)];
+    };
+
+    const esPagoInvalidoLegacy = (pago = {}) => {
+      const monto = Number(pago.monto_total_pagado || 0);
+      const meses = String(pago.meses_correspondientes || '').trim();
+      const notas = String(pago.notas_tesoreria || '').toLowerCase();
+      const sinMes = /^sinmes\b/i.test(meses);
+      const correccionLegacy = notas.includes('correccion requerida');
+      return (monto <= 0 && sinMes) || (monto <= 0 && correccionLegacy);
+    };
+
+    const pagosPorRutSocio = new Map();
+    (pagos || []).forEach((pago) => {
+      if (esPagoInvalidoLegacy(pago)) return;
+      const concepto = String(pago.concepto_pago || '').trim().toLowerCase();
+      if (!concepto.startsWith('mensualidad socio')) return;
+      const rutPago = normalizarRutComparacion(pago.rut_pagos || '');
+      if (!rutPago) return;
+      const mesesPago = parseMesesDePago(pago);
+      if (mesesPago.length === 0) return;
+      if (!pagosPorRutSocio.has(rutPago)) pagosPorRutSocio.set(rutPago, []);
+      pagosPorRutSocio.get(rutPago).push({ ...pago, mesesPago });
+    });
+
+    const getMesIngresoSocio = (cuenta = {}) => {
+      const fechaIngreso = String(cuenta?.fecha_ingreso_socio || '').trim();
+      const fecha = fechaIngreso ? new Date(fechaIngreso) : null;
+      if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
+        const anio = fecha.getFullYear();
+        if (anio > ANIO_OBJETIVO) return 13;
+        if (anio < ANIO_OBJETIVO) return 1;
+        return fecha.getMonth() + 1;
+      }
+      // Regla de negocio: sin fecha de ingreso configurada => enero 2026 (mismo criterio que deportistas).
+      return 1;
+    };
+
+    const socios = [];
+    (cuentas || []).filter((cuenta) => Boolean(cuenta?.es_socio)).forEach((cuenta) => {
+      const rutSocioNorm = normalizarRutComparacion(cuenta.rut || '');
+      if (!rutSocioNorm) return;
+
+      const inicioCobro = getMesIngresoSocio(cuenta);
+      const pagosSocio = pagosPorRutSocio.get(rutSocioNorm) || [];
+
+      const estadoPorMes = new Map();
+      pagosSocio.forEach((pago) => {
+        const estado = String(pago.estado_pago || '').toLowerCase();
+        pago.mesesPago.forEach((mes) => {
+          if (!estadoPorMes.has(mes)) estadoPorMes.set(mes, new Set());
+          estadoPorMes.get(mes).add(estado);
+        });
+      });
+
+      const mesesMorososNums = [];
+      for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
+        const estados = estadoPorMes.get(mes) || new Set();
+        const pagado = estados.has('aprobado') || estados.has('validado');
+        if (!pagado) mesesMorososNums.push(mes);
+      }
+      const mesesDeuda = mesesMorososNums.length;
+      if (mesesDeuda <= 0) return;
+
+      // Mismo cálculo de cuota automática de socio que PerfilTesoreriaPanel:
+      // monto_mensual_base de la cuenta si existe, si no 30% de la UTM.
+      const utmCuenta = Number(cuenta?.utm_valor_referencia || getUTMLastDayPreviousMonth(71506));
+      const cuotaBase = Number(cuenta?.monto_mensual_base || 0);
+      const cuotaRef = Math.round(cuotaBase > 0 ? cuotaBase : (utmCuenta * 0.3));
+
+      const telefonoCuenta = String(cuenta.telefono || '').trim();
+      const telefono = telefonoCuenta
+        ? `${String(cuenta.prefijo_tel || '+56').trim()}${telefonoCuenta}`
+        : '';
+
+      socios.push({
+        id: rutSocioNorm,
+        rut: cuenta.rut || rutSocioNorm,
+        nombre: `${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim() || `Socio ${cuenta.rut || ''}`,
+        mesesDeuda,
+        mesesMorosos: mesesMorososNums.map((n) => NOMBRES_MESES[n - 1]),
+        montoDeuda: mesesDeuda * cuotaRef,
+        contacto: telefono || cuenta.correo || 'Sin contacto',
+        telefono,
+        correo: cuenta.correo || '',
+      });
+    });
+
+    return socios.sort((a, b) => b.montoDeuda - a.montoDeuda);
+  };
+
   // El backend devuelve dia_citacion como timestamp ISO (columna DATE serializada
   // por pg/JSON) y las horas como HH:MM:SS (columna TIME), pero el resto de la UI
   // espera el mismo formato que generaban los <input type="date"/"time"> originales
@@ -865,7 +1016,7 @@ function App() {
             xp: Number(primerJugador.xp_total || 0),
             anioNacimiento: obtenerAnioNacimientoJugador(primerJugador),
             numeroCamiseta: obtenerNumeroCamisetaJugador(primerJugador, 0),
-            posicion: primerJugador.posicion_juego || 'N/A',
+            posicion: primerJugador.posicion_de_juego || 'N/A',
             estatura: primerJugador.estatura || 'N/A',
             peso: primerJugador.peso || 'N/A',
             manoHabil: primerJugador.mano_habil || 'N/A',
@@ -890,6 +1041,7 @@ function App() {
         setPagosMensualidadesAdmin(pagosMensualidadesRes);
         setPagosPendientesAdmin(pagosMensualidadesRes.filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente'));
         setMorososAdmin(construirMorososDesdePagos(pagosMensualidadesRes, jugadoresRes, cuentasRes));
+        setSociosMorosos(construirSociosMorosos(pagosMensualidadesRes, cuentasRes));
       }
 
       if (Array.isArray(partidosLiveRes)) {
@@ -1562,6 +1714,11 @@ function App() {
     setMorososAdmin(
       Array.isArray(pagosRes)
         ? construirMorososDesdePagos(pagosRes, jugadoresAdmin, cuentasAdmin)
+        : []
+    );
+    setSociosMorosos(
+      Array.isArray(pagosRes)
+        ? construirSociosMorosos(pagosRes, cuentasAdmin)
         : []
     );
   };
@@ -2275,7 +2432,7 @@ function App() {
     nivel: Number(j.nivel_actual || 1),
     xp: Number(j.xp_total || 0),
     numeroCamiseta: obtenerNumeroCamisetaJugador(j, 0),
-    posicion: j.posicion_juego || 'N/A',
+    posicion: j.posicion_de_juego || 'N/A',
     estatura: j.estatura || 'N/A',
     peso: j.peso || 'N/A',
     manoHabil: j.mano_habil || 'N/A',
@@ -2858,6 +3015,7 @@ function App() {
                 guardarJugadorVisitaAdmin={guardarJugadorVisitaAdmin}
                 validarPagoMensualidad={validarPagoMensualidad}
                 morososAdmin={morososAdmin}
+                sociosMorosos={sociosMorosos}
                 pagosMensualidadesAdmin={pagosMensualidadesAdmin}
                 onSheetsSyncComplete={sincronizarDatosDesdeSheets}
                 onCancelEdit={restaurarPermisosAntesCancelacion}

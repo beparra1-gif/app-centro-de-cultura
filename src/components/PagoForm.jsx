@@ -34,6 +34,14 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
   const [anioSeleccionado, setAnioSeleccionado] = useState(new Date().getFullYear());
   const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
   const [apoderadoAsignado, setApoderadoAsignado] = useState(null);
+
+  // Modo "socio": permite registrar la cuota de un socio que no tiene ningún
+  // deportista asociado — hoy ese socio es invisible para el sistema de
+  // pagos porque todo el flujo exige elegir un deportista primero.
+  const [modoPago, setModoPago] = useState('deportista'); // 'deportista' | 'socio'
+  const [rutCuentaSocio, setRutCuentaSocio] = useState('');
+  const [searchTermSocio, setSearchTermSocio] = useState('');
+  const [showSocioResults, setShowSocioResults] = useState(false);
   
   // Datos del jugador seleccionado
   const [valorMensualidad, setValorMensualidad] = useState(0);
@@ -47,6 +55,18 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
     const search = searchTerm.toLowerCase();
     return rut.includes(search) || nombres.includes(search) || apellidos.includes(search);
   }) : [];
+
+  // Cuentas con membresía de socio, para el modo "solo cuota de socio"
+  const cuentasSocias = cuentas.filter(c => c.es_socio);
+  const sociosFiltrados = searchTermSocio.trim() ? cuentasSocias.filter(c => {
+    const rut = (c.rut || '').toLowerCase();
+    const nombres = (c.nombres || '').toLowerCase();
+    const apellidos = `${c.apellido_paterno || ''} ${c.apellido_materno || ''}`.toLowerCase();
+    const search = searchTermSocio.toLowerCase();
+    return rut.includes(search) || nombres.includes(search) || apellidos.includes(search);
+  }) : [];
+
+  const puedeContinuar = modoPago === 'deportista' ? Boolean(formData.rut_jugador) : Boolean(rutCuentaSocio);
 
   // Calcular desglose de abono automáticamente
   const calcularDesglose = (monto, concepto, meses) => {
@@ -98,7 +118,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
         }));
 
         // Buscar apoderado asignado
-        const apoderado = cuentas.find(c => c.correo_usuario === jugador.correo_apoderado);
+        const apoderado = cuentas.find(c => c.correo === jugador.correo_apoderado);
         setApoderadoAsignado(apoderado || null);
 
         // Determinar concepto automáticamente
@@ -122,6 +142,24 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
       }
     }
   }, [formData.rut_jugador, jugadores, cuentas]);
+
+  // Actualizar cuando se selecciona un socio sin deportista asociado (modo
+  // "solo cuota de socio") — mismo patrón que el efecto de arriba, pero sin
+  // depender de una ficha de jugador (no existe valor_mensualidad propio).
+  useEffect(() => {
+    if (modoPago !== 'socio' || !rutCuentaSocio) return;
+    const cuentaSocio = cuentas.find(c => c.rut === rutCuentaSocio);
+    if (!cuentaSocio) return;
+
+    setValorMensualidad(VALORES_CONCEPTO['Mensualidad Socio']);
+    setFormData(prev => ({
+      ...prev,
+      correo_apoderado: cuentaSocio.correo || '',
+      concepto_pago: 'Mensualidad Socio',
+    }));
+    setMesesSeleccionados([]);
+    setDesglose(null);
+  }, [modoPago, rutCuentaSocio, cuentas]);
 
   // Actualizar desglose cuando cambia monto o meses
   useEffect(() => {
@@ -207,11 +245,19 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
 
     try {
       // Validar campos requeridos
-      if (!formData.rut_jugador) throw new Error('Selecciona un deportista');
+      if (modoPago === 'deportista' && !formData.rut_jugador) throw new Error('Selecciona un deportista');
+      if (modoPago === 'socio' && !rutCuentaSocio) throw new Error('Selecciona un socio');
       if (mesesSeleccionados.length === 0) throw new Error('Selecciona al menos un mes para pagar');
       if (!formData.monto_total_pagado || formData.monto_total_pagado <= 0) throw new Error('Monto debe ser mayor a 0');
 
-      const datosGuardar = { ...formData };
+      // rut_pagos identifica quién realmente paga (la cuenta), independiente
+      // de si el pago va ligado a un deportista puntual o no — sin esto, un
+      // pago de "solo cuota de socio" (rut_jugador vacío) queda huérfano y
+      // ningún cálculo de morosidad puede atribuírselo a nadie.
+      const datosGuardar = {
+        ...formData,
+        rut_pagos: modoPago === 'socio' ? rutCuentaSocio : (apoderadoAsignado?.rut || ''),
+      };
 
       // Si hay archivo, convertir a base64
       if (archivo) {
@@ -314,7 +360,40 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
         )}
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Modo: deportista (comportamiento de siempre) o solo cuota de socio
+              (sin deportista asociado — ej. directiva o socio sin hijos) */}
+          <div className="form-group">
+            <label style={{ fontWeight: '600', fontSize: '13px' }}>Tipo de pago</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => { setModoPago('deportista'); setRutCuentaSocio(''); setSearchTermSocio(''); }}
+                style={{
+                  flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600',
+                  border: modoPago === 'deportista' ? '2px solid var(--azul-electrico)' : '1px solid var(--borde)',
+                  background: modoPago === 'deportista' ? 'rgba(0,122,255,0.08)' : 'white',
+                  color: modoPago === 'deportista' ? 'var(--azul-electrico)' : 'var(--texto-primario)',
+                }}
+              >
+                Deportista
+              </button>
+              <button
+                type="button"
+                onClick={() => { setModoPago('socio'); setFormData(prev => ({ ...prev, rut_jugador: '' })); setSearchTerm(''); }}
+                style={{
+                  flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600',
+                  border: modoPago === 'socio' ? '2px solid var(--azul-electrico)' : '1px solid var(--borde)',
+                  background: modoPago === 'socio' ? 'rgba(0,122,255,0.08)' : 'white',
+                  color: modoPago === 'socio' ? 'var(--azul-electrico)' : 'var(--texto-primario)',
+                }}
+              >
+                Solo cuota de socio
+              </button>
+            </div>
+          </div>
+
           {/* Buscador Deportista */}
+          {modoPago === 'deportista' && (
           <div className="form-group">
             <label style={{ fontWeight: '600', fontSize: '13px' }}>Deportista *</label>
             <div style={{ position: 'relative' }}>
@@ -404,15 +483,107 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                 </div>
                 {apoderadoAsignado && (
                   <div style={{ fontSize: '11px', color: 'var(--azul-electrico)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <ClipboardList size={12} /> Apoderado: {apoderadoAsignado.nombres || 'Sin nombre'} ({apoderadoAsignado.correo_usuario})
+                    <ClipboardList size={12} /> Apoderado: {apoderadoAsignado.nombres || 'Sin nombre'} ({apoderadoAsignado.correo})
                   </div>
                 )}
               </div>
             )}
           </div>
+          )}
+
+          {/* Buscador Socio (modo "solo cuota de socio") */}
+          {modoPago === 'socio' && (
+          <div className="form-group">
+            <label style={{ fontWeight: '600', fontSize: '13px' }}>Socio *</label>
+            <div style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+                <Search size={16} color="var(--gris-secundario)" strokeWidth={1.5} />
+                <input
+                  type="text"
+                  placeholder="Busca por nombre o RUT..."
+                  value={searchTermSocio}
+                  onChange={(e) => setSearchTermSocio(e.target.value)}
+                  onFocus={() => setShowSocioResults(true)}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    paddingLeft: '32px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--borde)',
+                    fontSize: '13px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {showSocioResults && sociosFiltrados.length > 0 && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  background: 'white',
+                  border: '1px solid var(--borde)',
+                  borderTopWidth: 0,
+                  borderBottomLeftRadius: '8px',
+                  borderBottomRightRadius: '8px',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  zIndex: 1001,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                }}>
+                  {sociosFiltrados.map(c => (
+                    <button
+                      type="button"
+                      key={c.rut}
+                      onClick={() => {
+                        setRutCuentaSocio(c.rut);
+                        setSearchTermSocio('');
+                        setShowSocioResults(false);
+                      }}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        border: 'none',
+                        fontFamily: 'inherit',
+                        padding: '10px 12px',
+                        borderBottom: '1px solid var(--gris-fondo)',
+                        cursor: 'pointer',
+                        background: rutCuentaSocio === c.rut ? 'var(--gris-fondo)' : 'transparent'
+                      }}
+                    >
+                      <div style={{ fontWeight: '600', fontSize: '13px' }}>
+                        {c.nombres} {c.apellido_paterno || ''}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--gris-secundario)' }}>
+                        {c.rut}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {rutCuentaSocio && (
+              <div style={{
+                marginTop: '8px',
+                padding: '10px',
+                background: 'var(--gris-fondo)',
+                borderRadius: '8px',
+                fontSize: '12px'
+              }}>
+                <div style={{ color: 'var(--gris-secundario)', marginBottom: '4px' }}>Socio seleccionado:</div>
+                <div style={{ fontWeight: '600' }}>
+                  {cuentasSocias.find(c => c.rut === rutCuentaSocio)?.nombres} ({rutCuentaSocio})
+                </div>
+              </div>
+            )}
+          </div>
+          )}
 
           {/* Año y Meses */}
-          {formData.rut_jugador && (
+          {puedeContinuar && (
             <div className="form-group">
               <label style={{ fontWeight: '600', fontSize: '13px' }}>Período a pagar *</label>
               
@@ -517,7 +688,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
           )}
 
           {/* Concepto de pago con valor editable */}
-          {formData.rut_jugador && (
+          {puedeContinuar && (
             <div className="form-group">
               <label style={{ fontWeight: '600', fontSize: '13px' }}>Concepto de pago *</label>
               <select
@@ -578,7 +749,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
           )}
 
           {/* Monto pagado y desglose */}
-          {formData.rut_jugador && mesesSeleccionados.length > 0 && (
+          {puedeContinuar && mesesSeleccionados.length > 0 && (
             <div className="form-group">
               <label style={{ fontWeight: '600', fontSize: '13px' }}>Monto pagado ($) *</label>
               <input
@@ -675,8 +846,8 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
             </div>
           )}
 
-          {/* Monto simple si no hay deportista o meses seleccionados */}
-          {(!formData.rut_jugador || mesesSeleccionados.length === 0) && (
+          {/* Monto simple si no hay deportista/socio o meses seleccionados */}
+          {(!puedeContinuar || mesesSeleccionados.length === 0) && (
             <div className="form-group">
               <label style={{ fontWeight: '600', fontSize: '13px' }}>Monto pagado ($) *</label>
               <input
