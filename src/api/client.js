@@ -664,6 +664,20 @@ export const citacionesAPI = {
     });
     return handleResponse(response);
   },
+  update: async (id, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+  delete: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(response);
+  },
   agregarConvocado: async (citacionId, datos) => {
     const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados`, {
       method: 'POST',

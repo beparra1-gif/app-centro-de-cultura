@@ -5094,6 +5094,91 @@ app.get('/api/citaciones/:id', authenticate, async (req, res) => {
   }
 });
 
+// PUT: edita los datos de una citación existente (fecha, rival, horarios,
+// etc). No toca la nómina de convocados, que se gestiona aparte vía
+// /convocados. Solo admin/super_admin o quien la creó pueden editarla.
+app.put('/api/citaciones/:id', authenticate, requireModule('citaciones'), async (req, res) => {
+  const {
+    tipo_competencia, competencia_nombre, competencia_logo_url,
+    dia_citacion, hora_citacion, hora_presentacion, hora_maxima_confirmacion,
+    rival_nombre, rival_logo_url,
+    rama, categoria_base, categorias_apoyo,
+  } = req.body;
+
+  try {
+    const existente = await pool.query('SELECT responsable_rut FROM citaciones WHERE id = $1', [req.params.id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Citación no encontrada.' });
+    }
+    const esAdminOSuper = ['admin', 'super_admin', 'superadmin'].includes(normalizarRol(req.actor.rol));
+    if (!esAdminOSuper && normalizarRutParaComparar(existente.rows[0].responsable_rut) !== normalizarRutParaComparar(req.actor.rut)) {
+      return res.status(403).json({ error: 'No puedes editar una citación creada por otra persona.' });
+    }
+
+    await pool.query(
+      `UPDATE citaciones
+       SET tipo_competencia = COALESCE($1, tipo_competencia),
+           competencia_nombre = COALESCE($2, competencia_nombre),
+           competencia_logo_url = COALESCE($3, competencia_logo_url),
+           dia_citacion = COALESCE($4, dia_citacion),
+           hora_citacion = COALESCE($5, hora_citacion),
+           hora_presentacion = COALESCE($6, hora_presentacion),
+           hora_maxima_confirmacion = COALESCE($7, hora_maxima_confirmacion),
+           rival_nombre = COALESCE($8, rival_nombre),
+           rival_logo_url = COALESCE($9, rival_logo_url),
+           rama = COALESCE($10, rama),
+           categoria_base = COALESCE($11, categoria_base),
+           categorias_apoyo = COALESCE($12, categorias_apoyo),
+           updated_at = NOW()
+       WHERE id = $13`,
+      [
+        tipo_competencia || null, competencia_nombre || null, competencia_logo_url || null,
+        dia_citacion || null, hora_citacion || null, hora_presentacion || null,
+        hora_maxima_confirmacion || null,
+        rival_nombre || null, rival_logo_url || null,
+        rama || null, categoria_base || null,
+        Array.isArray(categorias_apoyo) ? JSON.stringify(categorias_apoyo) : null,
+        req.params.id,
+      ]
+    );
+
+    const completa = await cargarCitacionConConvocados(req.params.id);
+    res.json(completa);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE: borra una citación completa. citacion_convocados se limpia solo
+// (ON DELETE CASCADE), pero comunicaciones.citacion_id no tiene FK (ver nota
+// junto a ensureComunicacionesExtendedColumns) así que el post del muro
+// vinculado se borra a mano, igual que en /api/academia-videos/:id. Solo
+// admin/super_admin o quien la creó pueden borrarla.
+app.delete('/api/citaciones/:id', authenticate, requireModule('citaciones'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const existente = await client.query('SELECT responsable_rut FROM citaciones WHERE id = $1', [req.params.id]);
+    if (existente.rows.length === 0) {
+      return res.status(404).json({ error: 'Citación no encontrada.' });
+    }
+    const esAdminOSuper = ['admin', 'super_admin', 'superadmin'].includes(normalizarRol(req.actor.rol));
+    if (!esAdminOSuper && normalizarRutParaComparar(existente.rows[0].responsable_rut) !== normalizarRutParaComparar(req.actor.rut)) {
+      return res.status(403).json({ error: 'No puedes borrar una citación creada por otra persona.' });
+    }
+
+    await client.query('BEGIN');
+    await client.query('DELETE FROM comunicaciones WHERE citacion_id = $1', [req.params.id]);
+    await client.query('DELETE FROM citaciones WHERE id = $1', [req.params.id]);
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // POST: agrega un convocado a una citación existente y lo notifica.
 app.post('/api/citaciones/:id/convocados', authenticate, requireModule('citaciones'), async (req, res) => {
   const { rut_jugador, nombre, rama, categoria, correo_apoderado, requiere_excepcion_morosidad } = req.body;
