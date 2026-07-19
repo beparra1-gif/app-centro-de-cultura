@@ -9,23 +9,13 @@ import StaffEvaluacionPanel from './StaffEvaluacionPanel';
 import AcademiaDashboardPanel from './AcademiaDashboardPanel';
 import { filtraPorRamaCategoria } from '../utils/academia';
 import { calcularProgresoNivel } from '../utils/gamificacion';
+import { esUrlYoutube, esUrlVimeo, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
 
 const normalizarRutAcademia = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 
 const RAMAS = ['General', 'Masculina', 'Femenina', 'Mixta'];
 
-const esUrlYoutube = (url = '') => /youtube\.com\/watch\?v=|youtu\.be\//.test(url);
-const esUrlVimeo = (url = '') => /vimeo\.com\//.test(url);
 const esVideoInterno = (url = '') => /academia-videos\/file\//.test(url);
-
-const obtenerIdYoutube = (url = '') => {
-  const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
-  return match ? match[1] : null;
-};
-const obtenerIdVimeo = (url = '') => {
-  const match = url.match(/vimeo\.com\/(\d+)/);
-  return match ? match[1] : null;
-};
 
 const resolverUrlVideo = (cuerpoTexto = '') => (
   esVideoInterno(cuerpoTexto) ? `${api.API_BASE_URL_CONFIG}/${cuerpoTexto}` : cuerpoTexto

@@ -41,6 +41,20 @@ import SaludDashboardPanel from './SaludDashboardPanel';
 import SaludTimelinePanel from './SaludTimelinePanel';
 import SettingsPanel from './SettingsPanel';
 
+// comprobante_url llega en 2 formatos: URL relativa del backend
+// (/api/logo-assets/file/...) para imágenes subidas como archivo, o un data
+// URI base64 completo para PDF (ver convertirArchivoABase64 en
+// PerfilTesoreriaPanel.jsx). Ambos sirven directo como href/src; la relativa
+// solo necesita el host del backend por delante.
+const resolverUrlComprobante = (url = '') => {
+  const valor = String(url || '').trim();
+  if (!valor) return '';
+  if (valor.startsWith('data:') || /^https?:\/\//i.test(valor)) return valor;
+  return `${api.API_BASE_URL_CONFIG}${valor.startsWith('/') ? '' : '/'}${valor}`;
+};
+
+const esComprobanteImagen = (url = '') => /^data:image\//i.test(url) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
+
 function SuperAdminPanel({
   puedeAdminCompleto,
   usuarioAutenticado,
@@ -208,6 +222,7 @@ function SuperAdminPanel({
     logo_visitante_url: '',
     torneo_nombre: '',
     torneo_logo_url: '',
+    id_torneo: '',
     pts_local: '',
     pts_visitante: '',
     rama: 'Mixta',
@@ -215,6 +230,7 @@ function SuperAdminPanel({
     cancha_sede: '',
     fecha_hora: new Date().toISOString().slice(0, 10),
   });
+  const [torneosDisponibles, setTorneosDisponibles] = useState([]);
 
   // Definir categorías disponibles según rama
   const categoriasDisponibles = {
@@ -1024,6 +1040,7 @@ function SuperAdminPanel({
       logo_visitante_url: '',
       torneo_nombre: '',
       torneo_logo_url: '',
+      id_torneo: '',
       pts_local: '',
       pts_visitante: '',
       rama: 'Mixta',
@@ -1047,7 +1064,7 @@ function SuperAdminPanel({
   const guardarResultado = async () => {
     const {
       equipo_local, equipo_visitante,
-      logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url,
+      logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
       pts_local, pts_visitante, cancha_sede, fecha_hora,
     } = formResultado;
     if (!equipo_visitante.trim()) { showToast({ message: 'Ingresa el nombre del equipo visitante.', type: 'error' }); return; }
@@ -1061,6 +1078,7 @@ function SuperAdminPanel({
         logo_visitante_url: logo_visitante_url || null,
         torneo_nombre: torneo_nombre || null,
         torneo_logo_url: torneo_logo_url || null,
+        id_torneo: id_torneo || null,
         pts_local: Number(pts_local),
         pts_visitante: Number(pts_visitante),
         rama: formResultado.rama,
@@ -1387,6 +1405,15 @@ function SuperAdminPanel({
   useEffect(() => {
     if (vistaAdmin !== 'activos' && vistaAdmin !== 'resultados' && vistaAdmin !== 'citaciones') return;
     cargarLogosDisponiblesActivos();
+  }, [vistaAdmin]);
+
+  useEffect(() => {
+    if (vistaAdmin !== 'resultados') return;
+    let cancelado = false;
+    api.torneosAPI.getAll()
+      .then((torneos) => { if (!cancelado) setTorneosDisponibles(Array.isArray(torneos) ? torneos : []); })
+      .catch(() => { if (!cancelado) setTorneosDisponibles([]); });
+    return () => { cancelado = true; };
   }, [vistaAdmin]);
 
   const guardarEdicionJugadorVisita = async () => {
@@ -2684,12 +2711,39 @@ function SuperAdminPanel({
               <p style={{ fontSize: '13px', margin: '15px 0', color: 'var(--texto-principal)' }}>
                 <strong>Detalle:</strong> {pago.concepto_pago || 'Mensualidad'} · {pago.meses_correspondientes || 'Sin meses indicados'}
               </p>
-              <div className="foto-upload-box mb-15" style={{ padding: '15px', background: 'rgba(0,122,255,0.05)', borderColor: 'rgba(0,122,255,0.2)' }}>
-                <FileText size={24} color="var(--azul-electrico)" />
-                <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--azul-electrico)' }}>
-                  {pago.comprobante_url ? `Comprobante: ${pago.comprobante_url}` : 'Sin comprobante adjunto'}
-                </span>
-              </div>
+              {pago.comprobante_url ? (
+                (() => {
+                  const urlComprobante = resolverUrlComprobante(pago.comprobante_url);
+                  return esComprobanteImagen(pago.comprobante_url) ? (
+                    <a
+                      href={urlComprobante}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mb-15"
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: 'rgba(0,122,255,0.05)', border: '1px solid rgba(0,122,255,0.2)', borderRadius: '14px', textDecoration: 'none' }}
+                    >
+                      <img src={urlComprobante} alt="Comprobante de pago" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '10px', border: '1px solid rgba(0,122,255,0.2)' }} />
+                      <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--azul-electrico)' }}>Ver comprobante completo</span>
+                    </a>
+                  ) : (
+                    <a
+                      href={urlComprobante}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="foto-upload-box mb-15"
+                      style={{ padding: '15px', background: 'rgba(0,122,255,0.05)', borderColor: 'rgba(0,122,255,0.2)', textDecoration: 'none' }}
+                    >
+                      <FileText size={24} color="var(--azul-electrico)" />
+                      <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--azul-electrico)' }}>Ver comprobante (PDF)</span>
+                    </a>
+                  );
+                })()
+              ) : (
+                <div className="foto-upload-box mb-15" style={{ padding: '15px', background: 'rgba(255,59,48,0.05)', borderColor: 'rgba(255,59,48,0.2)' }}>
+                  <FileText size={24} color="var(--rojo-alerta)" />
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--rojo-alerta)' }}>Sin comprobante adjunto</span>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
                   style={{ flex: 1, padding: '12px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
@@ -3514,6 +3568,15 @@ function SuperAdminPanel({
                 placeholder="Nombre competencia o torneo"
               />
               <div className="form-group">
+                <label>Torneo (opcional, para tabla de posiciones)</label>
+                <select className="form-input" value={formResultado.id_torneo} onChange={(e) => setFormResultado((p) => ({ ...p, id_torneo: e.target.value }))}>
+                  <option value="">Sin torneo</option>
+                  {torneosDisponibles.map((t) => (
+                    <option key={t.id_torneo} value={t.id_torneo}>{t.nombre_torneo}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
                 <label>Rama</label>
                 <select className="form-input" value={formResultado.rama} onChange={(e) => {
                   const nuevaRama = e.target.value;
@@ -3592,6 +3655,7 @@ function SuperAdminPanel({
                     logo_visitante_url: p.logo_visitante_url,
                     torneo_nombre: p.torneo_nombre,
                     torneo_logo_url: p.torneo_logo_url,
+                    id_torneo: p.id_torneo || '',
                     pts_local: String(p.pts_local || ''),
                     pts_visitante: String(p.pts_visitante || ''),
                     rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),

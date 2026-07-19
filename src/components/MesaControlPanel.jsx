@@ -501,6 +501,7 @@ function MesaControlPanel({
   modoChromaKey,
   setModoChromaKey,
   partidos = [],
+  onPartidoFinalizado,
 }) {
   const [modoAnalisis, setModoAnalisis] = useState('dos');
   const [moduloMesa, setModuloMesa] = useState('prepartido');
@@ -514,6 +515,8 @@ function MesaControlPanel({
   const [competenciaNombre, setCompetenciaNombre] = useState('');
   const [competenciaLogoUrl, setCompetenciaLogoUrl] = useState('');
   const [canchaSede, setCanchaSede] = useState('');
+  const [torneoSeleccionadoId, setTorneoSeleccionadoId] = useState('');
+  const [torneosDisponibles, setTorneosDisponibles] = useState([]);
   const [incluirCategoriasMenores, setIncluirCategoriasMenores] = useState(false);
   const [nivelesCategoriasInferiores, setNivelesCategoriasInferiores] = useState(2);
   const [clubLocalNombre, setClubLocalNombre] = useState('Centro de Cultura Física');
@@ -548,8 +551,6 @@ function MesaControlPanel({
   const [staffVisita, setStaffVisita] = useState({ entrenador: '', asistente: '', delegado: '' });
   const [nominaLocalIds, setNominaLocalIds] = useState([]);
   const [nominaVisitaIds, setNominaVisitaIds] = useState([]);
-  const [quintetoLocalValidado, setQuintetoLocalValidado] = useState(false);
-  const [quintetoVisitaValidado, setQuintetoVisitaValidado] = useState(false);
   const [busquedaInclusionLocal, setBusquedaInclusionLocal] = useState('');
   const [busquedaNominaLocal, setBusquedaNominaLocal] = useState('');
   const [busquedaNominaVisita, setBusquedaNominaVisita] = useState('');
@@ -771,6 +772,7 @@ function MesaControlPanel({
       setCompetenciaNombre(guardada.competenciaNombre || '');
       setCompetenciaLogoUrl(guardada.competenciaLogoUrl || '');
       setCanchaSede(guardada.canchaSede || '');
+      setTorneoSeleccionadoId(guardada.torneoSeleccionadoId || '');
       setIncluirCategoriasMenores(Boolean(guardada.incluirCategoriasMenores));
       setNivelesCategoriasInferiores(Number(guardada.nivelesCategoriasInferiores || 2));
       setClubLocalNombre(guardada.clubLocalNombre || 'Centro de Cultura Física');
@@ -788,8 +790,6 @@ function MesaControlPanel({
       setQuintetoVisitaIds(Array.isArray(guardada.quintetoVisitaIds) ? guardada.quintetoVisitaIds : []);
       setNominaLocalIds(Array.isArray(guardada.nominaLocalIds) ? guardada.nominaLocalIds : []);
       setNominaVisitaIds(Array.isArray(guardada.nominaVisitaIds) ? guardada.nominaVisitaIds : []);
-      setQuintetoLocalValidado(Boolean(guardada.quintetoLocalValidado));
-      setQuintetoVisitaValidado(Boolean(guardada.quintetoVisitaValidado));
       setCapitanLocalId(guardada.capitanLocalId || '');
       setCapitanVisitaId(guardada.capitanVisitaId || '');
       setColorLocal(guardada.colorLocal || '#0a84ff');
@@ -828,6 +828,7 @@ function MesaControlPanel({
       competenciaNombre,
       competenciaLogoUrl,
       canchaSede,
+      torneoSeleccionadoId,
       incluirCategoriasMenores,
       nivelesCategoriasInferiores,
       clubLocalNombre,
@@ -845,8 +846,6 @@ function MesaControlPanel({
       quintetoVisitaIds,
       nominaLocalIds,
       nominaVisitaIds,
-      quintetoLocalValidado,
-      quintetoVisitaValidado,
       capitanLocalId,
       capitanVisitaId,
       colorLocal,
@@ -880,6 +879,7 @@ function MesaControlPanel({
     competenciaNombre,
     competenciaLogoUrl,
     canchaSede,
+    torneoSeleccionadoId,
     incluirCategoriasMenores,
     nivelesCategoriasInferiores,
     clubLocalNombre,
@@ -897,8 +897,6 @@ function MesaControlPanel({
     quintetoVisitaIds,
     nominaLocalIds,
     nominaVisitaIds,
-    quintetoLocalValidado,
-    quintetoVisitaValidado,
     capitanLocalId,
     capitanVisitaId,
     colorLocal,
@@ -1147,25 +1145,6 @@ function MesaControlPanel({
     setNominaLocalIds((prev) => [...prev, jugadorId]);
   };
 
-  const validarQuinteto = ({ tipo }) => {
-    if (tipo === 'local') {
-      if (quintetoLocalIds.length !== 5) { showToast({ message: 'El quinteto local debe tener 5 jugadoras/es.', type: 'error' }); return; }
-      setQuintetoLocalValidado(true);
-      return;
-    }
-    if (modoAnalisis !== 'dos') return;
-    if (quintetoVisitaIds.length !== 5) { showToast({ message: 'El quinteto visita debe tener 5 jugadoras/es.', type: 'error' }); return; }
-    setQuintetoVisitaValidado(true);
-  };
-
-  useEffect(() => {
-    if (!partidoIniciado) setQuintetoLocalValidado(false);
-  }, [quintetoLocalIds, nominaLocalIds, partidoIniciado]);
-
-  useEffect(() => {
-    if (!partidoIniciado) setQuintetoVisitaValidado(false);
-  }, [quintetoVisitaIds, nominaVisitaIds, partidoIniciado]);
-
   const salirPantallaCompletaManual = async () => {
     setForzarPantallaCompletaLive(false);
     setCronometroActivo(false);
@@ -1250,9 +1229,9 @@ function MesaControlPanel({
       minimoOk: total >= 5,
       maximoOk: total <= LIMITE_JUGADORES_POR_EQUIPO,
       dorsalesOk: dorsalesDuplicadosLocal.length === 0,
-      quintetoOk: quintetoLocalIds.length === 5 && quintetoLocalValidado,
+      quintetoOk: quintetoLocalIds.length === 5,
     };
-  }, [rosterLocal, dorsalesDuplicadosLocal, quintetoLocalIds, quintetoLocalValidado]);
+  }, [rosterLocal, dorsalesDuplicadosLocal, quintetoLocalIds]);
 
   const validacionVisita = useMemo(() => {
     const total = rosterVisita.length;
@@ -1264,9 +1243,9 @@ function MesaControlPanel({
       minimoOk: total >= 5,
       maximoOk: total <= LIMITE_JUGADORES_POR_EQUIPO,
       dorsalesOk: dorsalesDuplicadosVisita.length === 0,
-      quintetoOk: quintetoVisitaIds.length === 5 && quintetoVisitaValidado,
+      quintetoOk: quintetoVisitaIds.length === 5,
     };
-  }, [modoAnalisis, rosterVisita, dorsalesDuplicadosVisita, quintetoVisitaIds, quintetoVisitaValidado]);
+  }, [modoAnalisis, rosterVisita, dorsalesDuplicadosVisita, quintetoVisitaIds]);
 
   const prepartidoValido = useMemo(
     () => validacionLocal.minimoOk
@@ -1915,6 +1894,7 @@ function MesaControlPanel({
         logo_visitante_url: modoAnalisis === 'dos' ? (normalizarTexto(clubVisitaLogoUrl) || liveScore.equipoVisitaLogoUrl || '') : '',
         torneo_nombre: normalizarTexto(competenciaNombre) || null,
         torneo_logo_url: normalizarTexto(competenciaLogoUrl) || null,
+        id_torneo: torneoSeleccionadoId || null,
         estado_juego: 'en_curso',
         pts_local: liveScore.ptsLocal,
         pts_visitante: liveScore.ptsVisita,
@@ -1924,6 +1904,14 @@ function MesaControlPanel({
       return null;
     }
   };
+
+  useEffect(() => {
+    let cancelado = false;
+    api.torneosAPI.getAll()
+      .then((torneos) => { if (!cancelado) setTorneosDisponibles(Array.isArray(torneos) ? torneos : []); })
+      .catch(() => { if (!cancelado) setTorneosDisponibles([]); });
+    return () => { cancelado = true; };
+  }, []);
 
   const recargarHistorialRemoto = async () => {
     try {
@@ -2422,9 +2410,13 @@ function MesaControlPanel({
           cancha_sede: normalizarTexto(canchaSede) || null,
           pts_local: liveScore.ptsLocal,
           pts_visitante: liveScore.ptsVisita,
+          id_torneo: torneoSeleccionadoId || null,
           });
           await recargarHistorialRemoto();
           await persistirResultadoYEstadisticas(idPersistido);
+          // Avisa a App.jsx para que recargue el muro — sin esto el resultado
+          // recién publicado no aparece hasta recargar la página a mano.
+          if (typeof onPartidoFinalizado === 'function') onPartidoFinalizado();
         }
       }
       return true;
@@ -2465,7 +2457,7 @@ function MesaControlPanel({
   const confirmarFinalizacionPartido = async () => {
     if (!partidoIniciado) return;
     if (!(await confirmAction({ title: 'Finalizar partido', message: '¿Finalizar partido y guardar estadística?' }))) return;
-    const guardarHistorico = await confirmAction({ title: 'Guardar en histórico', message: '¿Quieres guardar este partido en la base histórica?' });
+    const guardarHistorico = await confirmAction({ title: 'Publicar resultado', message: '¿Publicar este resultado en el muro? Aparecerá igual que si lo cargaras manualmente en Registro de Resultados.' });
 
     const guardado = await guardarEstadisticaPartido({ guardarEnBaseHistorica: guardarHistorico });
     setPartidoIniciado(false);
@@ -2693,6 +2685,16 @@ function MesaControlPanel({
         </div>
 
         <label className="mesa-filter-item">
+          <span><Shield size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Torneo (opcional, para tabla de posiciones)</span>
+          <select className="form-input" value={torneoSeleccionadoId} onChange={(e) => setTorneoSeleccionadoId(e.target.value)}>
+            <option value="">Sin torneo</option>
+            {torneosDisponibles.map((t) => (
+              <option key={t.id_torneo} value={t.id_torneo}>{t.nombre_torneo}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="mesa-filter-item">
           <span><FileText size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Cancha / Sede</span>
           <input
             className="form-input"
@@ -2765,7 +2767,7 @@ function MesaControlPanel({
           <div className="mesa-validation-box">
             <h6>Local</h6>
             <p>Citadas/os: {validacionLocal.total} (max 12)</p>
-            <p>Quinteto inicial: {quintetoLocalIds.length}/5 {quintetoLocalValidado ? '· Validado' : ''}</p>
+            <p>Quinteto inicial: {quintetoLocalIds.length}/5 {quintetoLocalIds.length === 5 ? '· Listo' : ''}</p>
             {!validacionLocal.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosLocal.join(', ')}</p>}
             <label className="mesa-filter-item" style={{ marginTop: '8px' }}>
               <span>Capitán/a local</span>
@@ -2798,13 +2800,12 @@ function MesaControlPanel({
                 </div>
               ))}
             </div>
-            <button className="btn-secondary" style={{ width: 'auto', marginTop: '10px' }} onClick={() => validarQuinteto({ tipo: 'local' })}>Validar quinteto local</button>
           </div>
           {modoAnalisis === 'dos' && (
             <div className="mesa-validation-box">
               <h6>Visita</h6>
               <p>Citadas/os: {validacionVisita.total} (max 12)</p>
-              <p>Quinteto inicial: {quintetoVisitaIds.length}/5 {quintetoVisitaValidado ? '· Validado' : ''}</p>
+              <p>Quinteto inicial: {quintetoVisitaIds.length}/5 {quintetoVisitaIds.length === 5 ? '· Listo' : ''}</p>
               {!validacionVisita.dorsalesOk && <p className="mesa-validation-error">Dorsales duplicados: {dorsalesDuplicadosVisita.join(', ')}</p>}
               <label className="mesa-filter-item" style={{ marginTop: '8px' }}>
                 <span>Capitán/a visita</span>
@@ -2844,7 +2845,6 @@ function MesaControlPanel({
                   </div>
                 ))}
               </div>
-              <button className="btn-secondary" style={{ width: 'auto', marginTop: '10px' }} onClick={() => validarQuinteto({ tipo: 'visita' })}>Validar quinteto visita</button>
             </div>
           )}
         </div>

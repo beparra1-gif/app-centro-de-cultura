@@ -1512,6 +1512,7 @@ const ensurePartidosLiveMesaColumns = async () => {
     `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS analisis_json JSONB DEFAULT '{}'::jsonb`,
     `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS iniciado_at TIMESTAMP`,
     `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS finalizado_at TIMESTAMP`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS id_torneo INT`,
   ];
 
   for (const statement of ddl) {
@@ -1519,6 +1520,33 @@ const ensurePartidosLiveMesaColumns = async () => {
   }
 
   console.log('📋 Columnas avanzadas de mesa en partidos_live verificadas');
+};
+
+// torneos solo vivía en el script de migración suelto (backend/migrations/init.js)
+// — si un despliegue nunca lo corrió, la tabla no existía y la tabla de
+// posiciones/el selector de torneo fallaban con "relation torneos does not exist".
+const ensureTorneosTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS torneos (
+      id_torneo SERIAL PRIMARY KEY,
+      nombre_torneo VARCHAR(255),
+      rama VARCHAR(50),
+      categoria VARCHAR(50),
+      fecha_inicio DATE,
+      fecha_fin DATE,
+      ubicacion VARCHAR(255),
+      organizador VARCHAR(255),
+      cantidad_equipos INT,
+      formato VARCHAR(50),
+      estado VARCHAR(50),
+      ganador VARCHAR(255),
+      subcampeón VARCHAR(255),
+      premios TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('🏆 Tabla torneos verificada');
 };
 
 const ensurePagosMensualidadesColumns = async () => {
@@ -5459,7 +5487,7 @@ app.post('/api/partidos-live', authenticate, requireModule('scoreboard_live'), a
   const {
     fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante,
     rut_planillero, estado_juego,
-    logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url,
+    logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
     pts_local, pts_visitante,
   } = req.body;
   try {
@@ -5467,21 +5495,21 @@ app.post('/api/partidos-live', authenticate, requireModule('scoreboard_live'), a
     const ramafinal = rama || 'Mixta';
     const categoriafinal = categoria || 'SUB-13';
     const categoria_rama_final = categoria_rama || `${ramafinal}-${categoriafinal}`;
-    
+
     const result = await pool.query(
       `INSERT INTO partidos_live
        (fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante, rut_planillero,
-        estado_juego, logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url,
+        estado_juego, logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
         pts_local, pts_visitante)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9,'pendiente'), $10, $11, $12, $13,
-        COALESCE($14, 0), COALESCE($15, 0))
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9,'pendiente'), $10, $11, $12, $13, $14,
+        COALESCE($15, 0), COALESCE($16, 0))
        RETURNING *`,
       [
-        fecha_hora, cancha_sede, categoria_rama_final, ramafinal, categoriafinal, 
+        fecha_hora, cancha_sede, categoria_rama_final, ramafinal, categoriafinal,
         equipo_local, equipo_visitante, rut_planillero || null,
         estado_juego || 'pendiente',
         logo_local_url || null, logo_visitante_url || null,
-        torneo_nombre || null, torneo_logo_url || null,
+        torneo_nombre || null, torneo_logo_url || null, id_torneo || null,
         pts_local ?? 0, pts_visitante ?? 0,
       ]
     );
@@ -5509,10 +5537,11 @@ app.put('/api/partidos-live/:id', authenticate, requireModule('scoreboard_live')
     logo_visitante_url,
     torneo_nombre,
     torneo_logo_url,
+    id_torneo,
   } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE partidos_live 
+      `UPDATE partidos_live
        SET pts_local = COALESCE($1, pts_local),
            pts_visitante = COALESCE($2, pts_visitante),
            estado_juego = COALESCE($3, estado_juego),
@@ -5528,8 +5557,9 @@ app.put('/api/partidos-live/:id', authenticate, requireModule('scoreboard_live')
            logo_visitante_url = COALESCE($13, logo_visitante_url),
            torneo_nombre = COALESCE($14, torneo_nombre),
            torneo_logo_url = COALESCE($15, torneo_logo_url),
+           id_torneo = COALESCE($16, id_torneo),
            updated_at = NOW()
-       WHERE id_partido = $16
+       WHERE id_partido = $17
        RETURNING *`,
       [
         pts_local,
@@ -5547,6 +5577,7 @@ app.put('/api/partidos-live/:id', authenticate, requireModule('scoreboard_live')
         logo_visitante_url,
         torneo_nombre,
         torneo_logo_url,
+        id_torneo,
         req.params.id,
       ]
     );
@@ -5572,6 +5603,7 @@ app.post('/api/partidos-live/:id/finalizar-mesa', authenticate, requireModule('s
     cancha_sede,
     pts_local,
     pts_visitante,
+    id_torneo,
   } = req.body || {};
 
   try {
@@ -5590,8 +5622,9 @@ app.post('/api/partidos-live/:id/finalizar-mesa', authenticate, requireModule('s
            cancha_sede = COALESCE($8, cancha_sede),
            pts_local = COALESCE($9, pts_local),
            pts_visitante = COALESCE($10, pts_visitante),
+           id_torneo = COALESCE($11, id_torneo),
            updated_at = NOW()
-       WHERE id_partido = $11
+       WHERE id_partido = $12
        RETURNING *`,
       [
         mesa_payload ? JSON.stringify(mesa_payload) : null,
@@ -5604,6 +5637,7 @@ app.post('/api/partidos-live/:id/finalizar-mesa', authenticate, requireModule('s
         cancha_sede || null,
         pts_local ?? null,
         pts_visitante ?? null,
+        id_torneo || null,
         req.params.id,
       ]
     );
@@ -6338,7 +6372,11 @@ app.post('/api/staff', authenticate, requireModule('admin_dashboard'), async (re
 // 26. ENDPOINTS: TORNEOS (FASE 3)
 // ==========================================
 
-app.get('/api/torneos', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+// Lectura pública (mismo criterio que GET /api/partidos-live y GET
+// /api/resultados/partido/:id): cualquiera puede ver qué torneos existen y su
+// tabla de posiciones, incluso sin sesión, para mostrarlo en la fachada
+// pública. Crear/editar torneos sigue exigiendo admin o staff con Mesa.
+app.get('/api/torneos', async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM torneos ORDER BY fecha_inicio DESC`);
     res.json(result.rows);
@@ -6347,7 +6385,7 @@ app.get('/api/torneos', authenticate, requireModule('admin_dashboard'), async (r
   }
 });
 
-app.post('/api/torneos', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+app.post('/api/torneos', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard'), async (req, res) => {
   const { nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato } = req.body;
   try {
     const result = await pool.query(
@@ -6357,6 +6395,62 @@ app.post('/api/torneos', authenticate, requireModule('admin_dashboard'), async (
       [nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato]
     );
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: tabla de posiciones de un torneo, calculada desde los partidos
+// finalizados asignados a él. Básquetbol no tiene empates: se ordena por
+// victorias, luego % de victorias (por si no todos jugaron la misma
+// cantidad de partidos), luego diferencia de puntos. Pública, igual que
+// GET /api/torneos.
+app.get('/api/torneos/:id/tabla-posiciones', async (req, res) => {
+  try {
+    const partidos = (await pool.query(
+      `SELECT id_partido, equipo_local, equipo_visitante, pts_local, pts_visitante, fecha_hora, cancha_sede
+       FROM partidos_live
+       WHERE id_torneo = $1 AND estado_juego = 'finalizado'
+       ORDER BY fecha_hora ASC`,
+      [req.params.id]
+    )).rows;
+
+    const partidosPendientes = (await pool.query(
+      `SELECT id_partido, equipo_local, equipo_visitante, fecha_hora, cancha_sede, estado_juego
+       FROM partidos_live
+       WHERE id_torneo = $1 AND estado_juego != 'finalizado'
+       ORDER BY fecha_hora ASC`,
+      [req.params.id]
+    )).rows;
+
+    const normalizar = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const tabla = new Map();
+    const upsert = (nombre, pf, pc, resultado) => {
+      const key = normalizar(nombre);
+      if (!key) return;
+      const fila = tabla.get(key) || { nombre: String(nombre || '').trim(), pj: 0, pg: 0, pp: 0, pf: 0, pc: 0 };
+      fila.pj += 1;
+      fila.pf += Number(pf) || 0;
+      fila.pc += Number(pc) || 0;
+      if (resultado === 'W') fila.pg += 1;
+      else if (resultado === 'L') fila.pp += 1;
+      tabla.set(key, fila);
+    };
+
+    for (const p of partidos) {
+      const ptsLocal = Number(p.pts_local) || 0;
+      const ptsVisitante = Number(p.pts_visitante) || 0;
+      const empate = ptsLocal === ptsVisitante;
+      upsert(p.equipo_local, ptsLocal, ptsVisitante, empate ? null : (ptsLocal > ptsVisitante ? 'W' : 'L'));
+      upsert(p.equipo_visitante, ptsVisitante, ptsLocal, empate ? null : (ptsVisitante > ptsLocal ? 'W' : 'L'));
+    }
+
+    const posiciones = [...tabla.values()]
+      .map((fila) => ({ ...fila, dif: fila.pf - fila.pc, pct: fila.pj ? fila.pg / fila.pj : 0 }))
+      .sort((a, b) => b.pg - a.pg || b.pct - a.pct || b.dif - a.dif)
+      .map((fila, idx) => ({ ...fila, posicion: idx + 1 }));
+
+    res.json({ posiciones, partidos, partidosPendientes });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -7109,6 +7203,10 @@ app.listen(PORT, () => {
 
   ensurePartidosLiveMesaColumns().catch((error) => {
     console.error('❌ Error verificando columnas avanzadas de mesa:', error.message);
+  });
+
+  ensureTorneosTable().catch((error) => {
+    console.error('❌ Error verificando tabla torneos:', error.message);
   });
 
   ensurePartidosLiveLogos().catch((error) => {

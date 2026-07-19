@@ -1124,6 +1124,10 @@ export const torneosAPI = {
       body: JSON.stringify(datos)
     });
     return handleResponse(response);
+  },
+  tablaPosiciones: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/torneos/${id}/tabla-posiciones`);
+    return handleResponse(response);
   }
 };
 

@@ -6,6 +6,48 @@ import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
 import { calcularResumenCitacion } from '../utils/citaciones';
+import { esUrlImagen, esUrlYoutube, esUrlVimeo, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
+
+// El post puede traer un texto libre (Anuncio) o una URL (Imagen/Video/Enlace
+// elegidos en el formulario de Publicar) — cuerpo_texto es el mismo campo en
+// los dos casos, así que acá se detecta qué es en el momento de mostrarlo en
+// vez de depender de un tipo guardado aparte.
+function ContenidoComunicacion({ texto }) {
+  const valor = String(texto || '').trim();
+  if (!valor) return null;
+
+  if (esUrlImagen(valor)) {
+    return <img src={valor} alt="" style={{ width: '100%', borderRadius: '16px', marginTop: '4px', marginBottom: '8px' }} />;
+  }
+
+  if (esUrlYoutube(valor)) {
+    const id = obtenerIdYoutube(valor);
+    if (id) {
+      return (
+        <div style={{ borderRadius: '16px', overflow: 'hidden', aspectRatio: '16/9', marginTop: '4px', marginBottom: '8px' }}>
+          <iframe src={`https://www.youtube.com/embed/${id}`} title="Video" style={{ width: '100%', height: '100%', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+        </div>
+      );
+    }
+  }
+
+  if (esUrlVimeo(valor)) {
+    const id = obtenerIdVimeo(valor);
+    if (id) {
+      return (
+        <div style={{ borderRadius: '16px', overflow: 'hidden', aspectRatio: '16/9', marginTop: '4px', marginBottom: '8px' }}>
+          <iframe src={`https://player.vimeo.com/video/${id}`} title="Video" style={{ width: '100%', height: '100%', border: 'none' }} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
+        </div>
+      );
+    }
+  }
+
+  if (/^https?:\/\//i.test(valor)) {
+    return <a href={valor} target="_blank" rel="noreferrer" className="ios-rrss-body" style={{ display: 'block', color: 'var(--azul-electrico)', wordBreak: 'break-word' }}>{valor}</a>;
+  }
+
+  return <p className="ios-rrss-body">{valor}</p>;
+}
 
 function ComunicacionesPanel({
   rolUsuario,
@@ -415,7 +457,7 @@ function ComunicacionesPanel({
 
   return (
     <div className="mt-20">
-      {rolUsuario === 'admin' && (
+      {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && (
         <button onClick={() => setMostrarFormComunicaciones(!mostrarFormComunicaciones)} className="btn-electric" style={{ width: '100%', padding: '12px', marginBottom: '15px', borderRadius: '16px', border: 'none', color: 'white', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>
           <MessageCircle size={16} color="white" strokeWidth={1.5} style={{ marginRight: '6px', display: 'inline' }} /> {mostrarFormComunicaciones ? 'Cerrar' : 'Nueva Comunicación'}
         </button>
@@ -476,7 +518,7 @@ function ComunicacionesPanel({
               <h4 className="titulo-comunicado" style={{ marginBottom: '8px', color: 'var(--texto-principal)', fontWeight: '800', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {c.TIPO_COMUNICADO === 'Evento' ? <PartyPopper size={16} /> : c.TIPO_COMUNICADO === 'Asamblea' ? <ClipboardList size={16} /> : c.TIPO_COMUNICADO === 'Suspensión' ? <AlertTriangle size={16} color="var(--naranja-aviso)" /> : <Megaphone size={16} />} {c.TITULO}
               </h4>
-              <p className="ios-rrss-body">{c.CUERPO_TEXTO}</p>
+              <ContenidoComunicacion texto={c.CUERPO_TEXTO} />
 
               {c.solicita_asistencia && (
                 <div style={{ background: 'rgba(0, 122, 255, 0.08)', padding: '12px', borderRadius: '18px', marginBottom: '12px', marginTop: '10px' }}>

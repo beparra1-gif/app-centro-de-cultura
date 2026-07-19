@@ -1,6 +1,178 @@
-import { Bell, ChevronLeft, Lock, QrCode, User } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bell, ChevronLeft, Lock, QrCode, Trophy, User } from 'lucide-react';
+import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
+import { esUrlImagen, esUrlYoutube, esUrlVimeo, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
+
+// Misma lógica que ContenidoComunicacion en ComunicacionesPanel.jsx: el muro
+// público muestra los mismos posts, así que necesita la misma detección de
+// imagen/video/enlace en vez de mostrar la URL como texto plano.
+function ContenidoComunicacion({ texto }) {
+  const valor = String(texto || '').trim();
+  if (!valor) return null;
+
+  if (esUrlImagen(valor)) {
+    return <img src={valor} alt="" style={{ width: '100%', borderRadius: '16px', marginTop: '4px', marginBottom: '8px' }} />;
+  }
+
+  if (esUrlYoutube(valor)) {
+    const id = obtenerIdYoutube(valor);
+    if (id) {
+      return (
+        <div style={{ borderRadius: '16px', overflow: 'hidden', aspectRatio: '16/9', marginTop: '4px', marginBottom: '8px' }}>
+          <iframe src={`https://www.youtube.com/embed/${id}`} title="Video" style={{ width: '100%', height: '100%', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+        </div>
+      );
+    }
+  }
+
+  if (esUrlVimeo(valor)) {
+    const id = obtenerIdVimeo(valor);
+    if (id) {
+      return (
+        <div style={{ borderRadius: '16px', overflow: 'hidden', aspectRatio: '16/9', marginTop: '4px', marginBottom: '8px' }}>
+          <iframe src={`https://player.vimeo.com/video/${id}`} title="Video" style={{ width: '100%', height: '100%', border: 'none' }} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
+        </div>
+      );
+    }
+  }
+
+  if (/^https?:\/\//i.test(valor)) {
+    return <a href={valor} target="_blank" rel="noreferrer" className="ios-rrss-body" style={{ display: 'block', color: 'var(--azul-electrico)', wordBreak: 'break-word' }}>{valor}</a>;
+  }
+
+  return <p className="ios-rrss-body">{valor}</p>;
+}
+
+// Vista pública de solo lectura de Torneos: mismos endpoints que TorneosPanel
+// (ya son públicos, GET /api/torneos y /api/torneos/:id/tabla-posiciones no
+// piden sesión), pero sin el botón de crear torneo — acá solo se consulta.
+function TablaPosicionesPublica() {
+  const [torneos, setTorneos] = useState([]);
+  const [cargandoTorneos, setCargandoTorneos] = useState(true);
+  const [torneoSeleccionadoId, setTorneoSeleccionadoId] = useState(null);
+  const [tabla, setTabla] = useState(null);
+  const [cargandoTabla, setCargandoTabla] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+    api.torneosAPI.getAll()
+      .then((datos) => { if (!cancelado) setTorneos(Array.isArray(datos) ? datos : []); })
+      .catch(() => { if (!cancelado) setTorneos([]); })
+      .finally(() => { if (!cancelado) setCargandoTorneos(false); });
+    return () => { cancelado = true; };
+  }, []);
+
+  const seleccionarTorneo = async (idTorneo) => {
+    if (torneoSeleccionadoId === idTorneo) {
+      setTorneoSeleccionadoId(null);
+      setTabla(null);
+      return;
+    }
+    setTorneoSeleccionadoId(idTorneo);
+    setCargandoTabla(true);
+    try {
+      const datos = await api.torneosAPI.tablaPosiciones(idTorneo);
+      setTabla(datos);
+    } catch {
+      setTabla(null);
+    } finally {
+      setCargandoTabla(false);
+    }
+  };
+
+  if (cargandoTorneos) return <p style={{ fontSize: '13px', color: 'var(--texto-secundario)' }}>Cargando torneos...</p>;
+
+  if (torneos.length === 0) {
+    return (
+      <div className="card" style={{ borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
+        <p style={{ margin: 0, fontSize: '13px', color: 'var(--texto-secundario)' }}>Todavía no hay torneos publicados.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {torneos.map((t) => {
+        const abierto = torneoSeleccionadoId === t.id_torneo;
+        return (
+          <div key={t.id_torneo} className="card" style={{ borderRadius: '20px', padding: 0, overflow: 'hidden', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
+            <button
+              type="button"
+              onClick={() => seleccionarTorneo(t.id_torneo)}
+              style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '14px 16px', background: abierto ? 'rgba(0,122,255,0.06)' : 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Trophy size={18} color="var(--azul-electrico)" strokeWidth={1.5} />
+                <span>
+                  <strong style={{ display: 'block', fontSize: '14px' }}>{t.nombre_torneo}</strong>
+                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                    {t.rama || 'General'} · {t.categoria || 'General'}
+                  </span>
+                </span>
+              </span>
+            </button>
+
+            {abierto && (
+              <div style={{ padding: '4px 16px 16px 16px' }}>
+                {cargandoTabla && <p style={{ fontSize: '13px', color: 'var(--texto-secundario)' }}>Cargando tabla de posiciones...</p>}
+                {!cargandoTabla && tabla && tabla.posiciones.length === 0 && (
+                  <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', fontStyle: 'italic' }}>Todavía no hay partidos finalizados en este torneo.</p>
+                )}
+                {!cargandoTabla && tabla && tabla.posiciones.length > 0 && (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--borde-suave)' }}>
+                          <th style={{ padding: '6px 8px' }}>#</th>
+                          <th style={{ padding: '6px 8px' }}>Equipo</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'center' }}>PJ</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'center' }}>PG</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'center' }}>PP</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'center' }}>DIF</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'center' }}>%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tabla.posiciones.map((fila) => (
+                          <tr key={fila.nombre} style={{ borderBottom: '1px solid var(--borde-suave)' }}>
+                            <td style={{ padding: '6px 8px', fontWeight: '900', color: 'var(--azul-electrico)' }}>{fila.posicion}</td>
+                            <td style={{ padding: '6px 8px', fontWeight: '800' }}>{fila.nombre}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pj}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pg}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pp}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.dif > 0 ? `+${fila.dif}` : fila.dif}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'center' }}>{Math.round(fila.pct * 100)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {!cargandoTabla && tabla && tabla.partidosPendientes?.length > 0 && (
+                  <>
+                    <h5 style={{ margin: '16px 0 8px 0', fontSize: '13px' }}>Próximos partidos</h5>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {tabla.partidosPendientes.map((p) => (
+                        <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed var(--borde-suave)', borderRadius: '12px', padding: '8px 10px', fontSize: '12px' }}>
+                          <span>{p.equipo_local} vs {p.equipo_visitante}</span>
+                          <span style={{ color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                            {p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function PublicFacadePanel({
   vistaPublica,
@@ -98,7 +270,7 @@ function PublicFacadePanel({
                 <Bell size={16} style={{ marginRight: '6px' }} />
                 {c.TITULO}
               </h4>
-              <p className="ios-rrss-body">{c.CUERPO_TEXTO}</p>
+              <ContenidoComunicacion texto={c.CUERPO_TEXTO} />
             </div>
           ))}
 
@@ -131,6 +303,13 @@ function PublicFacadePanel({
           ) : (
             <ResultadosCards partidos={partidos} />
           )}
+        </div>
+      )}
+
+      {vistaPublica === 'torneos' && (
+        <div className="fade-in">
+          <h3 className="section-title mt-20">Torneos y Tabla de Posiciones</h3>
+          <TablaPosicionesPublica />
         </div>
       )}
     </>

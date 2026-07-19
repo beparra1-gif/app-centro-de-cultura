@@ -8,7 +8,7 @@ import {
   FileText, Flag, QrCode, Lock, Camera, ChevronRight, ChevronLeft, 
   ShieldAlert, Zap, Clock, FileDown, RefreshCw,
   History, CheckSquare,
-  XSquare, UserPlus
+  XSquare, UserPlus, ListOrdered
 } from 'lucide-react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
@@ -37,6 +37,7 @@ const ComunicacionesPanel = lazy(() => import('./components/ComunicacionesPanel'
 const KioscoPanel = lazy(() => import('./components/KioscoPanel'));
 const SuperAdminPanel = lazy(() => import('./components/SuperAdminPanel'));
 const MesaControlPanel = lazy(() => import('./components/MesaControlPanel'));
+const TorneosPanel = lazy(() => import('./components/TorneosPanel'));
 const PerfilTesoreriaPanel = lazy(() => import('./components/PerfilTesoreriaPanel'));
 const StaffAsistenciaPanel = lazy(() => import('./components/StaffAsistenciaPanel'));
 const AcademiaPanel = lazy(() => import('./components/AcademiaPanel'));
@@ -303,7 +304,7 @@ function App() {
       id: p.id_partido || idx + 1,
       rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
       categoria: p.categoria || p.categoria_rama || 'General',
-      torneo: p.estado_juego || 'Partido oficial',
+      torneo: p.torneo_nombre || p.competencia_nombre || 'Partido oficial',
       torneoLogoUrl: p.torneo_logo_url || p.logo_torneo_url || '',
       fechaISO: p.fecha_hora || null,
       fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
@@ -935,6 +936,7 @@ function App() {
       case 'jugador': return "Pase Digital";
       case 'asistencia_staff': return "Control Asistencia";
       case 'scoreboard_live': return "Mesa FIBA Live";
+      case 'torneos': return "Torneos y Tabla de Posiciones";
       case 'kiosco': return "Kiosco POS";
       case 'admin_dashboard': return "Administración";
       default: return "Club Cultura Física";
@@ -2607,6 +2609,11 @@ function App() {
                     setComunicaciones={setComunicaciones}
                     setMostrarFormComunicaciones={setMostrarFormComunicaciones}
                     addNotificacionHistorial={addNotificacionHistorial}
+                    onIrACitaciones={() => {
+                      setMostrarFormComunicaciones(false);
+                      setVistaAdmin('citaciones');
+                      cambiarPantallaConLoader('admin_dashboard');
+                    }}
                   />
                 )}
                 vistaMuro={vistaMuro}
@@ -2727,7 +2734,11 @@ function App() {
                 modoChromaKey={modoChromaKey}
                 setModoChromaKey={setModoChromaKey}
                 partidos={partidosResumen}
+                onPartidoFinalizado={recargarPartidosResumen}
               />
+            )}
+            {(puedeVerPantalla('scoreboard_live') || puedeVerPantalla('admin_dashboard')) && pantallaActiva === 'torneos' && (
+              <TorneosPanel />
             )}
             {puedeVerPantalla('kiosco') && pantallaActiva === 'kiosco' && (
               <KioscoPanel
@@ -2798,6 +2809,7 @@ function App() {
             <button type="button" className={`nav-item ${vistaPublica === 'inicio' ? 'active' : ''}`} onClick={() => setVistaPublica('inicio')}><Home size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Inicio</span></button>
             <button type="button" className={`nav-item ${vistaPublica === 'noticias' ? 'active' : ''}`} onClick={() => setVistaPublica('noticias')}><Bell size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Noticias</span></button>
             <button type="button" className={`nav-item ${vistaPublica === 'resultados' ? 'active' : ''}`} onClick={() => setVistaPublica('resultados')}><Trophy size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Resultados</span></button>
+            <button type="button" className={`nav-item ${vistaPublica === 'torneos' ? 'active' : ''}`} onClick={() => setVistaPublica('torneos')}><ListOrdered size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Torneos</span></button>
           </>
         ) : rolUsuario === 'visita' ? (
           <>
@@ -2837,6 +2849,19 @@ function App() {
               >
                 <UserPlus size={26} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <span className="mt-5">Citaciones</span>
+              </button>
+            )}
+            {/* 'torneos' tampoco es un módulo de MODULOS_ACCESO propio — se
+                muestra con el mismo criterio que ya decide quién ve Mesa
+                (scoreboard_live) o admin_dashboard, sin agregar un permiso nuevo. */}
+            {(puedeVerPantalla('scoreboard_live') || puedeVerPantalla('admin_dashboard')) && (
+              <button
+                type="button"
+                className={`nav-item ${pantallaActiva === 'torneos' ? 'active' : ''}`}
+                onClick={() => cambiarPantallaConLoader('torneos')}
+              >
+                <Trophy size={26} color="var(--gris-secundario)" strokeWidth={1.5} />
+                <span className="mt-5">Torneos</span>
               </button>
             )}
           </>
