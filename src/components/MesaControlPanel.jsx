@@ -2328,7 +2328,7 @@ function MesaControlPanel({
     }));
   };
 
-  const guardarEstadisticaPartido = async ({ guardarEnBaseHistorica = true } = {}) => {
+  const guardarEstadisticaPartido = async ({ guardarEnBaseHistorica = true, publicar = true } = {}) => {
     const payload = {
       id: nextId(),
       finalizadoAt: new Date().toISOString(),
@@ -2411,6 +2411,7 @@ function MesaControlPanel({
           pts_local: liveScore.ptsLocal,
           pts_visitante: liveScore.ptsVisita,
           id_torneo: torneoSeleccionadoId || null,
+          publicado: publicar,
           });
           await recargarHistorialRemoto();
           await persistirResultadoYEstadisticas(idPersistido);
@@ -2457,9 +2458,14 @@ function MesaControlPanel({
   const confirmarFinalizacionPartido = async () => {
     if (!partidoIniciado) return;
     if (!(await confirmAction({ title: 'Finalizar partido', message: '¿Finalizar partido y guardar estadística?' }))) return;
-    const guardarHistorico = await confirmAction({ title: 'Publicar resultado', message: '¿Publicar este resultado en el muro? Aparecerá igual que si lo cargaras manualmente en Registro de Resultados.' });
+    const guardarHistorico = await confirmAction({ title: 'Guardar en histórico', message: '¿Guardar este partido en la base de datos (para el historial y la tabla de posiciones)?' });
+    // Solo tiene sentido preguntar si publicar cuando SÍ se va a guardar — si
+    // no se guarda, no hay nada que publicar.
+    const publicarEnMuro = guardarHistorico
+      ? await confirmAction({ title: 'Publicar resultado', message: '¿Publicar este resultado en el muro público? Si dices que no, igual queda guardado para la tabla de posiciones, pero no aparecerá como noticia.' })
+      : false;
 
-    const guardado = await guardarEstadisticaPartido({ guardarEnBaseHistorica: guardarHistorico });
+    const guardado = await guardarEstadisticaPartido({ guardarEnBaseHistorica: guardarHistorico, publicar: publicarEnMuro });
     setPartidoIniciado(false);
     if (forzarPantallaCompletaLive) {
       showToast({ message: 'Partido finalizado. Usa "Salir Pantalla Completa" para cambiar de módulo.', type: 'info' });
@@ -2467,7 +2473,7 @@ function MesaControlPanel({
       setModuloMesa('analitica');
     }
     setPartidoPersistidoId(null);
-    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '00:00', texto: guardado ? `■ Partido finalizado y ${guardarHistorico ? 'guardado en histórico' : 'guardado localmente'}` : '■ Partido finalizado (falló guardado local)' }, ...prev]);
+    setPlayByPlay((prev) => [{ id: nextId(), tiempo: liveScore.reloj || '00:00', texto: guardado ? `■ Partido finalizado y ${guardarHistorico ? `guardado en histórico${publicarEnMuro ? ' y publicado' : ' (sin publicar)'}` : 'guardado localmente'}` : '■ Partido finalizado (falló guardado local)' }, ...prev]);
     if (!guardado) {
       showToast({ message: 'Partido finalizado, pero no se pudo guardar la estadística en este dispositivo.', type: 'warning' });
     }

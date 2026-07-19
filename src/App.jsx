@@ -309,7 +309,9 @@ function App() {
 
   const mapPartidosResumen = (partidosLiveRes = []) => {
     return (Array.isArray(partidosLiveRes) ? partidosLiveRes : [])
-      .filter((p) => esEquipoPropio(p.equipo_local) || esEquipoPropio(p.equipo_visitante))
+      // publicado === false: se cargó solo para la tabla de posiciones, el
+      // club decidió no destacarlo como noticia en el muro.
+      .filter((p) => p.publicado !== false && (esEquipoPropio(p.equipo_local) || esEquipoPropio(p.equipo_visitante)))
       .map((p, idx) => ({
       id: p.id_partido || idx + 1,
       rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),

@@ -229,6 +229,7 @@ function SuperAdminPanel({
     categoria: 'SUB-13',
     cancha_sede: '',
     fecha_hora: new Date().toISOString().slice(0, 10),
+    publicado: true,
   });
   const [torneosDisponibles, setTorneosDisponibles] = useState([]);
 
@@ -1047,6 +1048,7 @@ function SuperAdminPanel({
       categoria: 'SUB-13',
       cancha_sede: '',
       fecha_hora: new Date().toISOString().slice(0, 10),
+      publicado: true,
     });
     setPartidoEditandoId(null);
   };
@@ -1065,7 +1067,7 @@ function SuperAdminPanel({
     const {
       equipo_local, equipo_visitante,
       logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
-      pts_local, pts_visitante, cancha_sede, fecha_hora,
+      pts_local, pts_visitante, cancha_sede, fecha_hora, publicado,
     } = formResultado;
     if (!equipo_visitante.trim()) { showToast({ message: 'Ingresa el nombre del equipo visitante.', type: 'error' }); return; }
     if (pts_local === '' || pts_visitante === '') { showToast({ message: 'Ingresa los puntos de ambos equipos.', type: 'error' }); return; }
@@ -1086,6 +1088,7 @@ function SuperAdminPanel({
         cancha_sede,
         fecha_hora,
         estado_juego: 'finalizado',
+        publicado: publicado !== false,
       };
 
       if (partidoEditandoId) {
@@ -3606,6 +3609,10 @@ function SuperAdminPanel({
                 <input type="date" className="form-input" value={formResultado.fecha_hora} onChange={(e) => setFormResultado((p) => ({ ...p, fecha_hora: e.target.value }))} />
               </div>
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', cursor: 'pointer', fontSize: '13px' }}>
+              <input type="checkbox" checked={formResultado.publicado !== false} onChange={(e) => setFormResultado((p) => ({ ...p, publicado: e.target.checked }))} style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+              <span>Publicar en el muro de resultados{formResultado.publicado === false ? ' (solo cuenta para la tabla de posiciones)' : ''}</span>
+            </label>
             <button className="btn-electric" onClick={guardarResultado} disabled={guardandoResultado}>
               <Trophy size={15} /> {guardandoResultado ? 'Guardando...' : (partidoEditandoId ? 'Actualizar resultado' : 'Registrar resultado')}
             </button>
@@ -3662,6 +3669,7 @@ function SuperAdminPanel({
                     categoria: p.categoria || p.categoria_rama || 'General',
                     cancha_sede: p.cancha_sede || '',
                     fecha_hora: p.fecha_hora ? new Date(p.fecha_hora).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+                    publicado: p.publicado !== false,
                   });
                   setVistaAdmin('resultados');
                   window.scrollTo({ top: 0, behavior: 'smooth' });

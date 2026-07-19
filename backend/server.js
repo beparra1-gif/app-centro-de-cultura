@@ -1513,6 +1513,11 @@ const ensurePartidosLiveMesaColumns = async () => {
     `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS iniciado_at TIMESTAMP`,
     `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS finalizado_at TIMESTAMP`,
     `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS id_torneo INT`,
+    // Permite cargar un partido (para que cuente en la tabla de posiciones)
+    // sin que aparezca en el muro público de "Últimos Resultados" — pensado
+    // para partidos de terceros de un torneo externo que se cargan solo por
+    // completitud de la tabla, no como noticia del club.
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS publicado BOOLEAN DEFAULT true`,
   ];
 
   for (const statement of ddl) {
@@ -5488,7 +5493,7 @@ app.post('/api/partidos-live', authenticate, requireModule('scoreboard_live'), a
     fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante,
     rut_planillero, estado_juego,
     logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
-    pts_local, pts_visitante,
+    pts_local, pts_visitante, publicado,
   } = req.body;
   try {
     // Use new rama/categoria if provided, otherwise use old categoria_rama for backward compatibility
@@ -5500,9 +5505,9 @@ app.post('/api/partidos-live', authenticate, requireModule('scoreboard_live'), a
       `INSERT INTO partidos_live
        (fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante, rut_planillero,
         estado_juego, logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
-        pts_local, pts_visitante)
+        pts_local, pts_visitante, publicado)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9,'pendiente'), $10, $11, $12, $13, $14,
-        COALESCE($15, 0), COALESCE($16, 0))
+        COALESCE($15, 0), COALESCE($16, 0), COALESCE($17, true))
        RETURNING *`,
       [
         fecha_hora, cancha_sede, categoria_rama_final, ramafinal, categoriafinal,
@@ -5510,7 +5515,7 @@ app.post('/api/partidos-live', authenticate, requireModule('scoreboard_live'), a
         estado_juego || 'pendiente',
         logo_local_url || null, logo_visitante_url || null,
         torneo_nombre || null, torneo_logo_url || null, id_torneo || null,
-        pts_local ?? 0, pts_visitante ?? 0,
+        pts_local ?? 0, pts_visitante ?? 0, publicado,
       ]
     );
     res.json(result.rows[0]);
@@ -5538,6 +5543,7 @@ app.put('/api/partidos-live/:id', authenticate, requireModule('scoreboard_live')
     torneo_nombre,
     torneo_logo_url,
     id_torneo,
+    publicado,
   } = req.body;
   try {
     const result = await pool.query(
@@ -5558,8 +5564,9 @@ app.put('/api/partidos-live/:id', authenticate, requireModule('scoreboard_live')
            torneo_nombre = COALESCE($14, torneo_nombre),
            torneo_logo_url = COALESCE($15, torneo_logo_url),
            id_torneo = COALESCE($16, id_torneo),
+           publicado = COALESCE($17, publicado),
            updated_at = NOW()
-       WHERE id_partido = $17
+       WHERE id_partido = $18
        RETURNING *`,
       [
         pts_local,
@@ -5578,6 +5585,7 @@ app.put('/api/partidos-live/:id', authenticate, requireModule('scoreboard_live')
         torneo_nombre,
         torneo_logo_url,
         id_torneo,
+        publicado,
         req.params.id,
       ]
     );
@@ -5604,6 +5612,7 @@ app.post('/api/partidos-live/:id/finalizar-mesa', authenticate, requireModule('s
     pts_local,
     pts_visitante,
     id_torneo,
+    publicado,
   } = req.body || {};
 
   try {
@@ -5623,8 +5632,9 @@ app.post('/api/partidos-live/:id/finalizar-mesa', authenticate, requireModule('s
            pts_local = COALESCE($9, pts_local),
            pts_visitante = COALESCE($10, pts_visitante),
            id_torneo = COALESCE($11, id_torneo),
+           publicado = COALESCE($12, publicado),
            updated_at = NOW()
-       WHERE id_partido = $12
+       WHERE id_partido = $13
        RETURNING *`,
       [
         mesa_payload ? JSON.stringify(mesa_payload) : null,
@@ -5638,6 +5648,7 @@ app.post('/api/partidos-live/:id/finalizar-mesa', authenticate, requireModule('s
         pts_local ?? null,
         pts_visitante ?? null,
         id_torneo || null,
+        publicado,
         req.params.id,
       ]
     );
