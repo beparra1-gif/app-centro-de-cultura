@@ -236,7 +236,18 @@ function SuperAdminPanel({
   const [mesRecaudacionActivo, setMesRecaudacionActivo] = useState(null);
   const [busquedaSociosMorosos, setBusquedaSociosMorosos] = useState('');
 
+  // Filtro de mes a nivel de todo Resumen: al elegir un mes, las stats de
+  // arriba, la fila de recaudación y AMBAS listas de morosos (socios y
+  // deportistas) se acotan a ese mes específico en vez de "debe algo en
+  // cualquier mes del año" — responde a "quién debía junio", no solo
+  // "quién debe en general".
+  const [filtroMesResumen, setFiltroMesResumen] = useState('todos');
+  const filaMesResumenActiva = filtroMesResumen !== 'todos'
+    ? recaudacionMensual.find((f) => f.mes === filtroMesResumen)
+    : null;
+
   const sociosMorososFiltrados = (sociosMorosos || []).filter((s) => {
+    if (filtroMesResumen !== 'todos' && !(s.mesesMorosos || []).includes(filtroMesResumen)) return false;
     const q = busquedaSociosMorosos.trim().toLowerCase();
     if (!q) return true;
     return String(s.nombre || '').toLowerCase().includes(q);
@@ -272,6 +283,7 @@ function SuperAdminPanel({
   ).filter((m) => {
     if (filtroRamaMorosos !== 'todas' && m.rama !== filtroRamaMorosos) return false;
     if (filtroCategoriaMorosos !== 'todas' && m.categoria !== filtroCategoriaMorosos) return false;
+    if (filtroMesResumen !== 'todos' && !(m.mesesMorosos || []).includes(filtroMesResumen)) return false;
     const q = busquedaMorosos.trim().toLowerCase();
     if (!q) return true;
     if (String(m.nombre || '').toLowerCase().includes(q)) return true;
@@ -2006,27 +2018,60 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'dashboard' && (
         <div className="fade-in">
+          <div className="card mb-15" style={{ borderRadius: '18px', padding: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+              <div className="form-group" style={{ marginBottom: 0, flex: '1 1 180px' }}>
+                <label style={{ fontSize: '11px' }}>Ver mes</label>
+                <select
+                  className="form-input"
+                  value={filtroMesResumen}
+                  onChange={(e) => { setFiltroMesResumen(e.target.value); setMesRecaudacionActivo(e.target.value === 'todos' ? null : e.target.value); }}
+                >
+                  <option value="todos">Todo el año {ANIO_RECAUDACION}</option>
+                  {NOMBRES_MESES_RECAUDACION.map((mes) => (
+                    <option key={`filtro-mes-${mes}`} value={mes}>{mes}</option>
+                  ))}
+                </select>
+              </div>
+              {filtroMesResumen !== 'todos' && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ width: 'auto', padding: '10px 14px' }}
+                  onClick={() => { setFiltroMesResumen('todos'); setMesRecaudacionActivo(null); }}
+                >
+                  <X size={14} /> Ver todo el año
+                </button>
+              )}
+            </div>
+            {filtroMesResumen !== 'todos' && (
+              <p style={{ fontSize: '11px', color: 'var(--texto-secundario)', margin: '8px 0 0', fontWeight: '700' }}>
+                Mostrando stats, recaudación y morosos solo de {filtroMesResumen}.
+              </p>
+            )}
+          </div>
+
           <h3 className="section-title mt-0">Socios del Club</h3>
           <div className="caja-triple-grid mb-15">
-            <div className="admin-stat-pill verde"><span>Al Día</span><h2>{af.sociosAlDia}</h2></div>
-            <div className="admin-stat-pill rojo"><span>Morosos</span><h2>{af.sociosMorosos}</h2></div>
+            <div className="admin-stat-pill verde"><span>Al Día</span><h2>{filaMesResumenActiva ? Math.max(af.totalSocios - filaMesResumenActiva.morososSocios, 0) : af.sociosAlDia}</h2></div>
+            <div className="admin-stat-pill rojo"><span>Morosos</span><h2>{filaMesResumenActiva ? filaMesResumenActiva.morososSocios : af.sociosMorosos}</h2></div>
             <div className="admin-stat-pill azul"><span>Total</span><h2>{af.totalSocios}</h2></div>
           </div>
 
           <h3 className="section-title">Deportistas Inscritos</h3>
           <div className="caja-triple-grid mb-20">
-            <div className="admin-stat-pill verde"><span>Al Día</span><h2>{af.deportistasAlDia}</h2></div>
-            <div className="admin-stat-pill rojo"><span>Morosos</span><h2>{af.deportistasMorosos}</h2></div>
+            <div className="admin-stat-pill verde"><span>Al Día</span><h2>{filaMesResumenActiva ? Math.max(af.totalDeportistas - filaMesResumenActiva.morososDeportistas, 0) : af.deportistasAlDia}</h2></div>
+            <div className="admin-stat-pill rojo"><span>Morosos</span><h2>{filaMesResumenActiva ? filaMesResumenActiva.morososDeportistas : af.deportistasMorosos}</h2></div>
             <div className="admin-stat-pill azul"><span>Total</span><h2>{af.totalDeportistas}</h2></div>
           </div>
 
           <h3 className="section-title">Recaudación mes a mes — {ANIO_RECAUDACION}</h3>
           <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
-            Toca un mes para ver el detalle de quién pagó y quién quedó pendiente.
+            {filtroMesResumen === 'todos' ? 'Toca un mes para ver el detalle de quién pagó y quién quedó pendiente.' : `Viendo solo ${filtroMesResumen}. Elige "Todo el año" arriba para ver los 12 meses.`}
           </p>
           <div className="card mb-20" style={{ borderRadius: '20px', padding: '8px' }}>
-            {recaudacionMensual.map((fila) => {
-              const abierto = mesRecaudacionActivo === fila.mes;
+            {(filtroMesResumen === 'todos' ? recaudacionMensual : recaudacionMensual.filter((f) => f.mes === filtroMesResumen)).map((fila) => {
+              const abierto = filtroMesResumen !== 'todos' || mesRecaudacionActivo === fila.mes;
               const sociosDelMes = (sociosMorosos || []).filter((s) => (s.mesesMorosos || []).includes(fila.mes));
               const deportistasDelMes = (morososAdmin || []).filter((m) => (m.mesesMorosos || []).includes(fila.mes));
               return (
@@ -2097,7 +2142,7 @@ function SuperAdminPanel({
             })}
           </div>
 
-          <h3 className="section-title">Socios Morosos</h3>
+          <h3 className="section-title">Socios Morosos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
           <div style={{ position: 'relative', marginBottom: '10px' }}>
             <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
             <input
@@ -2161,7 +2206,7 @@ function SuperAdminPanel({
           })}
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', marginTop: '20px' }}>
-            <h3 className="section-title" style={{ margin: 0 }}>Deportistas Morosos</h3>
+            <h3 className="section-title" style={{ margin: 0 }}>Deportistas Morosos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
             <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={notificarTodosMorosos}>
               <Bell size={13} /> Notificar Todos
             </button>
