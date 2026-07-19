@@ -9,32 +9,33 @@ const DEFAULT_ENV = {
   GOOGLE_SHEET_ID: process.env.GOOGLE_SHEET_ID,
 };
 
+// Cada entrada acá es una pestaña del Sheet que la app lee y reescribe
+// automáticamente (ver el middleware de auto-export en server.js). Antes
+// incluía 9 pestañas que ninguna pantalla de la app usa de verdad — algunas
+// quedaron obsoletas (CONVOCATORIAS, superada por Citaciones), otras nunca
+// tuvieron UI (EVENTOS, ALERTAS, MARCAS_TIEMPO, PIZARRA_TACTICA,
+// ASISTENCIA_EVENTOS), y otras están duplicadas por tablas nativas propias
+// del Kiosco que sí están en uso (CAJA_EVENTO_KIOSCO, CATALOGO_INVENTARIO,
+// EGRESOS — Kiosco usa sus propias rutas /api/kiosco-*, no estas). Se sacan
+// del mapa para que la sincronización deje de leer/sobrescribir esas
+// pestañas — verificado con grep que ningún componente las consume.
 const SHEET_TABLE_MAP = [
   { sheet: 'JUGADORES', table: 'jugadores' },
   { sheet: 'CUENTAS', table: 'cuentas' },
   { sheet: 'PAGOS_MENSUALIDADES', table: 'pagos_mensualidades' },
   { sheet: 'COMUNICACIONES', table: 'comunicaciones' },
-  { sheet: 'CONVOCATORIAS', table: 'convocatorias' },
-  { sheet: 'EVENTOS', table: 'eventos' },
   { sheet: 'ASISTENCIA', table: 'asistencia' },
   { sheet: 'PARTIDOS_LIVE', table: 'partidos_live' },
-  { sheet: 'ALERTAS', table: 'alertas' },
   { sheet: 'ESTADISTICAS_STATS', table: 'estadisticas' },
   { sheet: 'EVALUACIONES', table: 'evaluaciones' },
   { sheet: 'GAMIFICACION_PUNTOS', table: 'gamificacion_puntos' },
-  { sheet: 'MARCAS_TIEMPO', table: 'marcas_tiempo' },
   { sheet: 'RESULTADOS', table: 'resultados' },
   { sheet: 'QUIZ_PREGUNTAS', table: 'quiz_preguntas' },
-  { sheet: 'PIZARRA_TACTICA', table: 'pizarra_tactica' },
   { sheet: 'JUGADORES_VISITA', table: 'jugadores_visita' },
   { sheet: 'AUDITORIA', table: 'auditoria' },
   { sheet: 'STAFF', table: 'staff' },
   { sheet: 'TORNEOS', table: 'torneos' },
-  { sheet: 'CAJA_EVENTO_KIOSCO', table: 'caja_evento_kiosco' },
-  { sheet: 'CATALOGO_INVENTARIO', table: 'catalogo_inventario' },
-  { sheet: 'EGRESOS', table: 'egresos' },
   { sheet: 'CLUBES', table: 'clubes' },
-  { sheet: 'ASISTENCIA_EVENTOS', table: 'asistencia_eventos' },
 ];
 
 const HEADER_ALIASES = {
