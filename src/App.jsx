@@ -765,7 +765,14 @@ function App() {
       pagosPorRutSocio.get(rutPago).push({ ...pago, mesesPago });
     });
 
+    // Mismo criterio que getMesIngreso para jugadores: mes_inicio_cobro (texto
+    // libre fijado a mano por el admin) manda sobre la fecha de ingreso, porque
+    // la fecha de ingreso al club no siempre coincide con el mes real desde el
+    // que se le empieza a cobrar la cuota de socio.
     const getMesIngresoSocio = (cuenta = {}) => {
+      const mesDesdeCampo = getMesNumero(cuenta?.mes_inicio_cobro || '');
+      if (mesDesdeCampo) return mesDesdeCampo;
+
       const fechaIngreso = String(cuenta?.fecha_ingreso_socio || '').trim();
       const fecha = fechaIngreso ? new Date(fechaIngreso) : null;
       if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {

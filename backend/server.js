@@ -1613,6 +1613,17 @@ const ensureClubesLogoColumn = async () => {
   console.log('🛡️ Columna logo_url de clubes verificada');
 };
 
+// jugadores ya tiene mes_inicio_cobro (texto libre, ej. "marzo") para saber
+// desde cuándo se le cobra mensualidad — cuentas solo tenía fecha_ingreso_socio
+// (fecha de ingreso al club), que no siempre coincide con el mes real desde el
+// que se debe cobrar la cuota de socio. Se agrega la misma columna acá para
+// que el admin pueda fijarlo explícito y construirSociosMorosos (App.jsx) no
+// tenga que adivinarlo solo desde la fecha de ingreso.
+const ensureCuentasMesInicioCobroColumn = async () => {
+  await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS mes_inicio_cobro VARCHAR(50)`);
+  console.log('🛡️ Columna mes_inicio_cobro de cuentas verificada');
+};
+
 const ensurePagosMensualidadesColumns = async () => {
   const ddl = [
     `ALTER TABLE pagos_mensualidades ADD COLUMN IF NOT EXISTS rut_pagos VARCHAR(20)`,
@@ -3619,6 +3630,7 @@ app.post('/api/cuentas', authenticate, requireModule('admin_dashboard'), async (
     num_segundo_contacto,
     es_socio,
     fecha_ingreso_socio,
+    mes_inicio_cobro,
     rol,
     perfil_principal,
     cargo_directiva,
@@ -3657,13 +3669,13 @@ app.post('/api/cuentas', authenticate, requireModule('admin_dashboard'), async (
         correo, rut, password, nombres, apellido_paterno, apellido_materno,
         fecha_nacimiento, estado_civil, direccion, comuna, prefijo_tel, telefono,
         profesion_oficio, nombre_segundo_contacto, parentesco_segundo_contacto,
-        num_segundo_contacto, es_socio, fecha_ingreso_socio, rol, perfil_principal,
+        num_segundo_contacto, es_socio, fecha_ingreso_socio, mes_inicio_cobro, rol, perfil_principal,
         cargo_directiva, socio_admin, aprobado_superadmin, acceso_nivel,
         utm_valor_referencia, monto_mensual_base, monto_mensual_override,
         condiciones_pago, fecha_corte_utm, permisos_override, forzar_clave, foto_perfil_url,
         requiere_foto_perfil, estado, autorizacion_imagen, dia_pago_acordado
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37
       ) RETURNING *`,
       [
         correo,
@@ -3684,6 +3696,7 @@ app.post('/api/cuentas', authenticate, requireModule('admin_dashboard'), async (
         num_segundo_contacto || null,
         es_socio ?? false,
         fecha_ingreso_socio || null,
+        mes_inicio_cobro || null,
         rol || 'apoderado',
         perfil_principal || rol || 'apoderado',
         cargo_directiva || null,
@@ -3724,7 +3737,7 @@ const CAMPOS_CUENTA_SOLO_ADMIN = [
   'rol', 'perfil_principal', 'cargo_directiva', 'socio_admin', 'aprobado_superadmin',
   'acceso_nivel', 'utm_valor_referencia', 'monto_mensual_base', 'monto_mensual_override',
   'condiciones_pago', 'fecha_corte_utm', 'permisos_override', 'forzar_clave', 'estado',
-  'autorizacion_imagen', 'dia_pago_acordado', 'es_socio', 'fecha_ingreso_socio',
+  'autorizacion_imagen', 'dia_pago_acordado', 'es_socio', 'fecha_ingreso_socio', 'mes_inicio_cobro',
 ];
 
 app.put(
@@ -3752,6 +3765,7 @@ app.put(
     num_segundo_contacto,
     es_socio,
     fecha_ingreso_socio,
+    mes_inicio_cobro,
     rol,
     perfil_principal,
     cargo_directiva,
@@ -3801,26 +3815,27 @@ app.put(
         num_segundo_contacto = COALESCE($16, num_segundo_contacto),
         es_socio = COALESCE($17, es_socio),
         fecha_ingreso_socio = COALESCE($18, fecha_ingreso_socio),
-        rol = COALESCE($19, rol),
-        perfil_principal = COALESCE($20, perfil_principal),
-        cargo_directiva = COALESCE($21, cargo_directiva),
-        socio_admin = COALESCE($22, socio_admin),
-        aprobado_superadmin = COALESCE($23, aprobado_superadmin),
-        acceso_nivel = COALESCE($24, acceso_nivel),
-        utm_valor_referencia = COALESCE($25, utm_valor_referencia),
-        monto_mensual_base = COALESCE($26, monto_mensual_base),
-        monto_mensual_override = COALESCE($27, monto_mensual_override),
-        condiciones_pago = COALESCE($28, condiciones_pago),
-        fecha_corte_utm = COALESCE($29, fecha_corte_utm),
-        permisos_override = COALESCE($30::jsonb, permisos_override),
-        forzar_clave = COALESCE($31, forzar_clave),
-        foto_perfil_url = COALESCE($32, foto_perfil_url),
-        requiere_foto_perfil = COALESCE($33, requiere_foto_perfil),
-        estado = COALESCE($34, estado),
-        autorizacion_imagen = COALESCE($35, autorizacion_imagen),
-        dia_pago_acordado = COALESCE($36, dia_pago_acordado),
+        mes_inicio_cobro = COALESCE($19, mes_inicio_cobro),
+        rol = COALESCE($20, rol),
+        perfil_principal = COALESCE($21, perfil_principal),
+        cargo_directiva = COALESCE($22, cargo_directiva),
+        socio_admin = COALESCE($23, socio_admin),
+        aprobado_superadmin = COALESCE($24, aprobado_superadmin),
+        acceso_nivel = COALESCE($25, acceso_nivel),
+        utm_valor_referencia = COALESCE($26, utm_valor_referencia),
+        monto_mensual_base = COALESCE($27, monto_mensual_base),
+        monto_mensual_override = COALESCE($28, monto_mensual_override),
+        condiciones_pago = COALESCE($29, condiciones_pago),
+        fecha_corte_utm = COALESCE($30, fecha_corte_utm),
+        permisos_override = COALESCE($31::jsonb, permisos_override),
+        forzar_clave = COALESCE($32, forzar_clave),
+        foto_perfil_url = COALESCE($33, foto_perfil_url),
+        requiere_foto_perfil = COALESCE($34, requiere_foto_perfil),
+        estado = COALESCE($35, estado),
+        autorizacion_imagen = COALESCE($36, autorizacion_imagen),
+        dia_pago_acordado = COALESCE($37, dia_pago_acordado),
         updated_at = NOW()
-      WHERE id = $37
+      WHERE id = $38
       RETURNING *`,
       [
         correo || null,
@@ -3841,6 +3856,7 @@ app.put(
         num_segundo_contacto || null,
         es_socio,
         fecha_ingreso_socio || null,
+        mes_inicio_cobro || null,
         rol || null,
         perfil_principal || null,
         cargo_directiva || null,
@@ -7655,6 +7671,10 @@ app.listen(PORT, () => {
 
   ensureClubesLogoColumn().catch((error) => {
     console.error('❌ Error verificando columna logo_url de clubes:', error.message);
+  });
+
+  ensureCuentasMesInicioCobroColumn().catch((error) => {
+    console.error('❌ Error verificando columna mes_inicio_cobro de cuentas:', error.message);
   });
 
   ensurePartidosLiveLogos().catch((error) => {
