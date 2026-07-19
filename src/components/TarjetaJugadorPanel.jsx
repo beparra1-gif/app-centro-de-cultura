@@ -124,6 +124,38 @@ function TarjetaJugadorPanel({
   const [quitarFondo, setQuitarFondo] = useState(false);
   const [procesandoFoto, setProcesandoFoto] = useState(false);
   const [guardandoDiseno, setGuardandoDiseno] = useState(false);
+  const [resumenAsistencia, setResumenAsistencia] = useState(null);
+
+  // pupiloActivo.asistencia nunca existe (no es un campo real de jugadores)
+  // — el resumen se calcula en el backend a partir de las listas que ya
+  // guarda StaffAsistenciaPanel (tabla asistencia), no de un valor estático.
+  useEffect(() => {
+    let cancelled = false;
+
+    const cargarResumenAsistencia = async () => {
+      const rut = String(pupiloActivo?.rut || '').trim();
+      if (!rut || rolUsuario === 'visita') {
+        setResumenAsistencia(null);
+        return;
+      }
+
+      try {
+        const resumen = await api.asistenciaAPI.getResumenJugador(rut);
+        if (!cancelled) {
+          setResumenAsistencia(resumen || null);
+        }
+      } catch {
+        if (!cancelled) {
+          setResumenAsistencia(null);
+        }
+      }
+    };
+
+    void cargarResumenAsistencia();
+    return () => {
+      cancelled = true;
+    };
+  }, [pupiloActivo?.rut, rolUsuario]);
 
   useEffect(() => {
     let cancelled = false;
@@ -318,7 +350,9 @@ function TarjetaJugadorPanel({
     if (!Number.isFinite(parsed)) return null;
     return Math.max(0, Math.min(100, parsed));
   };
-  const asistenciaRadar = porcentajeDesdeTexto(pupiloActivo.asistencia) ?? Math.max(20, Math.min(100, rachaActual * 12));
+  const asistenciaRadar = Number.isFinite(Number(resumenAsistencia?.porcentaje))
+    ? Number(resumenAsistencia.porcentaje)
+    : (porcentajeDesdeTexto(pupiloActivo.asistencia) ?? Math.max(20, Math.min(100, rachaActual * 12)));
   const progresoRadar = Math.max(0, Math.min(100, progresoNivel));
   const fisicoRadar = Number.isFinite(Number(detalleJugador?.fisico_score))
     ? Math.max(0, Math.min(100, Number(detalleJugador.fisico_score)))
@@ -460,7 +494,14 @@ function TarjetaJugadorPanel({
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '8px' }}>
                 <div className="stat-box">
                   <span className="stat-label">Asistencia</span>
-                  <strong className="stat-value" style={{ color: 'var(--verde-victoria)' }}>{pupiloActivo.asistencia || 'N/A'}</strong>
+                  <strong className="stat-value" style={{ color: 'var(--verde-victoria)' }}>
+                    {Number.isFinite(Number(resumenAsistencia?.porcentaje)) ? `${resumenAsistencia.porcentaje}%` : 'Sin registros'}
+                  </strong>
+                  {resumenAsistencia?.total > 0 && (
+                    <span style={{ display: 'block', fontSize: '10px', color: 'rgba(255,255,255,0.6)', fontWeight: '700', marginTop: '2px' }}>
+                      {resumenAsistencia.presentes}/{resumenAsistencia.total} listas
+                    </span>
+                  )}
                 </div>
                 <div className="stat-box">
                   <span className="stat-label">Estado</span>

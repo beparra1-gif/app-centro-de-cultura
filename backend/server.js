@@ -5631,6 +5631,49 @@ app.get('/api/asistencia/sesiones/:sesionId', authenticate, requireAnyModule('ci
   }
 });
 
+// GET: resumen de asistencia de UN jugador (para su tarjeta/perfil) —
+// cuenta los registros de las listas ya guardadas por staff. Mismo criterio
+// de acceso que GET /api/jugadores/:rut: el propio jugador, su apoderado, o
+// staff/admin vía obtenerPupilosDeActor.
+app.get('/api/asistencia/jugador/:rut', authenticate, async (req, res) => {
+  try {
+    if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+      const pupilos = await obtenerPupilosDeActor(req.actor);
+      const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
+      if (!rutsPupilos.has(normalizarRutParaComparar(req.params.rut))) {
+        return res.status(403).json({ error: 'No tienes acceso a este deportista.' });
+      }
+    }
+
+    const result = await pool.query(
+      `SELECT
+        COUNT(*) FILTER (WHERE estado_asistencia IN ('presente', 'ausente', 'justificado')) AS total,
+        COUNT(*) FILTER (WHERE estado_asistencia = 'presente') AS presentes,
+        COUNT(*) FILTER (WHERE estado_asistencia = 'ausente') AS ausentes,
+        COUNT(*) FILTER (WHERE estado_asistencia = 'justificado') AS justificados,
+        MAX(fecha) FILTER (WHERE estado_asistencia = 'presente') AS ultima_presente
+       FROM asistencia
+       WHERE rut_jugador = $1`,
+      [req.params.rut]
+    );
+    const fila = result.rows[0] || {};
+    const total = Number(fila.total || 0);
+    const presentes = Number(fila.presentes || 0);
+
+    res.json({
+      total,
+      presentes,
+      ausentes: Number(fila.ausentes || 0),
+      justificados: Number(fila.justificados || 0),
+      porcentaje: total > 0 ? Math.round((presentes / total) * 100) : null,
+      ultima_presente: fila.ultima_presente || null,
+    });
+  } catch (err) {
+    console.error('[GET /api/asistencia/jugador/:rut]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST: registra una sesión completa de una sola vez (todo el roster de esa
 // pasada de lista), en una transacción con un sesion_id común.
 app.post('/api/asistencia/sesion', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {

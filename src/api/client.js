@@ -795,6 +795,11 @@ export const asistenciaAPI = {
     const response = await apiFetch(`${API_BASE_URL}/asistencia/sesiones/${sesionId}`, { method: 'DELETE' });
     return handleResponse(response);
   },
+  // Resumen de asistencia de un jugador (para su tarjeta/perfil)
+  getResumenJugador: async (rut) => {
+    const response = await apiFetch(`${API_BASE_URL}/asistencia/jugador/${rut}`);
+    return handleResponse(response);
+  },
 };
 
 // ========== PARTIDOS EN VIVO (FASE 1) ==========
