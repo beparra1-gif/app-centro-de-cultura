@@ -427,9 +427,20 @@ function App() {
       return;
     }
 
+    // Durante el cambio de clave obligatorio / onboarding, sesionToken ya
+    // está seteado (se necesita para las llamadas del propio onboarding, ej.
+    // GET /api/cuentas/:id en cargarCuentaOnboarding) pero rolUsuario /
+    // usuarioAutenticado recién se completan al terminar el flujo, en
+    // iniciarSesionFinal. Sin este guard, este efecto interpretaba ese estado
+    // transitorio (token sin rol/usuario todavía) como "sesión cerrada" y
+    // limpiaba el token a mitad del onboarding: el siguiente fetch protegido
+    // (GET /api/cuentas/:id) volvía 401 y el modal quedaba pegado en el
+    // primer paso, sin avanzar tras cambiar la contraseña.
+    if (isOnboarding) return;
+
     api.setAuthToken(null);
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
-  }, [rolUsuario, usuarioAutenticado, pantallaActiva, sesionToken, sesionHidratada, SESSION_STORAGE_KEY]);
+  }, [rolUsuario, usuarioAutenticado, pantallaActiva, sesionToken, sesionHidratada, SESSION_STORAGE_KEY, isOnboarding]);
 
   const [nominaCita, setNominaCita] = useState([]);
 
@@ -2757,9 +2768,11 @@ function App() {
                 nombreResponsable={usuarioAutenticado?.nombres || usuarioAutenticado?.nombre || ''}
               />
             )}
-            {(puedeVerPantalla('admin_dashboard') || puedeVerPantalla('citaciones')) && pantallaActiva === 'admin_dashboard' && (
+            {(puedeVerPantalla('admin_dashboard') || puedeVerPantalla('citaciones') || puedeVerPantalla('resultados')) && pantallaActiva === 'admin_dashboard' && (
               <SuperAdminPanel
                 puedeAdminCompleto={puedeVerPantalla('admin_dashboard')}
+                puedeVerCitaciones={puedeVerPantalla('citaciones')}
+                puedeVerResultados={puedeVerPantalla('resultados')}
                 usuarioAutenticado={usuarioAutenticado}
                 vistaAdmin={vistaAdmin}
                 setVistaAdmin={setVistaAdmin}
@@ -2830,7 +2843,7 @@ function App() {
           </>
         ) : rolUsuario === 'mesa' ? (
           <div className="nav-item active" style={{width: '100%'}}><Monitor size={26} color="var(--gris-secundario)" strokeWidth={1.5} /><span className="mt-5">Consola Transmisión</span></div>
-        ) : modulosNavegacionVisibles.length > 0 || (puedeVerPantalla('citaciones') && !puedeVerPantalla('admin_dashboard')) ? (
+        ) : modulosNavegacionVisibles.length > 0 || ((puedeVerPantalla('citaciones') || puedeVerPantalla('resultados')) && !puedeVerPantalla('admin_dashboard')) ? (
           <>
             {modulosNavegacionVisibles.map((modulo) => {
               const meta = obtenerMetaModuloNav(modulo);
@@ -2848,19 +2861,23 @@ function App() {
                 </button>
               );
             })}
-            {/* 'citaciones' no es una pantalla propia (vive dentro de admin_dashboard
-                como una sub-vista de SuperAdminPanel), así que no puede pasar por el
-                loop genérico de arriba — se agrega a mano solo para quien tiene el
-                permiso citaciones sin tener admin_dashboard completo (ej. un profesor
-                con el permiso individual activado). */}
-            {puedeVerPantalla('citaciones') && !puedeVerPantalla('admin_dashboard') && (
+            {/* 'citaciones' y 'resultados' no son pantallas propias (viven dentro de
+                admin_dashboard como sub-vistas de SuperAdminPanel), así que no pueden
+                pasar por el loop genérico de arriba — se agregan a mano solo para
+                quien tiene alguno de esos permisos sin admin_dashboard completo (ej.
+                un profesor con módulos individuales activados). Un solo botón de
+                entrada: una vez adentro, SuperAdminPanel ya restringe qué pestañas
+                puede ver (ver el efecto de vistaAdmin en ese componente). */}
+            {(puedeVerPantalla('citaciones') || puedeVerPantalla('resultados')) && !puedeVerPantalla('admin_dashboard') && (
               <button
                 type="button"
                 className={`nav-item ${pantallaActiva === 'admin_dashboard' ? 'active' : ''}`}
                 onClick={() => cambiarPantallaConLoader('admin_dashboard')}
               >
                 <UserPlus size={26} color="var(--gris-secundario)" strokeWidth={1.5} />
-                <span className="mt-5">Citaciones</span>
+                <span className="mt-5">
+                  {puedeVerPantalla('citaciones') && puedeVerPantalla('resultados') ? 'Gestión' : puedeVerPantalla('citaciones') ? 'Citaciones' : 'Resultados'}
+                </span>
               </button>
             )}
             {/* 'torneos' tampoco es un módulo de MODULOS_ACCESO propio — se

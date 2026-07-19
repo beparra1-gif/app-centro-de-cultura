@@ -1384,6 +1384,46 @@ const ensureJugadoresExtendedColumns = async () => {
   console.log('🎴 Columna diseno_marco de jugadores verificada');
 };
 
+// beca empezó como BOOLEAN (sí/no) pero el club maneja porcentajes de rebaja
+// (hasta 100%) — se migra una sola vez a NUMERIC. El USING solo tiene sentido
+// mientras la columna sigue siendo boolean, así que se guarda contra
+// information_schema para no re-ejecutarlo (y romper) en bootes siguientes.
+const ensureJugadoresBecaNumerica = async () => {
+  const tipoActual = await pool.query(
+    `SELECT data_type FROM information_schema.columns WHERE table_name = 'jugadores' AND column_name = 'beca'`
+  );
+  if (tipoActual.rows[0]?.data_type === 'boolean') {
+    // El DEFAULT false debe sacarse antes del cambio de tipo: Postgres intenta
+    // convertir el default existente al tipo nuevo automáticamente y "false"
+    // no es un literal numeric válido.
+    await pool.query(`ALTER TABLE jugadores ALTER COLUMN beca DROP DEFAULT`);
+    await pool.query(
+      `ALTER TABLE jugadores ALTER COLUMN beca TYPE NUMERIC(5,2)
+       USING (CASE WHEN beca = true THEN 100 WHEN beca = false THEN 0 ELSE NULL END)`
+    );
+    console.log('🎓 Columna beca migrada de booleano a porcentaje (NUMERIC)');
+  }
+  await pool.query(`ALTER TABLE jugadores ALTER COLUMN beca SET DEFAULT 0`);
+};
+
+// Trazabilidad mensual de revisión de becas: una fila por jugador becado por
+// mes confirma que el admin/superadmin designado validó que la beca sigue
+// vigente ese mes. Ausencia de fila para el mes actual = pendiente de revisar.
+const ensureBecaRevisionesTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS beca_revisiones (
+      id SERIAL PRIMARY KEY,
+      rut_jugador VARCHAR(20) NOT NULL,
+      mes VARCHAR(7) NOT NULL,
+      porcentaje NUMERIC(5,2) NOT NULL,
+      revisado_por VARCHAR(20),
+      revisado_en TIMESTAMP DEFAULT NOW(),
+      UNIQUE(rut_jugador, mes)
+    )
+  `);
+  console.log('🎓 Tabla beca_revisiones verificada');
+};
+
 const ensureCuentasExtendedColumns = async () => {
   const ddl = [
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS perfil_principal VARCHAR(50) DEFAULT 'apoderado'`,
@@ -4705,6 +4745,72 @@ app.put('/api/pagos-mensualidades/:id', authenticate, requireAnyModule('validaci
   }
 });
 
+// GET: jugadores con beca activa (%>0) y si ya tienen revisión del mes
+// pedido — el admin/superadmin designado confirma mes a mes que la beca
+// sigue vigente (ver tabla beca_revisiones).
+app.get('/api/beca-revisiones', authenticate, requireModule('validacion_pagos'), async (req, res) => {
+  const mes = String(req.query.mes || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(mes)) {
+    return res.status(400).json({ error: 'Falta el parámetro mes en formato YYYY-MM.' });
+  }
+  try {
+    const becados = await pool.query(
+      `SELECT rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria, beca
+       FROM jugadores
+       WHERE beca IS NOT NULL AND beca > 0 AND (estado IS NULL OR UPPER(estado) <> 'BAJA')
+       ORDER BY nombres ASC`
+    );
+    const revisiones = await pool.query(
+      `SELECT rut_jugador, porcentaje, revisado_por, revisado_en FROM beca_revisiones WHERE mes = $1`,
+      [mes]
+    );
+    const revisionesPorRut = new Map(revisiones.rows.map((r) => [String(r.rut_jugador).trim(), r]));
+
+    const resultado = becados.rows.map((j) => ({
+      ...j,
+      revision_mes_actual: revisionesPorRut.get(String(j.rut_jugador).trim()) || null,
+    }));
+    res.json(resultado);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: confirma (o actualiza) la revisión mensual de una beca. Si el
+// porcentaje cambió respecto al de jugadores.beca, también lo actualiza ahí
+// (ej. se le bajó o retiró la beca al revisarla).
+app.post('/api/beca-revisiones', authenticate, requireModule('validacion_pagos'), async (req, res) => {
+  const { rut_jugador, mes, porcentaje } = req.body;
+  if (!String(rut_jugador || '').trim() || !/^\d{4}-\d{2}$/.test(String(mes || ''))) {
+    return res.status(400).json({ error: 'Faltan rut_jugador o mes (formato YYYY-MM) válidos.' });
+  }
+  const porcentajeNum = Number(porcentaje);
+  if (!Number.isFinite(porcentajeNum) || porcentajeNum < 0 || porcentajeNum > 100) {
+    return res.status(400).json({ error: 'El porcentaje debe estar entre 0 y 100.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const revision = await client.query(
+      `INSERT INTO beca_revisiones (rut_jugador, mes, porcentaje, revisado_por, revisado_en)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (rut_jugador, mes) DO UPDATE
+         SET porcentaje = EXCLUDED.porcentaje, revisado_por = EXCLUDED.revisado_por, revisado_en = NOW()
+       RETURNING *`,
+      [rut_jugador, mes, porcentajeNum, req.actor?.rut || null]
+    );
+    await client.query('UPDATE jugadores SET beca = $1 WHERE rut_jugador = $2', [porcentajeNum, rut_jugador]);
+    await client.query('COMMIT');
+    res.status(201).json(revision.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // ==========================================
 // 11. ENDPOINTS: CONVOCATORIAS/CITACIONES (FASE 1)
 // ==========================================
@@ -4934,8 +5040,10 @@ const cargarCitacionConConvocados = async (id) => {
   // Se agrega jugadores.rut_apoderado (no vive en citacion_convocados) para
   // que el frontend identifique al apoderado por la MISMA columna que ya usa
   // requireApoderadoDeJugador para autorizar el RSVP, en vez de adivinar por correo.
+  // fecha_nacimiento se agrega para la regla sub-13: a partir de esa edad el
+  // propio jugador también puede responder su citación (ver ComunicacionesPanel).
   const convocadosRes = await pool.query(
-    `SELECT cc.*, j.rut_apoderado
+    `SELECT cc.*, j.rut_apoderado, j.fecha_nacimiento
      FROM citacion_convocados cc
      LEFT JOIN jugadores j ON j.rut_jugador = cc.rut_jugador
      WHERE cc.citacion_id = $1
@@ -5032,7 +5140,7 @@ app.get('/api/citaciones', authenticate, async (req, res) => {
 
     const citacionesRes = await pool.query(`SELECT ${CITACION_COLUMNAS_SQL} FROM citaciones ORDER BY dia_citacion DESC NULLS LAST, hora_citacion ASC`);
     const convocadosRes = await pool.query(
-      `SELECT cc.*, j.rut_apoderado
+      `SELECT cc.*, j.rut_apoderado, j.fecha_nacimiento
        FROM citacion_convocados cc
        LEFT JOIN jugadores j ON j.rut_jugador = cc.rut_jugador
        ORDER BY cc.nombre ASC`
@@ -5573,7 +5681,7 @@ app.get('/api/partidos-live/historial', async (req, res) => {
 });
 
 // POST: Crear partido
-app.post('/api/partidos-live', authenticate, requireModule('scoreboard_live'), async (req, res) => {
+app.post('/api/partidos-live', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'resultados'), async (req, res) => {
   const {
     fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante,
     rut_planillero, estado_juego,
@@ -5610,7 +5718,7 @@ app.post('/api/partidos-live', authenticate, requireModule('scoreboard_live'), a
 });
 
 // PUT: Actualizar marcador
-app.put('/api/partidos-live/:id', authenticate, requireModule('scoreboard_live'), async (req, res) => {
+app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'resultados'), async (req, res) => {
   const {
     pts_local,
     pts_visitante,
@@ -7263,6 +7371,14 @@ app.listen(PORT, () => {
 
   ensureJugadoresExtendedColumns().catch((error) => {
     console.error('❌ Error verificando columnas extendidas de jugadores:', error.message);
+  });
+
+  ensureJugadoresBecaNumerica().catch((error) => {
+    console.error('❌ Error migrando columna beca a porcentaje:', error.message);
+  });
+
+  ensureBecaRevisionesTable().catch((error) => {
+    console.error('❌ Error verificando tabla beca_revisiones:', error.message);
   });
 
   ensureComunicacionesExtendedColumns().catch((error) => {

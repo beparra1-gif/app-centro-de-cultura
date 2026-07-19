@@ -234,6 +234,29 @@ const requireApoderadoDeJugadorOModule = (pool, moduloId) => (req, res, next) =>
 // indicado por :rut en la ruta — sin bypass de módulo administrativo. Se usa
 // para la confirmación/rechazo de citaciones, que el club pidió reservar
 // exclusivamente a apoderados (ni siquiera admin/staff responde en su lugar).
+// Edad en años cumplidos a partir de una fecha de nacimiento (DATE/timestamp
+// de Postgres o string parseable). Null si no hay fecha válida — nunca se
+// asume una edad a partir de un dato ausente.
+const calcularEdad = (fechaNacimiento) => {
+  if (!fechaNacimiento) return null;
+  const nacimiento = new Date(fechaNacimiento);
+  if (Number.isNaN(nacimiento.getTime())) return null;
+
+  const hoy = new Date();
+  let edad = hoy.getUTCFullYear() - nacimiento.getUTCFullYear();
+  const aunNoCumpleEsteAnio = (
+    hoy.getUTCMonth() < nacimiento.getUTCMonth()
+    || (hoy.getUTCMonth() === nacimiento.getUTCMonth() && hoy.getUTCDate() < nacimiento.getUTCDate())
+  );
+  if (aunNoCumpleEsteAnio) edad -= 1;
+  return edad;
+};
+
+const EDAD_MINIMA_RESPUESTA_PROPIA = 13;
+
+// Autoriza el RSVP de una citación a: (a) el apoderado registrado del
+// deportista (como siempre), o (b) el propio deportista si ya tiene 13 años
+// o más (regla de negocio: bajo esa edad, solo responde el apoderado).
 const requireApoderadoDeJugador = (pool) => (req, res, next) => {
   const actor = req.actor;
   if (!actor) {
@@ -246,12 +269,22 @@ const requireApoderadoDeJugador = (pool) => (req, res, next) => {
     return res.status(403).json({ error: 'No tienes acceso a este recurso.' });
   }
 
-  pool.query('SELECT rut_apoderado FROM jugadores WHERE rut_jugador = $1', [rutJugador])
+  pool.query('SELECT rut_apoderado, fecha_nacimiento FROM jugadores WHERE rut_jugador = $1', [rutJugador])
     .then((result) => {
-      const rutApoderadoRegistrado = normalizarRutParaComparar(result.rows[0]?.rut_apoderado || '');
+      const fila = result.rows[0] || {};
+      const rutApoderadoRegistrado = normalizarRutParaComparar(fila.rut_apoderado || '');
       if (rutApoderadoRegistrado && rutApoderadoRegistrado === rutActor) {
         return next();
       }
+
+      const esElPropioJugador = normalizarRutParaComparar(rutJugador) === rutActor;
+      if (esElPropioJugador) {
+        const edad = calcularEdad(fila.fecha_nacimiento);
+        if (edad !== null && edad >= EDAD_MINIMA_RESPUESTA_PROPIA) {
+          return next();
+        }
+      }
+
       return res.status(403).json({ error: 'Solo el apoderado del deportista puede confirmar o rechazar esta citación.' });
     })
     .catch((err) => res.status(500).json({ error: err.message }));
@@ -269,6 +302,7 @@ module.exports = {
   requireOwnerIdOrModule,
   requireApoderadoDeJugadorOModule,
   requireApoderadoDeJugador,
+  calcularEdad,
   stripFieldsUnlessModule,
   isBcryptHash,
   normalizarRutParaComparar,

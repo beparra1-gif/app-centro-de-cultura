@@ -5,7 +5,7 @@ import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
-import { calcularResumenCitacion } from '../utils/citaciones';
+import { calcularResumenCitacion, puedeJugadorResponderPropiaCitacion } from '../utils/citaciones';
 import { esUrlImagen, esUrlYoutube, esUrlVimeo, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
 
 // El post puede traer un texto libre (Anuncio) o una URL (Imagen/Video/Enlace
@@ -145,14 +145,15 @@ function ComunicacionesPanel({
     const actorId = rutUsuario || correoUsuario || `anon-${nextId()}`;
     // El backend autoriza por titularidad (rut_apoderado del jugador), no por
     // el rol de la cuenta. Lo único que bloquea es que el propio deportista
-    // citado (coincide por su propio RUT) intente responder por sí mismo.
+    // citado (coincide por su propio RUT) intente responder por sí mismo —
+    // salvo que ya tenga 13+ años, ver puedeJugadorResponderPropiaCitacion.
     const esElJugadorCitado = Boolean(rutUsuario) && String(convocado?.rut_jugador || '').trim() === rutUsuario;
     const claveMensaje = obtenerClaveMensaje(comId, convocado?.rut_jugador || actorId);
     const justificacion = respuesta === 'no'
       ? String(justificacionManual || '').trim()
       : '';
 
-    if (esElJugadorCitado) {
+    if (esElJugadorCitado && !puedeJugadorResponderPropiaCitacion(convocado || {})) {
       showToast({ message: 'Solo el apoderado puede confirmar o rechazar la citación.', type: 'error' });
       return;
     }
@@ -457,7 +458,7 @@ function ComunicacionesPanel({
 
   return (
     <div className="mt-20">
-      {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && (
+      {(rolUsuario === 'admin' || rolUsuario === 'super_admin' || rolUsuario === 'staff') && (
         <button onClick={() => setMostrarFormComunicaciones(!mostrarFormComunicaciones)} className="btn-electric" style={{ width: '100%', padding: '12px', marginBottom: '15px', borderRadius: '16px', border: 'none', color: 'white', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>
           <MessageCircle size={16} color="white" strokeWidth={1.5} style={{ marginRight: '6px', display: 'inline' }} /> {mostrarFormComunicaciones ? 'Cerrar' : 'Nueva Comunicación'}
         </button>
@@ -560,12 +561,15 @@ function ComunicacionesPanel({
                               const esPropio = propios.some((item) => item.rut_jugador === convocado.rut_jugador);
                               // El backend autoriza el RSVP por titularidad (rut_apoderado del
                               // jugador), no por el rol de la cuenta — un "socio" o "directiva"
-                              // puede ser apoderado igual que un rol "apoderado" literal. La
-                              // única persona que NO puede confirmar/rechazar es el propio
-                              // deportista citado (coincide por su propio RUT, no por correo
-                              // de apoderado).
+                              // puede ser apoderado igual que un rol "apoderado" literal. El
+                              // propio deportista citado (coincide por su propio RUT, no por
+                              // correo de apoderado) solo puede responder si ya tiene 13+ años
+                              // (puedeJugadorResponderPropiaCitacion) — bajo esa edad, solo su
+                              // apoderado puede hacerlo. El apoderado nunca pierde su capacidad
+                              // de responder aunque el jugador ya califique por edad.
                               const esElJugadorCitado = Boolean(rutUsuario) && String(convocado.rut_jugador || '').trim() === rutUsuario;
-                              const puedeResponder = esPropio && !esElJugadorCitado;
+                              const jugadorPuedeResponderPropio = esElJugadorCitado && puedeJugadorResponderPropiaCitacion(convocado);
+                              const puedeResponder = (esPropio && !esElJugadorCitado) || jugadorPuedeResponderPropio;
                               const colores = obtenerColorEstado(convocado.respuesta);
                               const claveMensaje = obtenerClaveMensaje(c.id, convocado.rut_jugador);
                               return (
@@ -586,7 +590,7 @@ function ComunicacionesPanel({
                                     </p>
                                   )}
 
-                                  {esElJugadorCitado && (
+                                  {esElJugadorCitado && !jugadorPuedeResponderPropio && (
                                     <p style={{ marginTop: '8px', fontSize: '12px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(15,23,42,0.05)', borderRadius: '10px', padding: '8px 10px' }}>
                                       Fuiste citado a este partido. Solo tu apoderado puede confirmar o rechazar la asistencia.
                                     </p>

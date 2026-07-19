@@ -145,7 +145,9 @@ function coerceByType(value, dataType) {
     type === 'real' ||
     type === 'double precision'
   ) {
-    const parsed = Number(raw.replace(',', '.'));
+    // Tolera "50%" además de "50" (ej. columna beca) — ninguna columna
+    // numérica del sistema usa % legítimamente, así que quitarlo es seguro.
+    const parsed = Number(raw.replace(',', '.').replace(/%\s*$/, ''));
     return Number.isFinite(parsed) ? parsed : null;
   }
 

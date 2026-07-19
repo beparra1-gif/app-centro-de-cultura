@@ -625,6 +625,23 @@ export const pagosMensualidadesAPI = {
   }
 };
 
+// ========== BECAS (revisión mensual) ==========
+
+export const becaAPI = {
+  getRevisiones: async (mes) => {
+    const response = await apiFetch(`${API_BASE_URL}/beca-revisiones?mes=${encodeURIComponent(mes)}`);
+    return handleResponse(response);
+  },
+  confirmar: async (datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/beca-revisiones`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  }
+};
+
 // ========== CONVOCATORIAS (FASE 1) ==========
 
 export const convocatoriasAPI = {

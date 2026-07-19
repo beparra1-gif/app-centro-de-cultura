@@ -21,6 +21,7 @@ function SettingsPanel({
       'kiosco',
       'inventario',
       'citaciones',
+      'resultados',
       'scoreboard_live',
       'validacion_pagos',
       'auditoria',

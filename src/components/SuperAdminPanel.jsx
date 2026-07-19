@@ -56,6 +56,8 @@ const esComprobanteImagen = (url = '') => /^data:image\//i.test(url) || /\.(png|
 
 function SuperAdminPanel({
   puedeAdminCompleto,
+  puedeVerCitaciones,
+  puedeVerResultados,
   usuarioAutenticado,
   vistaAdmin,
   setVistaAdmin,
@@ -508,15 +510,19 @@ function SuperAdminPanel({
     setCategoriasExtraCitacion((prev) => prev.filter((cat) => categoriasExtraCitacionPermitidas.includes(cat)));
   }, [categoriasExtraCitacionPermitidas]);
 
-  // Una cuenta con el permiso individual de citaciones pero sin admin_dashboard
-  // completo (ej. un profesor) solo debe poder ver la pestaña Citaciones, no
-  // el resto del panel admin — sin esto, el widening del gate en App.jsx la
-  // dejaría entrar a un panel completo que no le corresponde.
+  // Una cuenta con permiso individual de citaciones y/o resultados pero sin
+  // admin_dashboard completo (ej. un profesor) solo debe poder ver esas
+  // pestañas puntuales, no el resto del panel admin — sin esto, el widening
+  // del gate en App.jsx la dejaría entrar a un panel completo que no le
+  // corresponde.
   useEffect(() => {
-    if (!puedeAdminCompleto && vistaAdmin !== 'citaciones') {
-      setVistaAdmin('citaciones');
+    if (puedeAdminCompleto) return;
+    const tabsPermitidas = [puedeVerCitaciones && 'citaciones', puedeVerResultados && 'resultados'].filter(Boolean);
+    if (tabsPermitidas.length === 0) return;
+    if (!tabsPermitidas.includes(vistaAdmin)) {
+      setVistaAdmin(tabsPermitidas[0]);
     }
-  }, [puedeAdminCompleto, vistaAdmin, setVistaAdmin]);
+  }, [puedeAdminCompleto, puedeVerCitaciones, puedeVerResultados, vistaAdmin, setVistaAdmin]);
 
   const pagosPendientesReales = useMemo(
     () => (pagosPendientesAdmin || []).filter((p) => {
@@ -1853,13 +1859,21 @@ function SuperAdminPanel({
               <button type="button" className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}><Activity size={14} /> Resumen</button>
               <button type="button" className={`segment-btn ${vistaAdmin === 'usuarios' ? 'active' : ''}`} onClick={() => setVistaAdmin('usuarios')}><Users size={14} /> Usuarios y Cuentas</button>
               <button type="button" className={`segment-btn ${vistaAdmin === 'publicar' ? 'active' : ''}`} onClick={() => setVistaAdmin('publicar')}><Megaphone size={14} /> Publicar</button>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'resultados' ? 'active' : ''}`} onClick={() => { setVistaAdmin('resultados'); cargarPartidosAdmin(); }}><Trophy size={14} /> Resultados</button>
+            </>
+          ) : null}
+          {(puedeAdminCompleto || puedeVerResultados) && (
+            <button type="button" className={`segment-btn ${vistaAdmin === 'resultados' ? 'active' : ''}`} onClick={() => { setVistaAdmin('resultados'); cargarPartidosAdmin(); }}><Trophy size={14} /> Resultados</button>
+          )}
+          {puedeAdminCompleto ? (
+            <>
               <button type="button" className={`segment-btn ${vistaAdmin === 'activos' ? 'active' : ''}`} onClick={() => setVistaAdmin('activos')}><Image size={14} /> Activos</button>
               <button type="button" className={`segment-btn ${vistaAdmin === 'demo' ? 'active' : ''}`} onClick={() => setVistaAdmin('demo')}><ShieldCheck size={14} /> Demo</button>
               <button type="button" className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Validar Pago</button>
             </>
           ) : null}
-          <button type="button" className={`segment-btn ${vistaAdmin === 'citaciones' ? 'active' : ''}`} onClick={() => setVistaAdmin('citaciones')}><UserPlus size={14} /> Citaciones</button>
+          {(puedeAdminCompleto || puedeVerCitaciones) && (
+            <button type="button" className={`segment-btn ${vistaAdmin === 'citaciones' ? 'active' : ''}`} onClick={() => setVistaAdmin('citaciones')}><UserPlus size={14} /> Citaciones</button>
+          )}
           {puedeAdminCompleto ? (
             <>
               <button type="button" className={`segment-btn ${vistaAdmin === 'invitados' ? 'active' : ''}`} onClick={() => setVistaAdmin('invitados')}><Users size={14} /> Invitados</button>
