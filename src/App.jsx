@@ -299,8 +299,18 @@ function App() {
     return rolPriorizado || normalizarRol(rolBase || usuario?.rol || 'jugador');
   };
 
+  // El muro de "Últimos Resultados" (ComunicacionesPanel/PublicFacadePanel)
+  // siempre se narra desde la perspectiva del club ("GANAMOS"/"PERDIMOS") —
+  // no sirve para partidos entre dos equipos rivales que se cargan solo para
+  // llevar la tabla de posiciones completa de un torneo externo (Torneos ya
+  // los muestra sin ese sesgo). Se filtran acá para que no aparezcan en el
+  // muro general con un marco que no corresponde.
+  const esEquipoPropio = (nombre = '') => /centro\s*de\s*cultura\s*f[ií]sica/i.test(String(nombre || ''));
+
   const mapPartidosResumen = (partidosLiveRes = []) => {
-    return (Array.isArray(partidosLiveRes) ? partidosLiveRes : []).map((p, idx) => ({
+    return (Array.isArray(partidosLiveRes) ? partidosLiveRes : [])
+      .filter((p) => esEquipoPropio(p.equipo_local) || esEquipoPropio(p.equipo_visitante))
+      .map((p, idx) => ({
       id: p.id_partido || idx + 1,
       rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
       categoria: p.categoria || p.categoria_rama || 'General',
