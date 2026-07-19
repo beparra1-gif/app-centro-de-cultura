@@ -801,6 +801,7 @@ app.get('/api/assets/logos/list', (req, res) => {
       }));
     return res.json({ logos: files });
   } catch (error) {
+    console.error('[GET /api/assets/logos/list]', error);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -824,6 +825,7 @@ app.delete('/api/assets/logos/:filename', authenticate, requireModule('admin_das
     fs.unlinkSync(filePath);
     res.json({ ok: true, filename: safeFilename });
   } catch (error) {
+    console.error('[DELETE /api/assets/logos/:filename]', error);
     res.status(500).json({ error: error.message || 'No se pudo borrar el logo.' });
   }
 });
@@ -2009,6 +2011,7 @@ app.post('/api/logo-assets', authenticate, uploadLogoMemoria.single('archivo'), 
       legacyUrl: `/logos/${filename}`,
     });
   } catch (error) {
+    console.error('[POST /api/logo-assets]', error);
     return res.status(500).json({ error: error.message || 'No se pudo subir el logo.' });
   }
 });
@@ -2040,6 +2043,7 @@ app.get('/api/logo-assets/list', async (_req, res) => {
 
     return res.json({ logos });
   } catch (error) {
+    console.error('[GET /api/logo-assets/list]', error);
     return res.status(500).json({ error: error.message || 'No se pudo listar los logos.' });
   }
 });
@@ -2068,6 +2072,7 @@ app.get('/api/logo-assets/file/:filename', async (req, res) => {
     res.contentType(row.mime_type || 'application/octet-stream');
     return res.send(row.file_data);
   } catch (error) {
+    console.error('[GET /api/logo-assets/file/:filename]', error);
     return res.status(500).json({ error: error.message || 'No se pudo obtener el logo.' });
   }
 });
@@ -2099,6 +2104,7 @@ app.delete('/api/logo-assets/:filename', authenticate, requireModule('admin_dash
 
     return res.json({ ok: true, filename: safeFilename });
   } catch (error) {
+    console.error('[DELETE /api/logo-assets/:filename]', error);
     return res.status(500).json({ error: error.message || 'No se pudo borrar el logo.' });
   }
 });
@@ -2144,6 +2150,7 @@ app.post('/api/academia-videos', authenticate, requireRole('staff', 'admin', 'su
 
     return res.status(201).json({ video, comunicacion: comunicacion.rows[0] });
   } catch (error) {
+    console.error('[POST /api/academia-videos]', error);
     return res.status(500).json({ error: error.message || 'No se pudo subir el video.' });
   }
 });
@@ -2185,6 +2192,7 @@ app.get('/api/academia-videos/file/:id', async (req, res) => {
     res.setHeader('Content-Length', chunkEnd - start + 1);
     return res.send(buffer.subarray(start, chunkEnd + 1));
   } catch (error) {
+    console.error('[GET /api/academia-videos/file/:id]', error);
     return res.status(500).json({ error: error.message || 'No se pudo obtener el video.' });
   }
 });
@@ -2231,6 +2239,7 @@ app.put('/api/academia-videos/:id', authenticate, requireRole('staff', 'admin', 
 
     res.json(result.rows[0]);
   } catch (error) {
+    console.error('[PUT /api/academia-videos/:id]', error);
     res.status(500).json({ error: error.message || 'No se pudo actualizar el video.' });
   }
 });
@@ -2257,6 +2266,7 @@ app.delete('/api/academia-videos/:id', authenticate, requireRole('staff', 'admin
     res.json({ ok: true });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
+    console.error('[DELETE /api/academia-videos/:id]', error);
     res.status(500).json({ error: error.message || 'No se pudo borrar el video.' });
   } finally {
     client.release();
@@ -2293,6 +2303,7 @@ app.get('/api/academia-pizarras', authenticate, requireAnyModule('academia'), as
     const pupilos = await obtenerPupilosDeActor(req.actor);
     res.json(pizarrasActivas.filter((p) => academiaContenidoEsVisibleParaPupilos(p, pupilos)));
   } catch (error) {
+    console.error('[GET /api/academia-pizarras]', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2326,6 +2337,7 @@ app.post('/api/academia-pizarras', authenticate, requireRole('staff', 'admin', '
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
+    console.error('[POST /api/academia-pizarras]', error);
     res.status(500).json({ error: error.message || 'No se pudo guardar la pizarra.' });
   }
 });
@@ -2347,6 +2359,7 @@ app.get('/api/academia-pizarras/imagen/:id', async (req, res) => {
     res.contentType(row.imagen_mime_type || 'image/png');
     return res.send(row.imagen_data);
   } catch (error) {
+    console.error('[GET /api/academia-pizarras/imagen/:id]', error);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -2383,6 +2396,7 @@ app.put('/api/academia-pizarras/:id', authenticate, requireRole('staff', 'admin'
     );
     res.json(result.rows[0]);
   } catch (error) {
+    console.error('[PUT /api/academia-pizarras/:id]', error);
     res.status(500).json({ error: error.message || 'No se pudo actualizar la pizarra.' });
   }
 });
@@ -2403,6 +2417,7 @@ app.delete('/api/academia-pizarras/:id', authenticate, requireRole('staff', 'adm
     await pool.query('DELETE FROM academia_pizarras WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   } catch (error) {
+    console.error('[DELETE /api/academia-pizarras/:id]', error);
     res.status(500).json({ error: error.message || 'No se pudo borrar la pizarra.' });
   }
 });
@@ -2946,6 +2961,7 @@ app.post('/api/admin/sync-sheets/webhook-flush', async (req, res) => {
     await sheetsWebhookSyncManager.flush();
     return res.json({ ok: true, message: 'Flush webhook ejecutado.' });
   } catch (error) {
+    console.error('[POST /api/admin/sync-sheets/webhook-flush]', error);
     return res.status(500).json({ ok: false, error: error.message });
   }
 });
@@ -2956,6 +2972,19 @@ app.post('/api/admin/sync-sheets/webhook-flush', async (req, res) => {
 const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' },
+});
+
+// Antes compartía authRateLimiter con /login: una familia equivocándose al
+// escribir la clave nueva durante el cambio obligatorio de contraseña podía
+// agotar el cupo y quedar bloqueada también para volver a iniciar sesión.
+// Limiter propio, más holgado, porque acá no hay riesgo de fuerza bruta de
+// credenciales (requiere ya conocer la contraseña actual).
+const changePasswordRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' },
@@ -3036,11 +3065,12 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
       }
     });
   } catch (err) {
+    console.error('[POST /api/auth/login]', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/auth/change-password', authRateLimiter, async (req, res) => {
+app.post('/api/auth/change-password', changePasswordRateLimiter, async (req, res) => {
   const { rut, currentPassword, newPassword } = req.body;
 
   if (!rut || !newPassword) {
@@ -3084,6 +3114,7 @@ app.post('/api/auth/change-password', authRateLimiter, async (req, res) => {
 
     return res.json({ ok: true, message: 'Contraseña actualizada correctamente.' });
   } catch (err) {
+    console.error('[POST /api/auth/change-password]', err);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -3147,6 +3178,7 @@ app.get('/api/comunicaciones/:id', authenticateOpcional, async (req, res) => {
     const visibles = await filtrarComunicacionesParaActor([fila], req.actor);
     res.json(visibles[0] || {});
   } catch (err) {
+    console.error('[GET /api/comunicaciones/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3175,6 +3207,7 @@ app.post('/api/comunicaciones', authenticate, requireRole('staff', 'admin', 'sup
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/comunicaciones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3218,6 +3251,7 @@ app.put('/api/comunicaciones/:id', authenticate, requireRole('staff', 'admin', '
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/comunicaciones/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3239,6 +3273,7 @@ app.delete('/api/comunicaciones/:id', authenticate, requireRole('staff', 'admin'
     await pool.query('DELETE FROM comunicaciones WHERE id = $1', [req.params.id]);
     res.json({ message: 'Comunicación eliminada' });
   } catch (err) {
+    console.error('[DELETE /api/comunicaciones/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3258,6 +3293,7 @@ app.get('/api/comunicaciones/:comId/comentarios', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/comunicaciones/:comId/comentarios]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3275,6 +3311,7 @@ app.post('/api/comunicaciones/:comId/comentarios', authenticate, requireModule('
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/comunicaciones/:comId/comentarios]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3291,6 +3328,7 @@ app.put('/api/comentarios/:comentId/like', authenticate, requireModule('comunica
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/comentarios/:comentId/like]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3310,6 +3348,7 @@ app.get('/api/pagos/usuario/:usuarioId', authenticate, requireOwnerIdOrModule('u
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/pagos/usuario/:usuarioId]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3325,6 +3364,7 @@ app.get('/api/pagos', authenticate, requireModule('validacion_pagos'), async (re
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/pagos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3403,6 +3443,7 @@ app.post('/api/pagos', authenticate, requireModule('validacion_pagos'), async (r
     res.json(result.rows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('[POST /api/pagos]', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -3422,6 +3463,7 @@ app.put('/api/pagos/:pagoId/validar', authenticate, requireModule('validacion_pa
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/pagos/:pagoId/validar]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3440,6 +3482,7 @@ app.get('/api/usuarios', authenticate, requireModule('admin_dashboard'), async (
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/usuarios]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3453,6 +3496,7 @@ app.get('/api/usuarios/:id', authenticate, requireModule('admin_dashboard'), asy
     );
     res.json(result.rows[0] || {});
   } catch (err) {
+    console.error('[GET /api/usuarios/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3469,6 +3513,7 @@ app.post('/api/usuarios', authenticate, requireModule('admin_dashboard'), async 
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/usuarios]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3492,6 +3537,7 @@ app.get('/api/cuentas', authenticate, requireModule('admin_dashboard'), async (r
 
     res.json(cuentas);
   } catch (err) {
+    console.error('[GET /api/cuentas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3510,6 +3556,7 @@ app.get('/api/cuentas/incompletas', authenticate, requireModule('admin_dashboard
 
     res.json(incompletas);
   } catch (err) {
+    console.error('[GET /api/cuentas/incompletas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3529,6 +3576,7 @@ app.get('/api/cuentas/:id', authenticate, requireOwnerIdOrModule('id', 'admin_da
       campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
     });
   } catch (err) {
+    console.error('[GET /api/cuentas/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3649,6 +3697,7 @@ app.post('/api/cuentas', authenticate, requireModule('admin_dashboard'), async (
     if (err.code === '23505') {
       return res.status(400).json({ error: 'correo o rut ya existe' });
     }
+    console.error('[POST /api/cuentas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3810,6 +3859,7 @@ app.put(
     if (err.code === '23505') {
       return res.status(400).json({ error: 'correo o rut ya existe' });
     }
+    console.error('[POST /api/cuentas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3880,6 +3930,7 @@ app.delete('/api/cuentas/:id', authenticate, requireRole('super_admin'), async (
     } catch {
       // Ignorar errores secundarios de rollback.
     }
+    console.error('[DELETE /api/cuentas/:id]', err);
     return res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -3898,6 +3949,7 @@ app.get('/api/whatsapp/contactos', authenticate, requireModule('admin_dashboard'
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/whatsapp/contactos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3917,6 +3969,7 @@ app.post('/api/whatsapp/contactos', authenticate, requireModule('admin_dashboard
     if (err.code === '23505') {
       res.status(400).json({ error: 'Número ya existe' });
     } else {
+      console.error('[POST /api/whatsapp/contactos]', err);
       res.status(500).json({ error: err.message });
     }
   }
@@ -3931,6 +3984,7 @@ app.delete('/api/whatsapp/contactos/:id', authenticate, requireModule('admin_das
     );
     res.json({ message: 'Contacto eliminado' });
   } catch (err) {
+    console.error('[DELETE /api/whatsapp/contactos/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3957,6 +4011,7 @@ app.post('/api/whatsapp/enviar', authenticate, requireModule('admin_dashboard'),
     
     res.json({ success: true, mensaje_id: result.rows[0].id });
   } catch (err) {
+    console.error('[POST /api/whatsapp/enviar]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3977,6 +4032,7 @@ app.get('/api/reportes/engagement', authenticate, requireModule('reportes'), asy
     `);
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[GET /api/reportes/engagement]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -3998,6 +4054,7 @@ app.get('/api/reportes/top-comunicaciones', authenticate, requireModule('reporte
     `);
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/reportes/top-comunicaciones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4012,6 +4069,7 @@ app.get('/api/encuestas', async (req, res) => {
     const result = await pool.query('SELECT * FROM encuestas ORDER BY created_at DESC');
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/encuestas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4028,6 +4086,7 @@ app.post('/api/encuestas', authenticate, requireModule('admin_dashboard'), async
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/encuestas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4046,6 +4105,7 @@ app.put('/api/encuestas/:encuestaId/votar', authenticate, requireModule('comunic
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/encuestas/:encuestaId/votar]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4113,6 +4173,7 @@ app.get('/api/jugadores', authenticate, async (req, res) => {
     const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
     res.json(filas.filter((j) => rutsPupilos.has(normalizarRutParaComparar(j.rut_jugador))));
   } catch (err) {
+    console.error('[GET /api/jugadores]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4142,6 +4203,7 @@ app.get('/api/jugadores/:rut', authenticate, async (req, res) => {
     }
     res.json(jugador);
   } catch (err) {
+    console.error('[GET /api/jugadores/:rut]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4176,6 +4238,7 @@ app.post('/api/jugadores', authenticate, requireModule('admin_dashboard'), async
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/jugadores]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4341,6 +4404,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
 
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/jugadores/:rut]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4375,6 +4439,7 @@ app.post('/api/jugadores/:rut/foto', authenticate, requireApoderadoDeJugadorOMod
     }
     return res.json(result.rows[0]);
   } catch (error) {
+    console.error('[POST /api/jugadores/:rut/foto]', error);
     return res.status(500).json({ error: error.message || 'No se pudo subir la foto.' });
   }
 });
@@ -4476,6 +4541,7 @@ app.delete('/api/jugadores/:rut', authenticate, requireRole('super_admin'), asyn
     } catch {
       // Ignorar errores secundarios de rollback.
     }
+    console.error('[DELETE /api/jugadores/:rut]', err);
     return res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -4509,6 +4575,7 @@ app.get('/api/pagos-mensualidades', authenticate, async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/pagos-mensualidades]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4663,6 +4730,7 @@ app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'v
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/pagos-mensualidades]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4680,6 +4748,7 @@ app.put('/api/pagos-mensualidades/:id/validar', authenticate, requireModule('val
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/pagos-mensualidades/:id/validar]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4699,6 +4768,7 @@ app.get('/api/pagos-mensualidades/:id', authenticate, async (req, res) => {
     }
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[GET /api/pagos-mensualidades/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4741,6 +4811,7 @@ app.put('/api/pagos-mensualidades/:id', authenticate, requireAnyModule('validaci
     }
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/pagos-mensualidades/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4772,6 +4843,7 @@ app.get('/api/beca-revisiones', authenticate, requireModule('validacion_pagos'),
     }));
     res.json(resultado);
   } catch (err) {
+    console.error('[GET /api/beca-revisiones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4805,6 +4877,7 @@ app.post('/api/beca-revisiones', authenticate, requireModule('validacion_pagos')
     res.status(201).json(revision.rows[0]);
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    console.error('[POST /api/beca-revisiones]', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -4823,6 +4896,7 @@ app.get('/api/convocatorias', authenticate, requireModule('citaciones'), async (
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/convocatorias]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4840,6 +4914,7 @@ app.post('/api/convocatorias', authenticate, requireModule('citaciones'), async 
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/convocatorias]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5124,6 +5199,7 @@ app.post('/api/citaciones', authenticate, requireModule('citaciones'), async (re
     res.status(201).json(completa);
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    console.error('[POST /api/citaciones]', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -5167,6 +5243,7 @@ app.get('/api/citaciones', authenticate, async (req, res) => {
     const visibles = citaciones.filter((c) => citacionEsVisibleParaPupilos(c, pupilos));
     res.json(visibles);
   } catch (err) {
+    console.error('[GET /api/citaciones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5198,6 +5275,7 @@ app.get('/api/citaciones/:id', authenticate, async (req, res) => {
     }
     res.json(citacion);
   } catch (err) {
+    console.error('[GET /api/citaciones/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5253,6 +5331,7 @@ app.put('/api/citaciones/:id', authenticate, requireModule('citaciones'), async 
     const completa = await cargarCitacionConConvocados(req.params.id);
     res.json(completa);
   } catch (err) {
+    console.error('[PUT /api/citaciones/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5281,6 +5360,7 @@ app.delete('/api/citaciones/:id', authenticate, requireModule('citaciones'), asy
     res.json({ ok: true });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    console.error('[DELETE /api/citaciones/:id]', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -5316,6 +5396,7 @@ app.post('/api/citaciones/:id/convocados', authenticate, requireModule('citacion
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/citaciones/:id/convocados]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5329,6 +5410,7 @@ app.delete('/api/citaciones/:id/convocados/:rut', authenticate, requireModule('c
     );
     res.json({ ok: true });
   } catch (err) {
+    console.error('[DELETE /api/citaciones/:id/convocados/:rut]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5395,6 +5477,7 @@ app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireApode
 
     res.json(convocado);
   } catch (err) {
+    console.error('[PATCH /api/citaciones/:id/convocados/:rut/rsvp]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5409,6 +5492,7 @@ app.get('/api/notificaciones', authenticate, async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/notificaciones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5427,6 +5511,7 @@ app.patch('/api/notificaciones/:id/leida', authenticate, async (req, res) => {
     }
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PATCH /api/notificaciones/:id/leida]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5443,6 +5528,7 @@ app.get('/api/eventos', authenticate, requireModule('citaciones'), async (req, r
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/eventos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5459,6 +5545,7 @@ app.post('/api/eventos', authenticate, requireModule('citaciones'), async (req, 
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/eventos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5514,6 +5601,7 @@ app.get('/api/asistencia/sesiones', authenticate, requireAnyModule('citaciones',
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/asistencia/sesiones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5527,6 +5615,7 @@ app.get('/api/asistencia/sesiones/:sesionId', authenticate, requireAnyModule('ci
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/asistencia/sesiones/:sesionId]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5560,6 +5649,7 @@ app.post('/api/asistencia/sesion', authenticate, requireAnyModule('citaciones', 
     res.status(201).json({ sesion_id: sesionId, registros: creada.rows });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    console.error('[POST /api/asistencia/sesion]', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -5584,6 +5674,7 @@ app.put('/api/asistencia/:id', authenticate, requireAnyModule('citaciones', 'asi
     }
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/asistencia/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5594,6 +5685,7 @@ app.delete('/api/asistencia/:id', authenticate, requireAnyModule('citaciones', '
     await pool.query('DELETE FROM asistencia WHERE id_asistencia = $1', [req.params.id]);
     res.json({ ok: true });
   } catch (err) {
+    console.error('[DELETE /api/asistencia/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5604,6 +5696,7 @@ app.delete('/api/asistencia/sesiones/:sesionId', authenticate, requireAnyModule(
     await pool.query('DELETE FROM asistencia WHERE sesion_id = $1', [req.params.sesionId]);
     res.json({ ok: true });
   } catch (err) {
+    console.error('[DELETE /api/asistencia/sesiones/:sesionId]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5620,6 +5713,7 @@ app.get('/api/partidos-live', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/partidos-live]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5676,6 +5770,7 @@ app.get('/api/partidos-live/historial', async (req, res) => {
 
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/partidos-live/historial]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5713,6 +5808,7 @@ app.post('/api/partidos-live', authenticate, requireAnyModule('scoreboard_live',
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/partidos-live]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5787,6 +5883,7 @@ app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_liv
     }
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/partidos-live/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5852,6 +5949,7 @@ app.post('/api/partidos-live/:id/finalizar-mesa', authenticate, requireModule('s
 
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/partidos-live/:id/finalizar-mesa]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5885,6 +5983,7 @@ app.delete('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_
     } catch {
       // Ignore rollback errors and return original error.
     }
+    console.error('[DELETE /api/partidos-live/:id]', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -5908,6 +6007,7 @@ app.get('/api/estadisticas/partido/:partidoId', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/estadisticas/partido/:partidoId]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5924,6 +6024,7 @@ app.post('/api/estadisticas', authenticate, requireModule('scoreboard_live'), as
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/estadisticas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5950,6 +6051,7 @@ app.get('/api/evaluaciones/jugador/:rut', authenticate, requireAnyModule('evalua
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/evaluaciones/jugador/:rut]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5966,6 +6068,7 @@ app.post('/api/evaluaciones', authenticate, requireModule('evaluacion_staff'), a
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/evaluaciones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5983,6 +6086,7 @@ app.get('/api/gamificacion/:rut', authenticate, requireModule('jugador'), async 
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/gamificacion/:rut]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -5999,6 +6103,7 @@ app.post('/api/gamificacion', authenticate, requireAnyModule('evaluacion_staff',
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/gamificacion]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6016,6 +6121,7 @@ app.get('/api/marcas/:rut', authenticate, requireModule('jugador'), async (req, 
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/marcas/:rut]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6032,6 +6138,7 @@ app.post('/api/marcas', authenticate, requireAnyModule('evaluacion_staff', 'scor
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/marcas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6049,6 +6156,7 @@ app.get('/api/resultados/partido/:partidoId', async (req, res) => {
     );
     res.json(result.rows[0] || {});
   } catch (err) {
+    console.error('[GET /api/resultados/partido/:partidoId]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6066,6 +6174,7 @@ app.post('/api/resultados', authenticate, requireModule('scoreboard_live'), asyn
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/resultados]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6089,6 +6198,7 @@ app.get('/api/quiz', authenticate, requireModule('academia'), async (req, res) =
     const pupilos = await obtenerPupilosDeActor(req.actor);
     res.json(result.rows.filter((q) => academiaContenidoEsVisibleParaPupilos(q, pupilos)));
   } catch (err) {
+    console.error('[GET /api/quiz]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6110,6 +6220,7 @@ app.post('/api/quiz', authenticate, requireRole('staff', 'admin', 'super_admin')
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/quiz]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6145,6 +6256,7 @@ app.put('/api/quiz/:id', authenticate, requireRole('staff', 'admin', 'super_admi
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/quiz/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6158,6 +6270,7 @@ app.delete('/api/quiz/:id', authenticate, requireRole('staff', 'admin', 'super_a
     await pool.query('DELETE FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id]);
     res.json({ ok: true });
   } catch (err) {
+    console.error('[DELETE /api/quiz/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6230,6 +6343,7 @@ app.post('/api/quiz/:id/responder', authenticate, requireModule('academia'), asy
       client.release();
     }
   } catch (err) {
+    console.error('[POST /api/quiz/:id/responder]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6270,6 +6384,7 @@ app.get('/api/quiz/:id/respuestas', authenticate, requireRole('staff', 'admin', 
       },
     });
   } catch (err) {
+    console.error('[GET /api/quiz/:id/respuestas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6302,6 +6417,7 @@ app.post('/api/academia-material-interacciones', authenticate, requireModule('ac
     );
     res.status(201).json({ ok: true, duplicado: result.rows.length === 0 });
   } catch (err) {
+    console.error('[POST /api/academia-material-interacciones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6336,6 +6452,7 @@ app.get('/api/academia-material-interacciones/:comunicacionId', authenticate, re
       resumen: { totalAudiencia: audiencia.length, totalInteractuaron: interacciones.length },
     });
   } catch (err) {
+    console.error('[GET /api/academia-material-interacciones/:comunicacionId]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6366,6 +6483,7 @@ app.get('/api/academia/ranking', authenticate, requireRole('staff', 'admin', 'su
     }));
     res.json(filas);
   } catch (err) {
+    console.error('[GET /api/academia/ranking]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6383,6 +6501,7 @@ app.get('/api/pizarra/partido/:partidoId', authenticate, requireModule('scoreboa
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/pizarra/partido/:partidoId]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6399,6 +6518,7 @@ app.post('/api/pizarra', authenticate, requireModule('scoreboard_live'), async (
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/pizarra]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6415,6 +6535,7 @@ app.get('/api/migracion-pagos', authenticate, requireModule('validacion_pagos'),
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/migracion-pagos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6431,6 +6552,7 @@ app.post('/api/migracion-pagos', authenticate, requireModule('validacion_pagos')
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/migracion-pagos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6447,6 +6569,7 @@ app.get('/api/jugadores-visita', authenticate, requireModule('invitados'), async
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/jugadores-visita]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6490,6 +6613,7 @@ app.post('/api/jugadores-visita', authenticate, requireModule('invitados'), asyn
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/jugadores-visita]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6527,6 +6651,7 @@ app.put('/api/jugadores-visita/:id', authenticate, requireModule('invitados'), a
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/jugadores-visita/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6540,6 +6665,7 @@ app.get('/api/auditoria', authenticate, requireModule('auditoria'), async (req, 
     const result = await pool.query(`SELECT * FROM auditoria ORDER BY fecha_accion DESC LIMIT 100`);
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/auditoria]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6553,6 +6679,7 @@ app.get('/api/staff', authenticate, requireAnyModule('admin_dashboard', 'asisten
     const result = await pool.query(`SELECT * FROM staff WHERE activo = true ORDER BY apellido_paterno ASC`);
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/staff]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6568,6 +6695,7 @@ app.post('/api/staff', authenticate, requireModule('admin_dashboard'), async (re
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/staff]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6585,6 +6713,7 @@ app.get('/api/torneos', async (req, res) => {
     const result = await pool.query(`SELECT * FROM torneos ORDER BY fecha_inicio DESC`);
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/torneos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6600,6 +6729,7 @@ app.post('/api/torneos', authenticate, requireAnyModule('scoreboard_live', 'admi
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/torneos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6656,6 +6786,7 @@ app.get('/api/torneos/:id/tabla-posiciones', async (req, res) => {
 
     res.json({ posiciones, partidos, partidosPendientes });
   } catch (err) {
+    console.error('[GET /api/torneos/:id/tabla-posiciones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6672,6 +6803,7 @@ app.get('/api/caja-evento/:eventoId', authenticate, requireModule('kiosco'), asy
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/caja-evento/:eventoId]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6687,6 +6819,7 @@ app.post('/api/caja-evento', authenticate, requireModule('kiosco'), async (req, 
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/caja-evento]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6700,6 +6833,7 @@ app.get('/api/inventario', authenticate, requireAnyModule('kiosco', 'inventario'
     const result = await pool.query(`SELECT * FROM catalogo_inventario ORDER BY nombre_articulo ASC`);
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/inventario]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6715,6 +6849,7 @@ app.post('/api/inventario', authenticate, requireAnyModule('kiosco', 'inventario
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/inventario]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6728,6 +6863,7 @@ app.get('/api/egresos', authenticate, requireModule('kiosco'), async (req, res) 
     const result = await pool.query(`SELECT * FROM egresos ORDER BY fecha_egreso DESC`);
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/egresos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6743,6 +6879,7 @@ app.post('/api/egresos', authenticate, requireModule('kiosco'), async (req, res)
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/egresos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6758,6 +6895,7 @@ app.get('/api/kiosco-productos', authenticate, requireModule('kiosco'), async (r
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/kiosco-productos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6776,6 +6914,7 @@ app.post('/api/kiosco-productos', authenticate, requireModule('kiosco'), async (
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/kiosco-productos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6804,6 +6943,7 @@ app.put('/api/kiosco-productos/:id', authenticate, requireModule('kiosco'), asyn
     }
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/kiosco-productos/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6821,6 +6961,7 @@ app.delete('/api/kiosco-productos/:id', authenticate, requireModule('kiosco'), a
     }
     res.json({ ok: true });
   } catch (err) {
+    console.error('[DELETE /api/kiosco-productos/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6832,6 +6973,7 @@ app.get('/api/kiosco-turnos/actual', authenticate, requireModule('kiosco'), asyn
     );
     res.json(result.rows[0] || null);
   } catch (err) {
+    console.error('[GET /api/kiosco-turnos/actual]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6860,6 +7002,7 @@ app.get('/api/kiosco-turnos', authenticate, requireModule('kiosco'), async (req,
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/kiosco-turnos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6882,6 +7025,7 @@ app.post('/api/kiosco-turnos', authenticate, requireModule('kiosco'), async (req
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/kiosco-turnos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6929,6 +7073,7 @@ app.put('/api/kiosco-turnos/:id/cerrar', authenticate, requireModule('kiosco'), 
     }
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[PUT /api/kiosco-turnos/:id/cerrar]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6947,6 +7092,7 @@ app.delete('/api/kiosco-turnos/:id', authenticate, requireModule('kiosco'), asyn
     }
     res.json({ ok: true, deleted: { id: result.rows[0].id } });
   } catch (err) {
+    console.error('[DELETE /api/kiosco-turnos/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6975,6 +7121,7 @@ app.get('/api/kiosco-ventas', authenticate, requireModule('kiosco'), async (req,
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/kiosco-ventas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7009,6 +7156,7 @@ app.post('/api/kiosco-ventas', authenticate, requireModule('kiosco'), async (req
     res.json(venta.rows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('[POST /api/kiosco-ventas]', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -7020,6 +7168,7 @@ app.delete('/api/kiosco-ventas', authenticate, requireModule('kiosco'), async (r
     await pool.query('DELETE FROM kiosco_ventas');
     res.json({ ok: true });
   } catch (err) {
+    console.error('[DELETE /api/kiosco-ventas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7034,6 +7183,7 @@ app.get('/api/kiosco-fiados', authenticate, requireModule('kiosco'), async (req,
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/kiosco-fiados]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7083,6 +7233,7 @@ app.post('/api/kiosco-fiados/cargo', authenticate, requireModule('kiosco'), asyn
     res.json(fiado);
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('[POST /api/kiosco-fiados/cargo]', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -7119,6 +7270,7 @@ app.post('/api/kiosco-fiados/:id/pago', authenticate, requireModule('kiosco'), a
     res.json(actualizado.rows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('[POST /api/kiosco-fiados/:id/pago]', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -7135,6 +7287,7 @@ app.get('/api/kiosco-egresos', authenticate, requireModule('kiosco'), async (req
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/kiosco-egresos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7156,6 +7309,7 @@ app.post('/api/kiosco-egresos', authenticate, requireModule('kiosco'), async (re
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/kiosco-egresos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7169,6 +7323,7 @@ app.get('/api/clubes', authenticate, requireAnyModule('scoreboard_live', 'admin_
     const result = await pool.query(`SELECT * FROM clubes WHERE activo = true ORDER BY nombre_club ASC`);
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/clubes]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7184,6 +7339,7 @@ app.post('/api/clubes', authenticate, requireAnyModule('scoreboard_live', 'admin
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/clubes]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7202,6 +7358,7 @@ app.get('/api/lesiones', authenticate, requireAnyModule('evaluacion_staff', 'asi
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/lesiones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7217,6 +7374,7 @@ app.post('/api/lesiones', authenticate, requireAnyModule('evaluacion_staff', 'as
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/lesiones]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7235,6 +7393,7 @@ app.get('/api/disciplina', authenticate, requireAnyModule('evaluacion_staff', 'a
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/disciplina]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7250,6 +7409,7 @@ app.post('/api/disciplina', authenticate, requireAnyModule('evaluacion_staff', '
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/disciplina]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7263,6 +7423,7 @@ app.get('/api/entrenamientos', authenticate, requireAnyModule('asistencia_staff'
     const result = await pool.query(`SELECT * FROM entrenamientos ORDER BY fecha_entrenamiento DESC`);
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/entrenamientos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7278,6 +7439,7 @@ app.post('/api/entrenamientos', authenticate, requireAnyModule('asistencia_staff
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/entrenamientos]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7294,6 +7456,7 @@ app.get('/api/encuestas/:encuestaId/respuestas', authenticate, requireModule('ad
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/encuestas/:encuestaId/respuestas]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7309,6 +7472,7 @@ app.post('/api/encuestas/:encuestaId/respuesta', authenticate, requireModule('co
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/encuestas/:encuestaId/respuesta]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7325,6 +7489,7 @@ app.get('/api/asistencia-eventos/:eventoId', authenticate, requireModule('citaci
     );
     res.json(result.rows);
   } catch (err) {
+    console.error('[GET /api/asistencia-eventos/:eventoId]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7340,6 +7505,7 @@ app.post('/api/asistencia-eventos', authenticate, requireModule('citaciones'), a
     );
     res.json(result.rows[0]);
   } catch (err) {
+    console.error('[POST /api/asistencia-eventos]', err);
     res.status(500).json({ error: err.message });
   }
 });
