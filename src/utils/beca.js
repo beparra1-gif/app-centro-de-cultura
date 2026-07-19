@@ -35,3 +35,50 @@ export const calcularCuotaFinal = (valorMensualidad, jugador = {}) => {
   if (estaExentoDeMensualidad(jugador)) return 0;
   return calcularCuotaConBeca(valorMensualidad, jugador);
 };
+
+// Tarifa por defecto de mensualidad deportistas para UNA familia (todos los
+// pupilos del mismo apoderado), usada solo cuando NINGÚN pupilo de la
+// familia trae valor_mensualidad propio desde el Sheet. Si al menos uno sí
+// lo trae, se usa la suma de esos montos (ya con beca/exención aplicada) en
+// vez de la tarifa por defecto — mismo criterio en Tesorería y en Morosos
+// para que ambas pantallas muestren siempre el mismo número por familia.
+export const calcularCuotaDeportistasFamilia = ({ pupilosFamilia = [], esSocioApoderado = false, montoAcordado = 0 } = {}) => {
+  const cantidadPupilos = pupilosFamilia.length;
+  if (cantidadPupilos <= 0) return { cuotaDeportistas: 0, cuotaReferencial: 0 };
+
+  const pupilosConCuota = pupilosFamilia.filter((p) => !noDebeMensualidad(p));
+  if (pupilosConCuota.length === 0) return { cuotaDeportistas: 0, cuotaReferencial: 0 };
+
+  const sumaDesdeSheet = pupilosConCuota.reduce((acc, p) => {
+    const monto = Number(p?.valor_mensualidad || 0);
+    const base = Number.isFinite(monto) && monto > 0 ? monto : 0;
+    return acc + calcularCuotaFinal(base, p);
+  }, 0);
+
+  let cuotaDeportistas;
+  if (sumaDesdeSheet > 0) {
+    cuotaDeportistas = Math.round(sumaDesdeSheet);
+  } else if (Number.isFinite(montoAcordado) && montoAcordado > 0) {
+    cuotaDeportistas = montoAcordado;
+  } else if (esSocioApoderado) {
+    // Socio + apoderado: 15.000 (1 pupilo); desde 2, 12.000 c/u con el 3ro
+    // gratis (tope 24.000).
+    cuotaDeportistas = cantidadPupilos === 1 ? 15000 : 24000;
+  } else {
+    // Apoderado sin membresía socio: 30.000 (1 pupilo), 25.000 c/u desde 2.
+    cuotaDeportistas = cantidadPupilos === 1 ? 30000 : 25000 * cantidadPupilos;
+  }
+
+  const cuotaReferencial = Math.round(cuotaDeportistas / cantidadPupilos);
+  return { cuotaDeportistas, cuotaReferencial };
+};
+
+// Cuota mensual real de UN pupilo dentro de su familia: si trae
+// valor_mensualidad propio se usa tal cual (con beca/exención aplicada); si
+// no, se reparte la tarifa referencial de la familia (ver
+// calcularCuotaDeportistasFamilia).
+export const obtenerCuotaJugador = (pupilo = {}, cuotaReferencial = 0) => {
+  const monto = Number(pupilo?.valor_mensualidad || 0);
+  const base = Number.isFinite(monto) && monto > 0 ? monto : cuotaReferencial;
+  return calcularCuotaFinal(base, pupilo);
+};

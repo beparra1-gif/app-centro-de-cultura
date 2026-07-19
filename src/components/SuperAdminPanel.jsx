@@ -147,6 +147,13 @@ function SuperAdminPanel({
     : 0;
 
   const [busquedaMorosos, setBusquedaMorosos] = useState('');
+  const [filtroRamaMorosos, setFiltroRamaMorosos] = useState('todas');
+  const [filtroCategoriaMorosos, setFiltroCategoriaMorosos] = useState('todas');
+
+  // Opciones de los dropdown de rama/categoría: solo las que de verdad tienen
+  // algún moroso, no el universo completo de ramas/categorías del club.
+  const ramasMorosos = [...new Set((morososAdmin || []).map((m) => m.rama).filter(Boolean))].sort();
+  const categoriasMorosos = [...new Set((morososAdmin || []).map((m) => m.categoria).filter(Boolean))].sort();
 
   const morososFiltrados = (filtroMorosos === 'todos'
     ? (morososAdmin || [])
@@ -154,6 +161,8 @@ function SuperAdminPanel({
       ? (morososAdmin || []).filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado')
       : (morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado')
   ).filter((m) => {
+    if (filtroRamaMorosos !== 'todas' && m.rama !== filtroRamaMorosos) return false;
+    if (filtroCategoriaMorosos !== 'todas' && m.categoria !== filtroCategoriaMorosos) return false;
     const q = busquedaMorosos.trim().toLowerCase();
     if (!q) return true;
     if (String(m.nombre || '').toLowerCase().includes(q)) return true;
@@ -2057,6 +2066,26 @@ function SuperAdminPanel({
             <button className={`filter-chip ${filtroMorosos === 'socios' ? 'active' : ''}`} onClick={() => setFiltroMorosos('socios')}>Socios ({(morososAdmin || []).filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado').length})</button>
             <button className={`filter-chip ${filtroMorosos === 'apoderados' ? 'active' : ''}`} onClick={() => setFiltroMorosos('apoderados')}>Apoderados ({(morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado').length})</button>
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '15px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ fontSize: '11px' }}>Rama</label>
+              <select className="form-input" value={filtroRamaMorosos} onChange={(e) => setFiltroRamaMorosos(e.target.value)}>
+                <option value="todas">Todas</option>
+                {ramasMorosos.map((rama) => (
+                  <option key={`rama-moroso-${rama}`} value={rama}>{rama}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ fontSize: '11px' }}>Categoría</label>
+              <select className="form-input" value={filtroCategoriaMorosos} onChange={(e) => setFiltroCategoriaMorosos(e.target.value)}>
+                <option value="todas">Todas</option>
+                {categoriasMorosos.map((categoria) => (
+                  <option key={`categoria-moroso-${categoria}`} value={categoria}>{categoria}</option>
+                ))}
+              </select>
+            </div>
+          </div>
           {morososFiltrados.length === 0 && (
             <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
               Sin morosos que coincidan con la búsqueda.
@@ -2072,11 +2101,25 @@ function SuperAdminPanel({
                   <span className="moroso-nombre">{m.nombre}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
                     <span className="moroso-tipo-badge" style={{ background: bg, color }}>{labelTipo}</span>
+                    {(m.rama || m.categoria) && (
+                      <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: '999px' }}>
+                        {[m.rama, m.categoria].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
                     {m.pupilos.length > 0 && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><User size={11} /> {m.pupilos.join(' · ')}</span>}
                   </div>
                   <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
                     {m.telefono ? <><Phone size={11} /> {m.telefono}</> : <>{m.correo || 'Sin contacto'}</>}
                   </span>
+                  {(m.mesesMorosos || []).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                      {m.mesesMorosos.map((mes) => (
+                        <span key={`${m.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: '999px', padding: '2px 7px' }}>
+                          {mes}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="moroso-deuda">
                   <span className="moroso-monto">${m.montoDeuda.toLocaleString('es-CL')}</span>

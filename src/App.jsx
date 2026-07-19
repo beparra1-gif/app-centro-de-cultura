@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
-import { calcularCuotaFinal, noDebeMensualidad } from './utils/beca';
+import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from './utils/beca';
 import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
 import ApiStatusBanner from './components/ApiStatusBanner';
 import ToastContainer from './components/ToastContainer';
@@ -461,6 +461,7 @@ function App() {
       if (rut) cuentaPorRut.set(rut, cuenta);
     });
     const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const NOMBRES_MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     const ANIO_OBJETIVO = 2026;
     const now = new Date();
     const limiteMesDeuda = now.getFullYear() > ANIO_OBJETIVO
@@ -567,6 +568,41 @@ function App() {
       pagosPorRut.get(rutPago).push({ ...pago, mesesPago });
     });
 
+    // Agrupa por familia (mismo apoderado, vía rut_apoderado o si falta
+    // correo_apoderado) para calcular la tarifa por defecto igual que
+    // Tesorería (PerfilTesoreriaPanel): si ningún jugador de la familia trae
+    // valor_mensualidad propio, la familia entera comparte la tarifa
+    // referencial del club en vez de mostrar el número de meses como si
+    // fueran pesos.
+    const obtenerFamilyKey = (jugador = {}) => {
+      const rutApoderado = normalizarRutComparacion(jugador.rut_apoderado || '');
+      if (rutApoderado) return `rut:${rutApoderado}`;
+      const correo = normalizarCorreo(jugador.correo_apoderado || '');
+      if (correo) return `correo:${correo}`;
+      return `jugador:${normalizarRutComparacion(jugador.rut_jugador || '')}`;
+    };
+
+    const jugadoresPorFamilia = new Map();
+    (jugadores || []).forEach((jugador) => {
+      const key = obtenerFamilyKey(jugador);
+      if (!jugadoresPorFamilia.has(key)) jugadoresPorFamilia.set(key, []);
+      jugadoresPorFamilia.get(key).push(jugador);
+    });
+
+    const cuotaReferencialPorFamilia = new Map();
+    jugadoresPorFamilia.forEach((pupilosFamilia, key) => {
+      const primerJugador = pupilosFamilia[0];
+      const cuentaFamilia = cuentaPorRut.get(normalizarRutComparacion(primerJugador.rut_apoderado))
+        || cuentaPorCorreo.get(normalizarCorreo(primerJugador.correo_apoderado));
+      const perfilPrincipalFamilia = String(cuentaFamilia?.perfil_principal || cuentaFamilia?.rol || '').toLowerCase();
+      const { cuotaReferencial } = calcularCuotaDeportistasFamilia({
+        pupilosFamilia,
+        esSocioApoderado: perfilPrincipalFamilia === 'socio_apoderado',
+        montoAcordado: Number(cuentaFamilia?.monto_mensual_override || 0),
+      });
+      cuotaReferencialPorFamilia.set(key, cuotaReferencial);
+    });
+
     const morosos = [];
 
     (jugadores || []).forEach((jugador) => {
@@ -594,32 +630,46 @@ function App() {
         });
       });
 
-      let mesesDeuda = 0;
+      // mesesMorosos guarda los meses concretos (no solo el conteo), ya
+      // acotado por inicioCobro — un jugador que ingresó en marzo nunca
+      // arrastra ene/feb acá porque el loop ni siquiera los recorre.
+      const mesesMorososNums = [];
       for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
         const estados = estadoPorMes.get(mes) || new Set();
         const pagado = estados.has('aprobado') || estados.has('validado');
-        if (!pagado) mesesDeuda += 1;
+        if (!pagado) mesesMorososNums.push(mes);
       }
+      const mesesDeuda = mesesMorososNums.length;
 
       if (mesesDeuda <= 0) return;
 
-      // calcularCuotaFinal aplica el % de beca parcial (si tiene) al monto
-      // base — un jugador con 50% de beca debe aparecer con la mitad de
-      // deuda, no con el precio completo.
-      const cuotaRef = calcularCuotaFinal(Number(jugador.valor_mensualidad || 0), jugador);
+      // obtenerCuotaJugador aplica el % de beca parcial (si tiene) al monto
+      // propio, o a la tarifa referencial de su familia si no tiene
+      // valor_mensualidad cargado (mismo cálculo que Tesorería, nunca el
+      // número de meses mostrado como si fueran pesos).
+      const cuotaReferencialFamilia = cuotaReferencialPorFamilia.get(obtenerFamilyKey(jugador)) || 0;
+      const cuotaRef = obtenerCuotaJugador(jugador, cuotaReferencialFamilia);
       const cuentaApoderado = cuentaPorRut.get(normalizarRutComparacion(jugador.rut_apoderado))
         || cuentaPorCorreo.get(normalizarCorreo(jugador.correo_apoderado));
       const telefonoCuenta = String(cuentaApoderado?.telefono || '').trim();
       const telefono = telefonoCuenta
         ? `${String(cuentaApoderado?.prefijo_tel || '+56').trim()}${telefonoCuenta}`
         : '';
+      // tipo antes se adivinaba desde la rama del jugador (femenino =
+      // "apoderado", el resto "socio-apoderado"), lo que no tenía relación
+      // real con si la cuenta es socia — rompía el filtro "Solo socios".
+      // Se deriva del es_socio real de la cuenta del apoderado.
+      const tipo = cuentaApoderado?.es_socio ? 'socio-apoderado' : 'apoderado';
       morosos.push({
         id: rutJugadorNorm,
         rut: jugador.rut_jugador || rutJugadorNorm,
         nombre: `${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim() || `Jugador ${jugador.rut_jugador || ''}`,
-        tipo: jugador?.rama?.toLowerCase().includes('femen') ? 'apoderado' : 'socio-apoderado',
+        tipo,
+        rama: jugador.rama || '',
+        categoria: jugador.categoria || '',
         mesesDeuda,
-        montoDeuda: cuotaRef > 0 ? (mesesDeuda * cuotaRef) : mesesDeuda,
+        mesesMorosos: mesesMorososNums.map((n) => NOMBRES_MESES[n - 1]),
+        montoDeuda: mesesDeuda * cuotaRef,
         contacto: telefono || jugador.correo_apoderado || 'Sin contacto',
         telefono,
         correo: jugador.correo_apoderado || '',

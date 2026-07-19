@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Camera, Clock, LayoutGrid, List, Search, User, X } from 'lucide-react';
 import { getUTMLastDayPreviousMonth } from '../utils/appHelpers';
-import { calcularCuotaFinal, noDebeMensualidad } from '../utils/beca';
+import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from '../utils/beca';
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
@@ -297,7 +297,6 @@ function PerfilTesoreriaPanel({
     return { id: mesNumero, mes, estado };
   });
 
-  const cantidadPupilos = pupilosActivos.length;
   const now = new Date();
   const fechaCorte = new Date(now.getFullYear(), now.getMonth(), 0);
   const fechaCorteTexto = fechaCorte.toLocaleDateString('es-CL');
@@ -306,50 +305,22 @@ function PerfilTesoreriaPanel({
   const cuotaSocioBase = Number(cuentaActual?.monto_mensual_base || 0);
   const cuotaSocio = Math.round(cuotaSocioBase > 0 ? cuotaSocioBase : (utmActual * 0.3));
 
-  const calcularCuotaDeportistas = () => {
-    if (cantidadPupilos <= 0) return 0;
-
-    // Los becados al 100% y los exentos no aportan nada a la suma; los con
-    // beca parcial sí aportan, pero ya descontada (calcularCuotaFinal).
-    const pupilosConCuota = pupilosActivos.filter((p) => !noDebeMensualidad(p));
-    if (pupilosConCuota.length === 0) return 0;
-
-    const sumaDesdeSheet = pupilosConCuota.reduce((acc, p) => {
-      const monto = Number(p?.valor_mensualidad || 0);
-      const base = Number.isFinite(monto) && monto > 0 ? monto : 0;
-      return acc + calcularCuotaFinal(base, p);
-    }, 0);
-    if (sumaDesdeSheet > 0) return Math.round(sumaDesdeSheet);
-
-    // Excepción acordada/beca: aplica solo a la parte deportistas, nunca a la cuota socio.
-    const cuotaAcordada = Number(cuentaActual?.monto_mensual_override || 0);
-    if (Number.isFinite(cuotaAcordada) && cuotaAcordada > 0) return cuotaAcordada;
-
-    if (esSocioApoderado) {
-      if (cantidadPupilos === 1) return 15000;
-      // Desde 2 pupilos: 12.000 c/u y el 3ro gratis (tope 24.000).
-      return 24000;
-    }
-
-    // Apoderado sin membresía socio: 30.000 (1 pupilo), 25.000 c/u desde 2.
-    if (cantidadPupilos === 1) return 30000;
-    return 25000 * cantidadPupilos;
-  };
-
-  const cuotaDeportistas = calcularCuotaDeportistas();
+  // Excepción acordada/beca: aplica solo a la parte deportistas, nunca a la cuota socio.
+  const montoAcordadoFamilia = Number(cuentaActual?.monto_mensual_override || 0);
+  const { cuotaDeportistas, cuotaReferencial: cuotaDeportistaReferencial } = calcularCuotaDeportistasFamilia({
+    pupilosFamilia: pupilosActivos,
+    esSocioApoderado,
+    montoAcordado: montoAcordadoFamilia,
+  });
   const cuotaSocioAplicada = esSocio ? cuotaSocio : 0;
   const tarifaMensual = cuotaSocioAplicada + cuotaDeportistas;
-  const cuotaDeportistaReferencial = cantidadPupilos > 0 ? Math.round(cuotaDeportistas / cantidadPupilos) : cuotaDeportistas;
   const condicionesPagoPerfil = String(cuentaActual?.condiciones_pago || '').trim();
 
   // Cuota mensual real de UN pupilo: si la ficha trae valor_mensualidad
   // propio (caso normal, viene de la hoja) se usa tal cual; si no, se reparte
   // en partes iguales la tarifa agregada (mismo criterio que "Cuota vigente").
-  const obtenerCuotaMensualPupilo = (pupilo = {}) => {
-    const monto = Number(pupilo?.valor_mensualidad || 0);
-    const base = Number.isFinite(monto) && monto > 0 ? monto : cuotaDeportistaReferencial;
-    return calcularCuotaFinal(base, pupilo);
-  };
+  // Ver obtenerCuotaJugador en utils/beca — mismo cálculo que usa Morosos.
+  const obtenerCuotaMensualPupilo = (pupilo = {}) => obtenerCuotaJugador(pupilo, cuotaDeportistaReferencial);
 
   const tarifaRedondeada = Math.round(tarifaMensual);
   const totalSocioSeleccionado = cuotaSocioAplicada * mesesSocioSeleccionados.length;
