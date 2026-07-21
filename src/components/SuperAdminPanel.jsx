@@ -322,10 +322,17 @@ function SuperAdminPanel({
     });
   };
 
+  // Deportistas (tabla jugadores) y Cuentas (tabla cuentas: apoderados, socios,
+  // staff, admins, y también jugadores con login propio) son dos entidades
+  // distintas que antes vivían mezcladas en una sola lista/filtro — separadas
+  // en dos pestañas para que cada una tenga sus propios filtros relevantes.
+  const [vistaUsuarios, setVistaUsuarios] = useState('deportistas');
   const [filtroUsuariosTexto, setFiltroUsuariosTexto] = useState('');
+  const [filtroCuentasTexto, setFiltroCuentasTexto] = useState('');
   const [filtroTipoPerfil, setFiltroTipoPerfil] = useState('todos');
   const [filtroRamaJugadores, setFiltroRamaJugadores] = useState('todas');
   const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState('todas');
+  const [filtroApoderadoJugadores, setFiltroApoderadoJugadores] = useState('todos');
   const [filtroPupiloManual, setFiltroPupiloManual] = useState('');
   const [busquedaPermisosAjustes, setBusquedaPermisosAjustes] = useState('');
   const [filtroRolPermisosAjustes, setFiltroRolPermisosAjustes] = useState('Todos');
@@ -801,27 +808,139 @@ function SuperAdminPanel({
     return [...cuentas, ...jugadores];
   }, [cuentasAdmin, jugadoresAdmin]);
 
-  const usuariosFiltrados = useMemo(() => {
+  const deportistasFiltrados = useMemo(() => {
     const q = filtroUsuariosTexto.trim().toLowerCase();
-
-    return listadoUsuarios.filter((u) => {
-      if (filtroTipoPerfil !== 'todos' && u.perfil !== filtroTipoPerfil) return false;
-      if (q && !u.busqueda.includes(q)) return false;
-
-      if (filtroTipoPerfil === 'jugador') {
+    return listadoUsuarios
+      .filter((u) => {
+        if (u.tipo !== 'jugador') return false;
+        if (q && !u.busqueda.includes(q)) return false;
         if (filtroRamaJugadores !== 'todas' && u.rama !== filtroRamaJugadores.toLowerCase()) return false;
         if (filtroCategoriaJugadores !== 'todas' && u.categoria !== filtroCategoriaJugadores.toLowerCase()) return false;
-      }
-
-      return true;
-    });
+        const sinApoderado = rutsJugadoresSinApoderado.has(String(u.raw.rut_jugador || ''));
+        if (filtroApoderadoJugadores === 'sin' && !sinApoderado) return false;
+        if (filtroApoderadoJugadores === 'con' && sinApoderado) return false;
+        return true;
+      })
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
   }, [
     listadoUsuarios,
     filtroUsuariosTexto,
-    filtroTipoPerfil,
     filtroRamaJugadores,
     filtroCategoriaJugadores,
+    filtroApoderadoJugadores,
+    rutsJugadoresSinApoderado,
   ]);
+
+  const cuentasUsuariosFiltradas = useMemo(() => {
+    const q = filtroCuentasTexto.trim().toLowerCase();
+    return listadoUsuarios.filter((u) => {
+      if (u.tipo !== 'cuenta') return false;
+      if (filtroTipoPerfil !== 'todos' && u.perfil !== filtroTipoPerfil) return false;
+      if (q && !u.busqueda.includes(q)) return false;
+      return true;
+    });
+  }, [listadoUsuarios, filtroCuentasTexto, filtroTipoPerfil]);
+
+  // Tarjeta compartida por Deportistas y Cuentas — misma estructura, evita
+  // duplicar ~90 líneas de JSX entre las dos pestañas.
+  const renderTarjetaUsuario = (u) => {
+    const esIncompleta = u.tipo === 'jugador'
+      ? rutsJugadoresIncompletos.has(String(u.raw.rut_jugador || ''))
+      : idsCuentasIncompletas.has(String(u.raw.id));
+    const sinApoderado = u.tipo === 'jugador' && rutsJugadoresSinApoderado.has(String(u.raw.rut_jugador || ''));
+    const mostrandoAsignar = asignandoApoderadoRut === u.raw.rut_jugador;
+
+    return (
+      <div
+        key={u.id}
+        className="card"
+        style={{
+          marginBottom: '10px',
+          borderLeft: `4px solid ${sinApoderado ? 'var(--rojo-alerta)' : (u.tipo === 'jugador' ? 'var(--azul-electrico)' : '#FF9500')}`,
+          borderRadius: '22px',
+          background: sinApoderado ? 'rgba(255,59,48,0.05)' : undefined,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <strong style={{ fontSize: '14px' }}>{u.nombre}</strong>
+              <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', color: esIncompleta ? '#b36200' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
+                {esIncompleta ? 'Incompleta' : 'Completa'}
+              </span>
+              {sinApoderado && (
+                <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', color: '#b00020', background: 'rgba(255,59,48,0.12)' }}>
+                  Sin apoderado
+                </span>
+              )}
+            </div>
+            <div className="text-caption">
+              {u.tipo === 'jugador'
+                ? `${u.raw.rut_jugador || '-'} · ${u.raw.rama || 'Sin rama'} · ${u.raw.categoria || 'Sin categoría'}`
+                : `${u.raw.correo || '-'} · ${u.raw.rut || '-'} · ${(u.raw.rol || 'sin rol').toUpperCase()}`}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {sinApoderado && (
+              <button
+                className="btn-secondary"
+                style={{ width: 'auto' }}
+                onClick={() => {
+                  setAsignandoApoderadoRut(mostrandoAsignar ? null : u.raw.rut_jugador);
+                  setCorreoApoderadoParaAsignar('');
+                }}
+              >
+                {mostrandoAsignar ? 'Cancelar' : 'Asignar apoderado'}
+              </button>
+            )}
+            <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
+              Modificar
+            </button>
+            {esSuperAdmin && (
+              <button
+                className="btn-secondary"
+                style={{
+                  width: 'auto',
+                  background: 'rgba(255,59,48,0.12)',
+                  borderColor: 'rgba(255,59,48,0.36)',
+                  color: '#b00020',
+                  fontWeight: '800',
+                }}
+                onClick={() => eliminarUsuarioDefinitivo(u)}
+                disabled={eliminandoUsuarioId === u.id}
+              >
+                {eliminandoUsuarioId === u.id ? 'Borrando...' : 'Borrar definitivo'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {mostrandoAsignar && (
+          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--borde-suave)', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <select
+              className="form-input"
+              style={{ flex: '1 1 240px' }}
+              value={correoApoderadoParaAsignar}
+              onChange={(e) => setCorreoApoderadoParaAsignar(e.target.value)}
+            >
+              <option value="">Selecciona un apoderado/socio...</option>
+              {cuentasApoderadoParaAsignar.map((c) => (
+                <option key={c.correo} value={c.correo}>{c.nombre} · {c.correo}</option>
+              ))}
+            </select>
+            <button
+              className="btn-electric"
+              style={{ width: 'auto' }}
+              disabled={!correoApoderadoParaAsignar || guardandoAsignacionApoderado}
+              onClick={() => asignarApoderadoAJugador(u.raw)}
+            >
+              {guardandoAsignacionApoderado ? 'Guardando...' : 'Confirmar asignación'}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const cuentaPupilosActiva = cuentaAdminEdit || null;
 
@@ -2315,166 +2434,124 @@ function SuperAdminPanel({
         <div className="fade-in">
           <h3 className="section-title">Gestión de Usuarios y Cuentas</h3>
           <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
-            Esta es la vista unificada de trabajo. Aquí se gestionan cuentas, usuarios relacionados y jugadores sin volver al flujo antiguo separado.
+            Deportistas (ficha deportiva) y Cuentas (login de apoderados, socios, staff y admins) viven en tablas distintas — separadas acá para no mezclar sus filtros y datos.
           </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-            <div className="admin-stat-pill verde"><span>Completas</span><h2>{listadoUsuarios.length - (cuentasIncompletas.length + jugadoresIncompletos.length)}</h2></div>
-            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#b36200' }}>{cuentasIncompletas.length + jugadoresIncompletos.length}</h2></div>
-            <div className="admin-stat-pill rojo"><span>Jugadores sin apoderado</span><h2>{jugadoresSinApoderado.length}</h2></div>
+          <div className="segment-control" style={{ gap: '6px', marginBottom: '15px' }}>
+            <button type="button" className={`segment-btn ${vistaUsuarios === 'deportistas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('deportistas')}>
+              <Users size={14} /> Deportistas ({jugadoresAdmin.length})
+            </button>
+            <button type="button" className={`segment-btn ${vistaUsuarios === 'cuentas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('cuentas')}>
+              <User size={14} /> Cuentas ({cuentasAdmin.length})
+            </button>
           </div>
 
-          <div className="card">
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Buscar</label>
-                <div style={{ position: 'relative' }}>
-                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-                  <input
-                    className="form-input"
-                    style={{ paddingLeft: '32px' }}
-                    placeholder="Nombre, correo, RUT, rol o categoría"
-                    value={filtroUsuariosTexto}
-                    onChange={(e) => setFiltroUsuariosTexto(e.target.value)}
-                  />
-                </div>
+          {vistaUsuarios === 'deportistas' ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                <div className="admin-stat-pill verde"><span>Completos</span><h2>{jugadoresAdmin.length - jugadoresIncompletos.length}</h2></div>
+                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletos</span><h2 style={{ color: '#b36200' }}>{jugadoresIncompletos.length}</h2></div>
+                <div className="admin-stat-pill rojo"><span>Sin apoderado</span><h2>{jugadoresSinApoderado.length}</h2></div>
               </div>
 
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Tipo de perfil</label>
-                <select className="form-input" value={filtroTipoPerfil} onChange={(e) => setFiltroTipoPerfil(e.target.value)}>
-                  <option value="todos">Todos</option>
-                  <option value="jugador">Deportista / Jugador</option>
-                  <option value="apoderado">Apoderado</option>
-                    <option value="socio">Socio</option>
-                    <option value="socio_apoderado">Socio / Apoderado</option>
-                    <option value="directiva">Directiva</option>
-                  <option value="staff">Staff</option>
-                  <option value="admin">Admin</option>
-                  <option value="super_admin">Super Admin</option>
-                </select>
-              </div>
-            </div>
-
-            {filtroTipoPerfil === 'jugador' && (
-              <div className="grid-auto-220" style={{ marginTop: '8px' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Rama</label>
-                  <select className="form-input" value={filtroRamaJugadores} onChange={(e) => setFiltroRamaJugadores(e.target.value)}>
-                    <option value="todas">Todas</option>
-                    <option value="masculina">Masculina</option>
-                    <option value="femenina">Femenina</option>
-                    <option value="mixta">Mixta</option>
-                  </select>
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Categoría</label>
-                  <select className="form-input" value={filtroCategoriaJugadores} onChange={(e) => setFiltroCategoriaJugadores(e.target.value)}>
-                    <option value="todas">Todas</option>
-                    {categoriasUnicas.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginTop: '12px', maxHeight: '320px', overflowY: 'auto' }}>
-              {usuariosFiltrados.length === 0 && (
-                <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay resultados con los filtros actuales.</p>
-              )}
-
-              {usuariosFiltrados.map((u) => {
-                const esIncompleta = u.tipo === 'jugador'
-                  ? rutsJugadoresIncompletos.has(String(u.raw.rut_jugador || ''))
-                  : idsCuentasIncompletas.has(String(u.raw.id));
-                const sinApoderado = u.tipo === 'jugador' && rutsJugadoresSinApoderado.has(String(u.raw.rut_jugador || ''));
-                const mostrandoAsignar = asignandoApoderadoRut === u.raw.rut_jugador;
-
-                return (
-                  <div key={u.id} className="card" style={{ marginBottom: '10px', borderLeft: `4px solid ${u.tipo === 'jugador' ? 'var(--azul-electrico)' : '#FF9500'}`, borderRadius: '22px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <strong style={{ fontSize: '14px' }}>{u.nombre}</strong>
-                          <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', color: esIncompleta ? '#b36200' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
-                            {esIncompleta ? 'Incompleta' : 'Completa'}
-                          </span>
-                          {sinApoderado && (
-                            <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', color: '#b00020', background: 'rgba(255,59,48,0.12)' }}>
-                              Sin apoderado
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-caption">
-                          {u.tipo === 'jugador'
-                            ? `${u.raw.rut_jugador || '-'} · ${u.raw.rama || 'Sin rama'} · ${u.raw.categoria || 'Sin categoría'}`
-                            : `${u.raw.correo || '-'} · ${u.raw.rut || '-'} · ${(u.raw.rol || 'sin rol').toUpperCase()}`}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        {sinApoderado && (
-                          <button
-                            className="btn-secondary"
-                            style={{ width: 'auto' }}
-                            onClick={() => {
-                              setAsignandoApoderadoRut(mostrandoAsignar ? null : u.raw.rut_jugador);
-                              setCorreoApoderadoParaAsignar('');
-                            }}
-                          >
-                            {mostrandoAsignar ? 'Cancelar' : 'Asignar apoderado'}
-                          </button>
-                        )}
-                        <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
-                          Modificar
-                        </button>
-                        {esSuperAdmin && (
-                          <button
-                            className="btn-secondary"
-                            style={{
-                              width: 'auto',
-                              background: 'rgba(255,59,48,0.12)',
-                              borderColor: 'rgba(255,59,48,0.36)',
-                              color: '#b00020',
-                              fontWeight: '800',
-                            }}
-                            onClick={() => eliminarUsuarioDefinitivo(u)}
-                            disabled={eliminandoUsuarioId === u.id}
-                          >
-                            {eliminandoUsuarioId === u.id ? 'Borrando...' : 'Borrar definitivo'}
-                          </button>
-                        )}
-                      </div>
+              <div className="card">
+                <div className="grid-auto-220">
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Buscar</label>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+                      <input
+                        className="form-input"
+                        style={{ paddingLeft: '32px' }}
+                        placeholder="Nombre, RUT, rama o categoría"
+                        value={filtroUsuariosTexto}
+                        onChange={(e) => setFiltroUsuariosTexto(e.target.value)}
+                      />
                     </div>
-
-                    {mostrandoAsignar && (
-                      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--borde-suave)', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <select
-                          className="form-input"
-                          style={{ flex: '1 1 240px' }}
-                          value={correoApoderadoParaAsignar}
-                          onChange={(e) => setCorreoApoderadoParaAsignar(e.target.value)}
-                        >
-                          <option value="">Selecciona un apoderado/socio...</option>
-                          {cuentasApoderadoParaAsignar.map((c) => (
-                            <option key={c.correo} value={c.correo}>{c.nombre} · {c.correo}</option>
-                          ))}
-                        </select>
-                        <button
-                          className="btn-electric"
-                          style={{ width: 'auto' }}
-                          disabled={!correoApoderadoParaAsignar || guardandoAsignacionApoderado}
-                          onClick={() => asignarApoderadoAJugador(u.raw)}
-                        >
-                          {guardandoAsignacionApoderado ? 'Guardando...' : 'Confirmar asignación'}
-                        </button>
-                      </div>
-                    )}
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Rama</label>
+                    <select className="form-input" value={filtroRamaJugadores} onChange={(e) => setFiltroRamaJugadores(e.target.value)}>
+                      <option value="todas">Todas</option>
+                      <option value="masculina">Masculina</option>
+                      <option value="femenina">Femenina</option>
+                      <option value="mixta">Mixta</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Categoría</label>
+                    <select className="form-input" value={filtroCategoriaJugadores} onChange={(e) => setFiltroCategoriaJugadores(e.target.value)}>
+                      <option value="todas">Todas</option>
+                      {categoriasUnicas.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="filter-chips" style={{ marginTop: '10px' }}>
+                  <button className={`filter-chip ${filtroApoderadoJugadores === 'todos' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('todos')}>Todos ({jugadoresAdmin.length})</button>
+                  <button className={`filter-chip ${filtroApoderadoJugadores === 'sin' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('sin')}>Sin apoderado ({jugadoresSinApoderado.length})</button>
+                  <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdmin.length - jugadoresSinApoderado.length})</button>
+                </div>
+
+                <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
+                  {deportistasFiltrados.length === 0 && (
+                    <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay deportistas con los filtros actuales.</p>
+                  )}
+                  {deportistasFiltrados.map(renderTarjetaUsuario)}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                <div className="admin-stat-pill verde"><span>Completas</span><h2>{cuentasAdmin.length - cuentasIncompletas.length}</h2></div>
+                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#b36200' }}>{cuentasIncompletas.length}</h2></div>
+                <div className="admin-stat-pill azul"><span>Total</span><h2>{cuentasAdmin.length}</h2></div>
+              </div>
+
+              <div className="card">
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Buscar</label>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+                      <input
+                        className="form-input"
+                        style={{ paddingLeft: '32px' }}
+                        placeholder="Nombre, correo, RUT o rol"
+                        value={filtroCuentasTexto}
+                        onChange={(e) => setFiltroCuentasTexto(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Tipo de perfil</label>
+                    <select className="form-input" value={filtroTipoPerfil} onChange={(e) => setFiltroTipoPerfil(e.target.value)}>
+                      <option value="todos">Todos</option>
+                      <option value="apoderado">Apoderado</option>
+                      <option value="socio">Socio</option>
+                      <option value="socio_apoderado">Socio / Apoderado</option>
+                      <option value="directiva">Directiva</option>
+                      <option value="staff">Staff</option>
+                      <option value="admin">Admin</option>
+                      <option value="super_admin">Super Admin</option>
+                      <option value="jugador">Deportista con login propio</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
+                  {cuentasUsuariosFiltradas.length === 0 && (
+                    <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay cuentas con los filtros actuales.</p>
+                  )}
+                  {cuentasUsuariosFiltradas.map(renderTarjetaUsuario)}
+                </div>
+              </div>
+            </>
+          )}
 
           {editandoTipo === 'cuenta' && cuentaAdminEdit && (
             <div ref={edicionCuentaRef} className="card" style={{ borderRadius: '24px' }}>
