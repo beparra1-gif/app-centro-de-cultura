@@ -21,6 +21,7 @@ const MODULOS_ACCESO = [
   { id: 'validacion_pagos', etiqueta: 'Validación Pagos', categoria: 'Gestión', descripcion: 'Revisión y validación de mensualidades.' },
   { id: 'inventario', etiqueta: 'Inventario', categoria: 'Operación', descripcion: 'Stock y productos del kiosco.' },
   { id: 'cancha_arriendo', etiqueta: 'Arriendo de Cancha', categoria: 'Operación', descripcion: 'Calendario, cobros y análisis de arriendo de la cancha.' },
+  { id: 'horarios_entrenamiento', etiqueta: 'Horarios de Entrenamiento', categoria: 'Operación', descripcion: 'Horario semanal recurrente por categoría y sus excepciones puntuales.' },
   { id: 'torneos', etiqueta: 'Torneos', categoria: 'Operación', descripcion: 'Creación de torneos, equipos, partidos y tabla de posiciones.' },
   { id: 'mesa_publica', etiqueta: 'Vista Pública', categoria: 'Público', descripcion: 'Resultados y contenidos públicos.' },
 ];
@@ -36,7 +37,7 @@ const ROLES_BASE = {
   directiva: ['comunicaciones', 'academia', 'perfil', 'jugador'],
   staff: ['comunicaciones', 'academia', 'asistencia_staff', 'evaluacion_staff', 'citaciones', 'resultados'],
   mesa: ['scoreboard_live'],
-  admin: ['comunicaciones', 'perfil', 'kiosco', 'admin_dashboard', 'citaciones', 'resultados', 'auditoria', 'reportes', 'validacion_pagos', 'inventario', 'salud', 'invitados', 'cancha_arriendo', 'torneos'],
+  admin: ['comunicaciones', 'perfil', 'kiosco', 'admin_dashboard', 'citaciones', 'resultados', 'auditoria', 'reportes', 'validacion_pagos', 'inventario', 'salud', 'invitados', 'cancha_arriendo', 'torneos', 'horarios_entrenamiento'],
   super_admin: MODULOS_ACCESO.map((modulo) => modulo.id),
   superadmin: MODULOS_ACCESO.map((modulo) => modulo.id),
 };

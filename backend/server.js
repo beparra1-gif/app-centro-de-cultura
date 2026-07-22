@@ -533,6 +533,7 @@ const RESOURCE_TABLE_MAP = {
   disciplina: 'disciplina',
   entrenamientos: 'entrenamientos',
   'arriendos-cancha': 'arriendos_cancha',
+  'horarios-entrenamiento': 'horarios_entrenamiento',
 };
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -1958,6 +1959,53 @@ const ensureArriendosCanchaTable = async () => {
     )
   `);
   console.log('📅 Tabla arriendos_cancha verificada');
+};
+
+// Horario recurrente de entrenamientos: una fila = una franja semanal fija
+// (rama + categoría + día de semana + hora) que se repite indefinidamente.
+// No es la tabla vieja "entrenamientos" (esa es puntual, una fila por sesión
+// con fecha exacta, y quedó huérfana — no se toca ni se reutiliza).
+const ensureHorariosEntrenamientoTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS horarios_entrenamiento (
+      id_horario SERIAL PRIMARY KEY,
+      rama VARCHAR(50) NOT NULL,
+      categoria VARCHAR(50) NOT NULL,
+      dia_semana SMALLINT NOT NULL,
+      hora_inicio TIME NOT NULL,
+      hora_fin TIME NOT NULL,
+      lugar VARCHAR(255),
+      entrenador_a_cargo VARCHAR(255),
+      activo BOOLEAN NOT NULL DEFAULT true,
+      registrado_por VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('🗓️ Tabla horarios_entrenamiento verificada');
+};
+
+// Excepción puntual a un horario base, para UNA fecha específica: cancelar
+// esa sesión (tipo='cancelado') o reprogramarla (tipo='reprogramado', con
+// override de hora/lugar solo esa fecha — el horario base no cambia).
+const ensureHorariosEntrenamientoExcepcionesTable = async () => {
+  await ensureHorariosEntrenamientoTable();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS horarios_entrenamiento_excepciones (
+      id_excepcion SERIAL PRIMARY KEY,
+      id_horario INT NOT NULL REFERENCES horarios_entrenamiento(id_horario) ON DELETE CASCADE,
+      fecha DATE NOT NULL,
+      tipo VARCHAR(20) NOT NULL DEFAULT 'cancelado',
+      hora_inicio_nueva TIME,
+      hora_fin_nueva TIME,
+      lugar_nuevo VARCHAR(255),
+      motivo TEXT,
+      registrado_por VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(id_horario, fecha)
+    )
+  `);
+  console.log('🚫 Tabla horarios_entrenamiento_excepciones verificada');
 };
 
 // Citaciones: el flujo vivía 100% en memoria del navegador (nominaCita en
@@ -7819,68 +7867,42 @@ app.post('/api/arriendos-cancha', authenticate, requireModule('cancha_arriendo')
   }
 });
 
-// Genera N filas concretas en vez de un motor de recurrencia — más simple y
-// suficiente para diaria/semanal/mensual. Si alguna fecha choca con una
-// reserva existente, se omite (no revienta la serie completa) y se informa
-// en "omitidos" para que el frontend le avise al usuario cuáles quedaron
-// fuera.
-app.post('/api/arriendos-cancha/serie', authenticate, requireModule('cancha_arriendo'), async (req, res) => {
+// Recibe una lista explícita de fechas (elegidas a mano una por una, o
+// generadas por el frontend con un patrón diaria/semanal/mensual, o una
+// mezcla de ambas) — el backend ya no necesita saber cómo se armó la lista,
+// solo insertar lo que no choque. Reemplaza el viejo endpoint /serie
+// (que solo aceptaba un patrón fijo) para que "reserva única" y "varias
+// fechas" sean el mismo flujo del lado del formulario.
+app.post('/api/arriendos-cancha/lote', authenticate, requireModule('cancha_arriendo'), async (req, res) => {
   const {
     nombre_arrendatario, telefono_contacto, email_contacto,
-    tipo_serie, fecha_inicio, fecha_fin, hora_inicio, hora_fin,
+    fechas, hora_inicio, hora_fin,
     valor_arriendo, estado_pago, metodo_pago, observaciones, registrado_por,
   } = req.body;
 
   if (!String(nombre_arrendatario || '').trim()) {
     return res.status(400).json({ error: 'Falta el nombre de quien arrienda.' });
   }
-  if (!['diaria', 'semanal', 'mensual'].includes(tipo_serie)) {
-    return res.status(400).json({ error: 'Tipo de serie inválido (usa diaria, semanal o mensual).' });
+  if (!Array.isArray(fechas) || fechas.length === 0) {
+    return res.status(400).json({ error: 'Elige al menos una fecha.' });
   }
-  if (!fecha_inicio || !fecha_fin || !hora_inicio || !hora_fin) {
-    return res.status(400).json({ error: 'Falta fecha de inicio, fecha de término, hora de inicio u hora de término.' });
+  if (fechas.length > 366) {
+    return res.status(400).json({ error: 'Elige como máximo 366 fechas por reserva.' });
+  }
+  if (!hora_inicio || !hora_fin) {
+    return res.status(400).json({ error: 'Falta hora de inicio u hora de término.' });
   }
   if (hora_fin <= hora_inicio) {
     return res.status(400).json({ error: 'La hora de término debe ser posterior a la hora de inicio.' });
   }
 
   try {
-    const inicio = new Date(`${fecha_inicio}T00:00:00`);
-    const fin = new Date(`${fecha_fin}T00:00:00`);
-    if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime()) || fin < inicio) {
-      return res.status(400).json({ error: 'Rango de fechas inválido.' });
-    }
-
-    const fechas = [];
-    if (tipo_serie === 'diaria') {
-      for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
-        fechas.push(new Date(d));
-      }
-    } else if (tipo_serie === 'semanal') {
-      for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 7)) {
-        fechas.push(new Date(d));
-      }
-    } else {
-      const diaMes = inicio.getDate();
-      for (let d = new Date(inicio); d <= fin; d.setMonth(d.getMonth() + 1)) {
-        const candidato = new Date(d.getFullYear(), d.getMonth(), diaMes);
-        if (candidato.getMonth() === d.getMonth() && candidato <= fin) fechas.push(candidato);
-      }
-    }
-
-    if (fechas.length === 0) {
-      return res.status(400).json({ error: 'El rango no generó ninguna fecha de arriendo.' });
-    }
-    if (fechas.length > 366) {
-      return res.status(400).json({ error: 'La serie generaría más de 366 fechas — acorta el rango.' });
-    }
-
-    const serieId = crypto.randomUUID();
+    const fechasUnicas = [...new Set(fechas)].sort();
+    const serieId = fechasUnicas.length > 1 ? crypto.randomUUID() : null;
     const creados = [];
     const omitidos = [];
 
-    for (const fechaObj of fechas) {
-      const fechaStr = fechaObj.toISOString().slice(0, 10);
+    for (const fechaStr of fechasUnicas) {
       const choque = await buscarChoqueArriendoCancha(fechaStr, hora_inicio, hora_fin);
       if (choque) {
         omitidos.push({ fecha: fechaStr, motivo: `Choca con ${choque.nombre_arrendatario} (${choque.hora_inicio}-${choque.hora_fin})` });
@@ -7897,7 +7919,7 @@ app.post('/api/arriendos-cancha/serie', authenticate, requireModule('cancha_arri
           nombre_arrendatario.trim(), telefono_contacto || null, email_contacto || null,
           fechaStr, hora_inicio, hora_fin, valor_arriendo || 0,
           estado_pago || 'pendiente', metodo_pago || null, observaciones || null,
-          serieId, tipo_serie, registrado_por || null,
+          serieId, serieId ? 'manual' : null, registrado_por || null,
         ]
       );
       creados.push(result.rows[0]);
@@ -7905,7 +7927,7 @@ app.post('/api/arriendos-cancha/serie', authenticate, requireModule('cancha_arri
 
     res.status(201).json({ serieId, creados, omitidos });
   } catch (err) {
-    console.error('[POST /api/arriendos-cancha/serie]', err);
+    console.error('[POST /api/arriendos-cancha/lote]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -7982,6 +8004,238 @@ app.delete('/api/arriendos-cancha/serie/:serieId', authenticate, requireModule('
     res.json({ ok: true, borrados: result.rows.length });
   } catch (err) {
     console.error('[DELETE /api/arriendos-cancha/serie/:serieId]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 37. ENDPOINTS: HORARIOS DE ENTRENAMIENTO
+// ==========================================
+
+app.get('/api/horarios-entrenamiento', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
+  try {
+    const incluirInactivos = String(req.query.incluirInactivos || '').toLowerCase() === 'true';
+    const where = incluirInactivos ? '' : 'WHERE activo = true';
+    const result = await pool.query(
+      `SELECT * FROM horarios_entrenamiento ${where} ORDER BY rama, categoria, dia_semana, hora_inicio`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[GET /api/horarios-entrenamiento]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Pública (sin exigir el módulo de gestión): lista cruda de horarios activos
+// para el widget del Muro, que necesita el horario base agrupado por
+// categoría ("Lunes y Miércoles 18:00"), no fechas concretas expandidas.
+app.get('/api/horarios-entrenamiento/publico', authenticateOpcional, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id_horario, rama, categoria, dia_semana, hora_inicio, hora_fin, lugar, entrenador_a_cargo
+       FROM horarios_entrenamiento WHERE activo = true
+       ORDER BY rama, categoria, dia_semana, hora_inicio`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[GET /api/horarios-entrenamiento/publico]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Expande el horario recurrente + excepciones en instancias concretas dentro
+// de un rango de fechas — pública porque la usa tanto el calendario de
+// gestión (con módulo) como la grilla de Arriendo de Cancha (que solo
+// necesita cancha_arriendo, no horarios_entrenamiento) para mostrar ambas
+// capas juntas.
+app.get('/api/horarios-entrenamiento/instancias', authenticateOpcional, async (req, res) => {
+  const { desde, hasta } = req.query;
+  if (!desde || !hasta) {
+    return res.status(400).json({ error: 'Falta desde/hasta.' });
+  }
+  try {
+    const horarios = (await pool.query(`SELECT * FROM horarios_entrenamiento WHERE activo = true`)).rows;
+    const excepciones = (await pool.query(
+      `SELECT * FROM horarios_entrenamiento_excepciones WHERE fecha BETWEEN $1 AND $2`,
+      [desde, hasta]
+    )).rows;
+    const excepcionesPorHorarioFecha = new Map(
+      excepciones.map((e) => [`${e.id_horario}_${e.fecha.toISOString().slice(0, 10)}`, e])
+    );
+
+    const instancias = [];
+    const inicio = new Date(`${desde}T00:00:00`);
+    const fin = new Date(`${hasta}T00:00:00`);
+    for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
+      const fechaStr = d.toISOString().slice(0, 10);
+      const diaSemana = d.getDay();
+      horarios
+        .filter((h) => h.dia_semana === diaSemana)
+        .forEach((h) => {
+          const excepcion = excepcionesPorHorarioFecha.get(`${h.id_horario}_${fechaStr}`);
+          if (excepcion?.tipo === 'cancelado') return;
+          instancias.push({
+            id_horario: h.id_horario,
+            fecha: fechaStr,
+            rama: h.rama,
+            categoria: h.categoria,
+            hora_inicio: excepcion?.hora_inicio_nueva || h.hora_inicio,
+            hora_fin: excepcion?.hora_fin_nueva || h.hora_fin,
+            lugar: excepcion?.lugar_nuevo || h.lugar,
+            entrenador_a_cargo: h.entrenador_a_cargo,
+            es_reprogramado: excepcion?.tipo === 'reprogramado',
+          });
+        });
+    }
+    res.json(instancias);
+  } catch (err) {
+    console.error('[GET /api/horarios-entrenamiento/instancias]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/horarios-entrenamiento', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
+  const { rama, categoria, dia_semana, hora_inicio, hora_fin, lugar, entrenador_a_cargo, registrado_por } = req.body;
+
+  if (!String(rama || '').trim() || !String(categoria || '').trim()) {
+    return res.status(400).json({ error: 'Falta rama o categoría.' });
+  }
+  const diaSemanaNum = Number(dia_semana);
+  if (!Number.isInteger(diaSemanaNum) || diaSemanaNum < 0 || diaSemanaNum > 6) {
+    return res.status(400).json({ error: 'Día de semana inválido (usa 0=domingo a 6=sábado).' });
+  }
+  if (!hora_inicio || !hora_fin) {
+    return res.status(400).json({ error: 'Falta hora de inicio u hora de término.' });
+  }
+  if (hora_fin <= hora_inicio) {
+    return res.status(400).json({ error: 'La hora de término debe ser posterior a la hora de inicio.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO horarios_entrenamiento (rama, categoria, dia_semana, hora_inicio, hora_fin, lugar, entrenador_a_cargo, registrado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [rama.trim(), categoria.trim(), diaSemanaNum, hora_inicio, hora_fin, lugar || null, entrenador_a_cargo || null, registrado_por || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[POST /api/horarios-entrenamiento]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/horarios-entrenamiento/:id', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
+  const { rama, categoria, dia_semana, hora_inicio, hora_fin, lugar, entrenador_a_cargo, activo } = req.body;
+
+  if (hora_inicio && hora_fin && hora_fin <= hora_inicio) {
+    return res.status(400).json({ error: 'La hora de término debe ser posterior a la hora de inicio.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE horarios_entrenamiento SET
+        rama = COALESCE($1, rama),
+        categoria = COALESCE($2, categoria),
+        dia_semana = COALESCE($3, dia_semana),
+        hora_inicio = COALESCE($4, hora_inicio),
+        hora_fin = COALESCE($5, hora_fin),
+        lugar = COALESCE($6, lugar),
+        entrenador_a_cargo = COALESCE($7, entrenador_a_cargo),
+        activo = COALESCE($8, activo),
+        updated_at = NOW()
+       WHERE id_horario = $9
+       RETURNING *`,
+      [
+        rama || null, categoria || null,
+        dia_semana === undefined || dia_semana === null || dia_semana === '' ? null : Number(dia_semana),
+        hora_inicio || null, hora_fin || null, lugar || null, entrenador_a_cargo || null,
+        activo === undefined ? null : Boolean(activo),
+        req.params.id,
+      ]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Horario no encontrado.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[PUT /api/horarios-entrenamiento/:id]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/horarios-entrenamiento/:id', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
+  try {
+    const result = await pool.query(`DELETE FROM horarios_entrenamiento WHERE id_horario = $1 RETURNING id_horario`, [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Horario no encontrado.' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/horarios-entrenamiento/:id]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/horarios-entrenamiento/:id/excepciones', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM horarios_entrenamiento_excepciones WHERE id_horario = $1 ORDER BY fecha ASC`,
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[GET /api/horarios-entrenamiento/:id/excepciones]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/horarios-entrenamiento/:id/excepciones', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
+  const { fecha, tipo, hora_inicio_nueva, hora_fin_nueva, lugar_nuevo, motivo, registrado_por } = req.body;
+  const tipoFinal = tipo === 'reprogramado' ? 'reprogramado' : 'cancelado';
+
+  if (!fecha) {
+    return res.status(400).json({ error: 'Falta la fecha de la excepción.' });
+  }
+  if (tipoFinal === 'reprogramado' && (!hora_inicio_nueva || !hora_fin_nueva)) {
+    return res.status(400).json({ error: 'Para reprogramar, indica la nueva hora de inicio y término.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO horarios_entrenamiento_excepciones
+       (id_horario, fecha, tipo, hora_inicio_nueva, hora_fin_nueva, lugar_nuevo, motivo, registrado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (id_horario, fecha) DO UPDATE SET
+         tipo = EXCLUDED.tipo,
+         hora_inicio_nueva = EXCLUDED.hora_inicio_nueva,
+         hora_fin_nueva = EXCLUDED.hora_fin_nueva,
+         lugar_nuevo = EXCLUDED.lugar_nuevo,
+         motivo = EXCLUDED.motivo
+       RETURNING *`,
+      [
+        req.params.id, fecha, tipoFinal,
+        tipoFinal === 'reprogramado' ? hora_inicio_nueva : null,
+        tipoFinal === 'reprogramado' ? hora_fin_nueva : null,
+        lugar_nuevo || null, motivo || null, registrado_por || null,
+      ]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[POST /api/horarios-entrenamiento/:id/excepciones]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/horarios-entrenamiento-excepciones/:id', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
+  try {
+    const result = await pool.query(`DELETE FROM horarios_entrenamiento_excepciones WHERE id_excepcion = $1 RETURNING id_excepcion`, [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Excepción no encontrada.' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/horarios-entrenamiento-excepciones/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -8105,6 +8359,14 @@ app.listen(PORT, () => {
 
   ensureArriendosCanchaTable().catch((error) => {
     console.error('❌ Error verificando tabla arriendos_cancha:', error.message);
+  });
+
+  ensureHorariosEntrenamientoTable().catch((error) => {
+    console.error('❌ Error verificando tabla horarios_entrenamiento:', error.message);
+  });
+
+  ensureHorariosEntrenamientoExcepcionesTable().catch((error) => {
+    console.error('❌ Error verificando tabla horarios_entrenamiento_excepciones:', error.message);
   });
 
   ensureCitacionesTables().catch((error) => {

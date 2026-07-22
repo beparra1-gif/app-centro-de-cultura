@@ -5,6 +5,7 @@ import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
+import MuroHorarioEntrenamientos from './MuroHorarioEntrenamientos';
 import { calcularResumenCitacion, puedeJugadorResponderPropiaCitacion } from '../utils/citaciones';
 import { esUrlImagen, esUrlYoutube, esUrlVimeo, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
 
@@ -465,6 +466,8 @@ function ComunicacionesPanel({
       )}
 
       {mostrarFormComunicaciones && formularioComunicaciones}
+
+      <MuroHorarioEntrenamientos />
 
       <div className="scroll-horizontal-menu mb-20">
         <div className="segment-control">

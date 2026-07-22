@@ -1613,8 +1613,8 @@ export const arriendosCanchaAPI = {
     });
     return handleResponse(response);
   },
-  createSerie: async (datos) => {
-    const response = await apiFetch(`${API_BASE_URL}/arriendos-cancha/serie`, {
+  createLote: async (datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/arriendos-cancha/lote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(datos)
@@ -1636,5 +1636,58 @@ export const arriendosCanchaAPI = {
   removeSerie: async (serieId) => {
     const response = await apiFetch(`${API_BASE_URL}/arriendos-cancha/serie/${serieId}`, { method: 'DELETE' });
     return handleResponse(response);
+  },
+};
+
+export const horariosEntrenamientoAPI = {
+  getAll: async (filtros = {}) => {
+    const response = await apiFetch(`${API_BASE_URL}/horarios-entrenamiento${buildQuery(filtros)}`);
+    return handleResponse(response);
+  },
+  getPublico: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/horarios-entrenamiento/publico`);
+    return handleResponse(response);
+  },
+  getInstancias: async (filtros = {}) => {
+    const response = await apiFetch(`${API_BASE_URL}/horarios-entrenamiento/instancias${buildQuery(filtros)}`);
+    return handleResponse(response);
+  },
+  create: async (datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/horarios-entrenamiento`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+  update: async (id, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/horarios-entrenamiento/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+  remove: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/horarios-entrenamiento/${id}`, { method: 'DELETE' });
+    return handleResponse(response);
+  },
+  excepciones: {
+    getAll: async (idHorario) => {
+      const response = await apiFetch(`${API_BASE_URL}/horarios-entrenamiento/${idHorario}/excepciones`);
+      return handleResponse(response);
+    },
+    create: async (idHorario, datos) => {
+      const response = await apiFetch(`${API_BASE_URL}/horarios-entrenamiento/${idHorario}/excepciones`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      return handleResponse(response);
+    },
+    remove: async (idExcepcion) => {
+      const response = await apiFetch(`${API_BASE_URL}/horarios-entrenamiento-excepciones/${idExcepcion}`, { method: 'DELETE' });
+      return handleResponse(response);
+    },
   },
 };

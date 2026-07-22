@@ -8,7 +8,7 @@ import {
   FileText, Flag, QrCode, Lock, Camera, ChevronRight, ChevronLeft, 
   ShieldAlert, Zap, Clock, FileDown, RefreshCw,
   History, CheckSquare,
-  XSquare, UserPlus, ListOrdered, CalendarClock
+  XSquare, UserPlus, ListOrdered, CalendarClock, CalendarDays
 } from 'lucide-react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
@@ -37,6 +37,7 @@ import {
 const ComunicacionesPanel = lazy(() => import('./components/ComunicacionesPanel'));
 const KioscoPanel = lazy(() => import('./components/KioscoPanel'));
 const CanchaArriendoPanel = lazy(() => import('./components/CanchaArriendoPanel'));
+const HorariosEntrenamientoPanel = lazy(() => import('./components/HorariosEntrenamientoPanel'));
 const SuperAdminPanel = lazy(() => import('./components/SuperAdminPanel'));
 const MesaControlPanel = lazy(() => import('./components/MesaControlPanel'));
 const TorneosPanel = lazy(() => import('./components/TorneosPanel'));
@@ -1165,6 +1166,7 @@ function App() {
       case 'torneos': return "Torneos y Tabla de Posiciones";
       case 'kiosco': return "Kiosco POS";
       case 'cancha_arriendo': return "Arriendo de Cancha";
+      case 'horarios_entrenamiento': return "Horarios de Entrenamiento";
       case 'admin_dashboard': return "Administración";
       default: return "Club Cultura Física";
     }
@@ -2535,7 +2537,7 @@ function App() {
   }));
 
   const esPerfilFamiliarNav = ['apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'].includes(rolUsuario);
-  const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco', 'cancha_arriendo'];
+  const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco', 'cancha_arriendo', 'horarios_entrenamiento'];
   const modulosNavegacionVisibles = modulosNavegacionOrden.filter((modulo) => puedeVerPantalla(modulo));
   const LOCAL_PREVIEW_LABEL = 'MODO LOCAL · CAMBIOS INMEDIATOS';
   const mostrarApartadoLocal = (() => {
@@ -2568,6 +2570,8 @@ function App() {
         return { label: 'Kiosco', Icon: LayoutGrid };
       case 'cancha_arriendo':
         return { label: 'Cancha', Icon: CalendarClock };
+      case 'horarios_entrenamiento':
+        return { label: 'Entrenamientos', Icon: CalendarDays };
       default:
         return null;
     }
@@ -2981,6 +2985,9 @@ function App() {
             )}
             {puedeVerPantalla('cancha_arriendo') && pantallaActiva === 'cancha_arriendo' && (
               <CanchaArriendoPanel />
+            )}
+            {puedeVerPantalla('horarios_entrenamiento') && pantallaActiva === 'horarios_entrenamiento' && (
+              <HorariosEntrenamientoPanel />
             )}
             {(puedeVerPantalla('admin_dashboard') || puedeVerPantalla('citaciones') || puedeVerPantalla('resultados')) && pantallaActiva === 'admin_dashboard' && (
               <SuperAdminPanel
