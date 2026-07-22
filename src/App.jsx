@@ -8,7 +8,7 @@ import {
   FileText, Flag, QrCode, Lock, Camera, ChevronRight, ChevronLeft, 
   ShieldAlert, Zap, Clock, FileDown, RefreshCw,
   History, CheckSquare,
-  XSquare, UserPlus, ListOrdered
+  XSquare, UserPlus, ListOrdered, CalendarClock
 } from 'lucide-react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
@@ -36,6 +36,7 @@ import {
 
 const ComunicacionesPanel = lazy(() => import('./components/ComunicacionesPanel'));
 const KioscoPanel = lazy(() => import('./components/KioscoPanel'));
+const CanchaArriendoPanel = lazy(() => import('./components/CanchaArriendoPanel'));
 const SuperAdminPanel = lazy(() => import('./components/SuperAdminPanel'));
 const MesaControlPanel = lazy(() => import('./components/MesaControlPanel'));
 const TorneosPanel = lazy(() => import('./components/TorneosPanel'));
@@ -1163,6 +1164,7 @@ function App() {
       case 'scoreboard_live': return "Mesa FIBA Live";
       case 'torneos': return "Torneos y Tabla de Posiciones";
       case 'kiosco': return "Kiosco POS";
+      case 'cancha_arriendo': return "Arriendo de Cancha";
       case 'admin_dashboard': return "Administración";
       default: return "Club Cultura Física";
     }
@@ -2533,7 +2535,7 @@ function App() {
   }));
 
   const esPerfilFamiliarNav = ['apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'].includes(rolUsuario);
-  const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco'];
+  const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco', 'cancha_arriendo'];
   const modulosNavegacionVisibles = modulosNavegacionOrden.filter((modulo) => puedeVerPantalla(modulo));
   const LOCAL_PREVIEW_LABEL = 'MODO LOCAL · CAMBIOS INMEDIATOS';
   const mostrarApartadoLocal = (() => {
@@ -2564,6 +2566,8 @@ function App() {
         return { label: 'Mesa', Icon: Monitor };
       case 'kiosco':
         return { label: 'Kiosco', Icon: LayoutGrid };
+      case 'cancha_arriendo':
+        return { label: 'Cancha', Icon: CalendarClock };
       default:
         return null;
     }
@@ -2967,13 +2971,16 @@ function App() {
                 onPartidoFinalizado={recargarPartidosResumen}
               />
             )}
-            {(puedeVerPantalla('scoreboard_live') || puedeVerPantalla('admin_dashboard')) && pantallaActiva === 'torneos' && (
-              <TorneosPanel />
+            {(puedeVerPantalla('torneos') || puedeVerPantalla('scoreboard_live') || puedeVerPantalla('admin_dashboard')) && pantallaActiva === 'torneos' && (
+              <TorneosPanel puedeGestionar={puedeVerPantalla('torneos') || puedeVerPantalla('scoreboard_live') || puedeVerPantalla('admin_dashboard')} />
             )}
             {puedeVerPantalla('kiosco') && pantallaActiva === 'kiosco' && (
               <KioscoPanel
                 nombreResponsable={usuarioAutenticado?.nombres || usuarioAutenticado?.nombre || ''}
               />
+            )}
+            {puedeVerPantalla('cancha_arriendo') && pantallaActiva === 'cancha_arriendo' && (
+              <CanchaArriendoPanel />
             )}
             {(puedeVerPantalla('admin_dashboard') || puedeVerPantalla('citaciones') || puedeVerPantalla('resultados')) && pantallaActiva === 'admin_dashboard' && (
               <SuperAdminPanel
@@ -3088,10 +3095,11 @@ function App() {
                 </span>
               </button>
             )}
-            {/* 'torneos' tampoco es un módulo de MODULOS_ACCESO propio — se
-                muestra con el mismo criterio que ya decide quién ve Mesa
-                (scoreboard_live) o admin_dashboard, sin agregar un permiso nuevo. */}
-            {(puedeVerPantalla('scoreboard_live') || puedeVerPantalla('admin_dashboard')) && (
+            {/* 'torneos' ya es su propio módulo de MODULOS_ACCESO, pero se
+                mantiene el OR con scoreboard_live/admin_dashboard para no
+                quitarle acceso a Mesa/Admin que ya lo veían antes de que
+                existiera el permiso dedicado. */}
+            {(puedeVerPantalla('torneos') || puedeVerPantalla('scoreboard_live') || puedeVerPantalla('admin_dashboard')) && (
               <button
                 type="button"
                 className={`nav-item ${pantallaActiva === 'torneos' ? 'active' : ''}`}

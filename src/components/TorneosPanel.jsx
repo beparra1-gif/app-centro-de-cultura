@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Plus, Trophy } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
+import LogoAvatar from './LogoAvatar';
+import TorneoEquiposManager from './TorneoEquiposManager';
+import TorneoPartidosManager from './TorneoPartidosManager';
 
 const TORNEO_FORM_VACIO = {
   nombre_torneo: '',
@@ -13,14 +16,16 @@ const TORNEO_FORM_VACIO = {
   organizador: '',
   cantidad_equipos: '',
   formato: 'Todos contra todos',
+  tipo: 'interno',
 };
 
-function TorneosPanel() {
+function TorneosPanel({ puedeGestionar = false }) {
   const [torneos, setTorneos] = useState([]);
   const [cargandoTorneos, setCargandoTorneos] = useState(false);
   const [torneoSeleccionadoId, setTorneoSeleccionadoId] = useState(null);
   const [tabla, setTabla] = useState(null);
   const [cargandoTabla, setCargandoTabla] = useState(false);
+  const [equiposTorneo, setEquiposTorneo] = useState([]);
   const [mostrarFormCrear, setMostrarFormCrear] = useState(false);
   const [formTorneo, setFormTorneo] = useState(TORNEO_FORM_VACIO);
   const [creandoTorneo, setCreandoTorneo] = useState(false);
@@ -39,31 +44,45 @@ function TorneosPanel() {
   };
 
   useEffect(() => {
-    cargarTorneos();
+    (async () => { await cargarTorneos(); })();
   }, []);
 
-  const seleccionarTorneo = async (idTorneo) => {
-    if (torneoSeleccionadoId === idTorneo) {
-      setTorneoSeleccionadoId(null);
-      setTabla(null);
-      return;
-    }
-    setTorneoSeleccionadoId(idTorneo);
+  const cargarTablaYEquipos = async (idTorneo) => {
     setCargandoTabla(true);
     try {
-      const datos = await api.torneosAPI.tablaPosiciones(idTorneo);
-      setTabla(datos);
+      const [datosTabla, datosEquipos] = await Promise.all([
+        api.torneosAPI.tablaPosiciones(idTorneo),
+        api.torneosAPI.equipos.getAll(idTorneo),
+      ]);
+      setTabla(datosTabla);
+      setEquiposTorneo(Array.isArray(datosEquipos) ? datosEquipos : []);
     } catch (error) {
       showToast({ message: error.message || 'No se pudo cargar la tabla de posiciones.', type: 'error' });
       setTabla(null);
+      setEquiposTorneo([]);
     } finally {
       setCargandoTabla(false);
     }
   };
 
+  const seleccionarTorneo = async (idTorneo) => {
+    if (torneoSeleccionadoId === idTorneo) {
+      setTorneoSeleccionadoId(null);
+      setTabla(null);
+      setEquiposTorneo([]);
+      return;
+    }
+    setTorneoSeleccionadoId(idTorneo);
+    await cargarTablaYEquipos(idTorneo);
+  };
+
   const crearTorneo = async () => {
     if (!formTorneo.nombre_torneo.trim()) {
       showToast({ message: 'Ponle un nombre al torneo.', type: 'error' });
+      return;
+    }
+    if (formTorneo.tipo === 'externo' && !formTorneo.organizador.trim()) {
+      showToast({ message: 'Indica el club u organización que organiza el torneo externo.', type: 'error' });
       return;
     }
     setCreandoTorneo(true);
@@ -89,14 +108,24 @@ function TorneosPanel() {
     <div className="mt-20 fade-in">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
         <h3 className="section-title" style={{ margin: 0 }}>Torneos</h3>
-        <button type="button" className="btn-electric" style={{ width: 'auto', padding: '10px 16px' }} onClick={() => setMostrarFormCrear((v) => !v)}>
-          <Plus size={16} /> {mostrarFormCrear ? 'Cancelar' : 'Crear torneo'}
-        </button>
+        {puedeGestionar && (
+          <button type="button" className="btn-electric" style={{ width: 'auto', padding: '10px 16px' }} onClick={() => setMostrarFormCrear((v) => !v)}>
+            <Plus size={16} /> {mostrarFormCrear ? 'Cancelar' : 'Crear torneo'}
+          </button>
+        )}
       </div>
 
-      {mostrarFormCrear && (
+      {mostrarFormCrear && puedeGestionar && (
         <div className="card mb-15" style={{ borderRadius: '20px' }}>
           <h4 className="form-subtitle">Nuevo torneo</h4>
+          <div className="segment-control mb-15" style={{ gap: '6px' }}>
+            <button type="button" className={`segment-btn ${formTorneo.tipo === 'interno' ? 'active' : ''}`} onClick={() => setFormTorneo((p) => ({ ...p, tipo: 'interno' }))}>
+              Interno (armado por el club)
+            </button>
+            <button type="button" className={`segment-btn ${formTorneo.tipo === 'externo' ? 'active' : ''}`} onClick={() => setFormTorneo((p) => ({ ...p, tipo: 'externo' }))}>
+              Externo
+            </button>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Nombre *</label>
@@ -127,8 +156,8 @@ function TorneosPanel() {
               <input className="form-input" value={formTorneo.ubicacion} onChange={(e) => setFormTorneo((p) => ({ ...p, ubicacion: e.target.value }))} placeholder="Ej: Gimnasio CCF" />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Organizador</label>
-              <input className="form-input" value={formTorneo.organizador} onChange={(e) => setFormTorneo((p) => ({ ...p, organizador: e.target.value }))} />
+              <label>{formTorneo.tipo === 'externo' ? 'Club/organización organizadora *' : 'Organizador'}</label>
+              <input className="form-input" value={formTorneo.organizador} onChange={(e) => setFormTorneo((p) => ({ ...p, organizador: e.target.value }))} placeholder={formTorneo.tipo === 'externo' ? 'Ej: Liga Regional de Básquetbol' : 'Centro de Cultura Física'} />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Cantidad de equipos</label>
@@ -165,7 +194,7 @@ function TorneosPanel() {
                   <span>
                     <strong style={{ display: 'block', fontSize: '14px' }}>{t.nombre_torneo}</strong>
                     <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                      {t.rama || 'General'} · {t.categoria || 'General'} · {t.estado || 'activo'}
+                      {t.rama || 'General'} · {t.categoria || 'General'} · {t.estado || 'activo'} · {t.tipo === 'externo' ? `Externo (${t.organizador || 'sin organizador'})` : 'Interno'}
                     </span>
                   </span>
                 </span>
@@ -174,6 +203,26 @@ function TorneosPanel() {
               {abierto && (
                 <div style={{ padding: '4px 16px 16px 16px' }}>
                   {cargandoTabla && <p className="text-muted">Cargando tabla de posiciones...</p>}
+
+                  {!cargandoTabla && puedeGestionar && (
+                    <div className="card mb-15" style={{ borderRadius: '16px', background: 'rgba(0,122,255,0.04)' }}>
+                      <TorneoEquiposManager
+                        idTorneo={t.id_torneo}
+                        equipos={equiposTorneo}
+                        onEquiposChanged={() => cargarTablaYEquipos(t.id_torneo)}
+                      />
+                      <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px dashed var(--borde-suave)' }}>
+                        <TorneoPartidosManager
+                          idTorneo={t.id_torneo}
+                          torneo={t}
+                          equipos={equiposTorneo}
+                          partidosPendientes={tabla?.partidosPendientes || []}
+                          onPartidosChanged={() => cargarTablaYEquipos(t.id_torneo)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {!cargandoTabla && tabla && tabla.posiciones.length === 0 && (
                     <p className="text-muted text-center italic">Todavía no hay partidos finalizados asignados a este torneo.</p>
                   )}
@@ -198,7 +247,12 @@ function TorneosPanel() {
                             {tabla.posiciones.map((fila) => (
                               <tr key={fila.nombre} style={{ borderBottom: '1px solid var(--borde-suave)' }}>
                                 <td style={{ padding: '6px 8px', fontWeight: '900', color: 'var(--azul-electrico)' }}>{fila.posicion}</td>
-                                <td style={{ padding: '6px 8px', fontWeight: '800' }}>{fila.nombre}</td>
+                                <td style={{ padding: '6px 8px', fontWeight: '800' }}>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <LogoAvatar nombre={fila.nombre} logoUrl={fila.logoUrl} tipo="club" size={20} borderRadius="6px" />
+                                    {fila.nombre}
+                                  </span>
+                                </td>
                                 <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pj}</td>
                                 <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pg}</td>
                                 <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pp}</td>
@@ -216,7 +270,11 @@ function TorneosPanel() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {tabla.partidos.map((p) => (
                           <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '8px 10px', fontSize: '12px' }}>
-                            <span>{p.equipo_local} <strong>{p.pts_local}</strong> — <strong>{p.pts_visitante}</strong> {p.equipo_visitante}</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <LogoAvatar nombre={p.equipo_local} logoUrl={p.logo_local_url} tipo="club" size={18} borderRadius="6px" />
+                              {p.equipo_local} <strong>{p.pts_local}</strong> — <strong>{p.pts_visitante}</strong> {p.equipo_visitante}
+                              <LogoAvatar nombre={p.equipo_visitante} logoUrl={p.logo_visitante_url} tipo="club" size={18} borderRadius="6px" />
+                            </span>
                             <span style={{ color: 'var(--texto-secundario)', fontWeight: '700' }}>
                               {p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha'}
                             </span>

@@ -1164,7 +1164,25 @@ export const torneosAPI = {
   tablaPosiciones: async (id) => {
     const response = await apiFetch(`${API_BASE_URL}/torneos/${id}/tabla-posiciones`);
     return handleResponse(response);
-  }
+  },
+  equipos: {
+    getAll: async (idTorneo) => {
+      const response = await apiFetch(`${API_BASE_URL}/torneos/${idTorneo}/equipos`);
+      return handleResponse(response);
+    },
+    create: async (idTorneo, datos) => {
+      const response = await apiFetch(`${API_BASE_URL}/torneos/${idTorneo}/equipos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+      return handleResponse(response);
+    },
+    remove: async (idTorneo, idEquipo) => {
+      const response = await apiFetch(`${API_BASE_URL}/torneos/${idTorneo}/equipos/${idEquipo}`, { method: 'DELETE' });
+      return handleResponse(response);
+    },
+  },
 };
 
 // ========== ACTIVOS VISUALES ==========
@@ -1579,5 +1597,44 @@ export const kioscoAPI = {
       });
       return handleResponse(response);
     },
+  },
+};
+
+export const arriendosCanchaAPI = {
+  getAll: async (filtros = {}) => {
+    const response = await apiFetch(`${API_BASE_URL}/arriendos-cancha${buildQuery(filtros)}`);
+    return handleResponse(response);
+  },
+  create: async (datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/arriendos-cancha`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+  createSerie: async (datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/arriendos-cancha/serie`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+  update: async (id, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/arriendos-cancha/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+  remove: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/arriendos-cancha/${id}`, { method: 'DELETE' });
+    return handleResponse(response);
+  },
+  removeSerie: async (serieId) => {
+    const response = await apiFetch(`${API_BASE_URL}/arriendos-cancha/serie/${serieId}`, { method: 'DELETE' });
+    return handleResponse(response);
   },
 };

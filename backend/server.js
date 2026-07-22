@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { S3Client, PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
@@ -531,6 +532,7 @@ const RESOURCE_TABLE_MAP = {
   lesiones: 'lesiones',
   disciplina: 'disciplina',
   entrenamientos: 'entrenamientos',
+  'arriendos-cancha': 'arriendos_cancha',
 };
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -580,6 +582,11 @@ const getTableFromApiRequest = (req) => {
   // /api/encuestas/:encuestaId/respuesta writes to encuestas_respuestas.
   if (resource === 'encuestas' && String(pathParts[3] || '').toLowerCase() === 'respuesta') {
     return 'encuestas_respuestas';
+  }
+
+  // /api/torneos/:id/equipos writes to torneo_equipos, no a torneos.
+  if (resource === 'torneos' && String(pathParts[3] || '').toLowerCase() === 'equipos') {
+    return 'torneo_equipos';
   }
 
   return RESOURCE_TABLE_MAP[resource] || '';
@@ -1601,7 +1608,41 @@ const ensureTorneosTable = async () => {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await pool.query(`ALTER TABLE torneos ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) DEFAULT 'interno'`);
   console.log('🏆 Tabla torneos verificada');
+};
+
+// Equipos reales (nombre + logo) de un torneo — antes los "equipos" eran
+// solo texto libre tipeado en Mesa de Control al armar un partido, sin
+// registro propio ni logo persistente. id_club es opcional: se llena cuando
+// el equipo corresponde a un club ya existente en el directorio (tabla
+// clubes), para heredar su logo_url; si es un equipo nuevo, queda NULL y el
+// logo se guarda directo en logo_url.
+const ensureTorneoEquiposTable = async () => {
+  await ensureTorneosTable();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS torneo_equipos (
+      id_equipo SERIAL PRIMARY KEY,
+      id_torneo INT NOT NULL REFERENCES torneos(id_torneo) ON DELETE CASCADE,
+      nombre_equipo VARCHAR(255) NOT NULL,
+      logo_url VARCHAR(255),
+      id_club INT REFERENCES clubes(id_club),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(id_torneo, nombre_equipo)
+    )
+  `);
+  console.log('👥 Tabla torneo_equipos verificada');
+};
+
+// Vínculo débil (sin FK dura) entre un partido y los equipos reales del
+// torneo — mismo criterio que ya usa id_torneo hoy. equipo_local/
+// equipo_visitante (texto) siguen siendo la fuente de verdad para el nombre
+// mostrado y para la agregación de la tabla de posiciones; estas columnas
+// solo permiten recuperar el equipo real (y su logo) al editar un partido.
+const ensurePartidosLiveTorneoEquiposColumns = async () => {
+  await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS id_equipo_local INT`);
+  await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS id_equipo_visitante INT`);
+  console.log('🏆 Columnas id_equipo_local/id_equipo_visitante de partidos_live verificadas');
 };
 
 // clubes nunca tuvo columna de logo (LogoPicker ya leía c.logo_url ||
@@ -1888,6 +1929,35 @@ const ensureKioscoTables = async () => {
   await pool.query(`ALTER TABLE kiosco_egresos ADD COLUMN IF NOT EXISTS firma_receptor TEXT`);
 
   console.log('🛒 Tablas de kiosco POS verificadas');
+};
+
+// Arriendo de cancha: una sola tabla (reserva + cobro en la misma fila,
+// mismo criterio simple que kiosco_ventas) porque el club administra un
+// único recurso físico — no hace falta modelar un catálogo de canchas.
+// serie_id agrupa las filas generadas juntas por una serie recurrente
+// (diaria/semanal/mensual); NULL significa reserva única.
+const ensureArriendosCanchaTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS arriendos_cancha (
+      id_arriendo SERIAL PRIMARY KEY,
+      nombre_arrendatario VARCHAR(255) NOT NULL,
+      telefono_contacto VARCHAR(50),
+      email_contacto VARCHAR(255),
+      fecha DATE NOT NULL,
+      hora_inicio TIME NOT NULL,
+      hora_fin TIME NOT NULL,
+      valor_arriendo NUMERIC(10,2) NOT NULL DEFAULT 0,
+      estado_pago VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+      metodo_pago VARCHAR(50),
+      observaciones TEXT,
+      serie_id VARCHAR(40),
+      serie_tipo VARCHAR(20),
+      registrado_por VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('📅 Tabla arriendos_cancha verificada');
 };
 
 // Citaciones: el flujo vivía 100% en memoria del navegador (nominaCita en
@@ -5855,11 +5925,12 @@ app.get('/api/partidos-live/historial', async (req, res) => {
 });
 
 // POST: Crear partido
-app.post('/api/partidos-live', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'resultados'), async (req, res) => {
+app.post('/api/partidos-live', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'resultados', 'torneos'), async (req, res) => {
   const {
     fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante,
     rut_planillero, estado_juego,
     logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
+    id_equipo_local, id_equipo_visitante,
     pts_local, pts_visitante, publicado,
   } = req.body;
   try {
@@ -5872,9 +5943,10 @@ app.post('/api/partidos-live', authenticate, requireAnyModule('scoreboard_live',
       `INSERT INTO partidos_live
        (fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante, rut_planillero,
         estado_juego, logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
+        id_equipo_local, id_equipo_visitante,
         pts_local, pts_visitante, publicado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9,'pendiente'), $10, $11, $12, $13, $14,
-        COALESCE($15, 0), COALESCE($16, 0), COALESCE($17, true))
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9,'pendiente'), $10, $11, $12, $13, $14, $15, $16,
+        COALESCE($17, 0), COALESCE($18, 0), COALESCE($19, true))
        RETURNING *`,
       [
         fecha_hora, cancha_sede, categoria_rama_final, ramafinal, categoriafinal,
@@ -5882,6 +5954,7 @@ app.post('/api/partidos-live', authenticate, requireAnyModule('scoreboard_live',
         estado_juego || 'pendiente',
         logo_local_url || null, logo_visitante_url || null,
         torneo_nombre || null, torneo_logo_url || null, id_torneo || null,
+        id_equipo_local || null, id_equipo_visitante || null,
         pts_local ?? 0, pts_visitante ?? 0, publicado,
       ]
     );
@@ -5893,7 +5966,7 @@ app.post('/api/partidos-live', authenticate, requireAnyModule('scoreboard_live',
 });
 
 // PUT: Actualizar marcador
-app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'resultados'), async (req, res) => {
+app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'resultados', 'torneos'), async (req, res) => {
   const {
     pts_local,
     pts_visitante,
@@ -5911,6 +5984,8 @@ app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_liv
     torneo_nombre,
     torneo_logo_url,
     id_torneo,
+    id_equipo_local,
+    id_equipo_visitante,
     publicado,
   } = req.body;
   try {
@@ -5933,8 +6008,10 @@ app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_liv
            torneo_logo_url = COALESCE($15, torneo_logo_url),
            id_torneo = COALESCE($16, id_torneo),
            publicado = COALESCE($17, publicado),
+           id_equipo_local = COALESCE($18, id_equipo_local),
+           id_equipo_visitante = COALESCE($19, id_equipo_visitante),
            updated_at = NOW()
-       WHERE id_partido = $18
+       WHERE id_partido = $20
        RETURNING *`,
       [
         pts_local,
@@ -5954,6 +6031,8 @@ app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_liv
         torneo_logo_url,
         id_torneo,
         publicado,
+        id_equipo_local,
+        id_equipo_visitante,
         req.params.id,
       ]
     );
@@ -6797,18 +6876,75 @@ app.get('/api/torneos', async (req, res) => {
   }
 });
 
-app.post('/api/torneos', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard'), async (req, res) => {
-  const { nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato } = req.body;
+app.post('/api/torneos', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'torneos'), async (req, res) => {
+  const { nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato, tipo } = req.body;
+  const tipoFinal = tipo === 'externo' ? 'externo' : 'interno';
+  if (tipoFinal === 'externo' && !String(organizador || '').trim()) {
+    return res.status(400).json({ error: 'Indica el club u organización que organiza el torneo externo.' });
+  }
   try {
     const result = await pool.query(
-      `INSERT INTO torneos (nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato, estado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'activo')
+      `INSERT INTO torneos (nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato, estado, tipo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'activo', $10)
        RETURNING *`,
-      [nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato]
+      [nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato, tipoFinal]
     );
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[POST /api/torneos]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: equipos reales (nombre + logo) registrados para un torneo. Pública,
+// mismo criterio que el resto de las rutas de lectura de torneos.
+app.get('/api/torneos/:id/equipos', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM torneo_equipos WHERE id_torneo = $1 ORDER BY nombre_equipo ASC`,
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[GET /api/torneos/:id/equipos]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: agregar/actualizar un equipo de un torneo. ON CONFLICT lo hace
+// idempotente ante un doble submit del formulario.
+app.post('/api/torneos/:id/equipos', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'torneos'), async (req, res) => {
+  const { nombre_equipo, logo_url, id_club } = req.body;
+  if (!String(nombre_equipo || '').trim()) {
+    return res.status(400).json({ error: 'Falta el nombre del equipo.' });
+  }
+  try {
+    const result = await pool.query(
+      `INSERT INTO torneo_equipos (id_torneo, nombre_equipo, logo_url, id_club)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id_torneo, nombre_equipo) DO UPDATE SET logo_url = EXCLUDED.logo_url, id_club = EXCLUDED.id_club
+       RETURNING *`,
+      [req.params.id, nombre_equipo.trim(), logo_url || null, id_club || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[POST /api/torneos/:id/equipos]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/torneos/:id/equipos/:idEquipo', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'torneos'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM torneo_equipos WHERE id_equipo = $1 AND id_torneo = $2 RETURNING id_equipo`,
+      [req.params.idEquipo, req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Equipo no encontrado en este torneo.' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/torneos/:id/equipos/:idEquipo]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -6821,7 +6957,8 @@ app.post('/api/torneos', authenticate, requireAnyModule('scoreboard_live', 'admi
 app.get('/api/torneos/:id/tabla-posiciones', async (req, res) => {
   try {
     const partidos = (await pool.query(
-      `SELECT id_partido, equipo_local, equipo_visitante, pts_local, pts_visitante, fecha_hora, cancha_sede
+      `SELECT id_partido, equipo_local, equipo_visitante, pts_local, pts_visitante, fecha_hora, cancha_sede,
+              logo_local_url, logo_visitante_url
        FROM partidos_live
        WHERE id_torneo = $1 AND estado_juego = 'finalizado'
        ORDER BY fecha_hora ASC`,
@@ -6829,7 +6966,8 @@ app.get('/api/torneos/:id/tabla-posiciones', async (req, res) => {
     )).rows;
 
     const partidosPendientes = (await pool.query(
-      `SELECT id_partido, equipo_local, equipo_visitante, fecha_hora, cancha_sede, estado_juego
+      `SELECT id_partido, equipo_local, equipo_visitante, fecha_hora, cancha_sede, estado_juego,
+              logo_local_url, logo_visitante_url
        FROM partidos_live
        WHERE id_torneo = $1 AND estado_juego != 'finalizado'
        ORDER BY fecha_hora ASC`,
@@ -6838,13 +6976,14 @@ app.get('/api/torneos/:id/tabla-posiciones', async (req, res) => {
 
     const normalizar = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
     const tabla = new Map();
-    const upsert = (nombre, pf, pc, resultado) => {
+    const upsert = (nombre, pf, pc, resultado, logoUrl) => {
       const key = normalizar(nombre);
       if (!key) return;
-      const fila = tabla.get(key) || { nombre: String(nombre || '').trim(), pj: 0, pg: 0, pp: 0, pf: 0, pc: 0 };
+      const fila = tabla.get(key) || { nombre: String(nombre || '').trim(), logoUrl: '', pj: 0, pg: 0, pp: 0, pf: 0, pc: 0 };
       fila.pj += 1;
       fila.pf += Number(pf) || 0;
       fila.pc += Number(pc) || 0;
+      if (!fila.logoUrl && logoUrl) fila.logoUrl = logoUrl;
       if (resultado === 'W') fila.pg += 1;
       else if (resultado === 'L') fila.pp += 1;
       tabla.set(key, fila);
@@ -6854,8 +6993,8 @@ app.get('/api/torneos/:id/tabla-posiciones', async (req, res) => {
       const ptsLocal = Number(p.pts_local) || 0;
       const ptsVisitante = Number(p.pts_visitante) || 0;
       const empate = ptsLocal === ptsVisitante;
-      upsert(p.equipo_local, ptsLocal, ptsVisitante, empate ? null : (ptsLocal > ptsVisitante ? 'W' : 'L'));
-      upsert(p.equipo_visitante, ptsVisitante, ptsLocal, empate ? null : (ptsVisitante > ptsLocal ? 'W' : 'L'));
+      upsert(p.equipo_local, ptsLocal, ptsVisitante, empate ? null : (ptsLocal > ptsVisitante ? 'W' : 'L'), p.logo_local_url);
+      upsert(p.equipo_visitante, ptsVisitante, ptsLocal, empate ? null : (ptsVisitante > ptsLocal ? 'W' : 'L'), p.logo_visitante_url);
     }
 
     const posiciones = [...tabla.values()]
@@ -7593,6 +7732,261 @@ app.post('/api/asistencia-eventos', authenticate, requireModule('citaciones'), a
 });
 
 // ==========================================
+// 36. ENDPOINTS: ARRIENDO CANCHA
+// ==========================================
+
+// Choca con cualquier reserva activa (no anulada) del mismo día cuyo rango
+// horario se solape — condición estándar de solapamiento de intervalos.
+// excluirId se usa al editar/reprogramar, para no chocar contra sí misma.
+const buscarChoqueArriendoCancha = async (fecha, horaInicio, horaFin, excluirId = null) => {
+  const params = [fecha, horaFin, horaInicio];
+  let query = `
+    SELECT id_arriendo, nombre_arrendatario, hora_inicio, hora_fin
+    FROM arriendos_cancha
+    WHERE fecha = $1 AND estado_pago != 'anulado'
+      AND hora_inicio < $2 AND hora_fin > $3
+  `;
+  if (excluirId) {
+    params.push(excluirId);
+    query += ` AND id_arriendo != $4`;
+  }
+  const result = await pool.query(query, params);
+  return result.rows[0] || null;
+};
+
+app.get('/api/arriendos-cancha', authenticate, requireModule('cancha_arriendo'), async (req, res) => {
+  const { desde, hasta, estado_pago } = req.query;
+  try {
+    const condiciones = [];
+    const params = [];
+    if (desde) { params.push(desde); condiciones.push(`fecha >= $${params.length}`); }
+    if (hasta) { params.push(hasta); condiciones.push(`fecha <= $${params.length}`); }
+    if (estado_pago) { params.push(estado_pago); condiciones.push(`estado_pago = $${params.length}`); }
+    const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
+    const result = await pool.query(
+      `SELECT * FROM arriendos_cancha ${where} ORDER BY fecha ASC, hora_inicio ASC`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[GET /api/arriendos-cancha]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/arriendos-cancha', authenticate, requireModule('cancha_arriendo'), async (req, res) => {
+  const {
+    nombre_arrendatario, telefono_contacto, email_contacto,
+    fecha, hora_inicio, hora_fin, valor_arriendo,
+    estado_pago, metodo_pago, observaciones, registrado_por,
+  } = req.body;
+
+  if (!String(nombre_arrendatario || '').trim()) {
+    return res.status(400).json({ error: 'Falta el nombre de quien arrienda.' });
+  }
+  if (!fecha || !hora_inicio || !hora_fin) {
+    return res.status(400).json({ error: 'Falta fecha, hora de inicio o hora de término.' });
+  }
+  if (hora_fin <= hora_inicio) {
+    return res.status(400).json({ error: 'La hora de término debe ser posterior a la hora de inicio.' });
+  }
+
+  try {
+    const choque = await buscarChoqueArriendoCancha(fecha, hora_inicio, hora_fin);
+    if (choque) {
+      return res.status(409).json({
+        error: `La cancha ya está arrendada ese horario (${choque.nombre_arrendatario}, ${choque.hora_inicio}-${choque.hora_fin}).`,
+        conflicto: choque,
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO arriendos_cancha
+       (nombre_arrendatario, telefono_contacto, email_contacto, fecha, hora_inicio, hora_fin,
+        valor_arriendo, estado_pago, metodo_pago, observaciones, registrado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [
+        nombre_arrendatario.trim(), telefono_contacto || null, email_contacto || null,
+        fecha, hora_inicio, hora_fin, valor_arriendo || 0,
+        estado_pago || 'pendiente', metodo_pago || null, observaciones || null, registrado_por || null,
+      ]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('[POST /api/arriendos-cancha]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Genera N filas concretas en vez de un motor de recurrencia — más simple y
+// suficiente para diaria/semanal/mensual. Si alguna fecha choca con una
+// reserva existente, se omite (no revienta la serie completa) y se informa
+// en "omitidos" para que el frontend le avise al usuario cuáles quedaron
+// fuera.
+app.post('/api/arriendos-cancha/serie', authenticate, requireModule('cancha_arriendo'), async (req, res) => {
+  const {
+    nombre_arrendatario, telefono_contacto, email_contacto,
+    tipo_serie, fecha_inicio, fecha_fin, hora_inicio, hora_fin,
+    valor_arriendo, estado_pago, metodo_pago, observaciones, registrado_por,
+  } = req.body;
+
+  if (!String(nombre_arrendatario || '').trim()) {
+    return res.status(400).json({ error: 'Falta el nombre de quien arrienda.' });
+  }
+  if (!['diaria', 'semanal', 'mensual'].includes(tipo_serie)) {
+    return res.status(400).json({ error: 'Tipo de serie inválido (usa diaria, semanal o mensual).' });
+  }
+  if (!fecha_inicio || !fecha_fin || !hora_inicio || !hora_fin) {
+    return res.status(400).json({ error: 'Falta fecha de inicio, fecha de término, hora de inicio u hora de término.' });
+  }
+  if (hora_fin <= hora_inicio) {
+    return res.status(400).json({ error: 'La hora de término debe ser posterior a la hora de inicio.' });
+  }
+
+  try {
+    const inicio = new Date(`${fecha_inicio}T00:00:00`);
+    const fin = new Date(`${fecha_fin}T00:00:00`);
+    if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime()) || fin < inicio) {
+      return res.status(400).json({ error: 'Rango de fechas inválido.' });
+    }
+
+    const fechas = [];
+    if (tipo_serie === 'diaria') {
+      for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
+        fechas.push(new Date(d));
+      }
+    } else if (tipo_serie === 'semanal') {
+      for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 7)) {
+        fechas.push(new Date(d));
+      }
+    } else {
+      const diaMes = inicio.getDate();
+      for (let d = new Date(inicio); d <= fin; d.setMonth(d.getMonth() + 1)) {
+        const candidato = new Date(d.getFullYear(), d.getMonth(), diaMes);
+        if (candidato.getMonth() === d.getMonth() && candidato <= fin) fechas.push(candidato);
+      }
+    }
+
+    if (fechas.length === 0) {
+      return res.status(400).json({ error: 'El rango no generó ninguna fecha de arriendo.' });
+    }
+    if (fechas.length > 366) {
+      return res.status(400).json({ error: 'La serie generaría más de 366 fechas — acorta el rango.' });
+    }
+
+    const serieId = crypto.randomUUID();
+    const creados = [];
+    const omitidos = [];
+
+    for (const fechaObj of fechas) {
+      const fechaStr = fechaObj.toISOString().slice(0, 10);
+      const choque = await buscarChoqueArriendoCancha(fechaStr, hora_inicio, hora_fin);
+      if (choque) {
+        omitidos.push({ fecha: fechaStr, motivo: `Choca con ${choque.nombre_arrendatario} (${choque.hora_inicio}-${choque.hora_fin})` });
+        continue;
+      }
+
+      const result = await pool.query(
+        `INSERT INTO arriendos_cancha
+         (nombre_arrendatario, telefono_contacto, email_contacto, fecha, hora_inicio, hora_fin,
+          valor_arriendo, estado_pago, metodo_pago, observaciones, serie_id, serie_tipo, registrado_por)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         RETURNING *`,
+        [
+          nombre_arrendatario.trim(), telefono_contacto || null, email_contacto || null,
+          fechaStr, hora_inicio, hora_fin, valor_arriendo || 0,
+          estado_pago || 'pendiente', metodo_pago || null, observaciones || null,
+          serieId, tipo_serie, registrado_por || null,
+        ]
+      );
+      creados.push(result.rows[0]);
+    }
+
+    res.status(201).json({ serieId, creados, omitidos });
+  } catch (err) {
+    console.error('[POST /api/arriendos-cancha/serie]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/arriendos-cancha/:id', authenticate, requireModule('cancha_arriendo'), async (req, res) => {
+  const {
+    nombre_arrendatario, telefono_contacto, email_contacto,
+    fecha, hora_inicio, hora_fin, valor_arriendo,
+    estado_pago, metodo_pago, observaciones,
+  } = req.body;
+
+  try {
+    if (fecha && hora_inicio && hora_fin) {
+      if (hora_fin <= hora_inicio) {
+        return res.status(400).json({ error: 'La hora de término debe ser posterior a la hora de inicio.' });
+      }
+      const choque = await buscarChoqueArriendoCancha(fecha, hora_inicio, hora_fin, req.params.id);
+      if (choque) {
+        return res.status(409).json({
+          error: `La cancha ya está arrendada ese horario (${choque.nombre_arrendatario}, ${choque.hora_inicio}-${choque.hora_fin}).`,
+          conflicto: choque,
+        });
+      }
+    }
+
+    const result = await pool.query(
+      `UPDATE arriendos_cancha SET
+        nombre_arrendatario = COALESCE($1, nombre_arrendatario),
+        telefono_contacto = COALESCE($2, telefono_contacto),
+        email_contacto = COALESCE($3, email_contacto),
+        fecha = COALESCE($4, fecha),
+        hora_inicio = COALESCE($5, hora_inicio),
+        hora_fin = COALESCE($6, hora_fin),
+        valor_arriendo = COALESCE($7, valor_arriendo),
+        estado_pago = COALESCE($8, estado_pago),
+        metodo_pago = COALESCE($9, metodo_pago),
+        observaciones = COALESCE($10, observaciones),
+        updated_at = NOW()
+       WHERE id_arriendo = $11
+       RETURNING *`,
+      [
+        nombre_arrendatario || null, telefono_contacto || null, email_contacto || null,
+        fecha || null, hora_inicio || null, hora_fin || null, valor_arriendo ?? null,
+        estado_pago || null, metodo_pago || null, observaciones || null,
+        req.params.id,
+      ]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Arriendo no encontrado.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[PUT /api/arriendos-cancha/:id]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/arriendos-cancha/:id', authenticate, requireModule('cancha_arriendo'), async (req, res) => {
+  try {
+    const result = await pool.query(`DELETE FROM arriendos_cancha WHERE id_arriendo = $1 RETURNING id_arriendo`, [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Arriendo no encontrado.' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/arriendos-cancha/:id]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/arriendos-cancha/serie/:serieId', authenticate, requireModule('cancha_arriendo'), async (req, res) => {
+  try {
+    const result = await pool.query(`DELETE FROM arriendos_cancha WHERE serie_id = $1 RETURNING id_arriendo`, [req.params.serieId]);
+    res.json({ ok: true, borrados: result.rows.length });
+  } catch (err) {
+    console.error('[DELETE /api/arriendos-cancha/serie/:serieId]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // ERROR HANDLING
 // ==========================================
 
@@ -7669,6 +8063,14 @@ app.listen(PORT, () => {
     console.error('❌ Error verificando tabla torneos:', error.message);
   });
 
+  ensureTorneoEquiposTable().catch((error) => {
+    console.error('❌ Error verificando tabla torneo_equipos:', error.message);
+  });
+
+  ensurePartidosLiveTorneoEquiposColumns().catch((error) => {
+    console.error('❌ Error verificando columnas de equipos en partidos_live:', error.message);
+  });
+
   ensureClubesLogoColumn().catch((error) => {
     console.error('❌ Error verificando columna logo_url de clubes:', error.message);
   });
@@ -7699,6 +8101,10 @@ app.listen(PORT, () => {
 
   ensureKioscoTables().catch((error) => {
     console.error('❌ Error verificando tablas de kiosco:', error.message);
+  });
+
+  ensureArriendosCanchaTable().catch((error) => {
+    console.error('❌ Error verificando tabla arriendos_cancha:', error.message);
   });
 
   ensureCitacionesTables().catch((error) => {

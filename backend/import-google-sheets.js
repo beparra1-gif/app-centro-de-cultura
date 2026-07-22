@@ -36,6 +36,8 @@ const SHEET_TABLE_MAP = [
   { sheet: 'STAFF', table: 'staff' },
   { sheet: 'TORNEOS', table: 'torneos' },
   { sheet: 'CLUBES', table: 'clubes' },
+  { sheet: 'TORNEO_EQUIPOS', table: 'torneo_equipos' },
+  { sheet: 'ARRIENDOS_CANCHA', table: 'arriendos_cancha' },
 ];
 
 const HEADER_ALIASES = {
