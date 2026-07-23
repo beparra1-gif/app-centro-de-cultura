@@ -3,6 +3,7 @@ import { CalendarClock, Plus, BarChart3, Phone, Mail, X } from 'lucide-react';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
+import { colorBarraPorRama } from '../utils/coloresRama';
 import CalendarioGrilla from './CalendarioGrilla';
 
 const hoyISO = () => new Date().toISOString().slice(0, 10);
@@ -73,7 +74,6 @@ const COLOR_BARRA_ARRIENDO = {
   pagado: '#34C759',
   anulado: '#8E8E93',
 };
-const COLOR_BARRA_ENTRENAMIENTO = '#007AFF';
 
 function CanchaArriendoPanel() {
   const [vista, setVista] = useState('calendario');
@@ -163,7 +163,7 @@ function CanchaArriendoPanel() {
       horaFin: String(e.hora_fin || '00:00').slice(0, 5),
       titulo: `${e.rama} ${e.categoria}`,
       subtitulo: e.entrenador_a_cargo || '',
-      color: COLOR_BARRA_ENTRENAMIENTO,
+      color: colorBarraPorRama(e.rama),
       tipo: 'entrenamiento',
       raw: e,
     }));
@@ -320,7 +320,9 @@ function CanchaArriendoPanel() {
           <div style={{ display: 'flex', gap: '14px', fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', marginBottom: '10px', flexWrap: 'wrap' }}>
             <span><span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', background: COLOR_BARRA_ARRIENDO.pendiente, marginRight: '4px', verticalAlign: '-1px' }} />Arriendo pendiente</span>
             <span><span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', background: COLOR_BARRA_ARRIENDO.pagado, marginRight: '4px', verticalAlign: '-1px' }} />Arriendo pagado</span>
-            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', background: COLOR_BARRA_ENTRENAMIENTO, marginRight: '4px', verticalAlign: '-1px' }} />Entrenamiento</span>
+            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', background: colorBarraPorRama('masculina'), marginRight: '4px', verticalAlign: '-1px' }} />Entrenamiento masculino</span>
+            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', background: colorBarraPorRama('femenina'), marginRight: '4px', verticalAlign: '-1px' }} />Entrenamiento femenino</span>
+            <span><span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', background: colorBarraPorRama('mixta'), marginRight: '4px', verticalAlign: '-1px' }} />Entrenamiento mixto</span>
           </div>
 
           {cargando && <p className="text-muted">Cargando calendario...</p>}
@@ -375,7 +377,7 @@ function CanchaArriendoPanel() {
           )}
 
           {entrenamientoSeleccionado && (
-            <div className="card mt-15" style={{ borderRadius: '16px', borderLeft: `4px solid ${COLOR_BARRA_ENTRENAMIENTO}` }}>
+            <div className="card mt-15" style={{ borderRadius: '16px', borderLeft: `4px solid ${colorBarraPorRama(entrenamientoSeleccionado.rama)}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                 <div>
                   <strong style={{ fontSize: '14px' }}>

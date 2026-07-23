@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays } from 'lucide-react';
 import * as api from '../api/client';
+import { colorBadgePorRama } from '../utils/coloresRama';
 
 const DIAS_CORTO = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
-const COLOR_RAMA = {
-  masculina: { bg: 'rgba(0,122,255,0.12)', color: '#0a4da2' },
-  femenina: { bg: 'rgba(255,45,146,0.12)', color: '#a3145f' },
-  mixta: { bg: 'rgba(52,199,89,0.14)', color: '#1c7a3d' },
+const describirDias = (h) => {
+  if (h.tipo_recurrencia === 'mensual') {
+    const dias = Array.isArray(h.dias_mes) ? h.dias_mes : [];
+    return dias.length ? `Día${dias.length > 1 ? 's' : ''} ${dias.join(', ')} de cada mes` : 'Mensual';
+  }
+  const dias = Array.isArray(h.dias_semana) ? h.dias_semana : [];
+  return dias.length ? dias.map((d) => DIAS_CORTO[d]).join(', ') : '';
 };
-const colorRama = (rama = '') => COLOR_RAMA[String(rama).toLowerCase()] || { bg: 'rgba(120,120,128,0.12)', color: '#555' };
 
 // Widget fijo del Muro (no un post más de la lista cronológica) — se arma
 // solo, sin props, para poder insertarse en ComunicacionesPanel sin tocar
@@ -61,7 +64,7 @@ function MuroHorarioEntrenamientos() {
       {!colapsado && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
           {grupos.map((g) => {
-            const { bg, color } = colorRama(g.rama);
+            const { bg, color } = colorBadgePorRama(g.rama);
             return (
               <div key={`${g.rama}-${g.categoria}`} style={{ border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '8px 12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -71,7 +74,7 @@ function MuroHorarioEntrenamientos() {
                 <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   {g.sesiones.map((s) => (
                     <span key={s.id_horario} style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                      {DIAS_CORTO[s.dia_semana]} {s.hora_inicio?.slice(0, 5)}-{s.hora_fin?.slice(0, 5)}
+                      {describirDias(s)} {s.hora_inicio?.slice(0, 5)}-{s.hora_fin?.slice(0, 5)}
                       {s.lugar && ` · ${s.lugar}`}
                       {s.entrenador_a_cargo && ` · Prof. ${s.entrenador_a_cargo}`}
                     </span>

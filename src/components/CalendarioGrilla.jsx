@@ -185,12 +185,12 @@ function VistaMes({ rangoDesde, rangoHasta, mesReferencia, eventosPorFecha, hoyI
 
   return (
     <div className="card" style={{ borderRadius: '16px', padding: '8px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '4px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: '2px', marginBottom: '4px' }}>
         {DIAS_SEMANA.map((d) => (
           <div key={d} style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', textAlign: 'center', padding: '4px 0' }}>{d}</div>
         ))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: '2px' }}>
         {dias.map((dia) => {
           const fechaISO = aISO(dia);
           const eventosDia = eventosPorFecha.get(fechaISO) || [];
@@ -205,6 +205,7 @@ function VistaMes({ rangoDesde, rangoHasta, mesReferencia, eventosPorFecha, hoyI
               onClick={() => onClickDia && onClickDia(fechaISO)}
               style={{
                 minHeight: '76px',
+                minWidth: 0,
                 borderRadius: '10px',
                 padding: '4px',
                 background: esHoy ? 'rgba(0,122,255,0.08)' : 'transparent',
@@ -214,6 +215,7 @@ function VistaMes({ rangoDesde, rangoHasta, mesReferencia, eventosPorFecha, hoyI
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '2px',
+                overflow: 'hidden',
               }}
             >
               <span style={{ fontSize: '11px', fontWeight: esHoy ? '900' : '700', color: esHoy ? 'var(--azul-electrico)' : 'var(--texto-principal)' }}>
@@ -226,6 +228,11 @@ function VistaMes({ rangoDesde, rangoHasta, mesReferencia, eventosPorFecha, hoyI
                   onClick={(e) => { e.stopPropagation(); onClickEvento && onClickEvento(ev); }}
                   title={`${ev.horaInicio} ${ev.titulo}`}
                   style={{
+                    display: 'block',
+                    width: '100%',
+                    minWidth: 0,
+                    maxWidth: '100%',
+                    boxSizing: 'border-box',
                     background: ev.color,
                     color: 'white',
                     border: 'none',

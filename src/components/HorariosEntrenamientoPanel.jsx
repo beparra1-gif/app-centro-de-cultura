@@ -3,16 +3,40 @@ import { CalendarDays, Plus, Trash2 } from 'lucide-react';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
+import { colorBarraPorRama } from '../utils/coloresRama';
 import CalendarioGrilla from './CalendarioGrilla';
 
-const DIAS_SEMANA_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const DIAS_SEMANA_CORTO = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-const COLOR_ENTRENAMIENTO = '#007AFF';
+const DIAS_MES = Array.from({ length: 31 }, (_, i) => i + 1);
+
+// Describe el patrón de recurrencia de un horario para mostrarlo en listas y
+// selects, sin repetir esta lógica en cada lugar que lo necesita.
+const describirRecurrencia = (h) => {
+  if (h.tipo_recurrencia === 'mensual') {
+    const dias = Array.isArray(h.dias_mes) ? h.dias_mes : [];
+    return dias.length ? `Día${dias.length > 1 ? 's' : ''} ${dias.join(', ')} de cada mes` : 'Mensual';
+  }
+  const dias = Array.isArray(h.dias_semana) ? h.dias_semana : [];
+  return dias.length ? dias.map((d) => DIAS_SEMANA_CORTO[d]).join(', ') : 'Semanal';
+};
+
+const describirVigencia = (h) => {
+  const ini = h.fecha_inicio ? String(h.fecha_inicio).slice(0, 10) : null;
+  const fin = h.fecha_fin ? String(h.fecha_fin).slice(0, 10) : null;
+  if (ini && fin) return `Vigente ${ini} a ${fin}`;
+  if (ini) return `Vigente desde ${ini}`;
+  if (fin) return `Vigente hasta ${fin}`;
+  return '';
+};
 
 const HORARIO_FORM_VACIO = {
   rama: 'Mixta',
   categoria: '',
-  dia_semana: 1,
+  tipo_recurrencia: 'semanal',
+  dias_semana: [1],
+  dias_mes: [],
+  fecha_inicio: '',
+  fecha_fin: '',
   hora_inicio: '18:00',
   hora_fin: '19:30',
   lugar: '',
@@ -114,7 +138,11 @@ function HorariosEntrenamientoPanel() {
     setHorarioForm({
       rama: h.rama,
       categoria: h.categoria,
-      dia_semana: h.dia_semana,
+      tipo_recurrencia: h.tipo_recurrencia === 'mensual' ? 'mensual' : 'semanal',
+      dias_semana: Array.isArray(h.dias_semana) ? h.dias_semana : [],
+      dias_mes: Array.isArray(h.dias_mes) ? h.dias_mes : [],
+      fecha_inicio: h.fecha_inicio ? String(h.fecha_inicio).slice(0, 10) : '',
+      fecha_fin: h.fecha_fin ? String(h.fecha_fin).slice(0, 10) : '',
       hora_inicio: h.hora_inicio?.slice(0, 5) || '18:00',
       hora_fin: h.hora_fin?.slice(0, 5) || '19:30',
       lugar: h.lugar || '',
@@ -124,9 +152,37 @@ function HorariosEntrenamientoPanel() {
     setMostrarForm(true);
   };
 
+  const toggleDiaSemana = (idx) => {
+    setHorarioForm((p) => {
+      const set = new Set(p.dias_semana);
+      if (set.has(idx)) set.delete(idx); else set.add(idx);
+      return { ...p, dias_semana: [...set].sort((a, b) => a - b) };
+    });
+  };
+
+  const toggleDiaMes = (dia) => {
+    setHorarioForm((p) => {
+      const set = new Set(p.dias_mes);
+      if (set.has(dia)) set.delete(dia); else set.add(dia);
+      return { ...p, dias_mes: [...set].sort((a, b) => a - b) };
+    });
+  };
+
   const guardarHorario = async () => {
     if (!horarioForm.categoria.trim()) {
       showToast({ message: 'Ponle una categoría al horario (ej. SUB-14).', type: 'error' });
+      return;
+    }
+    if (horarioForm.tipo_recurrencia === 'semanal' && horarioForm.dias_semana.length === 0) {
+      showToast({ message: 'Elige al menos un día de la semana.', type: 'error' });
+      return;
+    }
+    if (horarioForm.tipo_recurrencia === 'mensual' && horarioForm.dias_mes.length === 0) {
+      showToast({ message: 'Elige al menos un día del mes.', type: 'error' });
+      return;
+    }
+    if (horarioForm.fecha_inicio && horarioForm.fecha_fin && horarioForm.fecha_fin < horarioForm.fecha_inicio) {
+      showToast({ message: 'La fecha de término de vigencia debe ser posterior a la de inicio.', type: 'error' });
       return;
     }
     setGuardando(true);
@@ -148,7 +204,7 @@ function HorariosEntrenamientoPanel() {
   };
 
   const borrarHorario = async (h) => {
-    if (!(await confirmAction({ title: 'Borrar horario', message: `¿Confirmas borrar el horario de ${h.rama} ${h.categoria} (${DIAS_SEMANA_LABELS[h.dia_semana]})? También se borran sus excepciones.`, danger: true }))) return;
+    if (!(await confirmAction({ title: 'Borrar horario', message: `¿Confirmas borrar el horario de ${h.rama} ${h.categoria} (${describirRecurrencia(h)})? También se borran sus excepciones.`, danger: true }))) return;
     try {
       await api.horariosEntrenamientoAPI.remove(h.id_horario);
       showToast({ message: 'Horario borrado.', type: 'success' });
@@ -200,7 +256,7 @@ function HorariosEntrenamientoPanel() {
     horaFin: String(e.hora_fin || '00:00').slice(0, 5),
     titulo: `${e.rama} ${e.categoria}`,
     subtitulo: e.entrenador_a_cargo || '',
-    color: COLOR_ENTRENAMIENTO,
+    color: colorBarraPorRama(e.rama),
     tipo: 'entrenamiento',
     raw: e,
   })), [instancias]);
@@ -262,18 +318,57 @@ function HorariosEntrenamientoPanel() {
                 </div>
               </div>
 
-              <label style={{ display: 'block', margin: '12px 0 6px' }}>Día de la semana</label>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {DIAS_SEMANA_CORTO.map((label, idx) => (
-                  <button
-                    key={label}
-                    type="button"
-                    className={`segment-btn ${horarioForm.dia_semana === idx ? 'active' : ''}`}
-                    onClick={() => setHorarioForm((p) => ({ ...p, dia_semana: idx }))}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <label style={{ display: 'block', margin: '12px 0 6px' }}>Frecuencia</label>
+              <div className="segment-control" style={{ gap: '6px', marginBottom: '10px' }}>
+                <button type="button" className={`segment-btn ${horarioForm.tipo_recurrencia === 'semanal' ? 'active' : ''}`} onClick={() => setHorarioForm((p) => ({ ...p, tipo_recurrencia: 'semanal' }))}>Semanal</button>
+                <button type="button" className={`segment-btn ${horarioForm.tipo_recurrencia === 'mensual' ? 'active' : ''}`} onClick={() => setHorarioForm((p) => ({ ...p, tipo_recurrencia: 'mensual' }))}>Mensual</button>
+              </div>
+
+              {horarioForm.tipo_recurrencia === 'semanal' ? (
+                <>
+                  <label style={{ display: 'block', margin: '0 0 6px' }}>Días de la semana (elige uno o varios)</label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {DIAS_SEMANA_CORTO.map((label, idx) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className={`segment-btn ${horarioForm.dias_semana.includes(idx) ? 'active' : ''}`}
+                        onClick={() => toggleDiaSemana(idx)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label style={{ display: 'block', margin: '0 0 6px' }}>Días del mes (ej. 1 y 15 = dos veces al mes)</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '5px', maxWidth: '320px' }}>
+                    {DIAS_MES.map((dia) => (
+                      <button
+                        key={dia}
+                        type="button"
+                        className={`segment-btn ${horarioForm.dias_mes.includes(dia) ? 'active' : ''}`}
+                        style={{ padding: '6px 0', fontSize: '11px' }}
+                        onClick={() => toggleDiaMes(dia)}
+                      >
+                        {dia}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <label style={{ display: 'block', margin: '14px 0 6px' }}>Vigencia (opcional — deja vacío para indefinido)</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Desde</label>
+                  <input type="date" className="form-input" value={horarioForm.fecha_inicio} onChange={(e) => setHorarioForm((p) => ({ ...p, fecha_inicio: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Hasta</label>
+                  <input type="date" className="form-input" value={horarioForm.fecha_fin} onChange={(e) => setHorarioForm((p) => ({ ...p, fecha_fin: e.target.value }))} />
+                </div>
               </div>
 
               <button className="btn-electric mt-15" onClick={guardarHorario} disabled={guardando}>
@@ -292,10 +387,13 @@ function HorariosEntrenamientoPanel() {
                 <div>
                   <strong style={{ fontSize: '13px' }}>{h.rama} {h.categoria}</strong>
                   <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', marginTop: '3px' }}>
-                    {DIAS_SEMANA_LABELS[h.dia_semana]} · {h.hora_inicio?.slice(0, 5)}-{h.hora_fin?.slice(0, 5)}
+                    {describirRecurrencia(h)} · {h.hora_inicio?.slice(0, 5)}-{h.hora_fin?.slice(0, 5)}
                     {h.lugar && ` · ${h.lugar}`}
                     {h.entrenador_a_cargo && ` · Prof. ${h.entrenador_a_cargo}`}
                   </div>
+                  {describirVigencia(h) && (
+                    <div style={{ fontSize: '10px', color: 'var(--texto-secundario)', fontWeight: '600', marginTop: '2px' }}>{describirVigencia(h)}</div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: '11px' }} onClick={() => iniciarEdicionHorario(h)}>Editar</button>
@@ -320,7 +418,7 @@ function HorariosEntrenamientoPanel() {
             <select className="form-input" value={horarioSeleccionadoId || ''} onChange={(e) => setHorarioSeleccionadoId(e.target.value ? Number(e.target.value) : null)}>
               <option value="">Elige un horario...</option>
               {horarios.map((h) => (
-                <option key={h.id_horario} value={h.id_horario}>{h.rama} {h.categoria} · {DIAS_SEMANA_LABELS[h.dia_semana]} {h.hora_inicio?.slice(0, 5)}</option>
+                <option key={h.id_horario} value={h.id_horario}>{h.rama} {h.categoria} · {describirRecurrencia(h)} {h.hora_inicio?.slice(0, 5)}</option>
               ))}
             </select>
           </div>
@@ -406,7 +504,7 @@ function HorariosEntrenamientoPanel() {
             onRangoVisibleChange={manejarRangoVisible}
           />
           {instanciaSeleccionada && (
-            <div className="card mt-15" style={{ borderRadius: '16px', borderLeft: `4px solid ${COLOR_ENTRENAMIENTO}` }}>
+            <div className="card mt-15" style={{ borderRadius: '16px', borderLeft: `4px solid ${colorBarraPorRama(instanciaSeleccionada.rama)}` }}>
               <strong style={{ fontSize: '14px' }}>
                 {instanciaSeleccionada.hora_inicio?.slice(0, 5)}-{instanciaSeleccionada.hora_fin?.slice(0, 5)} · {instanciaSeleccionada.rama} {instanciaSeleccionada.categoria}
               </strong>
