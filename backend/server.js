@@ -1995,7 +1995,47 @@ const ensureHorariosEntrenamientoTable = async () => {
   await pool.query(`ALTER TABLE horarios_entrenamiento ADD COLUMN IF NOT EXISTS fecha_fin DATE`);
   // Migra filas viejas (dia_semana escalar, previas a este cambio) al nuevo arreglo dias_semana.
   await pool.query(`UPDATE horarios_entrenamiento SET dias_semana = ARRAY[dia_semana]::SMALLINT[] WHERE dias_semana IS NULL AND dia_semana IS NOT NULL`);
+
+  // categoria/entrenador_a_cargo (escalares) → categorias/entrenadores (arreglos):
+  // un horario puede aplicar a varias categorías a la vez (ej. SUB-13 y SUB-15
+  // entrenan juntas) y puede tener uno o varios entrenadores a cargo. Las
+  // columnas viejas quedan en la tabla sin usar (igual que dia_semana) por
+  // compatibilidad de datos históricos — no se leen más tras este cambio.
+  await pool.query(`ALTER TABLE horarios_entrenamiento ALTER COLUMN categoria DROP NOT NULL`);
+  await pool.query(`ALTER TABLE horarios_entrenamiento ADD COLUMN IF NOT EXISTS categorias VARCHAR(50)[]`);
+  await pool.query(`ALTER TABLE horarios_entrenamiento ADD COLUMN IF NOT EXISTS entrenadores VARCHAR(255)[]`);
+  await pool.query(`UPDATE horarios_entrenamiento SET categorias = ARRAY[categoria] WHERE categorias IS NULL AND categoria IS NOT NULL`);
+  await pool.query(`UPDATE horarios_entrenamiento SET entrenadores = ARRAY[entrenador_a_cargo] WHERE entrenadores IS NULL AND entrenador_a_cargo IS NOT NULL AND entrenador_a_cargo != ''`);
   console.log('🗓️ Tabla horarios_entrenamiento verificada');
+};
+
+// Personal del club (entrenadores, kinesiólogos, etc.) — se usa para el
+// selector de "entrenador a cargo" en horarios de entrenamiento. La tabla ya
+// existía solo en backend/migrations/init.js (script de un solo uso); se
+// agrega acá con el patrón idempotente estándar para que /api/staff no falle
+// en un entorno donde ese script nunca se corrió.
+const ensureStaffTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS staff (
+      id_staff SERIAL PRIMARY KEY,
+      rut_staff VARCHAR(20) UNIQUE,
+      nombres VARCHAR(255),
+      apellido_paterno VARCHAR(255),
+      apellido_materno VARCHAR(255),
+      cargo VARCHAR(100),
+      rama VARCHAR(50),
+      especialidad VARCHAR(100),
+      email VARCHAR(255),
+      telefono VARCHAR(20),
+      fecha_ingreso DATE,
+      activo BOOLEAN DEFAULT true,
+      salario DECIMAL(10,2),
+      contrato_url VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('👥 Tabla staff verificada');
 };
 
 // Excepción puntual a un horario base, para UNA fecha específica: cancelar
@@ -6893,7 +6933,7 @@ app.get('/api/auditoria', authenticate, requireModule('auditoria'), async (req, 
 // 25. ENDPOINTS: STAFF (FASE 3)
 // ==========================================
 
-app.get('/api/staff', authenticate, requireAnyModule('admin_dashboard', 'asistencia_staff'), async (req, res) => {
+app.get('/api/staff', authenticate, requireAnyModule('admin_dashboard', 'asistencia_staff', 'horarios_entrenamiento'), async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM staff WHERE activo = true ORDER BY apellido_paterno ASC`);
     res.json(result.rows);
@@ -7815,6 +7855,34 @@ const buscarChoqueArriendoCancha = async (fecha, horaInicio, horaFin, excluirId 
   return result.rows[0] || null;
 };
 
+// Choca contra el horario de entrenamiento de esa fecha exacta (expande el
+// patrón recurrente para un solo día, reusando expandirHorariosEnRango de la
+// sección 37 — no se referencia hasta que llega un request, momento en el
+// que ya está definida más abajo en el archivo).
+const buscarChoqueEntrenamiento = async (fecha, horaInicio, horaFin) => {
+  const instancias = await expandirHorariosEnRango(fecha, fecha);
+  return instancias.find((i) => i.hora_inicio < horaFin && i.hora_fin > horaInicio) || null;
+};
+
+// Compone ambos choques: primero arriendo-vs-arriendo (comportamiento actual
+// sin cambios), después arriendo-vs-entrenamiento. Un arriendo no puede
+// coexistir con ninguno de los dos en la misma franja horaria.
+const buscarConflictoCanchaEnFecha = async (fecha, horaInicio, horaFin, excluirIdArriendo = null) => {
+  const choqueArriendo = await buscarChoqueArriendoCancha(fecha, horaInicio, horaFin, excluirIdArriendo);
+  if (choqueArriendo) return { origen: 'arriendo', ...choqueArriendo };
+  const choqueEntrenamiento = await buscarChoqueEntrenamiento(fecha, horaInicio, horaFin);
+  if (choqueEntrenamiento) return { origen: 'entrenamiento', ...choqueEntrenamiento };
+  return null;
+};
+
+const mensajeConflictoCancha = (conflicto) => {
+  if (conflicto.origen === 'entrenamiento') {
+    const categorias = Array.isArray(conflicto.categorias) ? conflicto.categorias.join('/') : '';
+    return `La cancha ya tiene entrenamiento ese horario (${conflicto.rama} ${categorias}, ${conflicto.hora_inicio}-${conflicto.hora_fin}).`;
+  }
+  return `La cancha ya está arrendada ese horario (${conflicto.nombre_arrendatario}, ${conflicto.hora_inicio}-${conflicto.hora_fin}).`;
+};
+
 app.get('/api/arriendos-cancha', authenticate, requireModule('cancha_arriendo'), async (req, res) => {
   const { desde, hasta, estado_pago } = req.query;
   try {
@@ -7853,12 +7921,9 @@ app.post('/api/arriendos-cancha', authenticate, requireModule('cancha_arriendo')
   }
 
   try {
-    const choque = await buscarChoqueArriendoCancha(fecha, hora_inicio, hora_fin);
-    if (choque) {
-      return res.status(409).json({
-        error: `La cancha ya está arrendada ese horario (${choque.nombre_arrendatario}, ${choque.hora_inicio}-${choque.hora_fin}).`,
-        conflicto: choque,
-      });
+    const conflicto = await buscarConflictoCanchaEnFecha(fecha, hora_inicio, hora_fin);
+    if (conflicto) {
+      return res.status(409).json({ error: mensajeConflictoCancha(conflicto), conflicto });
     }
 
     const result = await pool.query(
@@ -7915,10 +7980,27 @@ app.post('/api/arriendos-cancha/lote', authenticate, requireModule('cancha_arrie
     const creados = [];
     const omitidos = [];
 
+    // Una sola expansión para todo el rango del lote (no una query de
+    // entrenamientos por fecha dentro del loop, que sería N+1 hasta 366
+    // veces) — se agrupa por fecha para chequear cada una en memoria.
+    const instanciasEnRango = await expandirHorariosEnRango(fechasUnicas[0], fechasUnicas[fechasUnicas.length - 1]);
+    const instanciasPorFecha = new Map();
+    instanciasEnRango.forEach((i) => {
+      if (!instanciasPorFecha.has(i.fecha)) instanciasPorFecha.set(i.fecha, []);
+      instanciasPorFecha.get(i.fecha).push(i);
+    });
+
     for (const fechaStr of fechasUnicas) {
       const choque = await buscarChoqueArriendoCancha(fechaStr, hora_inicio, hora_fin);
       if (choque) {
         omitidos.push({ fecha: fechaStr, motivo: `Choca con ${choque.nombre_arrendatario} (${choque.hora_inicio}-${choque.hora_fin})` });
+        continue;
+      }
+      const choqueEntrenamiento = (instanciasPorFecha.get(fechaStr) || [])
+        .find((i) => i.hora_inicio < hora_fin && i.hora_fin > hora_inicio);
+      if (choqueEntrenamiento) {
+        const categorias = Array.isArray(choqueEntrenamiento.categorias) ? choqueEntrenamiento.categorias.join('/') : '';
+        omitidos.push({ fecha: fechaStr, motivo: `Choca con entrenamiento ${choqueEntrenamiento.rama} ${categorias} (${choqueEntrenamiento.hora_inicio}-${choqueEntrenamiento.hora_fin})` });
         continue;
       }
 
@@ -7957,12 +8039,9 @@ app.put('/api/arriendos-cancha/:id', authenticate, requireModule('cancha_arriend
       if (hora_fin <= hora_inicio) {
         return res.status(400).json({ error: 'La hora de término debe ser posterior a la hora de inicio.' });
       }
-      const choque = await buscarChoqueArriendoCancha(fecha, hora_inicio, hora_fin, req.params.id);
-      if (choque) {
-        return res.status(409).json({
-          error: `La cancha ya está arrendada ese horario (${choque.nombre_arrendatario}, ${choque.hora_inicio}-${choque.hora_fin}).`,
-          conflicto: choque,
-        });
+      const conflicto = await buscarConflictoCanchaEnFecha(fecha, hora_inicio, hora_fin, req.params.id);
+      if (conflicto) {
+        return res.status(409).json({ error: mensajeConflictoCancha(conflicto), conflicto });
       }
     }
 
@@ -8025,12 +8104,72 @@ app.delete('/api/arriendos-cancha/serie/:serieId', authenticate, requireModule('
 // 37. ENDPOINTS: HORARIOS DE ENTRENAMIENTO
 // ==========================================
 
+// Puro, sin DB: fechas ISO dentro de [desdeISO,hastaISO] donde aplica el
+// patrón de recurrencia de UN horario (acota por vigencia si tiene, y
+// chequea dias_mes o dias_semana según tipo_recurrencia). Reusado por
+// expandirHorariosEnRango (horarios ya guardados) y por
+// calcularAdvertenciasChoqueHorario (horario candidato, aún no insertado) —
+// evita triplicar este loop día-por-día en el archivo.
+const expandirPatronEnRango = (horario, desdeISO, hastaISO) => {
+  const inicioVigencia = horario.fecha_inicio ? new Date(horario.fecha_inicio).toISOString().slice(0, 10) : null;
+  const finVigencia = horario.fecha_fin ? new Date(horario.fecha_fin).toISOString().slice(0, 10) : null;
+  const desdeEfectivo = inicioVigencia && inicioVigencia > desdeISO ? inicioVigencia : desdeISO;
+  const hastaEfectivo = finVigencia && finVigencia < hastaISO ? finVigencia : hastaISO;
+
+  const fechas = [];
+  const inicio = new Date(`${desdeEfectivo}T00:00:00`);
+  const fin = new Date(`${hastaEfectivo}T00:00:00`);
+  for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
+    const coincide = horario.tipo_recurrencia === 'mensual'
+      ? Array.isArray(horario.dias_mes) && horario.dias_mes.includes(d.getDate())
+      : Array.isArray(horario.dias_semana) && horario.dias_semana.includes(d.getDay());
+    if (coincide) fechas.push(d.toISOString().slice(0, 10));
+  }
+  return fechas;
+};
+
+// Expande horarios activos (o una lista ya cargada, para no repetir el
+// SELECT) + sus excepciones en instancias concretas dentro de [desde,hasta].
+const expandirHorariosEnRango = async (desde, hasta, horariosDados = null) => {
+  const horarios = horariosDados || (await pool.query(`SELECT * FROM horarios_entrenamiento WHERE activo = true`)).rows;
+  if (horarios.length === 0) return [];
+
+  const excepciones = (await pool.query(
+    `SELECT * FROM horarios_entrenamiento_excepciones WHERE fecha BETWEEN $1 AND $2`,
+    [desde, hasta]
+  )).rows;
+  const excepcionesPorHorarioFecha = new Map(
+    excepciones.map((e) => [`${e.id_horario}_${e.fecha.toISOString().slice(0, 10)}`, e])
+  );
+
+  const instancias = [];
+  horarios.forEach((h) => {
+    expandirPatronEnRango(h, desde, hasta).forEach((fechaStr) => {
+      const excepcion = excepcionesPorHorarioFecha.get(`${h.id_horario}_${fechaStr}`);
+      if (excepcion?.tipo === 'cancelado') return;
+      instancias.push({
+        id_horario: h.id_horario,
+        fecha: fechaStr,
+        rama: h.rama,
+        categorias: h.categorias || [],
+        hora_inicio: excepcion?.hora_inicio_nueva || h.hora_inicio,
+        hora_fin: excepcion?.hora_fin_nueva || h.hora_fin,
+        lugar: excepcion?.lugar_nuevo || h.lugar,
+        entrenadores: h.entrenadores || [],
+        es_reprogramado: excepcion?.tipo === 'reprogramado',
+      });
+    });
+  });
+  instancias.sort((a, b) => (a.fecha + a.hora_inicio).localeCompare(b.fecha + b.hora_inicio));
+  return instancias;
+};
+
 app.get('/api/horarios-entrenamiento', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
   try {
     const incluirInactivos = String(req.query.incluirInactivos || '').toLowerCase() === 'true';
     const where = incluirInactivos ? '' : 'WHERE activo = true';
     const result = await pool.query(
-      `SELECT * FROM horarios_entrenamiento ${where} ORDER BY rama, categoria, hora_inicio`
+      `SELECT * FROM horarios_entrenamiento ${where} ORDER BY rama, hora_inicio`
     );
     res.json(result.rows);
   } catch (err) {
@@ -8046,9 +8185,9 @@ app.get('/api/horarios-entrenamiento', authenticate, requireModule('horarios_ent
 app.get('/api/horarios-entrenamiento/publico', authenticateOpcional, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id_horario, rama, categoria, tipo_recurrencia, dias_semana, dias_mes, fecha_inicio, fecha_fin, hora_inicio, hora_fin, lugar, entrenador_a_cargo
+      `SELECT id_horario, rama, categorias, tipo_recurrencia, dias_semana, dias_mes, fecha_inicio, fecha_fin, hora_inicio, hora_fin, lugar, entrenadores
        FROM horarios_entrenamiento WHERE activo = true
-       ORDER BY rama, categoria, hora_inicio`
+       ORDER BY rama, hora_inicio`
     );
     res.json(result.rows);
   } catch (err) {
@@ -8068,49 +8207,7 @@ app.get('/api/horarios-entrenamiento/instancias', authenticateOpcional, async (r
     return res.status(400).json({ error: 'Falta desde/hasta.' });
   }
   try {
-    const horarios = (await pool.query(`SELECT * FROM horarios_entrenamiento WHERE activo = true`)).rows;
-    const excepciones = (await pool.query(
-      `SELECT * FROM horarios_entrenamiento_excepciones WHERE fecha BETWEEN $1 AND $2`,
-      [desde, hasta]
-    )).rows;
-    const excepcionesPorHorarioFecha = new Map(
-      excepciones.map((e) => [`${e.id_horario}_${e.fecha.toISOString().slice(0, 10)}`, e])
-    );
-
-    const instancias = [];
-    const inicio = new Date(`${desde}T00:00:00`);
-    const fin = new Date(`${hasta}T00:00:00`);
-    for (let d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
-      const fechaStr = d.toISOString().slice(0, 10);
-      const diaSemana = d.getDay();
-      const diaMes = d.getDate();
-      horarios
-        .filter((h) => {
-          const inicioVigencia = h.fecha_inicio ? new Date(h.fecha_inicio).toISOString().slice(0, 10) : null;
-          const finVigencia = h.fecha_fin ? new Date(h.fecha_fin).toISOString().slice(0, 10) : null;
-          if (inicioVigencia && fechaStr < inicioVigencia) return false;
-          if (finVigencia && fechaStr > finVigencia) return false;
-          if (h.tipo_recurrencia === 'mensual') {
-            return Array.isArray(h.dias_mes) && h.dias_mes.includes(diaMes);
-          }
-          return Array.isArray(h.dias_semana) && h.dias_semana.includes(diaSemana);
-        })
-        .forEach((h) => {
-          const excepcion = excepcionesPorHorarioFecha.get(`${h.id_horario}_${fechaStr}`);
-          if (excepcion?.tipo === 'cancelado') return;
-          instancias.push({
-            id_horario: h.id_horario,
-            fecha: fechaStr,
-            rama: h.rama,
-            categoria: h.categoria,
-            hora_inicio: excepcion?.hora_inicio_nueva || h.hora_inicio,
-            hora_fin: excepcion?.hora_fin_nueva || h.hora_fin,
-            lugar: excepcion?.lugar_nuevo || h.lugar,
-            entrenador_a_cargo: h.entrenador_a_cargo,
-            es_reprogramado: excepcion?.tipo === 'reprogramado',
-          });
-        });
-    }
+    const instancias = await expandirHorariosEnRango(desde, hasta);
     res.json(instancias);
   } catch (err) {
     console.error('[GET /api/horarios-entrenamiento/instancias]', err);
@@ -8127,12 +8224,59 @@ const limpiarDiasArray = (valores, min, max) => {
   return [...set].sort((a, b) => a - b);
 };
 
-app.post('/api/horarios-entrenamiento', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
-  const { rama, categoria, tipo_recurrencia, dias_semana, dias_mes, fecha_inicio, fecha_fin, hora_inicio, hora_fin, lugar, entrenador_a_cargo, registrado_por } = req.body;
+// Igual idea para arreglos de texto (categorías, entrenadores): trim,
+// descarta vacíos, dedupe, cap de largo y cantidad.
+const limpiarTextoArray = (valores, maxLen = 255, maxItems = 20) => {
+  if (!Array.isArray(valores)) return [];
+  const set = new Set(
+    valores.map((v) => String(v || '').trim().slice(0, maxLen)).filter(Boolean)
+  );
+  return [...set].slice(0, maxItems);
+};
 
-  if (!String(rama || '').trim() || !String(categoria || '').trim()) {
-    return res.status(400).json({ error: 'Falta rama o categoría.' });
+const DIAS_VENTANA_ADVERTENCIA_DEFECTO = 90;
+
+// Advertencia (no bloqueante) de que un horario recién creado/editado choca
+// con arriendos ya reservados dentro de su vigencia (o los próximos 90 días
+// si no tiene fecha_fin, sin advertir sobre fechas pasadas). Una sola query
+// de rango + cruce en memoria contra expandirPatronEnRango, para no lanzar
+// una query por fecha del patrón.
+const calcularAdvertenciasChoqueHorario = async (horario) => {
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const inicioVigencia = horario.fecha_inicio ? new Date(horario.fecha_inicio) : null;
+  const desde = inicioVigencia && inicioVigencia > hoy ? inicioVigencia : hoy;
+  const hasta = horario.fecha_fin
+    ? new Date(horario.fecha_fin)
+    : new Date(desde.getTime() + DIAS_VENTANA_ADVERTENCIA_DEFECTO * 86400000);
+  if (hasta < desde) return [];
+
+  const desdeISO = desde.toISOString().slice(0, 10);
+  const hastaISO = hasta.toISOString().slice(0, 10);
+  const fechasPatron = new Set(expandirPatronEnRango(horario, desdeISO, hastaISO));
+  if (fechasPatron.size === 0) return [];
+
+  const { rows: arriendosEnVentana } = await pool.query(
+    `SELECT id_arriendo, nombre_arrendatario, fecha, hora_inicio, hora_fin FROM arriendos_cancha
+     WHERE fecha BETWEEN $1 AND $2 AND estado_pago != 'anulado'
+       AND hora_inicio < $3 AND hora_fin > $4`,
+    [desdeISO, hastaISO, horario.hora_fin, horario.hora_inicio]
+  );
+  return arriendosEnVentana
+    .filter((a) => fechasPatron.has(a.fecha.toISOString().slice(0, 10)))
+    .map((a) => ({ fecha: a.fecha.toISOString().slice(0, 10), nombre_arrendatario: a.nombre_arrendatario, hora_inicio: a.hora_inicio, hora_fin: a.hora_fin }));
+};
+
+app.post('/api/horarios-entrenamiento', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
+  const { rama, categorias, tipo_recurrencia, dias_semana, dias_mes, fecha_inicio, fecha_fin, hora_inicio, hora_fin, lugar, entrenadores, registrado_por } = req.body;
+
+  if (!String(rama || '').trim()) {
+    return res.status(400).json({ error: 'Falta la rama.' });
   }
+  const categoriasFinal = limpiarTextoArray(categorias, 50);
+  if (categoriasFinal.length === 0) {
+    return res.status(400).json({ error: 'Elige al menos una categoría.' });
+  }
+  const entrenadoresFinal = limpiarTextoArray(entrenadores, 255);
   const tipoFinal = tipo_recurrencia === 'mensual' ? 'mensual' : 'semanal';
   const diasSemanaFinal = tipoFinal === 'semanal' ? limpiarDiasArray(dias_semana, 0, 6) : [];
   const diasMesFinal = tipoFinal === 'mensual' ? limpiarDiasArray(dias_mes, 1, 31) : [];
@@ -8154,16 +8298,18 @@ app.post('/api/horarios-entrenamiento', authenticate, requireModule('horarios_en
 
   try {
     const result = await pool.query(
-      `INSERT INTO horarios_entrenamiento (rama, categoria, tipo_recurrencia, dias_semana, dias_mes, fecha_inicio, fecha_fin, hora_inicio, hora_fin, lugar, entrenador_a_cargo, registrado_por)
+      `INSERT INTO horarios_entrenamiento (rama, categorias, tipo_recurrencia, dias_semana, dias_mes, fecha_inicio, fecha_fin, hora_inicio, hora_fin, lugar, entrenadores, registrado_por)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
       [
-        rama.trim(), categoria.trim(), tipoFinal, diasSemanaFinal, diasMesFinal,
+        rama.trim(), categoriasFinal, tipoFinal, diasSemanaFinal, diasMesFinal,
         fecha_inicio || null, fecha_fin || null, hora_inicio, hora_fin,
-        lugar || null, entrenador_a_cargo || null, registrado_por || null,
+        lugar || null, entrenadoresFinal, registrado_por || null,
       ]
     );
-    res.status(201).json(result.rows[0]);
+    const horarioCreado = result.rows[0];
+    const advertenciasChoque = await calcularAdvertenciasChoqueHorario(horarioCreado);
+    res.status(201).json({ ...horarioCreado, advertenciasChoque });
   } catch (err) {
     console.error('[POST /api/horarios-entrenamiento]', err);
     res.status(500).json({ error: err.message });
@@ -8171,7 +8317,7 @@ app.post('/api/horarios-entrenamiento', authenticate, requireModule('horarios_en
 });
 
 app.put('/api/horarios-entrenamiento/:id', authenticate, requireModule('horarios_entrenamiento'), async (req, res) => {
-  const { rama, categoria, tipo_recurrencia, dias_semana, dias_mes, fecha_inicio, fecha_fin, hora_inicio, hora_fin, lugar, entrenador_a_cargo, activo } = req.body;
+  const { rama, categorias, tipo_recurrencia, dias_semana, dias_mes, fecha_inicio, fecha_fin, hora_inicio, hora_fin, lugar, entrenadores, activo } = req.body;
 
   if (hora_inicio && hora_fin && hora_fin <= hora_inicio) {
     return res.status(400).json({ error: 'La hora de término debe ser posterior a la hora de inicio.' });
@@ -8180,6 +8326,11 @@ app.put('/api/horarios-entrenamiento/:id', authenticate, requireModule('horarios
     return res.status(400).json({ error: 'La fecha de término de vigencia debe ser posterior a la de inicio.' });
   }
 
+  const categoriasFinal = categorias !== undefined ? limpiarTextoArray(categorias, 50) : null;
+  if (categorias !== undefined && categoriasFinal.length === 0) {
+    return res.status(400).json({ error: 'Elige al menos una categoría.' });
+  }
+  const entrenadoresFinal = entrenadores !== undefined ? limpiarTextoArray(entrenadores, 255) : null;
   const tipoFinal = tipo_recurrencia === 'mensual' || tipo_recurrencia === 'semanal' ? tipo_recurrencia : null;
   const diasSemanaFinal = tipoFinal === 'semanal' ? limpiarDiasArray(dias_semana, 0, 6) : (tipoFinal ? [] : null);
   const diasMesFinal = tipoFinal === 'mensual' ? limpiarDiasArray(dias_mes, 1, 31) : (tipoFinal ? [] : null);
@@ -8194,7 +8345,7 @@ app.put('/api/horarios-entrenamiento/:id', authenticate, requireModule('horarios
     const result = await pool.query(
       `UPDATE horarios_entrenamiento SET
         rama = COALESCE($1, rama),
-        categoria = COALESCE($2, categoria),
+        categorias = COALESCE($2, categorias),
         tipo_recurrencia = COALESCE($3, tipo_recurrencia),
         dias_semana = COALESCE($4, dias_semana),
         dias_mes = COALESCE($5, dias_mes),
@@ -8203,15 +8354,15 @@ app.put('/api/horarios-entrenamiento/:id', authenticate, requireModule('horarios
         hora_inicio = COALESCE($8, hora_inicio),
         hora_fin = COALESCE($9, hora_fin),
         lugar = COALESCE($10, lugar),
-        entrenador_a_cargo = COALESCE($11, entrenador_a_cargo),
+        entrenadores = COALESCE($11, entrenadores),
         activo = COALESCE($12, activo),
         updated_at = NOW()
        WHERE id_horario = $13
        RETURNING *`,
       [
-        rama || null, categoria || null, tipoFinal, diasSemanaFinal, diasMesFinal,
+        rama || null, categoriasFinal, tipoFinal, diasSemanaFinal, diasMesFinal,
         fecha_inicio || null, fecha_fin || null,
-        hora_inicio || null, hora_fin || null, lugar || null, entrenador_a_cargo || null,
+        hora_inicio || null, hora_fin || null, lugar || null, entrenadoresFinal,
         activo === undefined ? null : Boolean(activo),
         req.params.id,
       ]
@@ -8219,7 +8370,9 @@ app.put('/api/horarios-entrenamiento/:id', authenticate, requireModule('horarios
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Horario no encontrado.' });
     }
-    res.json(result.rows[0]);
+    const horarioActualizado = result.rows[0];
+    const advertenciasChoque = await calcularAdvertenciasChoqueHorario(horarioActualizado);
+    res.json({ ...horarioActualizado, advertenciasChoque });
   } catch (err) {
     console.error('[PUT /api/horarios-entrenamiento/:id]', err);
     res.status(500).json({ error: err.message });
@@ -8429,6 +8582,10 @@ app.listen(PORT, () => {
 
   ensureHorariosEntrenamientoExcepcionesTable().catch((error) => {
     console.error('❌ Error verificando tabla horarios_entrenamiento_excepciones:', error.message);
+  });
+
+  ensureStaffTable().catch((error) => {
+    console.error('❌ Error verificando tabla staff:', error.message);
   });
 
   ensureCitacionesTables().catch((error) => {

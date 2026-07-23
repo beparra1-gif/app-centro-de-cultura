@@ -8,7 +8,7 @@ import {
   FileText, Flag, QrCode, Lock, Camera, ChevronRight, ChevronLeft, 
   ShieldAlert, Zap, Clock, FileDown, RefreshCw,
   History, CheckSquare,
-  XSquare, UserPlus, ListOrdered, CalendarClock, CalendarDays
+  XSquare, UserPlus, ListOrdered, CalendarClock
 } from 'lucide-react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
@@ -36,8 +36,7 @@ import {
 
 const ComunicacionesPanel = lazy(() => import('./components/ComunicacionesPanel'));
 const KioscoPanel = lazy(() => import('./components/KioscoPanel'));
-const CanchaArriendoPanel = lazy(() => import('./components/CanchaArriendoPanel'));
-const HorariosEntrenamientoPanel = lazy(() => import('./components/HorariosEntrenamientoPanel'));
+const CanchaEntrenamientosPanel = lazy(() => import('./components/CanchaEntrenamientosPanel'));
 const SuperAdminPanel = lazy(() => import('./components/SuperAdminPanel'));
 const MesaControlPanel = lazy(() => import('./components/MesaControlPanel'));
 const TorneosPanel = lazy(() => import('./components/TorneosPanel'));
@@ -401,7 +400,13 @@ function App() {
               ...sesion.usuario,
               rol: resolverRolPrincipal(sesion.usuario?.rol || rolNormalizado, sesion.usuario),
             });
-            setPantallaActiva(sesion.pantallaActiva || (rolNormalizado === 'super_admin' ? 'admin_dashboard' : 'comunicaciones'));
+            // Sesiones guardadas antes de fusionar Cancha + Horarios en un
+            // solo apartado tenían esos ids como pantallaActiva — se
+            // normalizan al nuevo id para no dejar la pantalla en blanco.
+            const pantallaGuardada = ['cancha_arriendo', 'horarios_entrenamiento'].includes(sesion.pantallaActiva)
+              ? 'cancha_entrenamientos'
+              : sesion.pantallaActiva;
+            setPantallaActiva(pantallaGuardada || (rolNormalizado === 'super_admin' ? 'admin_dashboard' : 'comunicaciones'));
             setSesionToken(sesion.token || null);
             api.setAuthToken(sesion.token || null);
           }
@@ -1165,8 +1170,7 @@ function App() {
       case 'scoreboard_live': return "Mesa FIBA Live";
       case 'torneos': return "Torneos y Tabla de Posiciones";
       case 'kiosco': return "Kiosco POS";
-      case 'cancha_arriendo': return "Arriendo de Cancha";
-      case 'horarios_entrenamiento': return "Horarios de Entrenamiento";
+      case 'cancha_entrenamientos': return "Cancha y Entrenamientos";
       case 'admin_dashboard': return "Administración";
       default: return "Club Cultura Física";
     }
@@ -2537,7 +2541,7 @@ function App() {
   }));
 
   const esPerfilFamiliarNav = ['apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'].includes(rolUsuario);
-  const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco', 'cancha_arriendo', 'horarios_entrenamiento'];
+  const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco'];
   const modulosNavegacionVisibles = modulosNavegacionOrden.filter((modulo) => puedeVerPantalla(modulo));
   const LOCAL_PREVIEW_LABEL = 'MODO LOCAL · CAMBIOS INMEDIATOS';
   const mostrarApartadoLocal = (() => {
@@ -2568,10 +2572,6 @@ function App() {
         return { label: 'Mesa', Icon: Monitor };
       case 'kiosco':
         return { label: 'Kiosco', Icon: LayoutGrid };
-      case 'cancha_arriendo':
-        return { label: 'Cancha', Icon: CalendarClock };
-      case 'horarios_entrenamiento':
-        return { label: 'Entrenamientos', Icon: CalendarDays };
       default:
         return null;
     }
@@ -2983,11 +2983,11 @@ function App() {
                 nombreResponsable={usuarioAutenticado?.nombres || usuarioAutenticado?.nombre || ''}
               />
             )}
-            {puedeVerPantalla('cancha_arriendo') && pantallaActiva === 'cancha_arriendo' && (
-              <CanchaArriendoPanel />
-            )}
-            {puedeVerPantalla('horarios_entrenamiento') && pantallaActiva === 'horarios_entrenamiento' && (
-              <HorariosEntrenamientoPanel />
+            {(puedeVerPantalla('cancha_arriendo') || puedeVerPantalla('horarios_entrenamiento')) && pantallaActiva === 'cancha_entrenamientos' && (
+              <CanchaEntrenamientosPanel
+                puedeCancha={puedeVerPantalla('cancha_arriendo')}
+                puedeHorarios={puedeVerPantalla('horarios_entrenamiento')}
+              />
             )}
             {(puedeVerPantalla('admin_dashboard') || puedeVerPantalla('citaciones') || puedeVerPantalla('resultados')) && pantallaActiva === 'admin_dashboard' && (
               <SuperAdminPanel
@@ -3114,6 +3114,19 @@ function App() {
               >
                 <Trophy size={26} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <span className="mt-5">Torneos</span>
+              </button>
+            )}
+            {/* Un solo botón agrupa Arriendo de Cancha y Horarios de
+                Entrenamiento — cada uno sigue siendo su propio permiso, el
+                botón se muestra si el usuario tiene cualquiera de los dos. */}
+            {(puedeVerPantalla('cancha_arriendo') || puedeVerPantalla('horarios_entrenamiento')) && (
+              <button
+                type="button"
+                className={`nav-item ${pantallaActiva === 'cancha_entrenamientos' ? 'active' : ''}`}
+                onClick={() => cambiarPantallaConLoader('cancha_entrenamientos')}
+              >
+                <CalendarClock size={26} color="var(--gris-secundario)" strokeWidth={1.5} />
+                <span className="mt-5">Cancha</span>
               </button>
             )}
           </>

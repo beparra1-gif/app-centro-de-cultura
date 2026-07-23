@@ -38,11 +38,12 @@ function MuroHorarioEntrenamientos() {
   const grupos = useMemo(() => {
     const mapa = new Map();
     horarios.forEach((h) => {
-      const key = `${h.rama}__${h.categoria}`;
-      if (!mapa.has(key)) mapa.set(key, { rama: h.rama, categoria: h.categoria, sesiones: [] });
+      const categorias = Array.isArray(h.categorias) ? h.categorias : [];
+      const key = `${h.rama}__${categorias.join(',')}`;
+      if (!mapa.has(key)) mapa.set(key, { rama: h.rama, categorias, sesiones: [] });
       mapa.get(key).sesiones.push(h);
     });
-    return [...mapa.values()].sort((a, b) => (a.rama + a.categoria).localeCompare(b.rama + b.categoria));
+    return [...mapa.values()].sort((a, b) => (a.rama + a.categorias.join(',')).localeCompare(b.rama + b.categorias.join(',')));
   }, [horarios]);
 
   if (cargando || grupos.length === 0) return null;
@@ -66,17 +67,17 @@ function MuroHorarioEntrenamientos() {
           {grupos.map((g) => {
             const { bg, color } = colorBadgePorRama(g.rama);
             return (
-              <div key={`${g.rama}-${g.categoria}`} style={{ border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '8px 12px' }}>
+              <div key={`${g.rama}-${g.categorias.join(',')}`} style={{ border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '8px 12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '10px', fontWeight: '800', padding: '2px 8px', borderRadius: '999px', color, background: bg }}>{g.rama}</span>
-                  <strong style={{ fontSize: '13px' }}>{g.categoria}</strong>
+                  <strong style={{ fontSize: '13px' }}>{g.categorias.join(', ')}</strong>
                 </div>
                 <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                   {g.sesiones.map((s) => (
                     <span key={s.id_horario} style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
                       {describirDias(s)} {s.hora_inicio?.slice(0, 5)}-{s.hora_fin?.slice(0, 5)}
                       {s.lugar && ` · ${s.lugar}`}
-                      {s.entrenador_a_cargo && ` · Prof. ${s.entrenador_a_cargo}`}
+                      {Array.isArray(s.entrenadores) && s.entrenadores.length > 0 && ` · Prof. ${s.entrenadores.join(', ')}`}
                     </span>
                   ))}
                 </div>

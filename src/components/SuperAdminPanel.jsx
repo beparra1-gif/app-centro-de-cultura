@@ -35,6 +35,7 @@ import ResultadosCards from './ResultadosCards';
 import { colorTipo } from '../utils/appHelpers';
 import { calcularResumenCitacion } from '../utils/citaciones';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
+import { CATEGORIAS_POR_RAMA } from '../utils/categoriasDeportivas';
 import { cuentasDemo } from '../data/demoAccounts';
 import ReportesPanel from './ReportesPanel';
 import SaludAlertasPanel from './SaludAlertasPanel';
@@ -372,13 +373,8 @@ function SuperAdminPanel({
   const [torneosDisponibles, setTorneosDisponibles] = useState([]);
   const [comprobanteEnVista, setComprobanteEnVista] = useState(null); // { url, esImagen } | null
 
-  // Definir categorías disponibles según rama
-  const categoriasDisponibles = {
-    'Mixta': ['SUB-13', 'SUB-15', 'SUB-17', 'SUB-19'],
-    'Femenina': ['SUB-13', 'SUB-15', 'SUB-17', 'SUB-19'],
-    'Masculina': ['SUB-13', 'SUB-15', 'SUB-17', 'SUB-19'],
-    'Adulto': ['General'],
-  };
+  // Categorías disponibles según rama (catálogo compartido, ver src/utils/categoriasDeportivas.js)
+  const categoriasDisponibles = CATEGORIAS_POR_RAMA;
   const [partidosAdmin, setPartidosAdmin] = useState([]);
   const [guardandoResultado, setGuardandoResultado] = useState(false);
   const [partidoEditandoId, setPartidoEditandoId] = useState(null);
