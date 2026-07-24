@@ -1389,6 +1389,14 @@ export const clubesAPI = {
       body: JSON.stringify(datos)
     });
     return handleResponse(response);
+  },
+  update: async (id, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/clubes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
   }
 };
 

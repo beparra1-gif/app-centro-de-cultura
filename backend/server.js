@@ -1652,7 +1652,8 @@ const ensurePartidosLiveTorneoEquiposColumns = async () => {
 // autocompletado). Se agrega la real y se deja de lado el fallback muerto.
 const ensureClubesLogoColumn = async () => {
   await pool.query(`ALTER TABLE clubes ADD COLUMN IF NOT EXISTS logo_url VARCHAR(255)`);
-  console.log('🛡️ Columna logo_url de clubes verificada');
+  await pool.query(`ALTER TABLE clubes ADD COLUMN IF NOT EXISTS color_hex VARCHAR(7)`);
+  console.log('🛡️ Columnas logo_url/color_hex de clubes verificadas');
 };
 
 // jugadores ya tiene mes_inicio_cobro (texto libre, ej. "marzo") para saber
@@ -7650,20 +7651,41 @@ app.get('/api/clubes', authenticate, requireAnyModule('scoreboard_live', 'admin_
 });
 
 app.post('/api/clubes', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard'), async (req, res) => {
-  const { nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club, logo_url } = req.body;
+  const { nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club, logo_url, color_hex } = req.body;
   if (!String(nombre_club || '').trim()) {
     return res.status(400).json({ error: 'Falta el nombre del club.' });
   }
   try {
     const result = await pool.query(
-      `INSERT INTO clubes (nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club, logo_url, fecha_registro)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE)
+      `INSERT INTO clubes (nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club, logo_url, color_hex, fecha_registro)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE)
        RETURNING *`,
-      [nombre_club, ciudad || null, rama || null, contacto_principal || null, telefono_contacto || null, email_club || null, logo_url || null]
+      [nombre_club, ciudad || null, rama || null, contacto_principal || null, telefono_contacto || null, email_club || null, logo_url || null, color_hex || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('[POST /api/clubes]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/clubes/:id_club', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard'), async (req, res) => {
+  const { nombre_club, ciudad, rama, contacto_principal, telefono_contacto, email_club, logo_url, color_hex } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE clubes SET
+        nombre_club = COALESCE($1, nombre_club), ciudad = COALESCE($2, ciudad), rama = COALESCE($3, rama),
+        contacto_principal = COALESCE($4, contacto_principal), telefono_contacto = COALESCE($5, telefono_contacto),
+        email_club = COALESCE($6, email_club), logo_url = COALESCE($7, logo_url), color_hex = COALESCE($8, color_hex)
+       WHERE id_club = $9 RETURNING *`,
+      [nombre_club || null, ciudad || null, rama || null, contacto_principal || null, telefono_contacto || null, email_club || null, logo_url || null, color_hex || null, req.params.id_club]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Club no encontrado.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[PUT /api/clubes/:id_club]', err);
     res.status(500).json({ error: err.message });
   }
 });

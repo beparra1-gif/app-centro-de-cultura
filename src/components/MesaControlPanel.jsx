@@ -8,6 +8,7 @@ import { confirmAction } from '../utils/confirmDialog';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
+import MesaEstadisticasGlosario from './MesaEstadisticasGlosario';
 import { normalizarSlugLogo } from '../utils/logoResolver';
 
 const LIMITE_JUGADORES_POR_EQUIPO = 12;
@@ -509,7 +510,6 @@ function MesaControlPanel({
   const [historialFiltroRama, setHistorialFiltroRama] = useState('Todas');
   const [historialFiltroCategoria, setHistorialFiltroCategoria] = useState('Todas');
   const [tipoFichaTecnicaExport, setTipoFichaTecnicaExport] = useState('planilla_resumen_oficial');
-  const [sesionRecuperada, setSesionRecuperada] = useState(false);
   const [filtroRama, setFiltroRama] = useState('Todas');
   const [filtroCategoria, setFiltroCategoria] = useState('Todas');
   const [competenciaNombre, setCompetenciaNombre] = useState('');
@@ -809,8 +809,6 @@ function MesaControlPanel({
       if (Array.isArray(guardada.playByPlay)) setPlayByPlay(guardada.playByPlay);
       if (typeof guardada.notaScouting === 'string') setNotaScouting(guardada.notaScouting);
       if (guardada.jugadorSeleccionadoLive != null) setJugadorSeleccionadoLive(guardada.jugadorSeleccionadoLive);
-
-      setSesionRecuperada(true);
     } catch {
       // no-op: if persistence is corrupted we start from clean defaults
     }
@@ -2513,12 +2511,6 @@ function MesaControlPanel({
         </div>
       </div>
 
-      {sesionRecuperada && (
-        <div className="card mb-15" style={{ borderRadius: '16px', border: '1px solid rgba(52,199,89,0.4)', background: 'rgba(52,199,89,0.1)' }}>
-          <strong>Sesión restaurada automáticamente.</strong>
-          <p style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>Los datos de Mesa se mantuvieron después del refresco.</p>
-        </div>
-      )}
 
       {moduloMesa === 'prepartido' && (
         <>
@@ -2609,6 +2601,8 @@ function MesaControlPanel({
                 placeholder="Buscar club local"
                 logoSize={30}
                 extraOptions={opcionesLogosMesa}
+                colorHex={colorLocal}
+                onColorHex={(hex) => { setColorLocal(hex); setColorLocalDraft(hex); }}
               />
             </div>
             <div className="mesa-filtros-grid" style={{ padding: 0, marginTop: '8px' }}>
@@ -2644,6 +2638,8 @@ function MesaControlPanel({
                   placeholder="Buscar club visita"
                   logoSize={30}
                   extraOptions={opcionesLogosMesa}
+                  colorHex={colorVisita}
+                  onColorHex={(hex) => { setColorVisita(hex); setColorVisitaDraft(hex); }}
                 />
               </div>
               <div className="mesa-filtros-grid" style={{ padding: 0, marginTop: '8px' }}>
@@ -3313,7 +3309,10 @@ function MesaControlPanel({
       {moduloMesa === 'analitica' && (
       <>
       <div className="card mt-20" style={{ borderRadius: '24px' }}>
-        <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Seguimiento Estadístico (Eficiencia)</h4>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <h4 className="form-subtitle" style={{ fontWeight: '900', margin: 0 }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Seguimiento Estadístico (Eficiencia)</h4>
+          <MesaEstadisticasGlosario />
+        </div>
         <div className="mesa-stats-grid">
           <div className="mesa-stats-box">
             <h6>{equipoLocalActivo?.nombre || 'Local'}</h6>

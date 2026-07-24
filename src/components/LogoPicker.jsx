@@ -28,6 +28,8 @@ function LogoPicker({
   placeholder = 'Escribe el nombre...',
   logoSize = 40,
   extraOptions = [],
+  colorHex = '',
+  onColorHex,
 }) {
   const [logosDisponibles, setLogosDisponibles] = useState([]);
   const [clubes, setClubes] = useState([]);
@@ -82,7 +84,7 @@ function LogoPicker({
     for (const c of clubes) {
       const key = normalizarSlugLogo(c.nombre_club);
       if (key && !byNombre.has(key)) {
-        byNombre.set(key, { nombre: c.nombre_club, logoUrl: absolutizarLogoUrl(c.logo_url || '') });
+        byNombre.set(key, { nombre: c.nombre_club, logoUrl: absolutizarLogoUrl(c.logo_url || ''), idClub: c.id_club, colorHex: c.color_hex || '' });
       }
     }
 
@@ -136,12 +138,14 @@ function LogoPicker({
     } else if (!val) {
       onLogoUrl('');
     }
+    if (onColorHex && exacta?.colorHex) onColorHex(exacta.colorHex);
     setMostrarSugerencias(true);
   };
 
   const seleccionar = (opcion) => {
     onNombre(opcion.nombre);
     onLogoUrl(absolutizarLogoUrl(opcion.logoUrl || ''));
+    if (onColorHex && opcion.colorHex) onColorHex(opcion.colorHex);
     setMostrarSugerencias(false);
   };
 
@@ -165,6 +169,28 @@ function LogoPicker({
       showToast({ message: `"${nombre.trim()}" guardado en el directorio de clubes.`, type: 'success' });
     } catch (error) {
       showToast({ message: error.message || 'No se pudo guardar el club.', type: 'error' });
+    } finally {
+      setGuardandoClub(false);
+    }
+  };
+
+  // Distinto del botón de arriba: ese solo cubre clubes nuevos (POST). Un
+  // club que ya existe en el directorio pero cuyo color de partido cambió
+  // (ej. se corrigió a mano) necesita un UPDATE contra su id_club real.
+  const clubDirectorioActual = nombreNormalizado
+    ? clubes.find((c) => normalizarSlugLogo(c.nombre_club) === nombreNormalizado)
+    : null;
+  const puedeActualizarColorClub = tipo === 'club' && Boolean(onColorHex) && Boolean(clubDirectorioActual)
+    && Boolean(colorHex) && colorHex !== (clubDirectorioActual?.color_hex || '');
+
+  const actualizarColorClub = async () => {
+    setGuardandoClub(true);
+    try {
+      await api.clubesAPI.update(clubDirectorioActual.id_club, { color_hex: colorHex });
+      setClubes((prev) => prev.map((c) => (c.id_club === clubDirectorioActual.id_club ? { ...c, color_hex: colorHex } : c)));
+      showToast({ message: `Color de "${clubDirectorioActual.nombre_club}" actualizado en el directorio.`, type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo actualizar el color.', type: 'error' });
     } finally {
       setGuardandoClub(false);
     }
@@ -202,6 +228,18 @@ function LogoPicker({
           onMouseDown={guardarComoClubNuevo}
         >
           {guardandoClub ? 'Guardando...' : `+ Guardar "${nombre.trim()}" en el directorio de clubes`}
+        </button>
+      )}
+
+      {puedeActualizarColorClub && (
+        <button
+          type="button"
+          className="btn-secondary"
+          style={{ width: 'auto', padding: '6px 12px', marginTop: '6px', fontSize: '12px' }}
+          disabled={guardandoClub}
+          onMouseDown={actualizarColorClub}
+        >
+          {guardandoClub ? 'Guardando...' : `Actualizar color de "${clubDirectorioActual?.nombre_club}" en el directorio`}
         </button>
       )}
 
