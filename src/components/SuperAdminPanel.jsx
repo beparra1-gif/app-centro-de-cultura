@@ -3,7 +3,6 @@ import {
   Activity,
   AlertTriangle,
   Bell,
-  Check,
   CheckSquare,
   ChevronDown,
   FileText,
@@ -36,7 +35,6 @@ import { colorTipo } from '../utils/appHelpers';
 import { calcularResumenCitacion } from '../utils/citaciones';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { CATEGORIAS_POR_RAMA } from '../utils/categoriasDeportivas';
-import { cuentasDemo } from '../data/demoAccounts';
 import ReportesPanel from './ReportesPanel';
 import SaludAlertasPanel from './SaludAlertasPanel';
 import SaludDashboardPanel from './SaludDashboardPanel';
@@ -97,6 +95,10 @@ function SuperAdminPanel({
   cuentasAdmin,
   matrixPermisos,
   togglePermiso,
+  cuentasConCambiosPendientes,
+  guardandoCuentaId,
+  onGuardarCuenta,
+  rolesBaseInfo,
   jugadoresAdmin,
   jugadoresVisitaAdmin,
   guardarCuentaAdmin,
@@ -594,22 +596,6 @@ function SuperAdminPanel({
       fecha_corte_utm: cuenta.fecha_corte_utm || calcularFechaCorteMesAnterior(),
     };
   };
-
-  const cuentasDemoEnriquecidas = cuentasDemo.map((cuentaDemo) => {
-    const permisosBase = obtenerPermisosBasePorRol(cuentaDemo.perfil);
-    const cuentaReal = (cuentasAdmin || []).find((cuenta) => String(cuenta.correo || '').trim().toLowerCase() === String(cuentaDemo.correo || '').trim().toLowerCase())
-      || (cuentasAdmin || []).find((cuenta) => normalizarRol(cuenta.rol) === normalizarRol(cuentaDemo.perfil));
-    const permisoReal = cuentaReal
-      ? (matrixPermisos || []).find((cuenta) => cuenta.id === cuentaReal.id)
-      : null;
-    return {
-      ...cuentaDemo,
-      permisosBase,
-      modulosBase: MODULOS_ACCESO.filter((modulo) => permisosBase[modulo.id]),
-      cuentaReal,
-      permisoReal,
-    };
-  });
 
   const categoriasUnicas = useMemo(() => {
     const valores = jugadoresAdmin
@@ -2112,7 +2098,6 @@ function SuperAdminPanel({
           {puedeAdminCompleto ? (
             <>
               <button type="button" className={`segment-btn ${vistaAdmin === 'activos' ? 'active' : ''}`} onClick={() => setVistaAdmin('activos')}><Image size={14} /> Activos</button>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'demo' ? 'active' : ''}`} onClick={() => setVistaAdmin('demo')}><ShieldCheck size={14} /> Demo</button>
               <button type="button" className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Validar Pago</button>
             </>
           ) : null}
@@ -2572,7 +2557,7 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Mes inicio cobro (cuota socio)</label><input className="form-input" placeholder="ej. marzo" value={cuentaAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
                 <div className="form-group"><label>Día de pago acordado</label><input type="number" min="1" max="31" className="form-input" value={cuentaAdminEdit.dia_pago_acordado || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, dia_pago_acordado: e.target.value }))} /></div>
                 <div className="form-group"><label>Foto de perfil (URL)</label><input className="form-input" value={cuentaAdminEdit.foto_perfil_url || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, foto_perfil_url: e.target.value }))} /></div>
-                <div className="form-group"><label>Rol de acceso</label><select className="form-input" value={cuentaAdminEdit.rol || 'apoderado'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rol: e.target.value }))}><option value="apoderado">Apoderado</option><option value="staff">Staff</option><option value="jugador">Deportista / Jugador</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
+                <div className="form-group"><label>Rol de acceso</label><select className="form-input" value={cuentaAdminEdit.rol || 'apoderado'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rol: e.target.value }))}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`rol-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Perfil principal</label><select className="form-input" value={cuentaAdminEdit.perfil_principal || 'apoderado'} onChange={(e) => actualizarCuentaAdminEdit({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={cuentaAdminEdit.acceso_nivel || 'estandar'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, acceso_nivel: e.target.value }))}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
@@ -2823,7 +2808,7 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
                 <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
                 <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
-                <div className="form-group"><label>Rol de acceso *</label><select className="form-input" value={nuevaCuenta.rol} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rol: e.target.value }))}><option value="apoderado">Apoderado</option><option value="staff">Staff</option><option value="jugador">Deportista / Jugador</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div>
+                <div className="form-group"><label>Rol de acceso *</label><select className="form-input" value={nuevaCuenta.rol} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rol: e.target.value }))}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`rol-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Perfil principal *</label><select className="form-input" value={nuevaCuenta.perfil_principal || 'apoderado'} onChange={(e) => actualizarNuevaCuenta({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={nuevaCuenta.cargo_directiva || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-new-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={nuevaCuenta.acceso_nivel || 'estandar'} onChange={(e) => setNuevaCuenta((p) => ({ ...p, acceso_nivel: e.target.value }))}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
@@ -3005,94 +2990,6 @@ function SuperAdminPanel({
                 ))}
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {vistaAdmin === 'demo' && (
-        <div className="fade-in">
-          <h3 className="section-title">Cuentas Demo por Perfil</h3>
-          <div className="card" style={{ marginBottom: '15px' }}>
-            <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
-              Esta vista muestra las credenciales de prueba y los accesos que trae cada perfil por defecto. El superadmin puede ampliar o restringir accesos desde el módulo de configuraciones de usuario y permisos.
-            </p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '12px' }}>
-            {cuentasDemoEnriquecidas.map((cuenta) => (
-              <div key={cuenta.perfil} className="card" style={{ borderLeft: `4px solid ${cuenta.perfil === 'super_admin' ? '#FF9500' : 'var(--azul-electrico)'}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-                  <div>
-                    <strong style={{ display: 'block', fontSize: '15px' }}>{cuenta.etiqueta}</strong>
-                    <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800', textTransform: 'uppercase' }}>{normalizarRol(cuenta.perfil)}</span>
-                  </div>
-                  <LogoAvatar nombre={cuenta.etiqueta} size={38} borderRadius="12px" />
-                </div>
-
-                <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--texto-principal)', lineHeight: '1.6' }}>
-                  <div><strong>Correo:</strong> {cuenta.correo}</div>
-                  <div><strong>RUT:</strong> {cuenta.rut}</div>
-                  <div><strong>Password:</strong> {cuenta.password}</div>
-                </div>
-
-                <div style={{ marginTop: '12px' }}>
-                  <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800', marginBottom: '8px' }}>Acceso por defecto</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {cuenta.modulosBase.map((modulo) => (
-                      <span key={modulo.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 8px', borderRadius: '999px', background: 'rgba(0,122,255,0.08)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800' }}>
-                        <ShieldCheck size={11} /> {modulo.etiqueta}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ marginTop: '12px' }}>
-                  <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800', marginBottom: '8px' }}>
-                    Acceso actual {cuenta.permisoReal ? '· editable por superadmin' : '· sin cuenta real detectada'}
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {cuenta.modulosBase.map((modulo) => {
-                      const habilitado = Boolean(cuenta.permisoReal?.permisos?.[modulo.id]);
-                      return (
-                        <button
-                          key={modulo.id}
-                          onClick={() => cuenta.cuentaReal && togglePermiso(cuenta.cuentaReal.id, modulo.id)}
-                          disabled={!cuenta.cuentaReal || cuenta.perfil === 'super_admin'}
-                          style={{
-                            padding: '6px 9px',
-                            borderRadius: '999px',
-                            border: habilitado ? '1px solid var(--verde-victoria)' : '1px solid var(--borde-suave)',
-                            background: habilitado ? 'rgba(52,199,89,0.16)' : 'var(--fondo-app)',
-                            color: habilitado ? 'var(--verde-victoria)' : 'var(--texto-secundario)',
-                            fontSize: '11px',
-                            fontWeight: '800',
-                            cursor: cuenta.cuentaReal && cuenta.perfil !== 'super_admin' ? 'pointer' : 'not-allowed',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                          title={cuenta.cuentaReal ? 'Clic para agregar o quitar este acceso' : 'No se encontró la cuenta real'}
-                        >
-                          {habilitado ? <Check size={11} /> : <X size={11} />} {modulo.etiqueta}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="card mt-15">
-            <h4 className="form-subtitle">Matriz rápida de validación</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
-              {MODULOS_ACCESO.filter((modulo) => modulo.id !== 'mesa_publica').map((modulo) => (
-                <div key={modulo.id} style={{ padding: '10px 12px', borderRadius: '12px', border: '1px solid var(--borde-suave)', background: 'var(--fondo-app)' }}>
-                  <strong style={{ display: 'block', fontSize: '13px' }}>{modulo.etiqueta}</strong>
-                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{modulo.categoria}</span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       )}
@@ -4334,6 +4231,10 @@ function SuperAdminPanel({
             setFiltroRolPermisos={setFiltroRolPermisosAjustes}
             matrixPermisos={matrixPermisos || []}
             togglePermiso={togglePermiso}
+            cuentasConCambiosPendientes={cuentasConCambiosPendientes}
+            guardandoCuentaId={guardandoCuentaId}
+            onGuardarCuenta={onGuardarCuenta}
+            rolesBaseInfo={rolesBaseInfo}
             preferenciasSonido={{}}
             setPreferenciasSonido={() => {}}
             reproducirSonido={() => {}}

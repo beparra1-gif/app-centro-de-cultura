@@ -29,7 +29,9 @@ import {
 } from './utils/appHelpers';
 import {
   MODULOS_ACCESO,
+  ROLES_BASE,
   obtenerPermisosEfectivos,
+  obtenerPermisosBasePorRol,
   puedeVerModulo,
   normalizarRol,
 } from './security/accessControl';
@@ -226,16 +228,21 @@ function App() {
   const [busquedaPermisos, setBusquedaPermisos] = useState('');
   const [filtroRolPermisos, setFiltroRolPermisos] = useState('Todos');
   const [permisosPorUsuario, setPermisosPorUsuario] = useState({});
+  const [guardandoCuentaId, setGuardandoCuentaId] = useState(null);
 
   const perfilesPermisosFallback = [];
 
   const matrixPermisosBase = (Array.isArray(cuentasAdmin) && cuentasAdmin.length > 0 ? cuentasAdmin : perfilesPermisosFallback).map((usuario) => {
     const idUsuario = usuario.id ?? usuario.id_usuario ?? usuario.id_cuenta ?? usuario.rut ?? usuario.correo;
     const rolUsuarioBase = normalizarRol(usuario.perfil_principal || usuario.rol || usuario.rol_usuario || 'jugador');
+    const overridePersistido = (usuario.permisos_override && typeof usuario.permisos_override === 'object') ? usuario.permisos_override : {};
     const permisosEfectivos = obtenerPermisosEfectivos({
       rol: rolUsuarioBase,
-      // permisosPorUsuario stores only overrides; effective perms are computed here.
-      override: permisosPorUsuario[idUsuario] || {},
+      // El override real guardado en la cuenta es la base; permisosPorUsuario
+      // solo trae ediciones de ESTA sesión que todavía no se guardan — sin
+      // mezclar el persistido, la matriz se veía como el rol base puro cada
+      // vez que se recargaba la página, aunque la cuenta sí tuviera overrides.
+      override: { ...overridePersistido, ...(permisosPorUsuario[idUsuario] || {}) },
     });
 
     return {
@@ -245,7 +252,57 @@ function App() {
       permisos: permisosEfectivos,
     };
   });
-  
+
+  // Cuentas cuyo override en memoria todavía no se mandó a guardar — el
+  // panel de permisos (header y pestaña Ajustes) usa esto para mostrar el
+  // botón "Guardar cambios" solo donde hace falta.
+  const cuentasConCambiosPendientes = new Set(
+    Object.keys(permisosPorUsuario).filter((id) => Object.keys(permisosPorUsuario[id] || {}).length > 0)
+  );
+
+  // Referencia de solo lectura de qué módulos trae cada rol por defecto —
+  // reemplaza lo único útil que tenía la extinta pestaña "Demo". Los roles
+  // en sí siguen fijos en código (ver ROLES_BASE), esto no los edita.
+  const rolesBaseInfo = Object.keys(ROLES_BASE)
+    .filter((rol) => rol !== 'superadmin') // 'super_admin' ya cubre el alias
+    .map((rol) => ({
+      rol,
+      etiqueta: rol.charAt(0).toUpperCase() + rol.slice(1).replace(/_/g, ' '),
+      modulos: ROLES_BASE[rol].map((moduloId) => MODULOS_ACCESO.find((m) => m.id === moduloId)?.etiqueta || moduloId),
+    }));
+
+  // Guarda el override de UNA cuenta puntual desde el panel de permisos
+  // (header ⚙️ o pestaña Ajustes) — mismo diff que getPermisosPersistibles
+  // en SuperAdminPanel.jsx, pero calculado acá porque este panel edita
+  // varias cuentas a la vez, no una sola en edición.
+  const guardarPermisosDeCuenta = async (cuentaId) => {
+    const entry = matrixPermisosBase.find((u) => u.id === cuentaId);
+    if (!entry) return;
+
+    const base = obtenerPermisosBasePorRol(entry.rol);
+    const diff = {};
+    MODULOS_ACCESO.forEach((modulo) => {
+      const baseVal = Boolean(base[modulo.id]);
+      const effectiveVal = Boolean(entry.permisos[modulo.id]);
+      if (effectiveVal !== baseVal) diff[modulo.id] = effectiveVal;
+    });
+
+    setGuardandoCuentaId(cuentaId);
+    try {
+      await guardarCuentaAdmin({ permisos_override: diff }, cuentaId);
+      setPermisosPorUsuario((prev) => {
+        const next = { ...prev };
+        delete next[cuentaId];
+        return next;
+      });
+      showToast({ message: 'Permisos guardados.', type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudieron guardar los permisos.', type: 'error' });
+    } finally {
+      setGuardandoCuentaId(null);
+    }
+  };
+
   // --- ESTADOS: VISTAS Y CONFIGURACIÓN ---
   const [pagoViewMode, setPageViewMode] = useState('grid'); // grid | list
   const [showSettings, setShowSettings] = useState(false); // Panel de configuración
@@ -1675,16 +1732,20 @@ function App() {
 
   // Función para togglear un permiso específico
   const togglePermiso = (usuarioId, modulo) => {
-    setPermisosPorUsuario((prev) => {
-      const permisosActuales = prev[usuarioId] || {};
-      return {
-        ...prev,
-        [usuarioId]: {
-          ...permisosActuales,
-          [modulo]: !permisosActuales[modulo],
-        },
-      };
-    });
+    // Invierte el valor EFECTIVO actual (rol + override persistido + edición
+    // de esta sesión, ya combinados en matrixPermisosBase), no solo lo que
+    // haya en permisosPorUsuario — si no, un módulo ya activo por un
+    // override guardado en una sesión anterior no se podía apagar al primer
+    // clic (el valor de sesión partía undefined, !undefined siempre da true).
+    const entry = matrixPermisosBase.find((u) => u.id === usuarioId);
+    const efectivoActual = entry ? Boolean(entry.permisos[modulo]) : false;
+    setPermisosPorUsuario((prev) => ({
+      ...prev,
+      [usuarioId]: {
+        ...(prev[usuarioId] || {}),
+        [modulo]: !efectivoActual,
+      },
+    }));
   };
 
   const recargarUsuariosAdmin = async () => {
@@ -2702,6 +2763,10 @@ function App() {
             setFiltroRolPermisos={setFiltroRolPermisos}
             matrixPermisos={matrixPermisosBase}
             togglePermiso={togglePermiso}
+            cuentasConCambiosPendientes={cuentasConCambiosPendientes}
+            guardandoCuentaId={guardandoCuentaId}
+            onGuardarCuenta={guardarPermisosDeCuenta}
+            rolesBaseInfo={rolesBaseInfo}
             preferenciasSonido={preferenciasSonido}
             setPreferenciasSonido={setPreferenciasSonido}
             reproducirSonido={reproducirSonido}
@@ -3027,6 +3092,10 @@ function App() {
                 cuentasAdmin={cuentasAdmin}
                 matrixPermisos={matrixPermisosBase}
                 togglePermiso={togglePermiso}
+                cuentasConCambiosPendientes={cuentasConCambiosPendientes}
+                guardandoCuentaId={guardandoCuentaId}
+                onGuardarCuenta={guardarPermisosDeCuenta}
+                rolesBaseInfo={rolesBaseInfo}
                 jugadoresAdmin={jugadoresAdmin}
                 guardarCuentaAdmin={guardarCuentaAdmin}
                 guardarJugadorAdmin={guardarJugadorAdmin}
