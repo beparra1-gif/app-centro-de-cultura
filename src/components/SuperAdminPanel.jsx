@@ -59,6 +59,7 @@ const ANIO_RECAUDACION = 2026;
 const esComprobanteImagen = (url = '') => /^data:image\//i.test(url) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
 
 function SuperAdminPanel({
+  rolUsuario,
   puedeAdminCompleto,
   puedeVerCitaciones,
   puedeVerResultados,
@@ -532,6 +533,10 @@ function SuperAdminPanel({
   // --- PAGOS: FORMULARIO Y PAGINACIÓN ---
   const [mostrarFormularioPago, setMostrarFormularioPago] = useState(false);
   const [pagoEditandoId, setPagoEditandoId] = useState(null);
+  // Solo true cuando el formulario se abre desde "Registrar pago manual"
+  // (superadmin) — hace que PagoForm cree el pago ya aprobado en vez de
+  // pendiente. Se resetea al abrir "Nuevo Pago" normal o al editar.
+  const [pagoManualAutoAprobar, setPagoManualAutoAprobar] = useState(false);
   const [paginaPagosMigrados, setPaginaPagosMigrados] = useState(1);
   const [itemsPorPaginaPagos] = useState(15);
 
@@ -2998,6 +3003,43 @@ function SuperAdminPanel({
         <div className="fade-in">
           <h3 className="section-title">Bandeja de Validación</h3>
 
+          {rolUsuario === 'super_admin' && (
+            <div className="card mb-15" style={{ borderRadius: '18px', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <div>
+                  <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>Pago manual</h4>
+                  <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
+                    Elige un deportista o socio y registra un pago ya confirmado (mes o meses, pasados o futuros), sin pasar por la bandeja de validación. Solo superadmin.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMostrarFormularioPago(true);
+                    setPagoEditandoId(null);
+                    setPagoManualAutoAprobar(true);
+                  }}
+                  style={{
+                    padding: '10px 16px',
+                    background: 'var(--azul-electrico)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: '600',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Plus size={14} /> Registrar pago manual
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Pagos reales con comprobante */}
           <h4 className="form-subtitle" style={{ marginBottom: '8px' }}>
             Comprobantes enviados ({pagosPendientesReales.length})
@@ -3088,6 +3130,7 @@ function SuperAdminPanel({
                 onClick={() => {
                   setMostrarFormularioPago(true);
                   setPagoEditandoId(null);
+                  setPagoManualAutoAprobar(false);
                 }}
                 style={{
                   padding: '10px 16px',
@@ -3150,6 +3193,7 @@ function SuperAdminPanel({
                                   onClick={() => {
                                     setPagoEditandoId(pago.id);
                                     setMostrarFormularioPago(true);
+                                    setPagoManualAutoAprobar(false);
                                   }}
                                   title="Editar"
                                 >
@@ -4249,9 +4293,11 @@ function SuperAdminPanel({
           pago={pagoEditandoId ? pagosPendientesAdmin?.find(p => p.id === Number(pagoEditandoId)) : null}
           jugadores={jugadoresAdmin || []}
           cuentas={cuentasAdmin || []}
+          autoAprobar={pagoManualAutoAprobar}
           onClose={() => {
             setMostrarFormularioPago(false);
             setPagoEditandoId(null);
+            setPagoManualAutoAprobar(false);
           }}
           onSave={() => {
             setMostrarFormularioPago(false);

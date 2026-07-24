@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Upload, Search, ClipboardList, Check, Pin, Lightbulb, BarChart2 } from 'lucide-react';
 import * as api from '../api/client.js';
 import { calcularCuotaFinal } from '../utils/beca';
+import { confirmAction } from '../utils/confirmDialog';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const MESES_ABREV = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -13,7 +15,7 @@ const VALORES_CONCEPTO = {
   'Matrícula': 50000
 };
 
-export default function PagoForm({ pago = null, jugadores = [], cuentas = [], onClose, onSave }) {
+export default function PagoForm({ pago = null, jugadores = [], cuentas = [], onClose, onSave, autoAprobar = false }) {
   const [formData, setFormData] = useState({
     rut_jugador: pago?.rut_jugador || '',
     correo_apoderado: pago?.correo_apoderado || '',
@@ -276,6 +278,23 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
         // Actualizar
         await api.pagosMensualidadesAPI.update(pago.id, datosGuardar);
         setSuccess('Pago actualizado exitosamente');
+      } else if (autoAprobar) {
+        // Pago manual del superadmin: se salta la bandeja de validación, así
+        // que pide confirmación explícita antes de dejarlo marcado como pagado.
+        const confirmado = await confirmAction({
+          title: 'Confirmar pago manual',
+          message: `¿Confirmas registrar este pago como YA PAGADO por $${Number(datosGuardar.monto_total_pagado).toLocaleString('es-CL')} (${datosGuardar.meses_correspondientes})? Queda aprobado de inmediato, sin pasar por la bandeja de validación.`,
+          confirmText: 'Registrar y confirmar',
+        });
+        if (!confirmado) {
+          setCargando(false);
+          return;
+        }
+        const nuevoPago = await api.pagosMensualidadesAPI.create(datosGuardar);
+        if (nuevoPago?.id) {
+          await api.pagosMensualidadesAPI.validar(nuevoPago.id, 'aprobado');
+        }
+        setSuccess('Pago registrado y confirmado.');
       } else {
         // Crear
         await api.pagosMensualidadesAPI.create(datosGuardar);
@@ -292,7 +311,12 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
     }
   };
 
-  return (
+  // .ios-main tiene una transform permanente (clase screen-ready, ver
+  // MesaControlPanel.jsx) que lo convierte en containing block de los
+  // descendientes position:fixed, atrapando este overlay dentro del alto
+  // scrolleable de la pestaña en vez de centrarlo en el viewport real. El
+  // portal evita ese problema sin tocar la animacion global de .ios-main.
+  return createPortal(
     <div style={{
       position: 'fixed',
       top: 0,
@@ -318,7 +342,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h3 style={{ margin: 0, color: 'var(--texto-heading)' }}>
-            {pago?.id ? 'Editar Pago' : 'Nuevo Pago'}
+            {pago?.id ? 'Editar Pago' : autoAprobar ? 'Pago Manual (Confirmado)' : 'Nuevo Pago'}
           </h3>
           <button
             onClick={onClose}
@@ -332,6 +356,20 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
             <X size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
           </button>
         </div>
+
+        {!pago?.id && autoAprobar && (
+          <div style={{
+            background: 'rgba(0,122,255,0.08)',
+            color: 'var(--azul-electrico)',
+            padding: '12px',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            fontSize: '12px',
+            fontWeight: '600'
+          }}>
+            Este pago queda aprobado de inmediato, sin pasar por la bandeja de validación.
+          </div>
+        )}
 
         {error && (
           <div style={{
@@ -959,11 +997,12 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                 opacity: cargando ? 0.6 : 1
               }}
             >
-              {cargando ? 'Guardando...' : 'Guardar Pago'}
+              {cargando ? 'Guardando...' : (!pago?.id && autoAprobar) ? 'Registrar y Confirmar' : 'Guardar Pago'}
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

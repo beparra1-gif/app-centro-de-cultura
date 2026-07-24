@@ -3056,6 +3056,7 @@ function App() {
             )}
             {(puedeVerPantalla('admin_dashboard') || puedeVerPantalla('citaciones') || puedeVerPantalla('resultados')) && pantallaActiva === 'admin_dashboard' && (
               <SuperAdminPanel
+                rolUsuario={rolUsuario}
                 puedeAdminCompleto={puedeVerPantalla('admin_dashboard')}
                 puedeVerCitaciones={puedeVerPantalla('citaciones')}
                 puedeVerResultados={puedeVerPantalla('resultados')}
