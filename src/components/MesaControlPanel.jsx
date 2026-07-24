@@ -814,7 +814,22 @@ function MesaControlPanel({
     }
   }, [setJugadorSeleccionadoLive, setLiveScore, setNotaScouting, setPlayByPlay, setRosterEquipo]);
 
+  // El primer disparo de este efecto (al montar) corre con el estado
+  // todavía en sus valores por defecto — el efecto de restauración de
+  // arriba recién aplica lo guardado en localStorage vía setState, que no
+  // se refleja hasta el siguiente render. Sin este freno, ese primer
+  // guardado sobreescribe localStorage con los valores por defecto justo
+  // antes de que la restauración termine de aplicarse (más notorio con el
+  // doble-montaje de React en desarrollo, donde el segundo montaje termina
+  // leyendo el default que el primero alcanzó a guardar). Saltar solo el
+  // primer disparo alcanza: el guardado real ocurre en el siguiente
+  // render, ya con el estado restaurado.
+  const primerGuardadoOmitidoRef = useRef(false);
   useEffect(() => {
+    if (!primerGuardadoOmitidoRef.current) {
+      primerGuardadoOmitidoRef.current = true;
+      return;
+    }
     const payload = {
       modoAnalisis,
       moduloMesa,
