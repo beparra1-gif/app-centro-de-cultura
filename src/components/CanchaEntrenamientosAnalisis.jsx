@@ -35,8 +35,10 @@ function CanchaEntrenamientosAnalisis() {
     })();
   }, [analiticaDesde, analiticaHasta]);
 
-  const totalRecaudado = analitica.filter((a) => a.estado_pago === 'pagado').reduce((acc, a) => acc + Number(a.valor_arriendo || 0), 0);
-  const totalPendiente = analitica.filter((a) => a.estado_pago === 'pendiente').reduce((acc, a) => acc + Number(a.valor_arriendo || 0), 0);
+  const totalRecaudado = analitica.filter((a) => a.estado_pago !== 'anulado').reduce((acc, a) => acc + Number(a.monto_pagado || 0), 0);
+  const totalPendiente = analitica
+    .filter((a) => a.estado_pago === 'pendiente' || a.estado_pago === 'parcial')
+    .reduce((acc, a) => acc + Math.max(0, Number(a.valor_arriendo || 0) - Number(a.monto_pagado || 0)), 0);
   const cantidadReservas = analitica.filter((a) => a.estado_pago !== 'anulado').length;
   const horasArrendadas = analitica
     .filter((a) => a.estado_pago !== 'anulado')

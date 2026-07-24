@@ -24,6 +24,17 @@ const RANGO_VACIO = {
   hasta: hoyISO(),
 };
 
+const construirFormDesde = (arriendo) => (arriendo ? {
+  nombre_arrendatario: arriendo.nombre_arrendatario || '',
+  telefono_contacto: arriendo.telefono_contacto || '',
+  email_contacto: arriendo.email_contacto || '',
+  hora_inicio: (arriendo.hora_inicio || '10:00').slice(0, 5),
+  hora_fin: (arriendo.hora_fin || '11:00').slice(0, 5),
+  valor_arriendo: arriendo.valor_arriendo ?? '',
+  metodo_pago: arriendo.metodo_pago || '',
+  observaciones: arriendo.observaciones || '',
+} : FORM_VACIO);
+
 // Misma lógica que antes vivía solo en el backend (endpoint /serie) — el
 // frontend arma la lista de fechas (a mano, por patrón, o mezclando ambas) y
 // el backend solo recibe un array explícito. "Reserva única" y "varias
@@ -48,8 +59,13 @@ const generarFechasPorPatron = ({ tipo, desde, hasta }) => {
   return fechas.map((d) => d.toISOString().slice(0, 10));
 };
 
-function CanchaEntrenamientosReservaForm({ onGuardado }) {
-  const [form, setForm] = useState(FORM_VACIO);
+function CanchaEntrenamientosReservaForm({ onGuardado, arriendoParaEditar = null }) {
+  // El componente se remonta entero cada vez que el padre cambia de pestaña
+  // (no queda montado en segundo plano), así que un prop leído solo al
+  // montar alcanza — no hace falta reaccionar a cambios del prop en vivo.
+  const editandoId = arriendoParaEditar?.id_arriendo || null;
+  const [form, setForm] = useState(() => construirFormDesde(arriendoParaEditar));
+  const [fechaEdicion, setFechaEdicion] = useState(() => (arriendoParaEditar ? String(arriendoParaEditar.fecha).slice(0, 10) : hoyISO()));
   const [fechasSeleccionadas, setFechasSeleccionadas] = useState([hoyISO()]);
   const [fechaParaAgregar, setFechaParaAgregar] = useState(hoyISO());
   const [mostrarRangoAutomatico, setMostrarRangoAutomatico] = useState(false);
@@ -95,9 +111,36 @@ function CanchaEntrenamientosReservaForm({ onGuardado }) {
     showToast({ message: `${nuevas.length} fecha${nuevas.length === 1 ? '' : 's'} agregada${nuevas.length === 1 ? '' : 's'} a la lista.`, type: 'success' });
   };
 
+  const guardarEdicion = async () => {
+    setGuardando(true);
+    try {
+      await api.arriendosCanchaAPI.update(editandoId, {
+        nombre_arrendatario: form.nombre_arrendatario,
+        telefono_contacto: form.telefono_contacto,
+        email_contacto: form.email_contacto,
+        fecha: fechaEdicion,
+        hora_inicio: form.hora_inicio,
+        hora_fin: form.hora_fin,
+        valor_arriendo: form.valor_arriendo ? Number(form.valor_arriendo) : 0,
+        metodo_pago: form.metodo_pago,
+        observaciones: form.observaciones,
+      });
+      showToast({ message: 'Reserva actualizada.', type: 'success' });
+      onGuardado && onGuardado();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo actualizar la reserva.', type: 'error' });
+    } finally {
+      setGuardando(false);
+    }
+  };
+
   const guardarReserva = async () => {
     if (!form.nombre_arrendatario.trim()) {
       showToast({ message: 'Ponle un nombre a quien arrienda.', type: 'error' });
+      return;
+    }
+    if (editandoId) {
+      await guardarEdicion();
       return;
     }
     if (fechasSeleccionadas.length === 0) {
@@ -151,6 +194,12 @@ function CanchaEntrenamientosReservaForm({ onGuardado }) {
           <label>Correo (opcional)</label>
           <input className="form-input" value={form.email_contacto} onChange={(e) => setForm((p) => ({ ...p, email_contacto: e.target.value }))} />
         </div>
+        {editandoId && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Fecha</label>
+            <input type="date" className="form-input" value={fechaEdicion} onChange={(e) => setFechaEdicion(e.target.value)} />
+          </div>
+        )}
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Hora inicio</label>
           <input type="time" className="form-input" value={form.hora_inicio} onChange={(e) => setForm((p) => ({ ...p, hora_inicio: e.target.value }))} />
@@ -165,7 +214,12 @@ function CanchaEntrenamientosReservaForm({ onGuardado }) {
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Método de pago</label>
-          <input className="form-input" value={form.metodo_pago} onChange={(e) => setForm((p) => ({ ...p, metodo_pago: e.target.value }))} placeholder="Efectivo, transferencia..." />
+          <select className="form-input" value={form.metodo_pago} onChange={(e) => setForm((p) => ({ ...p, metodo_pago: e.target.value }))}>
+            <option value="">Sin especificar</option>
+            <option value="Efectivo">Efectivo</option>
+            <option value="Transferencia">Transferencia</option>
+            <option value="Otro">Otro</option>
+          </select>
         </div>
         <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
           <label>Observaciones</label>
@@ -173,6 +227,7 @@ function CanchaEntrenamientosReservaForm({ onGuardado }) {
         </div>
       </div>
 
+      {!editandoId && (
       <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px dashed var(--borde-suave)' }}>
         <label style={{ display: 'block', marginBottom: '8px' }}>Días a reservar (misma hora en todos)</label>
 
@@ -243,6 +298,7 @@ function CanchaEntrenamientosReservaForm({ onGuardado }) {
           </div>
         )}
       </div>
+      )}
 
       {ultimoResultadoLote?.omitidos?.length > 0 && (
         <div className="card mt-15" style={{ borderLeft: '4px solid var(--rojo-alerta)', borderRadius: '16px', background: 'rgba(255,59,48,0.06)' }}>
@@ -256,7 +312,7 @@ function CanchaEntrenamientosReservaForm({ onGuardado }) {
       )}
 
       <button className="btn-electric mt-15" onClick={guardarReserva} disabled={guardando}>
-        {guardando ? 'Guardando...' : `Guardar ${fechasSeleccionadas.length > 1 ? `${fechasSeleccionadas.length} reservas` : 'reserva'}`}
+        {guardando ? 'Guardando...' : editandoId ? 'Guardar cambios' : `Guardar ${fechasSeleccionadas.length > 1 ? `${fechasSeleccionadas.length} reservas` : 'reserva'}`}
       </button>
     </div>
   );

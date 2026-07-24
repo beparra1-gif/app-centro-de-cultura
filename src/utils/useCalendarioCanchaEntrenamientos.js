@@ -5,6 +5,7 @@ import { colorBarraPorRama } from './coloresRama';
 
 export const COLOR_BARRA_ARRIENDO = {
   pendiente: '#FF9500',
+  parcial: '#5AC8FA',
   pagado: '#34C759',
   anulado: '#8E8E93',
 };

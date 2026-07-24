@@ -1958,6 +1958,7 @@ const ensureArriendosCanchaTable = async () => {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await pool.query(`ALTER TABLE arriendos_cancha ADD COLUMN IF NOT EXISTS monto_pagado NUMERIC(10,2) NOT NULL DEFAULT 0`);
   console.log('📅 Tabla arriendos_cancha verificada');
 };
 
@@ -8031,7 +8032,7 @@ app.put('/api/arriendos-cancha/:id', authenticate, requireModule('cancha_arriend
   const {
     nombre_arrendatario, telefono_contacto, email_contacto,
     fecha, hora_inicio, hora_fin, valor_arriendo,
-    estado_pago, metodo_pago, observaciones,
+    estado_pago, metodo_pago, observaciones, monto_pagado,
   } = req.body;
 
   try {
@@ -8043,6 +8044,35 @@ app.put('/api/arriendos-cancha/:id', authenticate, requireModule('cancha_arriend
       if (conflicto) {
         return res.status(409).json({ error: mensajeConflictoCancha(conflicto), conflicto });
       }
+    }
+
+    // Si mandan monto_pagado y/o valor_arriendo sin estado_pago explícito, el
+    // estado se deriva acá (pendiente/parcial/pagado) — así "Anular"/
+    // "Reactivar" (que solo mandan estado_pago) siguen pisando el estado sin
+    // que un monto_pagado viejo los contradiga. Editar el valor de una
+    // reserva ya pagada (ej. corregir un precio) también recalcula el
+    // estado contra el monto_pagado existente, sin tratarlo como sobrepago
+    // — esa validación solo aplica cuando se está registrando un pago nuevo.
+    let estadoFinal = estado_pago || null;
+    const registrandoPago = monto_pagado !== undefined && monto_pagado !== null;
+    if (!estado_pago && (registrandoPago || valor_arriendo != null)) {
+      const filaActual = (!registrandoPago || valor_arriendo == null)
+        ? (await pool.query('SELECT valor_arriendo, monto_pagado FROM arriendos_cancha WHERE id_arriendo = $1', [req.params.id])).rows[0]
+        : null;
+      const valorRef = valor_arriendo != null ? Number(valor_arriendo) : Number(filaActual?.valor_arriendo || 0);
+      let montoRef;
+      if (registrandoPago) {
+        montoRef = Number(monto_pagado);
+        if (Number.isNaN(montoRef) || montoRef < 0) {
+          return res.status(400).json({ error: 'El monto pagado no puede ser negativo.' });
+        }
+        if (montoRef > valorRef) {
+          return res.status(400).json({ error: `El monto pagado no puede superar el valor del arriendo ($${valorRef.toLocaleString('es-CL')}).` });
+        }
+      } else {
+        montoRef = Number(filaActual?.monto_pagado || 0);
+      }
+      estadoFinal = montoRef <= 0 ? 'pendiente' : montoRef >= valorRef ? 'pagado' : 'parcial';
     }
 
     const result = await pool.query(
@@ -8057,14 +8087,15 @@ app.put('/api/arriendos-cancha/:id', authenticate, requireModule('cancha_arriend
         estado_pago = COALESCE($8, estado_pago),
         metodo_pago = COALESCE($9, metodo_pago),
         observaciones = COALESCE($10, observaciones),
+        monto_pagado = COALESCE($11, monto_pagado),
         updated_at = NOW()
-       WHERE id_arriendo = $11
+       WHERE id_arriendo = $12
        RETURNING *`,
       [
         nombre_arrendatario || null, telefono_contacto || null, email_contacto || null,
         fecha || null, hora_inicio || null, hora_fin || null, valor_arriendo ?? null,
-        estado_pago || null, metodo_pago || null, observaciones || null,
-        req.params.id,
+        estadoFinal, metodo_pago || null, observaciones || null,
+        monto_pagado ?? null, req.params.id,
       ]
     );
     if (result.rows.length === 0) {
