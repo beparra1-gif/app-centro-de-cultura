@@ -1848,6 +1848,7 @@ const ensureKioscoTables = async () => {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await pool.query(`ALTER TABLE kiosco_productos ADD COLUMN IF NOT EXISTS talla VARCHAR(10)`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS kiosco_turnos (
@@ -7221,16 +7222,16 @@ app.get('/api/kiosco-productos', authenticate, requireModule('kiosco'), async (r
 });
 
 app.post('/api/kiosco-productos', authenticate, requireModule('kiosco'), async (req, res) => {
-  const { nombre, emoji, categoria, costo, precio, stock } = req.body;
+  const { nombre, emoji, categoria, costo, precio, stock, talla } = req.body;
   if (!nombre || precio == null) {
     return res.status(400).json({ error: 'Nombre y precio son obligatorios.' });
   }
   try {
     const result = await pool.query(
-      `INSERT INTO kiosco_productos (nombre, emoji, categoria, costo, precio, stock)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO kiosco_productos (nombre, emoji, categoria, costo, precio, stock, talla)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [nombre, emoji || '📦', categoria || 'General', costo || 0, precio, stock || 0]
+      [nombre, emoji || '📦', categoria || 'General', costo || 0, precio, stock || 0, talla || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -7240,7 +7241,7 @@ app.post('/api/kiosco-productos', authenticate, requireModule('kiosco'), async (
 });
 
 app.put('/api/kiosco-productos/:id', authenticate, requireModule('kiosco'), async (req, res) => {
-  const camposPermitidos = ['nombre', 'emoji', 'categoria', 'costo', 'precio', 'stock', 'activo'];
+  const camposPermitidos = ['nombre', 'emoji', 'categoria', 'costo', 'precio', 'stock', 'activo', 'talla'];
   const columnas = [];
   const valores = [];
   camposPermitidos.forEach((campo) => {

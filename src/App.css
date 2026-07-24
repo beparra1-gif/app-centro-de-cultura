@@ -1931,7 +1931,18 @@ button,
   color: inherit;
 }
 
-.kiosco-cart { 
+/* Modo lista: mismo .map() de tarjetas, solo se reacomoda vía CSS. El
+   selector compuesto (dos clases) le gana en especificidad a los
+   `repeat(N,1fr) !important` de los breakpoints responsive de arriba,
+   sin importar el orden en el archivo. */
+.kiosco-grid.modo-lista { grid-template-columns: 1fr !important; gap: 8px; }
+.kiosco-grid.modo-lista .kiosco-item { flex-direction: row; justify-content: flex-start; text-align: left; padding: 10px 14px; gap: 12px; }
+.kiosco-grid.modo-lista .kiosco-item-inner { flex-direction: row; align-items: center; gap: 12px; }
+.kiosco-grid.modo-lista .kiosco-emoji { font-size: 26px; margin-bottom: 0; }
+.kiosco-grid.modo-lista .kiosco-nombre { flex: 1; text-align: left; }
+.kiosco-grid.modo-lista .kiosco-stock-label { margin-bottom: 0; }
+
+.kiosco-cart {
   padding: 20px;
   border-top: 4px solid var(--azul-marino);
   border-radius: 0 0 26px 26px;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown, Lock, User, Ticket, Trash2, Banknote, Smartphone, NotebookPen, BookOpen, XCircle, Search, PlusCircle, History, AlertTriangle, BarChart3, Pencil, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown, Lock, User, Ticket, Trash2, Banknote, Smartphone, NotebookPen, BookOpen, XCircle, Search, PlusCircle, History, AlertTriangle, BarChart3, Pencil, Check, ChevronDown, ChevronUp, LayoutGrid, List } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { getColorPorCategoria } from '../utils/appHelpers';
 import { showToast } from '../utils/toast';
@@ -81,7 +81,8 @@ function KioscoPanel({ nombreResponsable = '' }) {
   const [firmaEgreso, setFirmaEgreso] = useState(null);
   const [registrandoEgreso, setRegistrandoEgreso] = useState(false);
 
-  const [nuevoProducto, setNuevoProducto] = useState({ nombre: '', emoji: '', costo: '', precio: '', categoria: 'Bebida' });
+  const [nuevoProducto, setNuevoProducto] = useState({ nombre: '', emoji: '', costo: '', precio: '', categoria: 'Bebida', talla: '' });
+  const [vistaProductos, setVistaProductos] = useState('grid');
   const [productoEditandoId, setProductoEditandoId] = useState(null);
 
   const [fiados, setFiados] = useState([]);
@@ -328,7 +329,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
         turno_id: turno?.id || null,
         ticket_numero: ticketActual,
         producto_id: item.id,
-        producto_nombre: item.nombre,
+        producto_nombre: item.talla ? `${item.nombre} (${item.talla})` : item.nombre,
         cantidad: item.cant,
         precio_unitario: item.precio,
         subtotal: item.precio * item.cant,
@@ -475,8 +476,9 @@ function KioscoPanel({ nombreResponsable = '' }) {
         costo: Number(nuevoProducto.costo) || 0,
         precio: Number(nuevoProducto.precio) || 0,
         stock: Number(nuevoProducto.stock) || 0,
+        talla: nuevoProducto.talla || null,
       });
-      setNuevoProducto({ nombre: '', emoji: '', costo: '', precio: '', categoria: 'Bebida' });
+      setNuevoProducto({ nombre: '', emoji: '', costo: '', precio: '', categoria: 'Bebida', talla: '' });
       await cargarProductos();
       showToast({ message: 'Producto creado.', type: 'success' });
     } catch (err) {
@@ -918,7 +920,27 @@ function KioscoPanel({ nombreResponsable = '' }) {
 
       {vista === 'pos' && (
         <div className="kiosco-tablet-layout">
-          <div className="kiosco-grid">
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginBottom: '8px' }}>
+            <button
+              type="button"
+              className="btn-circle"
+              title="Vista en grilla"
+              style={{ background: vistaProductos === 'grid' ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.12)', color: vistaProductos === 'grid' ? 'white' : 'var(--azul-electrico)' }}
+              onClick={() => setVistaProductos('grid')}
+            >
+              <LayoutGrid size={14} />
+            </button>
+            <button
+              type="button"
+              className="btn-circle"
+              title="Vista en lista"
+              style={{ background: vistaProductos === 'list' ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.12)', color: vistaProductos === 'list' ? 'white' : 'var(--azul-electrico)' }}
+              onClick={() => setVistaProductos('list')}
+            >
+              <List size={14} />
+            </button>
+          </div>
+          <div className={`kiosco-grid ${vistaProductos === 'list' ? 'modo-lista' : ''}`}>
             {productos.map((prod) => {
               const stock = Number(prod.stock);
               const isCritico = stock > 0 && stock <= 5;
@@ -934,7 +956,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
                 >
                   <div id={`prod-${prod.id}`} className="kiosco-item-inner" style={{ transition: '0.1s' }}>
                     <span className="kiosco-emoji">{prod.emoji}</span>
-                    <span className="kiosco-nombre" style={{ color: colorCat.text }}>{prod.nombre}</span>
+                    <span className="kiosco-nombre" style={{ color: colorCat.text }}>{prod.nombre}{prod.talla ? ` (${prod.talla})` : ''}</span>
                     <span className="kiosco-stock-label" style={{ color: isCritico || sinStock ? 'var(--rojo-alerta)' : colorCat.text }}>Stock: {stock}</span>
                     <span className="kiosco-precio" style={{ color: colorCat.text }}>${Number(prod.precio).toLocaleString('es-CL')}</span>
                   </div>
@@ -1044,6 +1066,9 @@ function KioscoPanel({ nombreResponsable = '' }) {
               <select className="form-input" value={nuevoProducto.categoria} onChange={(e) => setNuevoProducto({ ...nuevoProducto, categoria: e.target.value })}>
                 <option value="Bebida">Bebida</option><option value="Comida">Comida</option><option value="Entradas">Entradas/Otros</option>
               </select>
+              <select className="form-input" value={nuevoProducto.talla} onChange={(e) => setNuevoProducto({ ...nuevoProducto, talla: e.target.value })}>
+                <option value="">Sin talla</option><option value="S">S</option><option value="M">M</option><option value="L">L</option>
+              </select>
             </div>
             <button className="btn-electric" onClick={crearProducto}>Añadir al Catálogo</button>
           </div>
@@ -1062,9 +1087,12 @@ function KioscoPanel({ nombreResponsable = '' }) {
                           <select className="form-input" style={{ gridColumn: '1 / -1', padding: '6px', fontSize: '12px' }} value={prod.categoria} onChange={(e) => actualizarCampoProducto(prod, 'categoria', e.target.value)}>
                             <option value="Bebida">Bebida</option><option value="Comida">Comida</option><option value="Entradas">Entradas/Otros</option>
                           </select>
+                          <select className="form-input" style={{ gridColumn: '1 / -1', padding: '6px', fontSize: '12px' }} value={prod.talla || ''} onChange={(e) => actualizarCampoProducto(prod, 'talla', e.target.value || null)}>
+                            <option value="">Sin talla</option><option value="S">S</option><option value="M">M</option><option value="L">L</option>
+                          </select>
                         </div>
                       ) : (
-                        <div><span style={{ fontSize: '24px', marginRight: '10px' }}>{prod.emoji}</span><strong style={{ color: 'var(--texto-principal)' }}>{prod.nombre}</strong><br /><span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: 'bold' }}>Costo: ${prod.costo} | Venta: ${prod.precio} | {prod.categoria}</span></div>
+                        <div><span style={{ fontSize: '24px', marginRight: '10px' }}>{prod.emoji}</span><strong style={{ color: 'var(--texto-principal)' }}>{prod.nombre}</strong><br /><span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: 'bold' }}>Costo: ${prod.costo} | Venta: ${prod.precio} | {prod.categoria}{prod.talla && ` · Talla ${prod.talla}`}</span></div>
                       )}
                       <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                         <button type="button" className="btn-circle" style={{ background: editando ? 'var(--verde-victoria)' : 'rgba(0,122,255,0.12)', color: editando ? 'white' : 'var(--azul-electrico)' }} title={editando ? 'Listo' : 'Editar'} onClick={() => setProductoEditandoId(editando ? null : prod.id)}>
