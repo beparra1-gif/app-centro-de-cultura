@@ -252,6 +252,10 @@ button,
     grid-column: 1;
     grid-row: 2;
     width: 100% !important;
+    /* Sin esto, width:100% es solo el contenido y el padding se suma
+       aparte — el sidebar termina ~24px más ancho que su columna de 240px
+       del grid y tapa el borde izquierdo del contenido principal. */
+    box-sizing: border-box !important;
     height: calc(100vh - 64px);
     flex-direction: column !important;
     justify-content: flex-start !important;
@@ -276,9 +280,17 @@ button,
     border-radius: 14px !important;
     font-size: 14px !important;
     width: 100% !important;
+    /* La regla base .nav-item (pensada para el nav inferior en celular) deja
+       max-width: 92px / min-width: 64px — sin resetearlos acá, el sidebar de
+       escritorio hereda ese tope y el label se parte letra por letra. */
+    max-width: none !important;
+    min-width: 0 !important;
     transform: none !important;
     filter: none !important;
     box-sizing: border-box;
+  }
+  .nav-item span {
+    white-space: nowrap !important;
   }
   .nav-item.active {
     background: rgba(0,122,255,0.1) !important;
