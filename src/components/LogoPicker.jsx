@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
-import { absolutizarLogoUrl, normalizarSlugLogo } from '../utils/logoResolver';
+import { absolutizarLogoUrl, normalizarSlugLogo, esNuestroClub } from '../utils/logoResolver';
 import { showToast } from '../utils/toast';
 
 /**
@@ -36,16 +36,6 @@ function LogoPicker({
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [guardandoClub, setGuardandoClub] = useState(false);
-  const esAliasNuestroClub = (valor = '') => {
-    const slug = normalizarSlugLogo(valor);
-    return [
-      'centro-de-cultura-fisica',
-      'club-centro-de-cultura-fisica',
-      'ccf',
-      'club-cultura-fisica',
-    ].some((alias) => slug === alias || slug.includes(alias));
-  };
-
   const normalizarBusquedaLogo = (valor = '') => {
     const base = normalizarSlugLogo(valor);
     return base.replace(/^(club|torneo|campeonato|competencia)-/i, '');
@@ -133,7 +123,7 @@ function LogoPicker({
     });
     if (exacta && exacta.logoUrl) {
       onLogoUrl(absolutizarLogoUrl(exacta.logoUrl));
-    } else if (esAliasNuestroClub(val)) {
+    } else if (esNuestroClub(val)) {
       onLogoUrl(absolutizarLogoUrl('/logos/club-logo.png'));
     } else if (!val) {
       onLogoUrl('');

@@ -1494,6 +1494,9 @@ const ensureComunicacionesExtendedColumns = async () => {
     `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS academia_video_id INTEGER`,
     // activo: publicado/despublicado. Todo lo existente queda publicado (true).
     `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true`,
+    // torneo_id: mismo criterio sin FK que citacion_id/academia_video_id —
+    // enlaza el post automático de "campeón" con el torneo que lo generó.
+    `ALTER TABLE comunicaciones ADD COLUMN IF NOT EXISTS torneo_id INTEGER`,
   ];
 
   for (const statement of ddl) {
@@ -1610,6 +1613,9 @@ const ensureTorneosTable = async () => {
     )
   `);
   await pool.query(`ALTER TABLE torneos ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) DEFAULT 'interno'`);
+  await pool.query(`ALTER TABLE torneos ADD COLUMN IF NOT EXISTS tipo_formato VARCHAR(20) NOT NULL DEFAULT 'liga'`);
+  await pool.query(`ALTER TABLE torneos ADD COLUMN IF NOT EXISTS bracket_generado BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE torneos ADD COLUMN IF NOT EXISTS publicar_resultado_en_muro BOOLEAN NOT NULL DEFAULT true`);
   console.log('🏆 Tabla torneos verificada');
 };
 
@@ -1643,7 +1649,13 @@ const ensureTorneoEquiposTable = async () => {
 const ensurePartidosLiveTorneoEquiposColumns = async () => {
   await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS id_equipo_local INT`);
   await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS id_equipo_visitante INT`);
-  console.log('🏆 Columnas id_equipo_local/id_equipo_visitante de partidos_live verificadas');
+  // ronda_bracket/posicion_bracket: NULL en partidos normales (liga o fuera
+  // de torneo). Para un torneo de eliminación directa marcan a qué ronda y
+  // qué cruce dentro de esa ronda pertenece el partido, así el backend sabe
+  // qué dos partidos de la ronda N alimentan a cuál partido de la ronda N+1.
+  await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS ronda_bracket INT`);
+  await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS posicion_bracket INT`);
+  console.log('🏆 Columnas id_equipo_local/id_equipo_visitante/ronda_bracket/posicion_bracket de partidos_live verificadas');
 };
 
 // clubes nunca tuvo columna de logo (LogoPicker ya leía c.logo_url ||
@@ -6143,6 +6155,9 @@ app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_liv
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Partido no encontrado' });
     }
+    if (result.rows[0].estado_juego === 'finalizado' && result.rows[0].ronda_bracket != null) {
+      await avanzarGanadorBracket(result.rows[0]);
+    }
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[PUT /api/partidos-live/:id]', err);
@@ -6981,17 +6996,18 @@ app.get('/api/torneos', async (req, res) => {
 });
 
 app.post('/api/torneos', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'torneos'), async (req, res) => {
-  const { nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato, tipo } = req.body;
+  const { nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato, tipo, tipo_formato, publicar_resultado_en_muro } = req.body;
   const tipoFinal = tipo === 'externo' ? 'externo' : 'interno';
+  const tipoFormatoFinal = tipo_formato === 'eliminacion_directa' ? 'eliminacion_directa' : 'liga';
   if (tipoFinal === 'externo' && !String(organizador || '').trim()) {
     return res.status(400).json({ error: 'Indica el club u organización que organiza el torneo externo.' });
   }
   try {
     const result = await pool.query(
-      `INSERT INTO torneos (nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato, estado, tipo)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'activo', $10)
+      `INSERT INTO torneos (nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato, estado, tipo, tipo_formato, publicar_resultado_en_muro)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'activo', $10, $11, $12)
        RETURNING *`,
-      [nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato, tipoFinal]
+      [nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, cantidad_equipos, formato, tipoFinal, tipoFormatoFinal, publicar_resultado_en_muro !== false]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -6999,6 +7015,174 @@ app.post('/api/torneos', authenticate, requireAnyModule('scoreboard_live', 'admi
     res.status(500).json({ error: err.message });
   }
 });
+
+// PUT: editar campos de gestión de un torneo (estado, ganador, etc.) — no
+// existía ningún endpoint de escritura para esto, así que "ganador" y
+// "estado" quedaban huérfanos en el esquema. Si se marca como finalizado
+// con un ganador, dispara el post automático al Muro (según el opt-out del
+// propio torneo).
+app.put('/api/torneos/:id', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'torneos'), async (req, res) => {
+  const { estado, ganador, subcampeon, premios, publicar_resultado_en_muro } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE torneos SET
+        estado = COALESCE($1, estado),
+        ganador = COALESCE($2, ganador),
+        "subcampeón" = COALESCE($3, "subcampeón"),
+        premios = COALESCE($4, premios),
+        publicar_resultado_en_muro = COALESCE($5, publicar_resultado_en_muro),
+        updated_at = NOW()
+       WHERE id_torneo = $6
+       RETURNING *`,
+      [estado || null, ganador || null, subcampeon || null, premios || null, publicar_resultado_en_muro ?? null, req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Torneo no encontrado.' });
+    }
+    if (estado === 'finalizado' && ganador) {
+      await publicarResultadoTorneoEnMuro(req.params.id);
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[PUT /api/torneos/:id]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: arma el cuadro de eliminación directa emparejando los equipos ya
+// agregados por orden de alta (equipo 1 vs 2, 3 vs 4, ...) — sin sorteo ni
+// sembrado, alcanza para un club chico. Exige potencia de 2 para no meterse
+// en la complejidad de "byes" (equipos que pasan de ronda sin jugar).
+app.post('/api/torneos/:id/generar-cuadro', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'torneos'), async (req, res) => {
+  try {
+    const torneo = (await pool.query('SELECT * FROM torneos WHERE id_torneo = $1', [req.params.id])).rows[0];
+    if (!torneo) {
+      return res.status(404).json({ error: 'Torneo no encontrado.' });
+    }
+    if (torneo.tipo_formato !== 'eliminacion_directa') {
+      return res.status(400).json({ error: 'Este torneo no es de formato eliminación directa.' });
+    }
+    if (torneo.bracket_generado) {
+      return res.status(400).json({ error: 'El cuadro de este torneo ya fue generado.' });
+    }
+
+    const equipos = (await pool.query('SELECT * FROM torneo_equipos WHERE id_torneo = $1 ORDER BY id_equipo ASC', [req.params.id])).rows;
+    const n = equipos.length;
+    const esPotenciaDeDos = n >= 2 && (n & (n - 1)) === 0;
+    if (!esPotenciaDeDos) {
+      return res.status(400).json({ error: `Para generar el cuadro necesitas una cantidad de equipos que sea potencia de 2 (2, 4, 8, 16...). Hoy tienes ${n}.` });
+    }
+
+    // Reclamo atómico antes de insertar: si dos requests llegan casi juntos
+    // (doble click), la primera en ejecutar este UPDATE gana y la segunda
+    // encuentra bracket_generado ya en true y no llega a duplicar partidos.
+    const reclamo = await pool.query(
+      `UPDATE torneos SET bracket_generado = true WHERE id_torneo = $1 AND bracket_generado = false RETURNING id_torneo`,
+      [req.params.id]
+    );
+    if (reclamo.rows.length === 0) {
+      return res.status(400).json({ error: 'El cuadro de este torneo ya fue generado.' });
+    }
+
+    for (let i = 0; i < n; i += 2) {
+      const local = equipos[i];
+      const visita = equipos[i + 1];
+      await pool.query(
+        `INSERT INTO partidos_live (id_torneo, ronda_bracket, posicion_bracket, equipo_local, equipo_visitante,
+         id_equipo_local, id_equipo_visitante, logo_local_url, logo_visitante_url, estado_juego, rama, categoria,
+         torneo_nombre, pts_local, pts_visitante)
+         VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, 'pendiente', $9, $10, $11, 0, 0)`,
+        [req.params.id, i / 2, local.nombre_equipo, visita.nombre_equipo, local.id_equipo, visita.id_equipo,
+         local.logo_url, visita.logo_url, torneo.rama, torneo.categoria, torneo.nombre_torneo]
+      );
+    }
+    res.json({ ok: true, rondas: Math.log2(n), partidosCreados: n / 2 });
+  } catch (err) {
+    console.error('[POST /api/torneos/:id/generar-cuadro]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Al finalizar un partido de bracket, si el "hermano" de esa ronda también
+// terminó, arma (o actualiza, si ya existía) el partido de la ronda
+// siguiente con los dos ganadores. Si esta era la última ronda, cierra el
+// torneo (ganador + estado) y dispara el post al Muro.
+const avanzarGanadorBracket = async (partido) => {
+  const { id_torneo, ronda_bracket, posicion_bracket } = partido;
+  if (ronda_bracket == null || posicion_bracket == null) return;
+
+  const totalEquipos = Number((await pool.query(
+    'SELECT COUNT(*) FROM torneo_equipos WHERE id_torneo = $1', [id_torneo]
+  )).rows[0].count);
+  const totalRondas = Math.round(Math.log2(totalEquipos || 1));
+  const ganador = (p) => (Number(p.pts_local) >= Number(p.pts_visitante))
+    ? { id: p.id_equipo_local, nombre: p.equipo_local, logo: p.logo_local_url }
+    : { id: p.id_equipo_visitante, nombre: p.equipo_visitante, logo: p.logo_visitante_url };
+
+  if (ronda_bracket >= totalRondas) {
+    const campeon = ganador(partido);
+    await pool.query(
+      `UPDATE torneos SET ganador = $1, estado = 'finalizado' WHERE id_torneo = $2 AND ganador IS NULL`,
+      [campeon.nombre, id_torneo]
+    );
+    await publicarResultadoTorneoEnMuro(id_torneo);
+    return;
+  }
+
+  const posicionHermano = posicion_bracket % 2 === 0 ? posicion_bracket + 1 : posicion_bracket - 1;
+  const hermano = (await pool.query(
+    `SELECT * FROM partidos_live WHERE id_torneo = $1 AND ronda_bracket = $2 AND posicion_bracket = $3`,
+    [id_torneo, ronda_bracket, posicionHermano]
+  )).rows[0];
+  if (!hermano || hermano.estado_juego !== 'finalizado') return; // esperar a que el hermano tambien termine
+
+  const primeraPos = Math.min(posicion_bracket, posicionHermano);
+  const [partidoLocal, partidoVisita] = primeraPos === posicion_bracket ? [partido, hermano] : [hermano, partido];
+  const local = ganador(partidoLocal);
+  const visita = ganador(partidoVisita);
+  const rondaSiguiente = ronda_bracket + 1;
+  const posicionSiguiente = Math.floor(primeraPos / 2);
+
+  const existente = (await pool.query(
+    `SELECT id_partido FROM partidos_live WHERE id_torneo = $1 AND ronda_bracket = $2 AND posicion_bracket = $3`,
+    [id_torneo, rondaSiguiente, posicionSiguiente]
+  )).rows[0];
+
+  if (existente) {
+    await pool.query(
+      `UPDATE partidos_live SET equipo_local=$1, equipo_visitante=$2, id_equipo_local=$3, id_equipo_visitante=$4,
+       logo_local_url=$5, logo_visitante_url=$6 WHERE id_partido=$7`,
+      [local.nombre, visita.nombre, local.id, visita.id, local.logo, visita.logo, existente.id_partido]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO partidos_live (id_torneo, ronda_bracket, posicion_bracket, equipo_local, equipo_visitante,
+       id_equipo_local, id_equipo_visitante, logo_local_url, logo_visitante_url, estado_juego, rama, categoria,
+       torneo_nombre, pts_local, pts_visitante)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pendiente',$10,$11,$12,0,0)`,
+      [id_torneo, rondaSiguiente, posicionSiguiente, local.nombre, visita.nombre, local.id, visita.id,
+       local.logo, visita.logo, partido.rama, partido.categoria, partido.torneo_nombre]
+    );
+  }
+};
+
+// Mismo molde que el post automático al subir un video de Academia (ver
+// POST /api/academia-videos): inserta directo en comunicaciones con un tipo
+// propio y un enlace débil (torneo_id) al origen. No hace nada si el torneo
+// optó por no publicar, o si todavía no tiene ganador.
+const publicarResultadoTorneoEnMuro = async (idTorneo) => {
+  const torneo = (await pool.query('SELECT * FROM torneos WHERE id_torneo = $1', [idTorneo])).rows[0];
+  if (!torneo || !torneo.publicar_resultado_en_muro || !torneo.ganador) return;
+  await pool.query(
+    `INSERT INTO comunicaciones (titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia, reacciones, asistencias, torneo_id)
+     VALUES ($1, $2, 'Torneo', $3, $4, 'Baja', false, '{}', '[]', $5)`,
+    [
+      `🏆 ${torneo.nombre_torneo}: campeón ${torneo.ganador}`,
+      `${torneo.ganador} se consagró campeón de "${torneo.nombre_torneo}".`,
+      torneo.rama, torneo.categoria, idTorneo,
+    ]
+  );
+};
 
 // GET: equipos reales (nombre + logo) registrados para un torneo. Pública,
 // mismo criterio que el resto de las rutas de lectura de torneos.
@@ -7062,7 +7246,7 @@ app.get('/api/torneos/:id/tabla-posiciones', async (req, res) => {
   try {
     const partidos = (await pool.query(
       `SELECT id_partido, equipo_local, equipo_visitante, pts_local, pts_visitante, fecha_hora, cancha_sede,
-              logo_local_url, logo_visitante_url
+              logo_local_url, logo_visitante_url, ronda_bracket, posicion_bracket
        FROM partidos_live
        WHERE id_torneo = $1 AND estado_juego = 'finalizado'
        ORDER BY fecha_hora ASC`,
@@ -7071,7 +7255,7 @@ app.get('/api/torneos/:id/tabla-posiciones', async (req, res) => {
 
     const partidosPendientes = (await pool.query(
       `SELECT id_partido, equipo_local, equipo_visitante, fecha_hora, cancha_sede, estado_juego,
-              logo_local_url, logo_visitante_url
+              logo_local_url, logo_visitante_url, ronda_bracket, posicion_bracket
        FROM partidos_live
        WHERE id_torneo = $1 AND estado_juego != 'finalizado'
        ORDER BY fecha_hora ASC`,

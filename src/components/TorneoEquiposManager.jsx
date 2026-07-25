@@ -15,15 +15,16 @@ function TorneoEquiposManager({ idTorneo, equipos = [], onEquiposChanged }) {
   const [logoNuevo, setLogoNuevo] = useState('');
   const [guardando, setGuardando] = useState(false);
 
-  const agregarEquipo = async () => {
-    if (!nombreNuevo.trim()) {
+  const agregarEquipo = async (nombreOverride, logoOverride) => {
+    const nombre = (nombreOverride ?? nombreNuevo).trim();
+    if (!nombre) {
       showToast({ message: 'Ponle un nombre al equipo.', type: 'error' });
       return;
     }
     setGuardando(true);
     try {
-      await api.torneosAPI.equipos.create(idTorneo, { nombre_equipo: nombreNuevo.trim(), logo_url: logoNuevo || null });
-      showToast({ message: `${nombreNuevo.trim()} agregado al torneo.`, type: 'success' });
+      await api.torneosAPI.equipos.create(idTorneo, { nombre_equipo: nombre, logo_url: (logoOverride ?? logoNuevo) || null });
+      showToast({ message: `${nombre} agregado al torneo.`, type: 'success' });
       setNombreNuevo('');
       setLogoNuevo('');
       if (onEquiposChanged) await onEquiposChanged();
@@ -81,10 +82,19 @@ function TorneoEquiposManager({ idTorneo, equipos = [], onEquiposChanged }) {
             placeholder="Nombre del equipo..."
           />
         </div>
-        <button className="btn-secondary" style={{ width: 'auto', padding: '10px 14px' }} onClick={agregarEquipo} disabled={guardando}>
+        <button className="btn-secondary" style={{ width: 'auto', padding: '10px 14px' }} onClick={() => agregarEquipo()} disabled={guardando}>
           <Plus size={14} /> {guardando ? 'Agregando...' : 'Agregar'}
         </button>
       </div>
+      <button
+        type="button"
+        className="btn-secondary"
+        style={{ width: 'auto', padding: '8px 12px', marginTop: '8px', fontSize: '11px' }}
+        onClick={() => agregarEquipo('Centro de Cultura Física', '/logos/club-logo.png')}
+        disabled={guardando}
+      >
+        + Es nuestro equipo (Centro de Cultura Física)
+      </button>
     </div>
   );
 }

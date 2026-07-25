@@ -1165,6 +1165,18 @@ export const torneosAPI = {
     const response = await apiFetch(`${API_BASE_URL}/torneos/${id}/tabla-posiciones`);
     return handleResponse(response);
   },
+  update: async (id, datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/torneos/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
+  },
+  generarCuadro: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/torneos/${id}/generar-cuadro`, { method: 'POST' });
+    return handleResponse(response);
+  },
   equipos: {
     getAll: async (idTorneo) => {
       const response = await apiFetch(`${API_BASE_URL}/torneos/${idTorneo}/equipos`);

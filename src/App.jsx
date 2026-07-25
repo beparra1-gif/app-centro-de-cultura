@@ -22,6 +22,7 @@ import ToastContainer from './components/ToastContainer';
 import ConfirmDialog from './components/ConfirmDialog';
 import { showToast } from './utils/toast';
 import { confirmAction } from './utils/confirmDialog';
+import { esNuestroClub } from './utils/logoResolver';
 import { cuentasDemo } from './data/demoAccounts';
 import {
   getUTMLastDayPreviousMonth,
@@ -364,30 +365,47 @@ function App() {
   // no sirve para partidos entre dos equipos rivales que se cargan solo para
   // llevar la tabla de posiciones completa de un torneo externo (Torneos ya
   // los muestra sin ese sesgo). Se filtran acá para que no aparezcan en el
-  // muro general con un marco que no corresponde.
-  const esEquipoPropio = (nombre = '') => /centro\s*de\s*cultura\s*f[ií]sica/i.test(String(nombre || ''));
+  // muro general con un marco que no corresponde. Usa la misma detección
+  // centralizada que LogoPicker (reconoce "CCF" y variantes, no solo el
+  // nombre completo) — antes este archivo tenía su propio regex más
+  // estricto, así que un equipo cargado como "CCF" quedaba afuera del muro
+  // aunque el resto de la app sí lo reconociera como el club.
+  const esEquipoPropio = (nombre = '') => esNuestroClub(nombre);
 
   const mapPartidosResumen = (partidosLiveRes = []) => {
     return (Array.isArray(partidosLiveRes) ? partidosLiveRes : [])
       // publicado === false: se cargó solo para la tabla de posiciones, el
       // club decidió no destacarlo como noticia en el muro.
       .filter((p) => p.publicado !== false && (esEquipoPropio(p.equipo_local) || esEquipoPropio(p.equipo_visitante)))
-      .map((p, idx) => ({
-      id: p.id_partido || idx + 1,
-      rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
-      categoria: p.categoria || p.categoria_rama || 'General',
-      torneo: p.torneo_nombre || p.competencia_nombre || 'Partido oficial',
-      torneoLogoUrl: p.torneo_logo_url || p.logo_torneo_url || '',
-      fechaISO: p.fecha_hora || null,
-      fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
-      miEquipo: Number(p.pts_local || 0),
-      rival: Number(p.pts_visitante || 0),
-      nombreRival: p.equipo_visitante || p.equipo_visitante_nombre || 'Rival',
-      equipoLocalNombre: p.equipo_local || p.equipo_local_nombre || 'Centro de Cultura Física',
-      equipoLocalLogoUrl: p.logo_local_url || p.equipo_local_logo_url || '/logos/club-logo.png',
-      equipoVisitaLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
-      rivalLogoUrl: p.logo_visitante_url || p.equipo_visitante_logo_url || '',
-    }));
+      .map((p, idx) => {
+        // El bracket automático puede tocarnos jugar de local o de visita
+        // según cómo cayó el cruce — "miEquipo"/"equipoLocalNombre" siempre
+        // deben ser NUESTRO lado (el que se muestra a la izquierda de la
+        // tarjeta), sin importar de qué lado quedamos en la fila real.
+        const jugamosDeLocal = esEquipoPropio(p.equipo_local);
+        const nombreMio = jugamosDeLocal ? p.equipo_local : p.equipo_visitante;
+        const logoMio = jugamosDeLocal ? p.logo_local_url : p.logo_visitante_url;
+        const ptsMios = jugamosDeLocal ? p.pts_local : p.pts_visitante;
+        const nombreDelRival = jugamosDeLocal ? p.equipo_visitante : p.equipo_local;
+        const logoDelRival = jugamosDeLocal ? p.logo_visitante_url : p.logo_local_url;
+        const ptsDelRival = jugamosDeLocal ? p.pts_visitante : p.pts_local;
+        return {
+          id: p.id_partido || idx + 1,
+          rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
+          categoria: p.categoria || p.categoria_rama || 'General',
+          torneo: p.torneo_nombre || p.competencia_nombre || 'Partido oficial',
+          torneoLogoUrl: p.torneo_logo_url || p.logo_torneo_url || '',
+          fechaISO: p.fecha_hora || null,
+          fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
+          miEquipo: Number(ptsMios || 0),
+          rival: Number(ptsDelRival || 0),
+          nombreRival: nombreDelRival || 'Rival',
+          equipoLocalNombre: nombreMio || 'Centro de Cultura Física',
+          equipoLocalLogoUrl: logoMio || '/logos/club-logo.png',
+          equipoVisitaLogoUrl: logoDelRival || '',
+          rivalLogoUrl: logoDelRival || '',
+        };
+      });
   };
 
   const mapComunicacionesResumen = (comunicacionesRes = []) => {

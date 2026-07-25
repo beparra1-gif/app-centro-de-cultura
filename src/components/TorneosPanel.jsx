@@ -5,6 +5,7 @@ import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import TorneoEquiposManager from './TorneoEquiposManager';
 import TorneoPartidosManager from './TorneoPartidosManager';
+import TorneoBracket from './TorneoBracket';
 
 const TORNEO_FORM_VACIO = {
   nombre_torneo: '',
@@ -15,8 +16,9 @@ const TORNEO_FORM_VACIO = {
   ubicacion: '',
   organizador: '',
   cantidad_equipos: '',
-  formato: 'Todos contra todos',
   tipo: 'interno',
+  tipo_formato: 'liga',
+  publicar_resultado_en_muro: true,
 };
 
 function TorneosPanel({ puedeGestionar = false }) {
@@ -29,6 +31,10 @@ function TorneosPanel({ puedeGestionar = false }) {
   const [mostrarFormCrear, setMostrarFormCrear] = useState(false);
   const [formTorneo, setFormTorneo] = useState(TORNEO_FORM_VACIO);
   const [creandoTorneo, setCreandoTorneo] = useState(false);
+  const [generandoCuadroId, setGenerandoCuadroId] = useState(null);
+  const [mostrarFinalizarId, setMostrarFinalizarId] = useState(null);
+  const [ganadorFinalizar, setGanadorFinalizar] = useState('');
+  const [finalizandoTorneo, setFinalizandoTorneo] = useState(false);
 
   const cargarTorneos = async () => {
     setCargandoTorneos(true);
@@ -104,6 +110,43 @@ function TorneosPanel({ puedeGestionar = false }) {
     }
   };
 
+  const generarCuadro = async (idTorneo) => {
+    setGenerandoCuadroId(idTorneo);
+    try {
+      await api.torneosAPI.generarCuadro(idTorneo);
+      showToast({ message: 'Cuadro generado.', type: 'success' });
+      await cargarTablaYEquipos(idTorneo);
+      await cargarTorneos();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo generar el cuadro.', type: 'error' });
+    } finally {
+      setGenerandoCuadroId(null);
+    }
+  };
+
+  const abrirFinalizarTorneo = (idTorneo, ganadorSugerido) => {
+    setMostrarFinalizarId(idTorneo);
+    setGanadorFinalizar(ganadorSugerido || '');
+  };
+
+  const finalizarTorneo = async (idTorneo) => {
+    if (!ganadorFinalizar.trim()) {
+      showToast({ message: 'Indica quién ganó el torneo.', type: 'error' });
+      return;
+    }
+    setFinalizandoTorneo(true);
+    try {
+      await api.torneosAPI.update(idTorneo, { estado: 'finalizado', ganador: ganadorFinalizar.trim() });
+      showToast({ message: 'Torneo finalizado.', type: 'success' });
+      setMostrarFinalizarId(null);
+      await cargarTorneos();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo finalizar el torneo.', type: 'error' });
+    } finally {
+      setFinalizandoTorneo(false);
+    }
+  };
+
   return (
     <div className="mt-20 fade-in">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
@@ -165,9 +208,20 @@ function TorneosPanel({ puedeGestionar = false }) {
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Formato</label>
-              <input className="form-input" value={formTorneo.formato} onChange={(e) => setFormTorneo((p) => ({ ...p, formato: e.target.value }))} placeholder="Ej: Todos contra todos" />
+              <div className="segment-control" style={{ gap: '6px' }}>
+                <button type="button" className={`segment-btn ${formTorneo.tipo_formato === 'liga' ? 'active' : ''}`} onClick={() => setFormTorneo((p) => ({ ...p, tipo_formato: 'liga' }))}>
+                  Liga
+                </button>
+                <button type="button" className={`segment-btn ${formTorneo.tipo_formato === 'eliminacion_directa' ? 'active' : ''}`} onClick={() => setFormTorneo((p) => ({ ...p, tipo_formato: 'eliminacion_directa' }))}>
+                  Eliminación directa
+                </button>
+              </div>
             </div>
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', fontSize: '12px', fontWeight: '700' }}>
+            <input type="checkbox" checked={formTorneo.publicar_resultado_en_muro} onChange={(e) => setFormTorneo((p) => ({ ...p, publicar_resultado_en_muro: e.target.checked }))} />
+            Publicar resultado final en el Muro (quién sale campeón)
+          </label>
           <button className="btn-electric mt-15" onClick={crearTorneo} disabled={creandoTorneo}>
             {creandoTorneo ? 'Creando...' : 'Guardar torneo'}
           </button>
@@ -220,83 +274,133 @@ function TorneosPanel({ puedeGestionar = false }) {
                           onPartidosChanged={() => cargarTablaYEquipos(t.id_torneo)}
                         />
                       </div>
+
+                      {t.tipo_formato === 'eliminacion_directa' && !t.bracket_generado && (
+                        <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px dashed var(--borde-suave)' }}>
+                          <button
+                            className="btn-secondary"
+                            style={{ width: 'auto', padding: '10px 14px' }}
+                            onClick={() => generarCuadro(t.id_torneo)}
+                            disabled={generandoCuadroId === t.id_torneo || equiposTorneo.length < 2}
+                          >
+                            {generandoCuadroId === t.id_torneo ? 'Generando...' : 'Generar cuadro'}
+                          </button>
+                          <p className="text-muted" style={{ fontSize: '11px', margin: '6px 0 0' }}>
+                            Necesita una cantidad de equipos potencia de 2 (2, 4, 8, 16...). Hoy tienes {equiposTorneo.length}.
+                          </p>
+                        </div>
+                      )}
+
+                      {t.tipo_formato === 'liga' && t.estado !== 'finalizado' && tabla?.posiciones?.length > 0 && (
+                        <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px dashed var(--borde-suave)' }}>
+                          {mostrarFinalizarId !== t.id_torneo ? (
+                            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 14px' }} onClick={() => abrirFinalizarTorneo(t.id_torneo, tabla.posiciones[0]?.nombre)}>
+                              Finalizar torneo
+                            </button>
+                          ) : (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                              <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label style={{ fontSize: '11px' }}>Campeón</label>
+                                <input className="form-input" value={ganadorFinalizar} onChange={(e) => setGanadorFinalizar(e.target.value)} />
+                              </div>
+                              <button className="btn-electric" style={{ width: 'auto', padding: '10px 14px' }} onClick={() => finalizarTorneo(t.id_torneo)} disabled={finalizandoTorneo}>
+                                {finalizandoTorneo ? 'Guardando...' : 'Confirmar'}
+                              </button>
+                              <button className="btn-secondary" style={{ width: 'auto', padding: '10px 14px' }} onClick={() => setMostrarFinalizarId(null)}>
+                                Cancelar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {!cargandoTabla && tabla && tabla.posiciones.length === 0 && (
-                    <p className="text-muted text-center italic">Todavía no hay partidos finalizados asignados a este torneo.</p>
-                  )}
-                  {!cargandoTabla && tabla && tabla.posiciones.length > 0 && (
+                  {t.tipo_formato === 'eliminacion_directa' ? (
+                    <TorneoBracket
+                      partidos={[
+                        ...(tabla?.partidos || []).map((p) => ({ ...p, estado_juego: 'finalizado' })),
+                        ...(tabla?.partidosPendientes || []),
+                      ]}
+                    />
+                  ) : (
                     <>
-                      <div style={{ overflowX: 'auto' }} className="mb-15">
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                          <thead>
-                            <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--borde-suave)' }}>
-                              <th style={{ padding: '6px 8px' }}>#</th>
-                              <th style={{ padding: '6px 8px' }}>Equipo</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'center' }}>PJ</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'center' }}>PG</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'center' }}>PP</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'center' }}>PF</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'center' }}>PC</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'center' }}>DIF</th>
-                              <th style={{ padding: '6px 8px', textAlign: 'center' }}>%</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {tabla.posiciones.map((fila) => (
-                              <tr key={fila.nombre} style={{ borderBottom: '1px solid var(--borde-suave)' }}>
-                                <td style={{ padding: '6px 8px', fontWeight: '900', color: 'var(--azul-electrico)' }}>{fila.posicion}</td>
-                                <td style={{ padding: '6px 8px', fontWeight: '800' }}>
-                                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <LogoAvatar nombre={fila.nombre} logoUrl={fila.logoUrl} tipo="club" size={20} borderRadius="6px" />
-                                    {fila.nombre}
-                                  </span>
-                                </td>
-                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pj}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pg}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pp}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pf}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pc}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.dif > 0 ? `+${fila.dif}` : fila.dif}</td>
-                                <td style={{ padding: '6px 8px', textAlign: 'center' }}>{Math.round(fila.pct * 100)}%</td>
-                              </tr>
+                      {!cargandoTabla && tabla && tabla.posiciones.length === 0 && (
+                        <p className="text-muted text-center italic">Todavía no hay partidos finalizados asignados a este torneo.</p>
+                      )}
+                      {!cargandoTabla && tabla && tabla.posiciones.length > 0 && (
+                        <>
+                          <div style={{ overflowX: 'auto' }} className="mb-15">
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                              <thead>
+                                <tr style={{ textAlign: 'left', borderBottom: '2px solid var(--borde-suave)' }}>
+                                  <th style={{ padding: '6px 8px' }}>#</th>
+                                  <th style={{ padding: '6px 8px' }}>Equipo</th>
+                                  <th style={{ padding: '6px 8px', textAlign: 'center' }}>PJ</th>
+                                  <th style={{ padding: '6px 8px', textAlign: 'center' }}>PG</th>
+                                  <th style={{ padding: '6px 8px', textAlign: 'center' }}>PP</th>
+                                  <th style={{ padding: '6px 8px', textAlign: 'center' }}>PF</th>
+                                  <th style={{ padding: '6px 8px', textAlign: 'center' }}>PC</th>
+                                  <th style={{ padding: '6px 8px', textAlign: 'center' }}>DIF</th>
+                                  <th style={{ padding: '6px 8px', textAlign: 'center' }}>%</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {tabla.posiciones.map((fila) => (
+                                  <tr key={fila.nombre} style={{ borderBottom: '1px solid var(--borde-suave)' }}>
+                                    <td style={{ padding: '6px 8px', fontWeight: '900', color: 'var(--azul-electrico)' }}>{fila.posicion}</td>
+                                    <td style={{ padding: '6px 8px', fontWeight: '800' }}>
+                                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <LogoAvatar nombre={fila.nombre} logoUrl={fila.logoUrl} tipo="club" size={20} borderRadius="6px" />
+                                        {fila.nombre}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pj}</td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pg}</td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pp}</td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pf}</td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.pc}</td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>{fila.dif > 0 ? `+${fila.dif}` : fila.dif}</td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'center' }}>{Math.round(fila.pct * 100)}%</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <h5 style={{ margin: '16px 0 8px 0', fontSize: '13px' }}>Partidos jugados</h5>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {tabla.partidos.map((p) => (
+                              <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '8px 10px', fontSize: '12px' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <LogoAvatar nombre={p.equipo_local} logoUrl={p.logo_local_url} tipo="club" size={18} borderRadius="6px" />
+                                  {p.equipo_local} <strong>{p.pts_local}</strong> — <strong>{p.pts_visitante}</strong> {p.equipo_visitante}
+                                  <LogoAvatar nombre={p.equipo_visitante} logoUrl={p.logo_visitante_url} tipo="club" size={18} borderRadius="6px" />
+                                </span>
+                                <span style={{ color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                                  {p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha'}
+                                </span>
+                              </div>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <h5 style={{ margin: '16px 0 8px 0', fontSize: '13px' }}>Partidos jugados</h5>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {tabla.partidos.map((p) => (
-                          <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '8px 10px', fontSize: '12px' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <LogoAvatar nombre={p.equipo_local} logoUrl={p.logo_local_url} tipo="club" size={18} borderRadius="6px" />
-                              {p.equipo_local} <strong>{p.pts_local}</strong> — <strong>{p.pts_visitante}</strong> {p.equipo_visitante}
-                              <LogoAvatar nombre={p.equipo_visitante} logoUrl={p.logo_visitante_url} tipo="club" size={18} borderRadius="6px" />
-                            </span>
-                            <span style={{ color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                              {p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha'}
-                            </span>
                           </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
+                        </>
+                      )}
 
-                  {!cargandoTabla && tabla && tabla.partidosPendientes.length > 0 && (
-                    <>
-                      <h5 style={{ margin: '16px 0 8px 0', fontSize: '13px' }}>Próximos partidos</h5>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {tabla.partidosPendientes.map((p) => (
-                          <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed var(--borde-suave)', borderRadius: '12px', padding: '8px 10px', fontSize: '12px' }}>
-                            <span>{p.equipo_local} vs {p.equipo_visitante}</span>
-                            <span style={{ color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                              {p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha'} · {p.estado_juego === 'en_curso' ? 'En curso' : 'Programado'}
-                            </span>
+                      {!cargandoTabla && tabla && tabla.partidosPendientes.length > 0 && (
+                        <>
+                          <h5 style={{ margin: '16px 0 8px 0', fontSize: '13px' }}>Próximos partidos</h5>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {tabla.partidosPendientes.map((p) => (
+                              <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed var(--borde-suave)', borderRadius: '12px', padding: '8px 10px', fontSize: '12px' }}>
+                                <span>{p.equipo_local} vs {p.equipo_visitante}</span>
+                                <span style={{ color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                                  {p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha'} · {p.estado_juego === 'en_curso' ? 'En curso' : 'Programado'}
+                                </span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </>
+                      )}
                     </>
                   )}
                 </div>

@@ -90,64 +90,70 @@ function TorneoPartidosManager({ idTorneo, torneo, equipos = [], partidosPendien
     }
   };
 
+  const esEliminacionDirecta = torneo?.tipo_formato === 'eliminacion_directa';
+
   return (
     <div>
-      <h5 style={{ margin: '0 0 10px', fontSize: '13px' }}>Agregar partido</h5>
-      {equipos.length < 2 ? (
-        <p className="text-muted italic" style={{ fontSize: '12px' }}>Agrega al menos 2 equipos para poder crear partidos.</p>
-      ) : (
+      {!esEliminacionDirecta && (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Equipo local</label>
-              <select className="form-input" value={idEquipoLocal} onChange={(e) => setIdEquipoLocal(e.target.value)}>
-                <option value="">Elegir...</option>
-                {equipos.map((eq) => <option key={eq.id_equipo} value={eq.id_equipo}>{eq.nombre_equipo}</option>)}
-              </select>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Equipo visitante</label>
-              <select className="form-input" value={idEquipoVisitante} onChange={(e) => setIdEquipoVisitante(e.target.value)}>
-                <option value="">Elegir...</option>
-                {equipos.map((eq) => <option key={eq.id_equipo} value={eq.id_equipo}>{eq.nombre_equipo}</option>)}
-              </select>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Fecha</label>
-              <input type="date" className="form-input" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Hora</label>
-              <input type="time" className="form-input" value={hora} onChange={(e) => setHora(e.target.value)} />
-            </div>
-          </div>
-
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', fontSize: '12px', fontWeight: '700' }}>
-            <input type="checkbox" checked={cargarResultadoAhora} onChange={(e) => setCargarResultadoAhora(e.target.checked)} />
-            Cargar resultado ahora
-          </label>
-
-          {cargarResultadoAhora && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginTop: '8px' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Puntos local</label>
-                <input type="number" min="0" className="form-input" value={ptsLocal} onChange={(e) => setPtsLocal(e.target.value)} />
+          <h5 style={{ margin: '0 0 10px', fontSize: '13px' }}>Agregar partido</h5>
+          {equipos.length < 2 ? (
+            <p className="text-muted italic" style={{ fontSize: '12px' }}>Agrega al menos 2 equipos para poder crear partidos.</p>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Equipo local</label>
+                  <select className="form-input" value={idEquipoLocal} onChange={(e) => setIdEquipoLocal(e.target.value)}>
+                    <option value="">Elegir...</option>
+                    {equipos.map((eq) => <option key={eq.id_equipo} value={eq.id_equipo}>{eq.nombre_equipo}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Equipo visitante</label>
+                  <select className="form-input" value={idEquipoVisitante} onChange={(e) => setIdEquipoVisitante(e.target.value)}>
+                    <option value="">Elegir...</option>
+                    {equipos.map((eq) => <option key={eq.id_equipo} value={eq.id_equipo}>{eq.nombre_equipo}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Fecha</label>
+                  <input type="date" className="form-input" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Hora</label>
+                  <input type="time" className="form-input" value={hora} onChange={(e) => setHora(e.target.value)} />
+                </div>
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Puntos visitante</label>
-                <input type="number" min="0" className="form-input" value={ptsVisitante} onChange={(e) => setPtsVisitante(e.target.value)} />
-              </div>
-            </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', fontSize: '12px', fontWeight: '700' }}>
+                <input type="checkbox" checked={cargarResultadoAhora} onChange={(e) => setCargarResultadoAhora(e.target.checked)} />
+                Cargar resultado ahora
+              </label>
+
+              {cargarResultadoAhora && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginTop: '8px' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Puntos local</label>
+                    <input type="number" min="0" className="form-input" value={ptsLocal} onChange={(e) => setPtsLocal(e.target.value)} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Puntos visitante</label>
+                    <input type="number" min="0" className="form-input" value={ptsVisitante} onChange={(e) => setPtsVisitante(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', fontSize: '12px', fontWeight: '700' }}>
+                <input type="checkbox" checked={publicarEnMuro} onChange={(e) => setPublicarEnMuro(e.target.checked)} />
+                Publicar en el muro
+              </label>
+
+              <button className="btn-secondary mt-10" style={{ width: 'auto', padding: '10px 14px' }} onClick={crearPartido} disabled={guardando}>
+                <Plus size={14} /> {guardando ? 'Guardando...' : 'Agregar partido'}
+              </button>
+            </>
           )}
-
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', fontSize: '12px', fontWeight: '700' }}>
-            <input type="checkbox" checked={publicarEnMuro} onChange={(e) => setPublicarEnMuro(e.target.checked)} />
-            Publicar en el muro
-          </label>
-
-          <button className="btn-secondary mt-10" style={{ width: 'auto', padding: '10px 14px' }} onClick={crearPartido} disabled={guardando}>
-            <Plus size={14} /> {guardando ? 'Guardando...' : 'Agregar partido'}
-          </button>
         </>
       )}
 

@@ -33,6 +33,17 @@ export const normalizarSlugLogo = (texto = '') => {
     .replace(/^-+|-+$/g, '');
 };
 
+// \u00danica fuente de verdad de "esto es nuestro club" \u2014 antes hab\u00eda tres copias
+// de esta misma lista (LogoPicker.jsx, construirLogoCandidates de aqu\u00ed
+// mismo, y un regex m\u00e1s estricto en App.jsx que no reconoc\u00eda "CCF"), lo que
+// hac\u00eda que el filtro de "Muro > Resultados" descartara partidos que el
+// resto de la app s\u00ed reconoc\u00eda como propios.
+const ALIAS_NUESTRO_CLUB = ['centro-de-cultura-fisica', 'club-centro-de-cultura-fisica', 'ccf', 'club-cultura-fisica'];
+export const esNuestroClub = (nombre = '') => {
+  const slug = normalizarSlugLogo(nombre);
+  return ALIAS_NUESTRO_CLUB.some((alias) => slug === alias || slug.includes(alias));
+};
+
 export const obtenerInicialesLogo = (texto = '') => {
   const palabras = String(texto)
     .trim()
@@ -53,7 +64,6 @@ export const construirLogoCandidates = ({ nombre = '', logoUrl = '', slug = '', 
   const urlDirecta = absolutizarLogoUrl(logoUrl);
   const slugBase = normalizarSlugLogo(slug || nombre);
   const tipoBase = normalizarSlugLogo(tipo);
-  const nombreNormalizado = normalizarSlugLogo(nombre);
   const origenApi = obtenerOrigenApi();
   const agregarCandidato = (url) => {
     if (!url) return;
@@ -63,18 +73,11 @@ export const construirLogoCandidates = ({ nombre = '', logoUrl = '', slug = '', 
     }
   };
 
-  const esNuestroClub = [
-    'centro-de-cultura-fisica',
-    'club-centro-de-cultura-fisica',
-    'ccf',
-    'club-cultura-fisica',
-  ].some((alias) => nombreNormalizado === alias || nombreNormalizado.includes(alias));
-
   if (urlDirecta) {
     candidatos.push(urlDirecta);
   }
 
-  if (esNuestroClub) {
+  if (esNuestroClub(nombre)) {
     agregarCandidato('/logos/club-logo.png');
     agregarCandidato('/api/logo-assets/file/club-logo.png');
   }
