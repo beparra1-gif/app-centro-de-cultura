@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trophy } from 'lucide-react';
+import { Pencil, Plus, Trash2, Trophy } from 'lucide-react';
 import { showToast } from '../utils/toast';
+import { confirmAction } from '../utils/confirmDialog';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import TorneoEquiposManager from './TorneoEquiposManager';
@@ -31,6 +32,8 @@ function TorneosPanel({ puedeGestionar = false }) {
   const [mostrarFormCrear, setMostrarFormCrear] = useState(false);
   const [formTorneo, setFormTorneo] = useState(TORNEO_FORM_VACIO);
   const [creandoTorneo, setCreandoTorneo] = useState(false);
+  const [torneoEditandoId, setTorneoEditandoId] = useState(null);
+  const [borrandoTorneoId, setBorrandoTorneoId] = useState(null);
   const [generandoCuadroId, setGenerandoCuadroId] = useState(null);
   const [mostrarFinalizarId, setMostrarFinalizarId] = useState(null);
   const [ganadorFinalizar, setGanadorFinalizar] = useState('');
@@ -82,7 +85,31 @@ function TorneosPanel({ puedeGestionar = false }) {
     await cargarTablaYEquipos(idTorneo);
   };
 
-  const crearTorneo = async () => {
+  const abrirEditarTorneo = (t) => {
+    setFormTorneo({
+      nombre_torneo: t.nombre_torneo || '',
+      rama: t.rama || 'Mixta',
+      categoria: t.categoria || '',
+      fecha_inicio: t.fecha_inicio ? String(t.fecha_inicio).slice(0, 10) : '',
+      fecha_fin: t.fecha_fin ? String(t.fecha_fin).slice(0, 10) : '',
+      ubicacion: t.ubicacion || '',
+      organizador: t.organizador || '',
+      cantidad_equipos: t.cantidad_equipos ?? '',
+      tipo: t.tipo || 'interno',
+      tipo_formato: t.tipo_formato || 'liga',
+      publicar_resultado_en_muro: t.publicar_resultado_en_muro !== false,
+    });
+    setTorneoEditandoId(t.id_torneo);
+    setMostrarFormCrear(true);
+  };
+
+  const cerrarFormTorneo = () => {
+    setMostrarFormCrear(false);
+    setTorneoEditandoId(null);
+    setFormTorneo(TORNEO_FORM_VACIO);
+  };
+
+  const guardarTorneo = async () => {
     if (!formTorneo.nombre_torneo.trim()) {
       showToast({ message: 'Ponle un nombre al torneo.', type: 'error' });
       return;
@@ -93,20 +120,49 @@ function TorneosPanel({ puedeGestionar = false }) {
     }
     setCreandoTorneo(true);
     try {
-      await api.torneosAPI.create({
+      const payload = {
         ...formTorneo,
         cantidad_equipos: formTorneo.cantidad_equipos ? Number(formTorneo.cantidad_equipos) : null,
         fecha_inicio: formTorneo.fecha_inicio || null,
         fecha_fin: formTorneo.fecha_fin || null,
-      });
-      setFormTorneo(TORNEO_FORM_VACIO);
-      setMostrarFormCrear(false);
-      showToast({ message: 'Torneo creado correctamente.', type: 'success' });
+      };
+      if (torneoEditandoId) {
+        await api.torneosAPI.update(torneoEditandoId, payload);
+        showToast({ message: 'Torneo actualizado correctamente.', type: 'success' });
+      } else {
+        await api.torneosAPI.create(payload);
+        showToast({ message: 'Torneo creado correctamente.', type: 'success' });
+      }
+      cerrarFormTorneo();
       await cargarTorneos();
     } catch (error) {
-      showToast({ message: `No se pudo crear el torneo: ${error.message}`, type: 'error' });
+      showToast({ message: `No se pudo guardar el torneo: ${error.message}`, type: 'error' });
     } finally {
       setCreandoTorneo(false);
+    }
+  };
+
+  const borrarTorneo = async (t) => {
+    const confirmado = await confirmAction({
+      title: 'Borrar torneo',
+      message: `Esto borra también sus equipos y partidos cargados. ¿Confirmas borrar "${t.nombre_torneo}"?`,
+      danger: true,
+    });
+    if (!confirmado) return;
+    setBorrandoTorneoId(t.id_torneo);
+    try {
+      await api.torneosAPI.delete(t.id_torneo);
+      showToast({ message: 'Torneo borrado.', type: 'success' });
+      if (torneoSeleccionadoId === t.id_torneo) {
+        setTorneoSeleccionadoId(null);
+        setTabla(null);
+        setEquiposTorneo([]);
+      }
+      await cargarTorneos();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo borrar el torneo.', type: 'error' });
+    } finally {
+      setBorrandoTorneoId(null);
     }
   };
 
@@ -152,7 +208,7 @@ function TorneosPanel({ puedeGestionar = false }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
         <h3 className="section-title" style={{ margin: 0 }}>Torneos</h3>
         {puedeGestionar && (
-          <button type="button" className="btn-electric" style={{ width: 'auto', padding: '10px 16px' }} onClick={() => setMostrarFormCrear((v) => !v)}>
+          <button type="button" className="btn-electric" style={{ width: 'auto', padding: '10px 16px' }} onClick={() => (mostrarFormCrear ? cerrarFormTorneo() : setMostrarFormCrear(true))}>
             <Plus size={16} /> {mostrarFormCrear ? 'Cancelar' : 'Crear torneo'}
           </button>
         )}
@@ -160,7 +216,7 @@ function TorneosPanel({ puedeGestionar = false }) {
 
       {mostrarFormCrear && puedeGestionar && (
         <div className="card mb-15" style={{ borderRadius: '20px' }}>
-          <h4 className="form-subtitle">Nuevo torneo</h4>
+          <h4 className="form-subtitle">{torneoEditandoId ? 'Editar torneo' : 'Nuevo torneo'}</h4>
           <div className="segment-control mb-15" style={{ gap: '6px' }}>
             <button type="button" className={`segment-btn ${formTorneo.tipo === 'interno' ? 'active' : ''}`} onClick={() => setFormTorneo((p) => ({ ...p, tipo: 'interno' }))}>
               Interno (armado por el club)
@@ -222,8 +278,8 @@ function TorneosPanel({ puedeGestionar = false }) {
             <input type="checkbox" checked={formTorneo.publicar_resultado_en_muro} onChange={(e) => setFormTorneo((p) => ({ ...p, publicar_resultado_en_muro: e.target.checked }))} />
             Publicar resultado final en el Muro (quién sale campeón)
           </label>
-          <button className="btn-electric mt-15" onClick={crearTorneo} disabled={creandoTorneo}>
-            {creandoTorneo ? 'Creando...' : 'Guardar torneo'}
+          <button className="btn-electric mt-15" onClick={guardarTorneo} disabled={creandoTorneo}>
+            {creandoTorneo ? 'Guardando...' : (torneoEditandoId ? 'Guardar cambios' : 'Guardar torneo')}
           </button>
         </div>
       )}
@@ -238,12 +294,12 @@ function TorneosPanel({ puedeGestionar = false }) {
           const abierto = torneoSeleccionadoId === t.id_torneo;
           return (
             <div key={t.id_torneo} className="card" style={{ borderRadius: '20px', padding: 0, overflow: 'hidden' }}>
-              <button
-                type="button"
-                onClick={() => seleccionarTorneo(t.id_torneo)}
-                style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '14px 16px', background: abierto ? 'rgba(0,122,255,0.06)' : 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', padding: '14px 16px', background: abierto ? 'rgba(0,122,255,0.06)' : 'transparent' }}>
+                <button
+                  type="button"
+                  onClick={() => seleccionarTorneo(t.id_torneo)}
+                  style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px', padding: 0, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                >
                   <Trophy size={18} color="var(--azul-electrico)" strokeWidth={1.5} />
                   <span>
                     <strong style={{ display: 'block', fontSize: '14px' }}>{t.nombre_torneo}</strong>
@@ -251,8 +307,29 @@ function TorneosPanel({ puedeGestionar = false }) {
                       {t.rama || 'General'} · {t.categoria || 'General'} · {t.estado || 'activo'} · {t.tipo === 'externo' ? `Externo (${t.organizador || 'sin organizador'})` : 'Interno'}
                     </span>
                   </span>
-                </span>
-              </button>
+                </button>
+                {puedeGestionar && (
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => abrirEditarTorneo(t)}
+                      title="Editar torneo"
+                      style={{ padding: '7px 10px', background: 'var(--azul-electrico)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => borrarTorneo(t)}
+                      disabled={borrandoTorneoId === t.id_torneo}
+                      title="Borrar torneo"
+                      style={{ padding: '7px 10px', background: 'rgba(239,68,68,0.1)', color: '#b91c1c', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {abierto && (
                 <div style={{ padding: '4px 16px 16px 16px' }}>

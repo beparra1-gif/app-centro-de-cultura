@@ -15,9 +15,9 @@ const VALORES_CONCEPTO = {
   'Matrícula': 50000
 };
 
-export default function PagoForm({ pago = null, jugadores = [], cuentas = [], onClose, onSave, autoAprobar = false }) {
+export default function PagoForm({ pago = null, jugadores = [], cuentas = [], onClose, onSave, autoAprobar = false, objetivoInicial = null }) {
   const [formData, setFormData] = useState({
-    rut_jugador: pago?.rut_jugador || '',
+    rut_jugador: pago?.rut_jugador || (objetivoInicial?.modoPago === 'deportista' ? objetivoInicial.rut : ''),
     correo_apoderado: pago?.correo_apoderado || '',
     concepto_pago: pago?.concepto_pago || 'Mensualidad',
     cantidad_meses_pagados: pago?.cantidad_meses_pagados || 1,
@@ -40,8 +40,8 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
   // Modo "socio": permite registrar la cuota de un socio que no tiene ningún
   // deportista asociado — hoy ese socio es invisible para el sistema de
   // pagos porque todo el flujo exige elegir un deportista primero.
-  const [modoPago, setModoPago] = useState('deportista'); // 'deportista' | 'socio'
-  const [rutCuentaSocio, setRutCuentaSocio] = useState('');
+  const [modoPago, setModoPago] = useState(objetivoInicial?.modoPago || 'deportista'); // 'deportista' | 'socio'
+  const [rutCuentaSocio, setRutCuentaSocio] = useState(objetivoInicial?.modoPago === 'socio' ? objetivoInicial.rut : '');
   const [searchTermSocio, setSearchTermSocio] = useState('');
   const [showSocioResults, setShowSocioResults] = useState(false);
   

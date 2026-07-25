@@ -7017,14 +7017,41 @@ app.post('/api/torneos', authenticate, requireAnyModule('scoreboard_live', 'admi
   }
 });
 
-// PUT: editar campos de gestión de un torneo (estado, ganador, etc.) — no
-// existía ningún endpoint de escritura para esto, así que "ganador" y
-// "estado" quedaban huérfanos en el esquema. Si se marca como finalizado
+// PUT: editar un torneo — tanto los campos de gestión (estado, ganador,
+// etc., sin los cuales "ganador"/"estado" quedaban huérfanos en el esquema)
+// como los datos básicos (nombre, fechas, formato...). Edición parcial: solo
+// se tocan las columnas que vienen en el body. Si se marca como finalizado
 // con un ganador, dispara el post automático al Muro (según el opt-out del
 // propio torneo).
 app.put('/api/torneos/:id', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'torneos'), async (req, res) => {
-  const { estado, ganador, subcampeon, premios, publicar_resultado_en_muro } = req.body;
+  const {
+    estado, ganador, subcampeon, premios, publicar_resultado_en_muro,
+    nombre_torneo, rama, categoria, fecha_inicio, fecha_fin, ubicacion, organizador, tipo, tipo_formato, cantidad_equipos,
+  } = req.body;
   try {
+    const actual = (await pool.query('SELECT * FROM torneos WHERE id_torneo = $1', [req.params.id])).rows[0];
+    if (!actual) {
+      return res.status(404).json({ error: 'Torneo no encontrado.' });
+    }
+
+    const tipoFinal = tipo === 'externo' ? 'externo' : (tipo === 'interno' ? 'interno' : actual.tipo);
+    const organizadorFinal = organizador !== undefined ? organizador : actual.organizador;
+    if (tipoFinal === 'externo' && !String(organizadorFinal || '').trim()) {
+      return res.status(400).json({ error: 'Indica el club u organización que organiza el torneo externo.' });
+    }
+
+    // Cambiar el formato de un torneo que ya tiene equipos o cuadro armado
+    // dejaría partidos_live apuntando a rondas/posiciones que no
+    // corresponden al nuevo formato — se bloquea antes de tocar nada.
+    if (tipo_formato && tipo_formato !== actual.tipo_formato) {
+      const tieneEquipos = Number((await pool.query(
+        'SELECT COUNT(*) FROM torneo_equipos WHERE id_torneo = $1', [req.params.id]
+      )).rows[0].count) > 0;
+      if (tieneEquipos || actual.bracket_generado) {
+        return res.status(400).json({ error: 'No se puede cambiar el formato de un torneo que ya tiene equipos o cuadro generado.' });
+      }
+    }
+
     const result = await pool.query(
       `UPDATE torneos SET
         estado = COALESCE($1, estado),
@@ -7032,14 +7059,26 @@ app.put('/api/torneos/:id', authenticate, requireAnyModule('scoreboard_live', 'a
         "subcampeón" = COALESCE($3, "subcampeón"),
         premios = COALESCE($4, premios),
         publicar_resultado_en_muro = COALESCE($5, publicar_resultado_en_muro),
+        nombre_torneo = COALESCE($6, nombre_torneo),
+        rama = COALESCE($7, rama),
+        categoria = COALESCE($8, categoria),
+        fecha_inicio = COALESCE($9, fecha_inicio),
+        fecha_fin = COALESCE($10, fecha_fin),
+        ubicacion = COALESCE($11, ubicacion),
+        organizador = COALESCE($12, organizador),
+        tipo = COALESCE($13, tipo),
+        tipo_formato = COALESCE($14, tipo_formato),
+        cantidad_equipos = COALESCE($15, cantidad_equipos),
         updated_at = NOW()
-       WHERE id_torneo = $6
+       WHERE id_torneo = $16
        RETURNING *`,
-      [estado || null, ganador || null, subcampeon || null, premios || null, publicar_resultado_en_muro ?? null, req.params.id]
+      [
+        estado || null, ganador || null, subcampeon || null, premios || null, publicar_resultado_en_muro ?? null,
+        nombre_torneo || null, rama || null, categoria || null, fecha_inicio || null, fecha_fin || null,
+        ubicacion || null, organizador || null, tipo || null, tipo_formato || null, cantidad_equipos || null,
+        req.params.id,
+      ]
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Torneo no encontrado.' });
-    }
     if (estado === 'finalizado' && ganador) {
       await publicarResultadoTorneoEnMuro(req.params.id);
     }
@@ -7047,6 +7086,33 @@ app.put('/api/torneos/:id', authenticate, requireAnyModule('scoreboard_live', 'a
   } catch (err) {
     console.error('[PUT /api/torneos/:id]', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE: borra un torneo y todo lo que le pertenece. torneo_equipos cae
+// solo (FK con ON DELETE CASCADE), pero partidos_live.id_torneo es un
+// vínculo débil sin FK (a propósito, ver comentario donde se agrega la
+// columna) — si no se borran a mano acá, quedan partidos huérfanos
+// apuntando a un id_torneo que ya no existe.
+app.delete('/api/torneos/:id', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'torneos'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const torneo = (await client.query('SELECT id_torneo FROM torneos WHERE id_torneo = $1', [req.params.id])).rows[0];
+    if (!torneo) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Torneo no encontrado.' });
+    }
+    await client.query('DELETE FROM partidos_live WHERE id_torneo = $1', [req.params.id]);
+    await client.query('DELETE FROM torneos WHERE id_torneo = $1', [req.params.id]);
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[DELETE /api/torneos/:id]', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 

@@ -537,6 +537,10 @@ function SuperAdminPanel({
   // (superadmin) — hace que PagoForm cree el pago ya aprobado en vez de
   // pendiente. Se resetea al abrir "Nuevo Pago" normal o al editar.
   const [pagoManualAutoAprobar, setPagoManualAutoAprobar] = useState(false);
+  // Quién quedó preseleccionado al abrir "Pago manual" desde una fila de
+  // moroso en Resumen (ver sociosMorososFiltrados/morososFiltrados más
+  // abajo) — null cuando se abre vacío desde el botón general de Pagos.
+  const [pagoManualObjetivo, setPagoManualObjetivo] = useState(null);
   const [paginaPagosMigrados, setPaginaPagosMigrados] = useState(1);
   const [itemsPorPaginaPagos] = useState(15);
 
@@ -2297,15 +2301,32 @@ function SuperAdminPanel({
                   <span className="moroso-monto">${s.montoDeuda.toLocaleString('es-CL')}</span>
                   <span className="moroso-meses" style={{ color: gravedad }}>{s.mesesDeuda} {s.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
                 </div>
-                <button
-                  className="btn-notificar"
-                  onClick={() => avisarSocioMoroso(s)}
-                  disabled={!s.telefono}
-                  title={s.telefono ? `Enviar recordatorio por WhatsApp a ${s.telefono}` : 'Sin teléfono registrado en la cuenta'}
-                  style={!s.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                >
-                  <Bell size={13} /> Avisar
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    className="btn-notificar"
+                    onClick={() => avisarSocioMoroso(s)}
+                    disabled={!s.telefono}
+                    title={s.telefono ? `Enviar recordatorio por WhatsApp a ${s.telefono}` : 'Sin teléfono registrado en la cuenta'}
+                    style={!s.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                  >
+                    <Bell size={13} /> Avisar
+                  </button>
+                  {rolUsuario === 'super_admin' && (
+                    <button
+                      className="btn-notificar"
+                      style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }}
+                      onClick={() => {
+                        setMostrarFormularioPago(true);
+                        setPagoEditandoId(null);
+                        setPagoManualAutoAprobar(true);
+                        setPagoManualObjetivo({ modoPago: 'socio', rut: s.rut });
+                      }}
+                      title={`Registrar pago manual de ${s.nombre}`}
+                    >
+                      <Plus size={13} /> Pago manual
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -2401,15 +2422,32 @@ function SuperAdminPanel({
                   <span className="moroso-monto">${m.montoDeuda.toLocaleString('es-CL')}</span>
                   <span className="moroso-meses" style={{ color: gravedad }}>{m.mesesDeuda} {m.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
                 </div>
-                <button
-                  className="btn-notificar"
-                  onClick={() => avisarMoroso(m)}
-                  disabled={!m.telefono}
-                  title={m.telefono ? `Enviar recordatorio por WhatsApp a ${m.telefono}` : 'Sin teléfono registrado en la cuenta'}
-                  style={!m.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                >
-                  <Bell size={13} /> Avisar
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    className="btn-notificar"
+                    onClick={() => avisarMoroso(m)}
+                    disabled={!m.telefono}
+                    title={m.telefono ? `Enviar recordatorio por WhatsApp a ${m.telefono}` : 'Sin teléfono registrado en la cuenta'}
+                    style={!m.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                  >
+                    <Bell size={13} /> Avisar
+                  </button>
+                  {rolUsuario === 'super_admin' && (
+                    <button
+                      className="btn-notificar"
+                      style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }}
+                      onClick={() => {
+                        setMostrarFormularioPago(true);
+                        setPagoEditandoId(null);
+                        setPagoManualAutoAprobar(true);
+                        setPagoManualObjetivo({ modoPago: 'deportista', rut: m.rut });
+                      }}
+                      title={`Registrar pago manual de ${m.nombre}`}
+                    >
+                      <Plus size={13} /> Pago manual
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -4294,14 +4332,17 @@ function SuperAdminPanel({
           jugadores={jugadoresAdmin || []}
           cuentas={cuentasAdmin || []}
           autoAprobar={pagoManualAutoAprobar}
+          objetivoInicial={pagoManualObjetivo}
           onClose={() => {
             setMostrarFormularioPago(false);
             setPagoEditandoId(null);
             setPagoManualAutoAprobar(false);
+            setPagoManualObjetivo(null);
           }}
           onSave={() => {
             setMostrarFormularioPago(false);
             setPagoEditandoId(null);
+            setPagoManualObjetivo(null);
             // Recargar pagos
             window.location.reload();
           }}

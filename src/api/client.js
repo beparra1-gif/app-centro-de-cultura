@@ -1173,6 +1173,10 @@ export const torneosAPI = {
     });
     return handleResponse(response);
   },
+  delete: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/torneos/${id}`, { method: 'DELETE' });
+    return handleResponse(response);
+  },
   generarCuadro: async (id) => {
     const response = await apiFetch(`${API_BASE_URL}/torneos/${id}/generar-cuadro`, { method: 'POST' });
     return handleResponse(response);
