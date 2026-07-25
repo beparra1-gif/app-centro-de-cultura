@@ -367,11 +367,23 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
       if (storageCfg.uploadRequired) {
         throw uploadError;
       }
+      // El SDK de S3 a veces solo da ".message" genérico (ej. "UnknownError")
+      // sin decir por qué — se registra también en logs del servidor el resto
+      // del objeto de error (nombre, código HTTP, request id) para poder
+      // diagnosticar sin adivinar.
+      console.error('[backup upload]', {
+        message: uploadError.message,
+        name: uploadError.name,
+        code: uploadError.Code || uploadError.code,
+        httpStatusCode: uploadError.$metadata?.httpStatusCode,
+        requestId: uploadError.$metadata?.requestId,
+        stack: uploadError.stack,
+      });
       upload = {
         attempted: true,
         uploaded: false,
         skipped: true,
-        reason: uploadError.message,
+        reason: `${uploadError.message} | name=${uploadError.name || '?'} code=${uploadError.Code || uploadError.code || '?'} http=${uploadError.$metadata?.httpStatusCode || '?'}`,
       };
     }
 
