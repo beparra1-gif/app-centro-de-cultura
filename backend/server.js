@@ -157,6 +157,15 @@ const uploadBackupToObjectStorage = async ({ localFilePath, trigger, strategy })
       secretAccessKey: storage.secretAccessKey,
     },
     forcePathStyle: true,
+    // Desde ~3.7xx, el SDK v3 por defecto manda/exige checksums flexibles
+    // (x-amz-checksum-*) en cada request. DigitalOcean Spaces (como la
+    // mayoría de proveedores S3-compatibles) no los soporta bien, y la
+    // respuesta de error que devuelve no calza con lo que el SDK espera
+    // parsear — el resultado es un "UnknownError" genérico sin ningún
+    // detalle real. Forzar 'WHEN_REQUIRED' vuelve al comportamiento
+    // clásico (solo cuando el propio SDK lo requiere, no por defecto).
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   });
 
   const fileName = path.basename(localFilePath);
