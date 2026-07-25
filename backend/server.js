@@ -15,6 +15,7 @@ const cron = require('node-cron');
 const { runImportFromSheets } = require('./import-google-sheets');
 const { createSheetsSyncManager } = require('./google-sheets-sync');
 const { createSheetsWebhookSyncManager } = require('./google-sheets-webhook-sync');
+const { calcularEmparejamientos } = require('./torneoBracket');
 const rateLimit = require('express-rate-limit');
 const {
   hashPassword,
@@ -7051,8 +7052,8 @@ app.put('/api/torneos/:id', authenticate, requireAnyModule('scoreboard_live', 'a
 
 // POST: arma el cuadro de eliminación directa emparejando los equipos ya
 // agregados por orden de alta (equipo 1 vs 2, 3 vs 4, ...) — sin sorteo ni
-// sembrado, alcanza para un club chico. Exige potencia de 2 para no meterse
-// en la complejidad de "byes" (equipos que pasan de ronda sin jugar).
+// sembrado, alcanza para un club chico. No exige potencia de 2: si sobran
+// equipos, los primeros pasan directo a la ronda 2 (ver calcularEmparejamientos).
 app.post('/api/torneos/:id/generar-cuadro', authenticate, requireAnyModule('scoreboard_live', 'admin_dashboard', 'torneos'), async (req, res) => {
   try {
     const torneo = (await pool.query('SELECT * FROM torneos WHERE id_torneo = $1', [req.params.id])).rows[0];
@@ -7067,10 +7068,8 @@ app.post('/api/torneos/:id/generar-cuadro', authenticate, requireAnyModule('scor
     }
 
     const equipos = (await pool.query('SELECT * FROM torneo_equipos WHERE id_torneo = $1 ORDER BY id_equipo ASC', [req.params.id])).rows;
-    const n = equipos.length;
-    const esPotenciaDeDos = n >= 2 && (n & (n - 1)) === 0;
-    if (!esPotenciaDeDos) {
-      return res.status(400).json({ error: `Para generar el cuadro necesitas una cantidad de equipos que sea potencia de 2 (2, 4, 8, 16...). Hoy tienes ${n}.` });
+    if (equipos.length < 2) {
+      return res.status(400).json({ error: 'Necesitas al menos 2 equipos para generar el cuadro.' });
     }
 
     // Reclamo atómico antes de insertar: si dos requests llegan casi juntos
@@ -7084,29 +7083,66 @@ app.post('/api/torneos/:id/generar-cuadro', authenticate, requireAnyModule('scor
       return res.status(400).json({ error: 'El cuadro de este torneo ya fue generado.' });
     }
 
-    for (let i = 0; i < n; i += 2) {
-      const local = equipos[i];
-      const visita = equipos[i + 1];
-      await pool.query(
-        `INSERT INTO partidos_live (id_torneo, ronda_bracket, posicion_bracket, equipo_local, equipo_visitante,
-         id_equipo_local, id_equipo_visitante, logo_local_url, logo_visitante_url, estado_juego, rama, categoria,
-         torneo_nombre, pts_local, pts_visitante)
-         VALUES ($1, 1, $2, $3, $4, $5, $6, $7, $8, 'pendiente', $9, $10, $11, 0, 0)`,
-        [req.params.id, i / 2, local.nombre_equipo, visita.nombre_equipo, local.id_equipo, visita.id_equipo,
-         local.logo_url, visita.logo_url, torneo.rama, torneo.categoria, torneo.nombre_torneo]
-      );
+    const { partidosReales, pasesDirectos, totalRondas } = calcularEmparejamientos(equipos);
+    const meta = { rama: torneo.rama, categoria: torneo.categoria, torneoNombre: torneo.nombre_torneo };
+
+    for (const { posicion, local, visita } of partidosReales) {
+      await colocarEnBracket(req.params.id, 1, posicion, true, local, meta);
+      await colocarEnBracket(req.params.id, 1, posicion, false, visita, meta);
     }
-    res.json({ ok: true, rondas: Math.log2(n), partidosCreados: n / 2 });
+    for (const { posicion, esLocal, equipo } of pasesDirectos) {
+      await colocarEnBracket(req.params.id, 2, posicion, esLocal, equipo, meta);
+    }
+
+    res.json({ ok: true, rondas: totalRondas, partidosCreados: partidosReales.length, pasesDirectos: pasesDirectos.length });
   } catch (err) {
     console.error('[POST /api/torneos/:id/generar-cuadro]', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Al finalizar un partido de bracket, si el "hermano" de esa ronda también
-// terminó, arma (o actualiza, si ya existía) el partido de la ronda
-// siguiente con los dos ganadores. Si esta era la última ronda, cierra el
-// torneo (ganador + estado) y dispara el post al Muro.
+// Coloca un equipo en un lado (local o visita) de la posición de un cuadro
+// de eliminación directa. Si el partido en esa (ronda, posicion) todavía no
+// existe, lo crea con ese lado lleno y el otro vacío (a la espera de un
+// pase directo o de que se resuelva el cruce que lo alimenta); si ya
+// existe, solo actualiza ese lado sin tocar el otro. Un mismo helper cubre
+// armar la ronda 1, colocar los pases directos, y el avance de ganadores.
+const colocarEnBracket = async (idTorneo, ronda, posicion, esLocal, equipo, meta) => {
+  const nombre = equipo.nombre_equipo || equipo.nombre || null;
+  const idEquipo = equipo.id_equipo ?? equipo.id ?? null;
+  const logo = equipo.logo_url || equipo.logo || null;
+
+  const existente = (await pool.query(
+    `SELECT id_partido FROM partidos_live WHERE id_torneo = $1 AND ronda_bracket = $2 AND posicion_bracket = $3`,
+    [idTorneo, ronda, posicion]
+  )).rows[0];
+
+  if (existente) {
+    const columnas = esLocal
+      ? 'equipo_local = $1, id_equipo_local = $2, logo_local_url = $3'
+      : 'equipo_visitante = $1, id_equipo_visitante = $2, logo_visitante_url = $3';
+    await pool.query(`UPDATE partidos_live SET ${columnas} WHERE id_partido = $4`, [nombre, idEquipo, logo, existente.id_partido]);
+    return;
+  }
+
+  const columnasLocal = esLocal ? [nombre, idEquipo, logo] : [null, null, null];
+  const columnasVisita = esLocal ? [null, null, null] : [nombre, idEquipo, logo];
+  await pool.query(
+    `INSERT INTO partidos_live (id_torneo, ronda_bracket, posicion_bracket, equipo_local, equipo_visitante,
+     id_equipo_local, id_equipo_visitante, logo_local_url, logo_visitante_url, estado_juego, rama, categoria,
+     torneo_nombre, pts_local, pts_visitante)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pendiente',$10,$11,$12,0,0)`,
+    [idTorneo, ronda, posicion, columnasLocal[0], columnasVisita[0], columnasLocal[1], columnasVisita[1],
+     columnasLocal[2], columnasVisita[2], meta.rama, meta.categoria, meta.torneoNombre]
+  );
+};
+
+// Al finalizar un partido de bracket, coloca a su ganador en el lado que le
+// corresponde (según la paridad de su posición) del partido de la ronda
+// siguiente — sin esperar a que ningún "hermano" termine, cada partido
+// escribe su propio resultado de forma independiente. Si esta era la
+// última ronda, cierra el torneo (ganador + estado) y dispara el post al
+// Muro.
 const avanzarGanadorBracket = async (partido) => {
   const { id_torneo, ronda_bracket, posicion_bracket } = partido;
   if (ronda_bracket == null || posicion_bracket == null) return;
@@ -7114,56 +7150,26 @@ const avanzarGanadorBracket = async (partido) => {
   const totalEquipos = Number((await pool.query(
     'SELECT COUNT(*) FROM torneo_equipos WHERE id_torneo = $1', [id_torneo]
   )).rows[0].count);
-  const totalRondas = Math.round(Math.log2(totalEquipos || 1));
+  const totalRondas = Math.ceil(Math.log2(totalEquipos || 1));
   const ganador = (p) => (Number(p.pts_local) >= Number(p.pts_visitante))
-    ? { id: p.id_equipo_local, nombre: p.equipo_local, logo: p.logo_local_url }
-    : { id: p.id_equipo_visitante, nombre: p.equipo_visitante, logo: p.logo_visitante_url };
+    ? { id_equipo: p.id_equipo_local, nombre_equipo: p.equipo_local, logo_url: p.logo_local_url }
+    : { id_equipo: p.id_equipo_visitante, nombre_equipo: p.equipo_visitante, logo_url: p.logo_visitante_url };
 
   if (ronda_bracket >= totalRondas) {
     const campeon = ganador(partido);
     await pool.query(
       `UPDATE torneos SET ganador = $1, estado = 'finalizado' WHERE id_torneo = $2 AND ganador IS NULL`,
-      [campeon.nombre, id_torneo]
+      [campeon.nombre_equipo, id_torneo]
     );
     await publicarResultadoTorneoEnMuro(id_torneo);
     return;
   }
 
-  const posicionHermano = posicion_bracket % 2 === 0 ? posicion_bracket + 1 : posicion_bracket - 1;
-  const hermano = (await pool.query(
-    `SELECT * FROM partidos_live WHERE id_torneo = $1 AND ronda_bracket = $2 AND posicion_bracket = $3`,
-    [id_torneo, ronda_bracket, posicionHermano]
-  )).rows[0];
-  if (!hermano || hermano.estado_juego !== 'finalizado') return; // esperar a que el hermano tambien termine
-
-  const primeraPos = Math.min(posicion_bracket, posicionHermano);
-  const [partidoLocal, partidoVisita] = primeraPos === posicion_bracket ? [partido, hermano] : [hermano, partido];
-  const local = ganador(partidoLocal);
-  const visita = ganador(partidoVisita);
   const rondaSiguiente = ronda_bracket + 1;
-  const posicionSiguiente = Math.floor(primeraPos / 2);
-
-  const existente = (await pool.query(
-    `SELECT id_partido FROM partidos_live WHERE id_torneo = $1 AND ronda_bracket = $2 AND posicion_bracket = $3`,
-    [id_torneo, rondaSiguiente, posicionSiguiente]
-  )).rows[0];
-
-  if (existente) {
-    await pool.query(
-      `UPDATE partidos_live SET equipo_local=$1, equipo_visitante=$2, id_equipo_local=$3, id_equipo_visitante=$4,
-       logo_local_url=$5, logo_visitante_url=$6 WHERE id_partido=$7`,
-      [local.nombre, visita.nombre, local.id, visita.id, local.logo, visita.logo, existente.id_partido]
-    );
-  } else {
-    await pool.query(
-      `INSERT INTO partidos_live (id_torneo, ronda_bracket, posicion_bracket, equipo_local, equipo_visitante,
-       id_equipo_local, id_equipo_visitante, logo_local_url, logo_visitante_url, estado_juego, rama, categoria,
-       torneo_nombre, pts_local, pts_visitante)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pendiente',$10,$11,$12,0,0)`,
-      [id_torneo, rondaSiguiente, posicionSiguiente, local.nombre, visita.nombre, local.id, visita.id,
-       local.logo, visita.logo, partido.rama, partido.categoria, partido.torneo_nombre]
-    );
-  }
+  const posicionSiguiente = Math.floor(posicion_bracket / 2);
+  const esLocal = posicion_bracket % 2 === 0;
+  const meta = { rama: partido.rama, categoria: partido.categoria, torneoNombre: partido.torneo_nombre };
+  await colocarEnBracket(id_torneo, rondaSiguiente, posicionSiguiente, esLocal, ganador(partido), meta);
 };
 
 // Mismo molde que el post automático al subir un video de Academia (ver

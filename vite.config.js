@@ -42,5 +42,19 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.js',
     globals: true,
+    // Sin esto, vitest también encuentra y corre los tests de backend/ (con
+    // su propia config de Node, no jsdom) y los specs de Playwright en
+    // tests/e2e/ (que "*.spec.js" también matchea) al ejecutar "npm run
+    // test" en la raíz — cada suite corre con su propio comando (ver
+    // backend/package.json y "test:e2e" acá). Se parte de los excludes por
+    // defecto de vitest (definir "exclude" acá los reemplaza entero, no los
+    // suma) y se agregan ambas carpetas a la lista.
+    exclude: [
+      '**/node_modules/**', '**/dist/**', '**/cypress/**',
+      '**/.{idea,git,cache,output,temp}/**',
+      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*',
+      '**/backend/**',
+      '**/tests/e2e/**',
+    ],
   },
 })

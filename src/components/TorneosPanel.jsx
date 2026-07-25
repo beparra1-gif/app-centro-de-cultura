@@ -286,7 +286,7 @@ function TorneosPanel({ puedeGestionar = false }) {
                             {generandoCuadroId === t.id_torneo ? 'Generando...' : 'Generar cuadro'}
                           </button>
                           <p className="text-muted" style={{ fontSize: '11px', margin: '6px 0 0' }}>
-                            Necesita una cantidad de equipos potencia de 2 (2, 4, 8, 16...). Hoy tienes {equiposTorneo.length}.
+                            Arma el cuadro con los {equiposTorneo.length} equipos ya agregados — si no es potencia de 2, algunos avanzan directo a la siguiente ronda (pase libre).
                           </p>
                         </div>
                       )}
