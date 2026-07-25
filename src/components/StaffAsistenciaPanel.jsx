@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useSwipeable } from 'react-swipeable';
 import {
-  Save, Check, X, LayoutGrid, List, Search,
+  Save, Check, X, LayoutGrid, List, Search, QrCode,
   Trash2, Pencil, ChevronDown, ChevronUp, Calendar, Loader2,
 } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
+import QrScanner from './QrScanner';
 
 const ESTADO_COLOR = {
   presente: { bg: 'var(--verde-victoria)', bgSoft: 'rgba(52,199,89,0.10)' },
@@ -107,6 +108,7 @@ function StaffAsistenciaPanel({
   const [categoriasSeleccionadas, setCategoriasSeleccionadas] = useState([]);
   const [modoVista, setModoVista] = useState('lista');
   const [guardandoSesion, setGuardandoSesion] = useState(false);
+  const [mostrarEscanerQR, setMostrarEscanerQR] = useState(false);
 
   const [sesiones, setSesiones] = useState([]);
   const [cargandoSesiones, setCargandoSesiones] = useState(false);
@@ -163,6 +165,24 @@ function StaffAsistenciaPanel({
       cancelText: 'No, sin aviso',
     });
     cambiarEstado(jugador.id, justificada ? 'justificado' : 'ausente');
+  };
+
+  // El QR de cada jugador (TarjetaJugadorPanel.jsx) trae { rut, nombre } —
+  // solo sirve como método de entrada más rápido para marcar presente en la
+  // MISMA nómina ya filtrada acá; nada distinto se guarda hasta que se
+  // presiona "Confirmar y Guardar", igual que con el swipe manual.
+  const escanearAsistencia = (payload) => {
+    const jugador = rosterFiltrado.find((j) => (j.rut_jugador || j.rut) === payload.rut);
+    if (!jugador) {
+      showToast({ message: `${payload.nombre || payload.rut} no está en la nómina filtrada actual.`, type: 'error' });
+      return;
+    }
+    if (jugador.estadoAsistencia === 'presente') {
+      showToast({ message: `${jugador.nombre} ya estaba marcado presente.`, type: 'info' });
+      return;
+    }
+    marcarPresente(jugador);
+    showToast({ message: `${jugador.nombre} marcado presente.`, type: 'success' });
   };
 
   const toggleCategoria = (categoria) => {
@@ -394,6 +414,14 @@ function StaffAsistenciaPanel({
                 </span>
               </div>
             </div>
+            <button
+              type="button"
+              className="btn-electric"
+              style={{ width: 'auto', padding: '10px 14px' }}
+              onClick={() => setMostrarEscanerQR(true)}
+            >
+              <QrCode size={15} /> Escanear QR
+            </button>
             <div style={{ display: 'flex', gap: '4px', background: 'var(--fondo-input)', borderRadius: '12px', padding: '4px' }}>
               <button type="button" onClick={() => setModoVista('lista')} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 11px', borderRadius: '9px', border: 'none', fontSize: '11px', fontWeight: '800', background: modoVista === 'lista' ? 'var(--blanco-tarjeta)' : 'transparent', color: modoVista === 'lista' ? 'var(--texto-principal)' : 'var(--texto-secundario)', boxShadow: modoVista === 'lista' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none' }}><List size={13} /> Lista</button>
               <button type="button" onClick={() => setModoVista('cuadricula')} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 11px', borderRadius: '9px', border: 'none', fontSize: '11px', fontWeight: '800', background: modoVista === 'cuadricula' ? 'var(--blanco-tarjeta)' : 'transparent', color: modoVista === 'cuadricula' ? 'var(--texto-principal)' : 'var(--texto-secundario)', boxShadow: modoVista === 'cuadricula' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none' }}><LayoutGrid size={13} /> Cuadrícula</button>
@@ -569,6 +597,14 @@ function StaffAsistenciaPanel({
             </>
           )}
         </div>
+      )}
+
+      {mostrarEscanerQR && (
+        <QrScanner
+          titulo="Escanear asistencia de entrenamiento"
+          onScan={escanearAsistencia}
+          onClose={() => setMostrarEscanerQR(false)}
+        />
       )}
     </div>
   );

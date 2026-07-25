@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   Bell,
+  Check,
   CheckSquare,
   ChevronDown,
   FileText,
@@ -13,6 +14,7 @@ import {
   Pencil,
   Phone,
   Plus,
+  QrCode,
   Search,
   ShieldCheck,
   Stethoscope,
@@ -30,6 +32,7 @@ import { confirmAction } from '../utils/confirmDialog';
 import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
 import PagoForm from './PagoForm';
+import QrScanner from './QrScanner';
 import ResultadosCards from './ResultadosCards';
 import { colorTipo } from '../utils/appHelpers';
 import { calcularResumenCitacion } from '../utils/citaciones';
@@ -396,6 +399,7 @@ function SuperAdminPanel({
   const [seleccionCitacion, setSeleccionCitacion] = useState({});
   const [autorizacionMorosos, setAutorizacionMorosos] = useState({});
   const [citacionActivaId, setCitacionActivaId] = useState(null);
+  const [citacionEscaneandoId, setCitacionEscaneandoId] = useState(null);
   const [convocadoAAgregarPorCitacion, setConvocadoAAgregarPorCitacion] = useState({});
   const [vistaCitaciones, setVistaCitaciones] = useState('crear');
   const [horaMaximaEditadaManualmente, setHoraMaximaEditadaManualmente] = useState(false);
@@ -1887,6 +1891,27 @@ function SuperAdminPanel({
       sincronizarComunicacionDesdeCitacion(citaActualizada);
     } catch (error) {
       showToast({ message: error.message || 'No se pudo quitar el deportista de la nómina.', type: 'error' });
+    }
+  };
+
+  // Asistencia real del día de la citación, vía escaneo del QR de la
+  // Tarjeta del jugador — independiente de si ya había confirmado RSVP.
+  // Solo marca a quien ya está en la nómina de convocados de ESTA citación.
+  const marcarAsistenciaEscaneada = async (cita, payload) => {
+    const yaConvocado = (cita.convocados || []).some(
+      (c) => String(c.rut_jugador || '').trim() === String(payload.rut || '').trim()
+    );
+    if (!yaConvocado) {
+      showToast({ message: `${payload.nombre || payload.rut} no está convocado a esta citación.`, type: 'error' });
+      return;
+    }
+    try {
+      await api.citacionesAPI.marcarAsistencia(cita.id, payload.rut);
+      const citaActualizada = normalizarCitacion(await api.citacionesAPI.getById(cita.id));
+      setNominaCita((prev) => (prev || []).map((item) => (item.id === cita.id ? citaActualizada : item)));
+      showToast({ message: `${payload.nombre || payload.rut} marcado presente.`, type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo marcar la asistencia.', type: 'error' });
     }
   };
 
@@ -3673,6 +3698,9 @@ function SuperAdminPanel({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <strong style={{ fontSize: '13px' }}>{cita.tipo_competencia} · {cita.competencia_nombre} · vs {cita.rival_nombre}</strong>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button className="btn-secondary" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => setCitacionEscaneandoId(cita.id)}>
+                          <QrCode size={14} /> Escanear asistencia
+                        </button>
                         <button className="btn-secondary" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => setCitacionActivaId(abierta ? null : cita.id)}>
                           {abierta ? 'Ocultar detalle' : 'Ver detalle'}
                         </button>
@@ -3702,6 +3730,14 @@ function SuperAdminPanel({
                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
                       {progreso}% respondida de {total} · Confirmados {confirmados} · Rechazados con justificación {justificados} · Rechazados sin justificar (venció plazo) {automaticos} · Pendientes {pendientes}
                     </div>
+
+                    {citacionEscaneandoId === cita.id && (
+                      <QrScanner
+                        titulo={`Asistencia · vs ${cita.rival_nombre}`}
+                        onScan={(payload) => marcarAsistenciaEscaneada(cita, payload)}
+                        onClose={() => setCitacionEscaneandoId(null)}
+                      />
+                    )}
 
                     {abierta && puedeEditarNominaCitacion(cita) && (
                       <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', background: 'rgba(0,122,255,0.05)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: '10px', padding: '8px' }}>
@@ -3770,6 +3806,11 @@ function SuperAdminPanel({
                             <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{conv.correo_apoderado || 'Sin correo apoderado'}</div>
                             <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
                               Estado de respuesta: {conv.respuesta === 'si' ? 'Confirmado' : conv.respuesta === 'no' ? 'Inasistente' : 'Pendiente'}
+                              {conv.asistio_evento && (
+                                <span style={{ marginLeft: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--verde-victoria)' }}>
+                                  <Check size={12} /> Presente (QR)
+                                </span>
+                              )}
                             </div>
                             {conv.respuesta === 'no' && conv.respondido_automaticamente && (
                               <div style={{ marginTop: '5px', fontSize: '11px', color: '#b36200', fontWeight: '800' }}>

@@ -2135,6 +2135,11 @@ const ensureCitacionesTables = async () => {
   // uno generado por el barrido de vencimiento (sin justificación), para el
   // desglose "confirmó / rechazó justificando / rechazó por no responder".
   await pool.query(`ALTER TABLE citacion_convocados ADD COLUMN IF NOT EXISTS respondido_automaticamente BOOLEAN NOT NULL DEFAULT false`);
+  // Asistencia real el día del torneo (vía escaneo de QR), independiente del
+  // RSVP previo en "respuesta" — alguien puede confirmar y no llegar, o
+  // llegar sin haber confirmado.
+  await pool.query(`ALTER TABLE citacion_convocados ADD COLUMN IF NOT EXISTS asistio_evento BOOLEAN`);
+  await pool.query(`ALTER TABLE citacion_convocados ADD COLUMN IF NOT EXISTS hora_asistencia_marcada TIMESTAMP`);
 
   console.log('📋 Tablas de citaciones verificadas');
 };
@@ -5634,6 +5639,28 @@ app.delete('/api/citaciones/:id/convocados/:rut', authenticate, requireModule('c
     res.json({ ok: true });
   } catch (err) {
     console.error('[DELETE /api/citaciones/:id/convocados/:rut]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH: marca asistencia real del día (staff escaneando el QR de la
+// Tarjeta del jugador) — acción de staff, guard igual a agregar/quitar
+// convocado, a diferencia del RSVP de abajo que solo puede hacer el
+// apoderado. Independiente de "respuesta" (RSVP previo): confirmar
+// asistencia no es lo mismo que haber llegado.
+app.patch('/api/citaciones/:id/convocados/:rut/asistencia', authenticate, requireModule('citaciones'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE citacion_convocados SET asistio_evento = true, hora_asistencia_marcada = NOW()
+       WHERE citacion_id = $1 AND rut_jugador = $2 RETURNING *`,
+      [req.params.id, req.params.rut]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Este jugador no está convocado a esta citación.' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[PATCH /api/citaciones/:id/convocados/:rut/asistencia]', err);
     res.status(500).json({ error: err.message });
   }
 });

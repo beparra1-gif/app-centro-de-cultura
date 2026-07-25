@@ -709,6 +709,12 @@ export const citacionesAPI = {
     });
     return handleResponse(response);
   },
+  marcarAsistencia: async (citacionId, rutJugador) => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados/${rutJugador}/asistencia`, {
+      method: 'PATCH',
+    });
+    return handleResponse(response);
+  },
   responder: async (citacionId, rutJugador, datos) => {
     const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados/${rutJugador}/rsvp`, {
       method: 'PATCH',
