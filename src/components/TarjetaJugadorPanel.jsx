@@ -129,6 +129,7 @@ function TarjetaJugadorPanel({
   const [resumenAsistencia, setResumenAsistencia] = useState(null);
   const [mostrarDetalleAsistencia, setMostrarDetalleAsistencia] = useState(false);
   const [ultimaEvaluacion, setUltimaEvaluacion] = useState(null);
+  const [resumenEstadisticas, setResumenEstadisticas] = useState(null);
 
   // pupiloActivo.asistencia nunca existe (no es un campo real de jugadores)
   // — el resumen se calcula en el backend a partir de las listas que ya
@@ -156,6 +157,36 @@ function TarjetaJugadorPanel({
     };
 
     void cargarResumenAsistencia();
+    return () => {
+      cancelled = true;
+    };
+  }, [pupiloActivo?.rut, rolUsuario]);
+
+  // Promedios reales de juego (PTS/REB/AST) para la Tarjeta — sin partidos
+  // registrados, "partidos: 0" (el backend nunca inventa un promedio en 0).
+  useEffect(() => {
+    let cancelled = false;
+
+    const cargarResumenEstadisticas = async () => {
+      const rut = String(pupiloActivo?.rut || '').trim();
+      if (!rut || rolUsuario === 'visita') {
+        setResumenEstadisticas(null);
+        return;
+      }
+
+      try {
+        const resumen = await api.estadisticasAPI.getResumenJugador(rut);
+        if (!cancelled) {
+          setResumenEstadisticas(resumen || null);
+        }
+      } catch {
+        if (!cancelled) {
+          setResumenEstadisticas(null);
+        }
+      }
+    };
+
+    void cargarResumenEstadisticas();
     return () => {
       cancelled = true;
     };
@@ -249,6 +280,7 @@ function TarjetaJugadorPanel({
     background: 'linear-gradient(145deg, #5A3726 0%, #A56A43 100%)',
     accent: '#D9A066',
     border: 'rgba(255,255,255,0.18)',
+    pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 2px, transparent 2px, transparent 14px)',
   };
   const nivelActual = rolUsuario === 'visita' ? 'MAX' : nivelBase;
   const nivelActualNumero = Number(nivelActual) || 0;
@@ -326,6 +358,7 @@ function TarjetaJugadorPanel({
       background: 'linear-gradient(145deg, #5E6774 0%, #D8E0E8 100%)',
       accent: '#F5F8FA',
       border: 'rgba(255,255,255,0.22)',
+      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.09) 0px, rgba(255,255,255,0.09) 2px, transparent 2px, transparent 14px)',
     };
   } else if (nivelActual > 20) {
     textoRareza = 'ORO';
@@ -333,6 +366,7 @@ function TarjetaJugadorPanel({
       background: 'linear-gradient(145deg, #8B5E00 0%, #FFC94D 100%)',
       accent: '#FFE29A',
       border: 'rgba(255,255,255,0.22)',
+      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 2px, transparent 2px, transparent 12px), repeating-linear-gradient(25deg, rgba(255,241,199,0.10) 0px, rgba(255,241,199,0.10) 1px, transparent 1px, transparent 18px)',
     };
   }
 
@@ -342,6 +376,7 @@ function TarjetaJugadorPanel({
       background: 'linear-gradient(145deg, #0C4A6E 0%, #66D9FF 45%, #E8FBFF 100%)',
       accent: '#E8FBFF',
       border: 'rgba(255,255,255,0.3)',
+      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.16) 0px, rgba(255,255,255,0.16) 2px, transparent 2px, transparent 10px), repeating-linear-gradient(25deg, rgba(180,240,255,0.14) 0px, rgba(180,240,255,0.14) 1px, transparent 1px, transparent 16px)',
     };
   }
 
@@ -351,6 +386,7 @@ function TarjetaJugadorPanel({
       background: 'linear-gradient(145deg, #123A57 0%, #3BA4D8 100%)',
       accent: '#D7F2FF',
       border: 'rgba(255,255,255,0.22)',
+      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.07) 0px, rgba(255,255,255,0.07) 2px, transparent 2px, transparent 14px)',
     };
   }
 
@@ -1071,13 +1107,14 @@ function TarjetaJugadorPanel({
           ref={cardFrontExportRef}
           className="card"
           style={{
+            boxSizing: 'border-box',
             width: `${EXPORT_WIDTH}px`,
             height: `${EXPORT_HEIGHT}px`,
             borderRadius: '26px',
             padding: '30px',
             display: 'flex',
             flexDirection: 'column',
-            background: `${estiloRareza.background}, radial-gradient(circle at 18% -5%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 40%)`,
+            background: `radial-gradient(circle at 18% -5%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 40%), ${estiloRareza.pattern}, ${estiloRareza.background}`,
             color: 'white',
             border: disenoActivo.extraBorder || `1px solid ${estiloRareza.border}`,
             boxShadow: disenoActivo.extraShadow ? `0 20px 45px rgba(9, 20, 38, 0.32), ${disenoActivo.extraShadow}` : '0 20px 45px rgba(9, 20, 38, 0.32)',
@@ -1126,7 +1163,53 @@ function TarjetaJugadorPanel({
             </div>
           </div>
 
-          <div style={{ marginTop: 'auto' }}>
+          {rolUsuario !== 'visita' && (
+            <div style={{ marginTop: '20px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+                {insignias.slice(0, 3).map((insignia) => (
+                  <span key={`front-${insignia}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '900' }}>
+                    <BadgeCheck size={13} /> {insignia}
+                  </span>
+                ))}
+              </div>
+
+              <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'center' }}>
+                <RadarChart width={300} height={220} data={radarGamificacionData} outerRadius={78}>
+                  <PolarGrid stroke="rgba(255,255,255,0.25)" />
+                  <PolarAngleAxis dataKey="area" tick={{ fill: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: 700 }} />
+                  <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} tickCount={5} />
+                  <Radar dataKey="valor" stroke="#00C7BE" fill="#00C7BE" fillOpacity={0.35} strokeWidth={2} isAnimationActive={false} />
+                </RadarChart>
+              </div>
+              {!hayEvaluacionReal && (
+                <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'rgba(255,255,255,0.65)', fontWeight: '700', textAlign: 'center' }}>
+                  Física/Técnica/Táctica: aún sin evaluaciones del staff.
+                </p>
+              )}
+
+              <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                <div className="stat-box">
+                  <span className="stat-label">PTS</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{resumenEstadisticas?.partidos > 0 ? resumenEstadisticas.pts : '—'}</strong>
+                </div>
+                <div className="stat-box">
+                  <span className="stat-label">REB</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{resumenEstadisticas?.partidos > 0 ? resumenEstadisticas.reb : '—'}</strong>
+                </div>
+                <div className="stat-box">
+                  <span className="stat-label">AST</span>
+                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{resumenEstadisticas?.partidos > 0 ? resumenEstadisticas.ast : '—'}</strong>
+                </div>
+              </div>
+              {!(resumenEstadisticas?.partidos > 0) && (
+                <p style={{ margin: '6px 0 0', fontSize: '10px', color: 'rgba(255,255,255,0.65)', fontWeight: '700', textAlign: 'center' }}>
+                  Promedios por partido: aún sin partidos registrados.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div style={{ marginTop: 'auto', paddingTop: '16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
               <div className="stat-box">
                 <span className="stat-label">Posicion</span>
@@ -1152,6 +1235,7 @@ function TarjetaJugadorPanel({
           ref={cardBackRef}
           className="card"
           style={{
+            boxSizing: 'border-box',
             width: `${EXPORT_WIDTH}px`,
             height: `${EXPORT_HEIGHT}px`,
             borderRadius: '24px',

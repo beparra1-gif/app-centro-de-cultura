@@ -890,6 +890,12 @@ export const estadisticasAPI = {
     return handleResponse(response);
   },
 
+  // Promedio de estadísticas de juego de un jugador (para su Tarjeta)
+  getResumenJugador: async (rut) => {
+    const response = await apiFetch(`${API_BASE_URL}/estadisticas/jugador/${rut}/resumen`);
+    return handleResponse(response);
+  },
+
   // Crear
   create: async (datos) => {
     const response = await apiFetch(`${API_BASE_URL}/estadisticas`, {

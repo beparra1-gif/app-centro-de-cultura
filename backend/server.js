@@ -5984,6 +5984,43 @@ app.get('/api/asistencia/jugador/:rut', authenticate, async (req, res) => {
   }
 });
 
+// GET: promedio de estadísticas de juego de UN jugador (para su Tarjeta) —
+// mismo criterio de acceso que GET /api/asistencia/jugador/:rut. Sin
+// partidos registrados, "partidos: 0" — el frontend muestra un mensaje
+// honesto en vez de inventar promedios en 0.
+app.get('/api/estadisticas/jugador/:rut/resumen', authenticate, async (req, res) => {
+  try {
+    if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+      const pupilos = await obtenerPupilosDeActor(req.actor);
+      const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
+      if (!rutsPupilos.has(normalizarRutParaComparar(req.params.rut))) {
+        return res.status(403).json({ error: 'No tienes acceso a este deportista.' });
+      }
+    }
+
+    const result = await pool.query(
+      `SELECT
+        COUNT(*) AS partidos,
+        COALESCE(AVG(puntos), 0) AS pts,
+        COALESCE(AVG(rebotes), 0) AS reb,
+        COALESCE(AVG(asistencias), 0) AS ast
+       FROM estadisticas
+       WHERE rut_jugador = $1`,
+      [req.params.rut]
+    );
+    const fila = result.rows[0] || {};
+    res.json({
+      partidos: Number(fila.partidos || 0),
+      pts: Math.round(Number(fila.pts || 0) * 10) / 10,
+      reb: Math.round(Number(fila.reb || 0) * 10) / 10,
+      ast: Math.round(Number(fila.ast || 0) * 10) / 10,
+    });
+  } catch (err) {
+    console.error('[GET /api/estadisticas/jugador/:rut/resumen]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST: registra una sesión completa de una sola vez (todo el roster de esa
 // pasada de lista), en una transacción con un sesion_id común.
 app.post('/api/asistencia/sesion', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
