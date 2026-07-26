@@ -14,6 +14,7 @@ function PerfilTesoreriaPanel({
   cuentasAdmin,
   pagosMensualidadesAdmin,
   morososAdmin,
+  sociosMorosos,
   mesesSeleccionados,
   setMesesSeleccionados,
   tipoPago,
@@ -30,6 +31,10 @@ function PerfilTesoreriaPanel({
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
   const [errorComprobante, setErrorComprobante] = useState('');
   const [busquedaCuenta, setBusquedaCuenta] = useState('');
+  // Cuenta seleccionada directo (sin pasar por un jugador) — necesario para
+  // poder revisar la Tesorería de un socio que no tiene ningún deportista
+  // asociado, caso que "cuentaActual" antes no contemplaba en absoluto.
+  const [cuentaSocioActiva, setCuentaSocioActiva] = useState(null);
   // mesesSeleccionados (prop, { [rutPupilo]: number[] }) representa la
   // grilla de Mensualidad Deportista, con selección independiente por
   // pupilo; la de Cuota Socio es independiente para que el socio/apoderado
@@ -85,6 +90,7 @@ function PerfilTesoreriaPanel({
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
+  const normalizarRutCuenta = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 
   const resultadosBusqueda = useMemo(() => {
     const termino = normalizarTextoBusqueda(busquedaCuenta);
@@ -94,7 +100,7 @@ function PerfilTesoreriaPanel({
       (Array.isArray(cuentasAdmin) ? cuentasAdmin : []).map((c) => [String(c.correo || '').trim().toLowerCase(), c])
     );
 
-    return (Array.isArray(pupilosDisponibles) ? pupilosDisponibles : [])
+    const resultadosJugador = (Array.isArray(pupilosDisponibles) ? pupilosDisponibles : [])
       .filter((j) => {
         const cuenta = cuentasPorCorreo.get(String(j.correo_apoderado || '').trim().toLowerCase());
         const camposTexto = [
@@ -109,20 +115,47 @@ function PerfilTesoreriaPanel({
       })
       .slice(0, 20)
       .map((j) => ({
+        tipo: 'jugador',
         jugador: j,
         cuenta: cuentasPorCorreo.get(String(j.correo_apoderado || '').trim().toLowerCase()) || null,
       }));
+
+    // Socios sin ningún deportista asociado son invisibles en pupilosDisponibles
+    // (no hay ningún jugador desde el cual encontrarlos) — se buscan directo en
+    // cuentasAdmin, excluyendo las que ya aparecen vía un resultado-jugador de
+    // arriba para no duplicar la misma familia dos veces.
+    const rutsCuentaYaEncontrados = new Set(
+      resultadosJugador.map((r) => normalizarRutCuenta(r.cuenta?.rut || '')).filter(Boolean)
+    );
+    const resultadosCuenta = (Array.isArray(cuentasAdmin) ? cuentasAdmin : [])
+      .filter((c) => c.es_socio && !rutsCuentaYaEncontrados.has(normalizarRutCuenta(c.rut || '')))
+      .filter((c) => {
+        const camposTexto = [c.nombres, c.apellido_paterno, c.rut, c.correo].map(normalizarTextoBusqueda).join(' ');
+        return camposTexto.includes(termino);
+      })
+      .slice(0, 10)
+      .map((c) => ({ tipo: 'cuenta', cuenta: c }));
+
+    return [...resultadosJugador, ...resultadosCuenta];
   }, [busquedaCuenta, esVistaAdmin, cuentasAdmin, pupilosDisponibles]);
 
-  const seleccionarResultadoBusqueda = (jugador) => {
-    if (typeof setPupiloActivo === 'function') setPupiloActivo(jugador);
+  const seleccionarResultadoBusqueda = (resultado) => {
+    if (resultado.tipo === 'cuenta') {
+      setCuentaSocioActiva(resultado.cuenta);
+      if (typeof setPupiloActivo === 'function') setPupiloActivo(null);
+    } else {
+      setCuentaSocioActiva(null);
+      if (typeof setPupiloActivo === 'function') setPupiloActivo(resultado.jugador);
+    }
     setBusquedaCuenta('');
   };
 
   const mesesBase = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const anioObjetivo = 2026;
-  const normalizarRutCuenta = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
-  const cuentaActual = Array.isArray(cuentasAdmin)
+  // cuentaSocioActiva gana siempre que exista: es una selección explícita de
+  // un socio sin deportistas (ver seleccionarResultadoBusqueda). Si no, se
+  // deriva del pupilo activo como antes.
+  const cuentaActual = cuentaSocioActiva || (Array.isArray(cuentasAdmin)
     ? cuentasAdmin.find((cuenta) => {
       const rutCuenta = normalizarRutCuenta(cuenta.rut || '');
       const rutApoderado = normalizarRutCuenta(pupiloActivo?.rut_apoderado || '');
@@ -132,7 +165,7 @@ function PerfilTesoreriaPanel({
       const correoApoderado = String(pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
       return Boolean(correoCuenta && correoApoderado && correoCuenta === correoApoderado);
     }) || null
-    : null;
+    : null);
   const pupilosActivos = esVistaAdmin
     ? (pupiloActivo ? [pupiloActivo] : [])
     : (Array.isArray(pupilosDisponibles) && pupilosDisponibles.length > 0
@@ -157,10 +190,12 @@ function PerfilTesoreriaPanel({
   const esSocio = Boolean(cuentaActual?.es_socio) || ['socio', 'socio_apoderado', 'directiva'].includes(perfilPrincipal);
   const esSocioApoderado = perfilPrincipal === 'socio_apoderado';
 
-  const morosoActivo = (morososAdmin || []).find((m) => {
-    const rutMoroso = normalizarRutComparacion(m?.rut || '');
-    return rutMoroso && rutMoroso === rutPupiloActivoNormalizado;
-  }) || null;
+  // Sin pupilo (socio revisado directo, sin deportistas) la deuda no vive en
+  // morososAdmin (deuda de jugadores) sino en sociosMorosos (deuda de cuota
+  // de socio), buscada por el rut de la cuenta en vez del rut del pupilo.
+  const morosoActivo = rutPupiloActivoNormalizado
+    ? (morososAdmin || []).find((m) => normalizarRutComparacion(m?.rut || '') === rutPupiloActivoNormalizado) || null
+    : (sociosMorosos || []).find((s) => normalizarRutComparacion(s?.rut || '') === rutCuentaNormalizado) || null;
   const mesesAtraso = Number(morosoActivo?.mesesDeuda || 0);
   const estadoCuenta = mesesAtraso > 0 ? 'Moroso' : 'Al Día';
 
@@ -249,13 +284,18 @@ function PerfilTesoreriaPanel({
 
   const pagosJugador = (pagosMensualidadesAdmin || []).filter((p) => {
     if (esPagoInvalidoLegacy(p)) return false;
-    if (!rutPupiloActivo) return false;
     const rutJugadorPago = normalizarRutComparacion(p.rut_jugador);
     const rutPagadorPago = normalizarRutComparacion(p.rut_pagos);
-    if (rutJugadorPago && rutJugadorPago === rutPupiloActivoNormalizado) return true;
-    if (rutPagadorPago && rutPagadorPago === rutPupiloActivoNormalizado) return true;
 
-    // Fallback para cuentas con un solo pupilo: acepta pagos ligados por rut_pagos.
+    if (rutPupiloActivo) {
+      if (rutJugadorPago && rutJugadorPago === rutPupiloActivoNormalizado) return true;
+      if (rutPagadorPago && rutPagadorPago === rutPupiloActivoNormalizado) return true;
+    }
+
+    // Pagos de "solo cuota de socio" (sin deportista, rut_jugador vacío) se
+    // ligan por rut_pagos a la propia cuenta — no dependen de que haya un
+    // pupilo seleccionado (antes el "if (!rutPupiloActivo) return false" de
+    // arriba cortaba esto en seco para un socio sin ningún hijo).
     if (!rutJugadorPago && pupilosActivos.length <= 1 && rutCuentaNormalizado && rutPagadorPago === rutCuentaNormalizado) {
       return true;
     }
@@ -511,34 +551,44 @@ function PerfilTesoreriaPanel({
 
           {resultadosBusqueda.length > 0 && (
             <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '260px', overflowY: 'auto' }}>
-              {resultadosBusqueda.map((r) => (
-                <button
-                  type="button"
-                  key={r.jugador.rut || r.jugador.id}
-                  onClick={() => seleccionarResultadoBusqueda(r.jugador)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '14px', border: '1px solid var(--borde-suave)', background: 'rgba(0,122,255,0.04)', cursor: 'pointer', textAlign: 'left' }}
-                >
-                  <User size={18} color="var(--azul-electrico)" />
-                  <div style={{ minWidth: 0 }}>
-                    <strong style={{ display: 'block', fontSize: '13px', color: 'var(--texto-principal)' }}>{r.jugador.nombre || 'Jugador'}</strong>
-                    <span style={{ display: 'block', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                      {r.jugador.rut || 'Sin RUT'}{r.cuenta ? ` · Apoderado: ${r.cuenta.nombres || ''} ${r.cuenta.apellido_paterno || ''}`.trim() : ''}
-                    </span>
-                  </div>
-                </button>
-              ))}
+              {resultadosBusqueda.map((r) => {
+                const esCuenta = r.tipo === 'cuenta';
+                const nombrePrincipal = esCuenta ? `${r.cuenta.nombres || ''} ${r.cuenta.apellido_paterno || ''}`.trim() || 'Socio' : (r.jugador.nombre || 'Jugador');
+                const rutPrincipal = esCuenta ? (r.cuenta.rut || 'Sin RUT') : (r.jugador.rut || 'Sin RUT');
+                const detalle = esCuenta
+                  ? 'Socio sin deportistas asociados'
+                  : (r.cuenta ? `Apoderado: ${r.cuenta.nombres || ''} ${r.cuenta.apellido_paterno || ''}`.trim() : '');
+                return (
+                  <button
+                    type="button"
+                    key={esCuenta ? r.cuenta.rut : (r.jugador.rut || r.jugador.id)}
+                    onClick={() => seleccionarResultadoBusqueda(r)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '14px', border: '1px solid var(--borde-suave)', background: 'rgba(0,122,255,0.04)', cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    <User size={18} color="var(--azul-electrico)" />
+                    <div style={{ minWidth: 0 }}>
+                      <strong style={{ display: 'block', fontSize: '13px', color: 'var(--texto-principal)' }}>{nombrePrincipal}</strong>
+                      <span style={{ display: 'block', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                        {rutPrincipal}{detalle ? ` · ${detalle}` : ''}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
           {busquedaCuenta.length >= 2 && resultadosBusqueda.length === 0 && (
             <p style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>Sin resultados para "{busquedaCuenta}".</p>
           )}
 
-          {pupiloActivo && (
+          {(pupiloActivo || cuentaSocioActiva) && (
             <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--borde-suave)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                Revisando cuenta de: <strong style={{ color: 'var(--texto-principal)' }}>{pupiloActivo.nombre}</strong>
+                Revisando cuenta de: <strong style={{ color: 'var(--texto-principal)' }}>
+                  {pupiloActivo ? pupiloActivo.nombre : `${cuentaSocioActiva.nombres || ''} ${cuentaSocioActiva.apellido_paterno || ''}`.trim()}
+                </strong>
               </span>
-              <button type="button" className="btn-secondary" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={() => setPupiloActivo(null)}>
+              <button type="button" className="btn-secondary" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={() => { setPupiloActivo(null); setCuentaSocioActiva(null); }}>
                 Cambiar búsqueda
               </button>
             </div>
@@ -593,7 +643,7 @@ function PerfilTesoreriaPanel({
         </div>
       )}
 
-      {(!esVistaAdmin || pupiloActivo) ? (
+      {(!esVistaAdmin || pupiloActivo || cuentaSocioActiva) ? (
         <>
       <div className="status-account-card payment-overview-card mt-15" style={{ borderRadius: '28px', boxShadow: '0 16px 34px rgba(15,23,42,0.10)' }}>
         <div className="status-header">
@@ -700,6 +750,12 @@ function PerfilTesoreriaPanel({
               ))}
             </div>
           </div>
+        )}
+
+        {esVistaAdmin && cuentaActual && pupilosActivos.length === 0 && (
+          <p style={{ margin: '0 0 15px 0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', fontStyle: 'italic' }}>
+            Este socio no tiene deportistas asociados — solo aplica la Cuota de Socio de arriba.
+          </p>
         )}
 
         {pupilosActivos.map(pupilo => (

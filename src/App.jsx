@@ -3006,6 +3006,7 @@ function App() {
                 cuentasAdmin={cuentasAdmin}
                 pagosMensualidadesAdmin={pagosMensualidadesAdmin}
                 morososAdmin={morososAdmin}
+                sociosMorosos={sociosMorosos}
                 mesesSeleccionados={mesesSeleccionados}
                 setMesesSeleccionados={setMesesSeleccionados}
                 tipoPago={tipoPago}
