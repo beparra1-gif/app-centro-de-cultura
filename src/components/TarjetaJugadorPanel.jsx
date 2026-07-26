@@ -277,10 +277,12 @@ function TarjetaJugadorPanel({
 
   let textoRareza = 'BRONCE';
   let estiloRareza = {
-    background: 'linear-gradient(145deg, #5A3726 0%, #A56A43 100%)',
-    accent: '#D9A066',
-    border: 'rgba(255,255,255,0.18)',
-    pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 2px, transparent 2px, transparent 14px)',
+    // Bronce cepillado: cobre oscuro -> cobre claro, imitando metal con luz direccional.
+    background: 'linear-gradient(145deg, #3D2413 0%, #8B5A2B 45%, #C9793F 100%)',
+    accent: '#F0C199',
+    border: 'rgba(255,214,170,0.4)',
+    glow: '0 0 0 1px rgba(255,214,170,0.25)',
+    pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 2px, transparent 2px, transparent 14px)',
   };
   const nivelActual = rolUsuario === 'visita' ? 'MAX' : nivelBase;
   const nivelActualNumero = Number(nivelActual) || 0;
@@ -355,31 +357,49 @@ function TarjetaJugadorPanel({
   const categoriaDisplay = rolUsuario === 'visita' ? 'Open' : (pupiloActivo.categoria || 'General');
   const categoriaConAnio = anioNacimiento ? `${categoriaDisplay} · ${anioNacimiento}` : categoriaDisplay;
 
-  if (nivelActual > 10 && nivelActual <= 20) {
-    textoRareza = 'PLATA';
+  // 5 niveles de rareza (Bronce/Plata/Oro/Platino/Diamante), inspirados en las
+  // referencias de tarjetas metálicas que trajo el usuario: cada uno sube en
+  // brillo/frialdad de color y en intensidad del "glow" del marco.
+  if (nivelActual > 40) {
+    textoRareza = 'DIAMANTE';
     estiloRareza = {
-      background: 'linear-gradient(145deg, #5E6774 0%, #D8E0E8 100%)',
-      accent: '#F5F8FA',
-      border: 'rgba(255,255,255,0.22)',
-      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.09) 0px, rgba(255,255,255,0.09) 2px, transparent 2px, transparent 14px)',
+      // Base gélida + reflejo iridiscente (rosado/celeste) simulando el
+      // borde multicolor de la referencia, sin depender de border-image
+      // (riesgoso con html2canvas — ver project_tarjeta_jugador_export).
+      background: 'linear-gradient(145deg, #0C4A6E 0%, #66D9FF 45%, #F2FDFF 100%)',
+      accent: '#F2FDFF',
+      border: 'rgba(255,255,255,0.55)',
+      glow: '0 0 0 2px rgba(255,255,255,0.55), 0 0 22px 4px rgba(150,220,255,0.4), 0 0 34px 10px rgba(255,190,250,0.22)',
+      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.18) 0px, rgba(255,255,255,0.18) 2px, transparent 2px, transparent 10px), repeating-linear-gradient(25deg, rgba(180,240,255,0.16) 0px, rgba(180,240,255,0.16) 1px, transparent 1px, transparent 16px)',
+      sparkle: true,
+    };
+  } else if (nivelActual > 30) {
+    textoRareza = 'PLATINO';
+    estiloRareza = {
+      // Más frío y luminoso que Plata: gris-azulado casi blanco.
+      background: 'linear-gradient(145deg, #4A5560 0%, #B9C6D1 45%, #F4F9FC 100%)',
+      accent: '#EAF6FF',
+      border: 'rgba(230,245,255,0.5)',
+      glow: '0 0 0 1px rgba(230,245,255,0.4), 0 0 14px 2px rgba(210,235,255,0.3)',
+      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 2px, transparent 2px, transparent 13px)',
     };
   } else if (nivelActual > 20) {
     textoRareza = 'ORO';
     estiloRareza = {
-      background: 'linear-gradient(145deg, #8B5E00 0%, #FFC94D 100%)',
-      accent: '#FFE29A',
-      border: 'rgba(255,255,255,0.22)',
+      background: 'linear-gradient(145deg, #5C3D00 0%, #C9910B 45%, #FFD873 100%)',
+      accent: '#FFEFC2',
+      border: 'rgba(255,241,199,0.45)',
+      glow: '0 0 0 1px rgba(255,241,199,0.3), 0 0 12px 2px rgba(255,201,77,0.25)',
       pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 2px, transparent 2px, transparent 12px), repeating-linear-gradient(25deg, rgba(255,241,199,0.10) 0px, rgba(255,241,199,0.10) 1px, transparent 1px, transparent 18px)',
     };
-  }
-
-  if (nivelActual > 30) {
-    textoRareza = 'DIAMANTE';
+  } else if (nivelActual > 10) {
+    textoRareza = 'PLATA';
     estiloRareza = {
-      background: 'linear-gradient(145deg, #0C4A6E 0%, #66D9FF 45%, #E8FBFF 100%)',
-      accent: '#E8FBFF',
-      border: 'rgba(255,255,255,0.3)',
-      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.16) 0px, rgba(255,255,255,0.16) 2px, transparent 2px, transparent 10px), repeating-linear-gradient(25deg, rgba(180,240,255,0.14) 0px, rgba(180,240,255,0.14) 1px, transparent 1px, transparent 16px)',
+      background: 'linear-gradient(145deg, #3E4750 0%, #8E97A0 45%, #E7ECEF 100%)',
+      accent: '#F5F8FA',
+      border: 'rgba(255,255,255,0.35)',
+      glow: '0 0 0 1px rgba(255,255,255,0.25)',
+      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.09) 0px, rgba(255,255,255,0.09) 2px, transparent 2px, transparent 14px)',
     };
   }
 
@@ -389,6 +409,7 @@ function TarjetaJugadorPanel({
       background: 'linear-gradient(145deg, #123A57 0%, #3BA4D8 100%)',
       accent: '#D7F2FF',
       border: 'rgba(255,255,255,0.22)',
+      glow: '0 0 0 1px rgba(255,255,255,0.2)',
       pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.07) 0px, rgba(255,255,255,0.07) 2px, transparent 2px, transparent 14px)',
     };
   }
@@ -396,7 +417,13 @@ function TarjetaJugadorPanel({
   const rutValidacion = rolUsuario === 'visita' ? 'VISITA' : (pupiloActivo.rut || 'SIN-RUT');
   const clubNombre = pupiloActivo.club_nombre || pupiloActivo.club_procedencia || (rolUsuario === 'visita' ? 'Club invitado' : 'Centro de Cultura Física');
   const clubLogoUrl = pupiloActivo.club_logo_url || '/logos/club-logo.png';
-  const fotoPrincipal = resolverUrlFoto(detalleJugador?.foto_jugador || pupiloActivo.foto_jugador || pupiloActivo.foto_perfil_url || '');
+  // La Tarjeta usa SOLO la foto subida específicamente para ella
+  // (detalleJugador.foto_jugador, fresca desde /api/jugadores/:rut — no la
+  // versión de pupiloActivo, que puede venir mezclada con el roster de otros
+  // paneles). Nunca cae a foto_perfil_url: esa es la foto de la cuenta/perfil
+  // general (Onboarding), y el jugador puede querer una distinta para la
+  // tarjeta coleccionable.
+  const fotoPrincipal = resolverUrlFoto(detalleJugador?.foto_jugador || '');
   const disenoActivo = DISENOS_MARCO[detalleJugador?.diseno_marco || pupiloActivo.diseno_marco || 'clasico'] || DISENOS_MARCO.clasico;
   const descriptorGenero = `${pupiloActivo.genero || ''} ${pupiloActivo.sexo || ''} ${pupiloActivo.rama || ''}`.toLowerCase();
   const esFemenino = descriptorGenero.includes('femen') || descriptorGenero.includes('mujer');
@@ -454,18 +481,28 @@ function TarjetaJugadorPanel({
     { area: 'Progreso', valor: progresoRadar },
   ];
 
-  const descargarDataUrl = (dataUrl, nombreArchivo) => {
+  const canvasABlob = (canvas) => new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('No se pudo generar la imagen.'))), 'image/png');
+  });
+
+  const descargarBlob = (blob, nombreArchivo) => {
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = dataUrl;
+    link.href = url;
     link.download = nombreArchivo;
+    document.body.appendChild(link);
     link.click();
+    link.remove();
+    // Revocar después de un tick: algunos navegadores inician la descarga
+    // de forma asíncrona y revocar de inmediato la corta a mitad de camino.
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
   };
 
   const capturarRefExport = async (targetRef) => {
     if (!targetRef.current) throw new Error('No se pudo preparar la tarjeta para exportar.');
     return html2canvas(targetRef.current, {
       backgroundColor: null,
-      scale: 1,
+      scale: 2,
       useCORS: true,
       width: EXPORT_WIDTH,
       height: EXPORT_HEIGHT,
@@ -478,8 +515,25 @@ function TarjetaJugadorPanel({
     if (!refObjetivo.current) return;
     try {
       const canvas = await capturarRefExport(refObjetivo);
-      const image = canvas.toDataURL('image/png');
-      descargarDataUrl(image, `tarjeta-coleccion-${sufijo}-${String(nombreDisplay || 'jugador').toLowerCase()}.png`);
+      const blob = await canvasABlob(canvas);
+      const nombreArchivo = `tarjeta-coleccion-${sufijo}-${String(nombreDisplay || 'jugador').toLowerCase()}.png`;
+
+      // En móviles con soporte de Web Share (con archivos), compartir es más
+      // útil que descargar a una carpeta que el jugador no revisa — permite
+      // guardarla en fotos o enviarla directo por WhatsApp, que era parte del
+      // pedido original ("descargar y compartir").
+      const archivo = new File([blob], nombreArchivo, { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+        try {
+          await navigator.share({ files: [archivo], title: 'Mi Tarjeta CCF', text: '¡Mira mi Tarjeta de colección!' });
+          return;
+        } catch (shareError) {
+          if (shareError?.name === 'AbortError') return; // el usuario cerró el share sheet
+          // Si share falla por otra razón, seguimos con la descarga normal.
+        }
+      }
+
+      descargarBlob(blob, nombreArchivo);
     } catch {
       showToast({ message: 'No se pudo descargar la tarjeta en este momento.', type: 'error' });
     }
@@ -653,8 +707,8 @@ function TarjetaJugadorPanel({
           padding: '22px',
           background: `${estiloRareza.background}, radial-gradient(circle at 20% -10%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 45%)`,
           color: 'white',
-          border: disenoActivo.extraBorder || `1px solid ${estiloRareza.border}`,
-          boxShadow: disenoActivo.extraShadow ? `0 20px 45px rgba(9, 20, 38, 0.32), ${disenoActivo.extraShadow}` : '0 20px 45px rgba(9, 20, 38, 0.32)',
+          border: disenoActivo.extraBorder || `2px solid ${estiloRareza.border}`,
+          boxShadow: [`0 20px 45px rgba(9, 20, 38, 0.32)`, estiloRareza.glow, disenoActivo.extraShadow].filter(Boolean).join(', '),
           filter: disenoActivo.extraFilter || undefined,
         }}
       >
@@ -782,9 +836,16 @@ function TarjetaJugadorPanel({
       <div className="card collection-panel" style={{ marginTop: '8px', borderRadius: '18px', border: '1px solid var(--borde-suave)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <h4 className="collection-title" style={{ margin: 0, fontSize: '15px', fontWeight: '900', color: 'var(--azul-marino)' }}>Ver mi tarjeta de coleccion</h4>
-          <button className="player-action-btn alt" onClick={descargarTarjetaColeccionActual} style={{ padding: '8px 12px' }}>
-            <Download size={14} /> Descargar
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {puedeEditarDatosJugador && rolUsuario !== 'visita' && (
+              <button className="player-action-btn" onClick={() => setMostrarSubirFoto(true)} style={{ padding: '8px 12px' }}>
+                <Camera size={14} /> {fotoPrincipal ? 'Cambiar foto' : 'Subir foto'}
+              </button>
+            )}
+            <button className="player-action-btn alt" onClick={descargarTarjetaColeccionActual} style={{ padding: '8px 12px' }}>
+              <Download size={14} /> Descargar
+            </button>
+          </div>
         </div>
 
         <div className="collection-style-switch mt-10" role="radiogroup" aria-label="Vista tarjeta de coleccion">
@@ -813,7 +874,8 @@ function TarjetaJugadorPanel({
               padding: '12px',
               background: estiloRareza.background,
               color: 'white',
-              boxShadow: '0 12px 24px rgba(15,23,42,0.25)',
+              border: `2px solid ${estiloRareza.border}`,
+              boxShadow: [`0 12px 24px rgba(15,23,42,0.25)`, estiloRareza.glow].filter(Boolean).join(', '),
               display: 'grid',
               gridTemplateRows: 'auto auto 1fr auto'
             }}>
@@ -824,13 +886,27 @@ function TarjetaJugadorPanel({
               <div style={{ marginTop: '6px', fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: '14px', fontWeight: '900', textTransform: 'uppercase' }}>
                 {nombreDisplay} {apellidoDisplay}
               </div>
-              <div style={{ marginTop: '8px', borderRadius: '12px', overflow: 'hidden', background: 'rgba(255,255,255,0.2)' }}>
+              <div style={{ position: 'relative', marginTop: '8px', borderRadius: '12px', overflow: 'hidden', background: 'rgba(255,255,255,0.2)' }}>
                 {fotoPrincipal ? (
                   <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
                   <div style={{ height: '100%', minHeight: '130px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {esFemenino ? <Venus size={24} /> : <Mars size={24} />}
                   </div>
+                )}
+                {puedeEditarDatosJugador && rolUsuario !== 'visita' && (
+                  <button
+                    type="button"
+                    onClick={() => setMostrarSubirFoto(true)}
+                    title="Cambiar foto"
+                    style={{
+                      position: 'absolute', bottom: '6px', right: '6px', width: '28px', height: '28px', borderRadius: '999px',
+                      background: 'var(--azul-electrico)', color: 'white', border: '2px solid white', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(0,0,0,0.3)',
+                    }}
+                  >
+                    <Camera size={13} />
+                  </button>
                 )}
               </div>
               <div style={{ marginTop: '8px', fontSize: '11px', fontWeight: '800' }}>
@@ -1117,13 +1193,20 @@ function TarjetaJugadorPanel({
             padding: '30px',
             display: 'flex',
             flexDirection: 'column',
+            position: 'relative',
             background: `radial-gradient(circle at 18% -5%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 40%), ${estiloRareza.pattern}, ${estiloRareza.background}`,
             color: 'white',
-            border: disenoActivo.extraBorder || `1px solid ${estiloRareza.border}`,
-            boxShadow: disenoActivo.extraShadow ? `0 20px 45px rgba(9, 20, 38, 0.32), ${disenoActivo.extraShadow}` : '0 20px 45px rgba(9, 20, 38, 0.32)',
+            border: disenoActivo.extraBorder || `3px solid ${estiloRareza.border}`,
+            boxShadow: [`0 20px 45px rgba(9, 20, 38, 0.32)`, estiloRareza.glow, disenoActivo.extraShadow].filter(Boolean).join(', '),
             filter: disenoActivo.extraFilter || undefined,
           }}
         >
+          {estiloRareza.sparkle && (
+            <>
+              <Sparkles size={22} style={{ position: 'absolute', top: '16px', left: '16px', opacity: 0.85, color: '#F2FDFF' }} />
+              <Sparkles size={16} style={{ position: 'absolute', bottom: '16px', right: '18px', opacity: 0.7, color: '#F2FDFF' }} />
+            </>
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
             <span style={{ fontSize: '13px', fontWeight: '900', letterSpacing: '0.9px', textTransform: 'uppercase', opacity: 0.9 }}>Tarjeta Oficial CCF 2026</span>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -1247,8 +1330,8 @@ function TarjetaJugadorPanel({
             flexDirection: 'column',
             background: 'linear-gradient(160deg, #0b1d3a 0%, #133a66 46%, #0e2b4d 100%)',
             color: 'white',
-            border: '1px solid rgba(255,255,255,0.14)',
-            boxShadow: '0 20px 45px rgba(9, 20, 38, 0.32)'
+            border: `2px solid ${estiloRareza.border}`,
+            boxShadow: [`0 20px 45px rgba(9, 20, 38, 0.32)`, estiloRareza.glow].filter(Boolean).join(', ')
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
