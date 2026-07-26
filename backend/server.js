@@ -4964,7 +4964,10 @@ app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'v
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pendiente', $9)
        RETURNING *`,
       [
-        rut_jugador,
+        // rut_jugador tiene FK a jugadores — un pago "solo cuota de socio"
+        // (sin deportista asociado) manda '' desde el frontend, que viola
+        // la FK (a diferencia de NULL, que sí está permitido en la columna).
+        String(rut_jugador || '').trim() || null,
         rutPagosFinal || null,
         correo_apoderado,
         concepto_pago,
@@ -5043,7 +5046,9 @@ app.put('/api/pagos-mensualidades/:id', authenticate, requireAnyModule('validaci
        WHERE id = $10
        RETURNING *`,
       [
-        rut_jugador,
+        // Mismo motivo que en POST /api/pagos-mensualidades: rut_jugador
+        // tiene FK a jugadores, '' la viola (NULL sí está permitido).
+        String(rut_jugador || '').trim() || null,
         rut_pagos,
         correo_apoderado,
         concepto_pago,
