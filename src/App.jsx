@@ -76,9 +76,15 @@ function App() {
   const [pantallaActiva, setPantallaActiva] = useState('comunicaciones'); 
   const [showModalSalir, setShowModalSalir] = useState(false);
   const [mostrarFormularioLogin, setMostrarFormularioLogin] = useState(false);
-  const [tipoLoginSeleccionado, setTipoLoginSeleccionado] = useState(''); 
+  const [tipoLoginSeleccionado, setTipoLoginSeleccionado] = useState('');
   const [rutInput, setRutInput] = useState('');
   const [passInput, setPassInput] = useState('');
+  // Solo para "Acceso Visitas": antes de esto, todo invitado veía la misma
+  // Tarjeta genérica ("INVITADO TORNEO", sin club) sin importar quién fuera
+  // — ahora el propio invitado escribe su nombre y club al entrar.
+  const [nombreInvitado, setNombreInvitado] = useState('');
+  const [clubInvitado, setClubInvitado] = useState('');
+  const [clubLogoInvitado, setClubLogoInvitado] = useState('');
 
   // --- ESTADOS: MULTI-PUPILO Y NOTIFICACIONES (PREMIUM) ---
   const [pupiloActivo, setPupiloActivo] = useState(null);
@@ -978,8 +984,12 @@ function App() {
     }
   };
 
-  const cargarDatos = async ({ manual = false } = {}) => {
+  const cargarDatos = async ({ manual = false, rolActivo } = {}) => {
     if (manual) setApiRetrying(true);
+    // El invitado no tiene token real: jugadoresAPI.getAll() (protegido) 401ea
+    // y cae al fallback [], lo que gatillaba el "else" de más abajo y borraba
+    // el pupiloActivo recién armado con su nombre/club en iniciarSesionFinal.
+    const esInvitadoActivo = (rolActivo ?? rolUsuario) === 'visita';
 
     try {
       const resultados = await Promise.allSettled([
@@ -1085,7 +1095,9 @@ function App() {
 
         setRosterEquipo(nuevoRoster);
 
-        if (jugadoresRes.length > 0) {
+        if (esInvitadoActivo) {
+          // no pisar el pupiloActivo del invitado con datos de roster real
+        } else if (jugadoresRes.length > 0) {
           const primerJugador = jugadoresRes[0];
           setPupiloActivo((prev) => prev || {
             id: 1,
@@ -1251,8 +1263,8 @@ function App() {
     }
   };
 
-  const abrirFormularioLogin = (tipo) => { setTipoLoginSeleccionado(tipo); setMostrarFormularioLogin(true); setRutInput(tipo === 'invitado' ? 'visita' : ''); };
-  const volverInicioLogin = () => { setMostrarFormularioLogin(false); setRutInput(''); setPassInput(''); };
+  const abrirFormularioLogin = (tipo) => { setTipoLoginSeleccionado(tipo); setMostrarFormularioLogin(true); setRutInput(tipo === 'invitado' ? 'visita' : ''); setNombreInvitado(''); setClubInvitado(''); setClubLogoInvitado(''); };
+  const volverInicioLogin = () => { setMostrarFormularioLogin(false); setRutInput(''); setPassInput(''); setNombreInvitado(''); setClubInvitado(''); setClubLogoInvitado(''); };
 
   const getCamposPendientesOnboarding = (cuenta = {}) => {
     const rolBase = normalizarRol(cuenta.perfil_principal || cuenta.rol || rolUsuarioTemporal || 'apoderado');
@@ -1321,13 +1333,19 @@ function App() {
     if(!rutInput || !passInput) { showToast({ message: 'Ingresa tu RUT y contraseña.', type: 'error' }); return; }
 
     if(tipoLoginSeleccionado === 'invitado' || rutInput.toLowerCase().includes('visita')) {
+      if (!nombreInvitado.trim()) {
+        showToast({ message: 'Ingresa tu nombre para tu Tarjeta de invitado.', type: 'error' });
+        return;
+      }
       iniciarSesionFinal('visita', {
         id: `visita-${rutInput || 'anonimo'}`,
-        nombre: 'Visita',
+        nombre: nombreInvitado.trim(),
         correo: '',
         rut: rutInput || '',
         rol: 'visita',
         access_profiles: ['visita'],
+        club_nombre: clubInvitado.trim() || '',
+        club_logo_url: clubLogoInvitado || '',
       });
       return;
     }
@@ -1503,7 +1521,20 @@ function App() {
 
     setRolUsuario(perfilNormalizado);
     setUsuarioAutenticado(usuarioNormalizado);
-    
+
+    // El invitado no tiene fila en "jugadores", así que el efecto que deriva
+    // pupiloActivo desde pupilosDisponibles (esJugadorAutenticado/esPerfilFamiliar)
+    // nunca lo cubre — sin esto la Tarjeta se queda en "Cargando..." para siempre.
+    if (perfilNormalizado === 'visita') {
+      setPupiloActivo({
+        id: usuarioNormalizado.id || 'visita',
+        rut: usuarioNormalizado.rut || '',
+        nombre: usuarioNormalizado.nombre || '',
+        club_nombre: usuarioNormalizado.club_nombre || '',
+        club_logo_url: usuarioNormalizado.club_logo_url || '',
+      });
+    }
+
     // Determinar pantalla activa según rol
     let pantallaActiva = 'comunicaciones';
     if(perfilNormalizado === 'mesa') pantallaActiva = 'scoreboard_live';
@@ -1530,7 +1561,7 @@ function App() {
     // Recargar datos con el token recién autenticado: el fetch inicial (al montar la app)
     // corre sin sesión y sus resultados protegidos quedan vacíos; sin este refresh, la sesión
     // arranca con jugadores/cuentas/pagos vacíos hasta que algo más dispare una recarga manual.
-    void cargarDatos();
+    void cargarDatos({ rolActivo: perfilNormalizado });
   };
 
   const cerrarSesion = () => {
@@ -2909,6 +2940,12 @@ function App() {
                 setRutInput={setRutInput}
                 passInput={passInput}
                 setPassInput={setPassInput}
+                nombreInvitado={nombreInvitado}
+                setNombreInvitado={setNombreInvitado}
+                clubInvitado={clubInvitado}
+                setClubInvitado={setClubInvitado}
+                clubLogoInvitado={clubLogoInvitado}
+                setClubLogoInvitado={setClubLogoInvitado}
                 volverInicioLogin={volverInicioLogin}
                 comunicacionesPublicas={comunicacionesPublicas}
                 galeriaPublica={galeriaPublica}

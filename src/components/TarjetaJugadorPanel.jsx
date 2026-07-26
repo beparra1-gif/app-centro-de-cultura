@@ -305,12 +305,15 @@ function TarjetaJugadorPanel({
     || construirNombreCompleto(pupiloDesdeListado)
     || construirNombreCompleto(detalleJugador)
     || String(pupiloActivo?.nombre || '').trim();
-  const nombreCompletoDisplay = rolUsuario === 'visita' ? 'INVITADO TORNEO' : (nombreCompletoReal || 'JUGADOR');
+  // El invitado escribe su propio nombre al entrar por "Acceso Visitas"
+  // (App.jsx, handleLoginSubmit) — antes esto se pisaba siempre con
+  // "INVITADO TORNEO"/"Invitado"/"TORNEO" fijos, sin importar qué nombre
+  // real trajera pupiloActivo.nombre. Ahora solo se usa el genérico si de
+  // verdad no hay ningún nombre (invitado que dejó el campo vacío).
+  const nombreCompletoDisplay = nombreCompletoReal || (rolUsuario === 'visita' ? 'INVITADO' : 'JUGADOR');
   const partesNombre = String(nombreCompletoDisplay || '').trim().split(/\s+/).filter(Boolean);
-  const nombreDisplay = rolUsuario === 'visita' ? 'Invitado' : (partesNombre[0] || 'Jugador');
-  const apellidoDisplay = rolUsuario === 'visita'
-    ? 'TORNEO'
-    : ((partesNombre.slice(1).join(' ') || partesNombre[0] || '').toUpperCase());
+  const nombreDisplay = partesNombre[0] || (rolUsuario === 'visita' ? 'Invitado' : 'Jugador');
+  const apellidoDisplay = (partesNombre.slice(1).join(' ') || partesNombre[0] || (rolUsuario === 'visita' ? 'TORNEO' : '')).toUpperCase();
   const anioNacimiento = (
     pupiloActivo.anioNacimiento
     || pupiloActivo.anio_nacimiento

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Bell, ChevronLeft, Lock, QrCode, Trophy, User } from 'lucide-react';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
+import LogoPicker from './LogoPicker';
 import ResultadosCards from './ResultadosCards';
 import { esUrlImagen, esUrlYoutube, esUrlVimeo, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
 
@@ -184,6 +185,12 @@ function PublicFacadePanel({
   setRutInput,
   passInput,
   setPassInput,
+  nombreInvitado,
+  setNombreInvitado,
+  clubInvitado,
+  setClubInvitado,
+  clubLogoInvitado,
+  setClubLogoInvitado,
   volverInicioLogin,
   comunicacionesPublicas,
   galeriaPublica,
@@ -229,6 +236,25 @@ function PublicFacadePanel({
               <h4 className="login-form-title">
                 {tipoLoginSeleccionado === 'invitado' ? 'Portal Invitados' : 'Acceso Oficial'}
               </h4>
+              {tipoLoginSeleccionado === 'invitado' && (
+                <>
+                  <div className="input-group-login">
+                    <User size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
+                    <input type="text" placeholder="Tu nombre completo" value={nombreInvitado} onChange={e => setNombreInvitado(e.target.value)} required />
+                  </div>
+                  <div className="mt-10 mb-10">
+                    <LogoPicker
+                      label=""
+                      nombre={clubInvitado}
+                      onNombre={setClubInvitado}
+                      logoUrl={clubLogoInvitado}
+                      onLogoUrl={setClubLogoInvitado}
+                      tipo="club"
+                      placeholder="Tu club (opcional)..."
+                    />
+                  </div>
+                </>
+              )}
               <div className="input-group-login">
                 <User size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <input type="text" placeholder="RUT" value={rutInput} onChange={e => setRutInput(e.target.value)} required />
