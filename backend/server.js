@@ -5680,6 +5680,26 @@ app.patch('/api/citaciones/:id/convocados/:rut/asistencia', authenticate, requir
       return res.status(404).json({ error: 'Este jugador no está convocado a esta citación.' });
     }
     res.json(result.rows[0]);
+
+    // Aviso puntual (no repetitivo como sería en cada entrenamiento) — tiene
+    // valor real: confirma al apoderado que su hijo/a llegó bien a la citación.
+    try {
+      const citacion = await pool.query(
+        'SELECT competencia_nombre, rival_nombre FROM citaciones WHERE id = $1', [req.params.id]
+      );
+      const destinatarios = await resolverDestinatariosCitacion([result.rows[0]]);
+      const cuerpo = `${result.rows[0].nombre || 'El deportista'} fue registrado presente en ${citacion.rows[0]?.competencia_nombre || 'la citación'} vs ${citacion.rows[0]?.rival_nombre || ''}.`.trim();
+      await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
+        rut,
+        tipo: 'asistencia',
+        titulo: 'Asistencia confirmada',
+        cuerpo,
+        referenciaTipo: 'citacion',
+        referenciaId: Number(req.params.id),
+      })));
+    } catch (notifErr) {
+      console.error('[PATCH /api/citaciones/:id/convocados/:rut/asistencia] error notificando:', notifErr.message);
+    }
   } catch (err) {
     console.error('[PATCH /api/citaciones/:id/convocados/:rut/asistencia]', err);
     res.status(500).json({ error: err.message });
@@ -5920,6 +5940,29 @@ app.get('/api/asistencia/jugador/:rut', authenticate, async (req, res) => {
     const total = Number(fila.total || 0);
     const presentes = Number(fila.presentes || 0);
 
+    // Detalle para que el apoderado vea algo más que un %: últimos
+    // entrenamientos (tabla asistencia) y últimas citaciones/torneos a los
+    // que fue convocado (citacion_convocados + citaciones), con si quedó
+    // registrado presente vía QR (asistio_evento).
+    const historialEntrenamientos = await pool.query(
+      `SELECT fecha, estado_asistencia, observacion
+       FROM asistencia
+       WHERE rut_jugador = $1
+       ORDER BY fecha DESC, created_at DESC
+       LIMIT 10`,
+      [req.params.rut]
+    );
+    const historialCitaciones = await pool.query(
+      `SELECT c.dia_citacion, c.competencia_nombre, c.rival_nombre, c.tipo_competencia,
+              cc.respuesta, cc.asistio_evento
+       FROM citacion_convocados cc
+       JOIN citaciones c ON c.id = cc.citacion_id
+       WHERE cc.rut_jugador = $1
+       ORDER BY c.dia_citacion DESC
+       LIMIT 10`,
+      [req.params.rut]
+    );
+
     res.json({
       total,
       presentes,
@@ -5927,6 +5970,8 @@ app.get('/api/asistencia/jugador/:rut', authenticate, async (req, res) => {
       justificados: Number(fila.justificados || 0),
       porcentaje: total > 0 ? Math.round((presentes / total) * 100) : null,
       ultima_presente: fila.ultima_presente || null,
+      historialEntrenamientos: historialEntrenamientos.rows,
+      historialCitaciones: historialCitaciones.rows,
     });
   } catch (err) {
     console.error('[GET /api/asistencia/jugador/:rut]', err);
@@ -5961,6 +6006,26 @@ app.post('/api/asistencia/sesion', authenticate, requireAnyModule('citaciones', 
     await client.query('COMMIT');
     const creada = await pool.query('SELECT * FROM asistencia WHERE sesion_id = $1 ORDER BY nombre_jugador ASC', [sesionId]);
     res.status(201).json({ sesion_id: sesionId, registros: creada.rows });
+
+    // Avisar solo lo accionable: ausencia SIN aviso (no "justificado", que ya
+    // implica que el apoderado avisó antes). No se avisa "presente" en cada
+    // entrenamiento — con 2-3 sesiones por semana sería puro ruido.
+    const ausentesSinAviso = registros.filter((r) => r.estado_asistencia === 'ausente' && r.rut_jugador);
+    for (const registro of ausentesSinAviso) {
+      try {
+        const destinatarios = await resolverDestinatariosCitacion([{ rut_jugador: registro.rut_jugador }]);
+        await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
+          rut,
+          tipo: 'asistencia',
+          titulo: 'Ausencia en entrenamiento',
+          cuerpo: `${registro.nombre_jugador || 'El deportista'} no registró asistencia en el entrenamiento del ${fecha || 'día de hoy'}.`,
+          referenciaTipo: 'asistencia',
+          referenciaId: null,
+        })));
+      } catch (notifErr) {
+        console.error('[POST /api/asistencia/sesion] error notificando ausencia:', notifErr.message);
+      }
+    }
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error('[POST /api/asistencia/sesion]', err);

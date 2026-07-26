@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { BadgeCheck, Camera, Download, ClipboardEdit, Loader2, Mars, QrCode, ShieldCheck, Shirt, Sparkles, Trophy, User, Venus, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
@@ -126,6 +127,7 @@ function TarjetaJugadorPanel({
   const [procesandoFoto, setProcesandoFoto] = useState(false);
   const [guardandoDiseno, setGuardandoDiseno] = useState(false);
   const [resumenAsistencia, setResumenAsistencia] = useState(null);
+  const [mostrarDetalleAsistencia, setMostrarDetalleAsistencia] = useState(false);
   const [ultimaEvaluacion, setUltimaEvaluacion] = useState(null);
 
   // pupiloActivo.asistencia nunca existe (no es un campo real de jugadores)
@@ -394,8 +396,8 @@ function TarjetaJugadorPanel({
     if (porcentaje >= 50) return '#FF9500';
     return 'var(--rojo-alerta)';
   };
-  const asistenciaRadar = Number.isFinite(Number(resumenAsistencia?.porcentaje))
-    ? Number(resumenAsistencia.porcentaje)
+  const asistenciaRadar = Number.isFinite(resumenAsistencia?.porcentaje)
+    ? resumenAsistencia.porcentaje
     : (porcentajeDesdeTexto(pupiloActivo.asistencia) ?? Math.max(20, Math.min(100, rachaActual * 12)));
   const progresoRadar = Math.max(0, Math.min(100, progresoNivel));
   // puntaje_condicion/tecnica/mental ya vienen 0-100 (mismo rango que llena
@@ -536,9 +538,18 @@ function TarjetaJugadorPanel({
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '8px' }}>
                 <div className="stat-box">
                   <span className="stat-label">Asistencia</span>
-                  <strong className="stat-value" style={{ color: colorSemaforoAsistencia(Number(resumenAsistencia?.porcentaje)) }}>
-                    {Number.isFinite(Number(resumenAsistencia?.porcentaje)) ? `${resumenAsistencia.porcentaje}%` : 'Sin registros'}
+                  <strong className="stat-value" style={{ color: colorSemaforoAsistencia(resumenAsistencia?.porcentaje) }}>
+                    {Number.isFinite(resumenAsistencia?.porcentaje) ? `${resumenAsistencia.porcentaje}%` : 'Sin registros'}
                   </strong>
+                  {resumenAsistencia && (
+                    <button
+                      type="button"
+                      onClick={() => setMostrarDetalleAsistencia(true)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '4px', fontSize: '11px', fontWeight: '800', color: 'rgba(255,255,255,0.85)', textDecoration: 'underline' }}
+                    >
+                      Ver detalle
+                    </button>
+                  )}
                 </div>
                 <div className="stat-box">
                   <span className="stat-label">Estado</span>
@@ -996,6 +1007,63 @@ function TarjetaJugadorPanel({
             </button>
           </div>
         </div>
+      )}
+
+      {mostrarDetalleAsistencia && createPortal(
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, padding: '20px',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '440px', width: '100%',
+            maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', color: 'var(--texto-principal)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0 }}>Historial de asistencia</h3>
+              <button onClick={() => setMostrarDetalleAsistencia(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                <X size={22} color="var(--gris-secundario)" strokeWidth={1.5} />
+              </button>
+            </div>
+
+            <h4 style={{ fontSize: '13px', margin: '0 0 8px' }}>Entrenamientos</h4>
+            {(resumenAsistencia?.historialEntrenamientos || []).length === 0 ? (
+              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontStyle: 'italic', margin: '0 0 16px' }}>Sin registros todavía.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+                {resumenAsistencia.historialEntrenamientos.map((r, idx) => {
+                  const color = r.estado_asistencia === 'presente' ? 'var(--verde-victoria)' : r.estado_asistencia === 'ausente' ? 'var(--rojo-alerta)' : '#FF9500';
+                  const etiqueta = r.estado_asistencia === 'presente' ? 'Presente' : r.estado_asistencia === 'ausente' ? 'Ausente' : r.estado_asistencia === 'justificado' ? 'Justificado' : 'Pendiente';
+                  return (
+                    <div key={`ent-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '10px', background: 'var(--gris-fondo)', fontSize: '12px' }}>
+                      <span>{r.fecha ? new Date(r.fecha).toLocaleDateString('es-CL') : 'Sin fecha'}</span>
+                      <span style={{ fontWeight: '800', color, fontSize: '11px', textTransform: 'uppercase' }}>{etiqueta}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <h4 style={{ fontSize: '13px', margin: '0 0 8px' }}>Citaciones y torneos</h4>
+            {(resumenAsistencia?.historialCitaciones || []).length === 0 ? (
+              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontStyle: 'italic', margin: 0 }}>Sin convocatorias todavía.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {resumenAsistencia.historialCitaciones.map((c, idx) => (
+                  <div key={`cit-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '10px', background: 'var(--gris-fondo)', fontSize: '12px' }}>
+                    <span>
+                      {c.dia_citacion ? new Date(c.dia_citacion).toLocaleDateString('es-CL') : 'Sin fecha'} — {c.competencia_nombre} vs {c.rival_nombre}
+                    </span>
+                    <span style={{ fontWeight: '800', fontSize: '11px', textTransform: 'uppercase', color: c.asistio_evento ? 'var(--verde-victoria)' : 'var(--texto-secundario)' }}>
+                      {c.asistio_evento ? '✓ Asistió' : 'Sin registro'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
       )}
 
       <div aria-hidden="true" style={{ position: 'fixed', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import jsQR from 'jsqr';
-import { Camera, Check, X } from 'lucide-react';
+import { AlertTriangle, Camera, Check, X } from 'lucide-react';
 
 // Lee el QR de asistencia que ya genera TarjetaJugadorPanel.jsx
 // ({ tipo: 'asistencia_ccf', rut, nombre, categoria }) usando la cámara
@@ -21,6 +21,7 @@ function QrScanner({ titulo = 'Escanear QR', onScan, onClose }) {
 
   const [error, setError] = useState('');
   const [ultimoOk, setUltimoOk] = useState(null); // { nombre } — flash verde momentáneo
+  const [ultimoInvalido, setUltimoInvalido] = useState(false); // flash rojo momentáneo
 
   useEffect(() => {
     let cancelado = false;
@@ -69,13 +70,25 @@ function QrScanner({ titulo = 'Escanear QR', onScan, onClose }) {
     };
 
     const procesarCodigo = (texto) => {
-      let payload;
+      let payload = null;
       try {
         payload = JSON.parse(texto);
       } catch {
-        return; // no es un QR con JSON — probablemente otro tipo de código, se ignora
+        // no es un QR con JSON — se trata igual que "no reconocido" abajo
       }
-      if (payload?.tipo !== 'asistencia_ccf' || !payload?.rut) return;
+
+      if (payload?.tipo !== 'asistencia_ccf' || !payload?.rut) {
+        // Sin esta pausa, un QR ajeno frente a la cámara dispararía este
+        // mismo chequeo en cada frame (30-60/seg) sin que el staff sepa por
+        // qué "no pasa nada" — antes simplemente no daba ningún aviso.
+        pausadoRef.current = true;
+        setUltimoInvalido(true);
+        setTimeout(() => {
+          pausadoRef.current = false;
+          setUltimoInvalido(false);
+        }, 1200);
+        return;
+      }
 
       pausadoRef.current = true;
       setUltimoOk({ nombre: payload.nombre || payload.rut });
@@ -123,6 +136,12 @@ function QrScanner({ titulo = 'Escanear QR', onScan, onClose }) {
               <div style={{ position: 'absolute', inset: 0, background: 'rgba(52,199,89,0.35)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                 <Check size={48} color="white" strokeWidth={3} />
                 <strong style={{ color: 'white', fontSize: '14px' }}>{ultimoOk.nombre}</strong>
+              </div>
+            )}
+            {ultimoInvalido && (
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,59,48,0.35)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                <AlertTriangle size={40} color="white" strokeWidth={3} />
+                <strong style={{ color: 'white', fontSize: '13px', textAlign: 'center', padding: '0 20px' }}>QR no reconocido — intenta de nuevo</strong>
               </div>
             )}
           </>
