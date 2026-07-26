@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BadgeCheck, Camera, Download, ClipboardEdit, Loader2, Mars, QrCode, ShieldCheck, Shirt, Sparkles, Trophy, User, Venus, X } from 'lucide-react';
+import { BadgeCheck, Camera, Download, ClipboardEdit, Loader2, Mars, QrCode, ScanLine, ShieldCheck, Shirt, Sparkles, Trophy, User, Users, Venus, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer } from 'recharts';
 import PupiloSelector from './PupiloSelector';
 import BuscadorJugadorAdmin from './BuscadorJugadorAdmin';
 import EditarJugadorModal from './EditarJugadorModal';
+import QrScanner from './QrScanner';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import { obtenerPorcentajeBeca } from '../utils/beca';
@@ -106,6 +107,75 @@ const DISENOS_MARCO = {
   holografico: { etiqueta: 'Holográfico', extraBorder: '2px solid rgba(255,255,255,0.65)', extraShadow: '0 0 6px 2px rgba(255,105,180,0.45), 0 0 18px 6px rgba(120,190,255,0.4), 0 0 30px 10px rgba(255,230,120,0.3)', extraFilter: null },
 };
 
+// 5 niveles de rareza (Bronce/Plata/Oro/Platino/Diamante), inspirados en las
+// referencias de tarjetas metálicas que trajo el usuario. Extraído como
+// función pura (no depende de props/estado del componente) para poder
+// aplicar el mismo marco tanto a la tarjeta propia como a cada mini-tarjeta
+// del álbum de colección (cada compañera tiene su propio nivel).
+const obtenerEstiloRarezaPorNivel = (nivel) => {
+  const nivelNumero = Number(nivel) || 0;
+
+  if (nivelNumero > 40) {
+    return {
+      texto: 'DIAMANTE',
+      estilo: {
+        background: 'linear-gradient(145deg, #0C4A6E 0%, #66D9FF 45%, #F2FDFF 100%)',
+        accent: '#F2FDFF',
+        border: 'rgba(255,255,255,0.55)',
+        glow: '0 0 0 2px rgba(255,255,255,0.55), 0 0 22px 4px rgba(150,220,255,0.4), 0 0 34px 10px rgba(255,190,250,0.22)',
+        pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.18) 0px, rgba(255,255,255,0.18) 2px, transparent 2px, transparent 10px), repeating-linear-gradient(25deg, rgba(180,240,255,0.16) 0px, rgba(180,240,255,0.16) 1px, transparent 1px, transparent 16px)',
+        sparkle: true,
+      },
+    };
+  }
+  if (nivelNumero > 30) {
+    return {
+      texto: 'PLATINO',
+      estilo: {
+        background: 'linear-gradient(145deg, #4A5560 0%, #B9C6D1 45%, #F4F9FC 100%)',
+        accent: '#EAF6FF',
+        border: 'rgba(230,245,255,0.5)',
+        glow: '0 0 0 1px rgba(230,245,255,0.4), 0 0 14px 2px rgba(210,235,255,0.3)',
+        pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 2px, transparent 2px, transparent 13px)',
+      },
+    };
+  }
+  if (nivelNumero > 20) {
+    return {
+      texto: 'ORO',
+      estilo: {
+        background: 'linear-gradient(145deg, #5C3D00 0%, #C9910B 45%, #FFD873 100%)',
+        accent: '#FFEFC2',
+        border: 'rgba(255,241,199,0.45)',
+        glow: '0 0 0 1px rgba(255,241,199,0.3), 0 0 12px 2px rgba(255,201,77,0.25)',
+        pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 2px, transparent 2px, transparent 12px), repeating-linear-gradient(25deg, rgba(255,241,199,0.10) 0px, rgba(255,241,199,0.10) 1px, transparent 1px, transparent 18px)',
+      },
+    };
+  }
+  if (nivelNumero > 10) {
+    return {
+      texto: 'PLATA',
+      estilo: {
+        background: 'linear-gradient(145deg, #3E4750 0%, #8E97A0 45%, #E7ECEF 100%)',
+        accent: '#F5F8FA',
+        border: 'rgba(255,255,255,0.35)',
+        glow: '0 0 0 1px rgba(255,255,255,0.25)',
+        pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.09) 0px, rgba(255,255,255,0.09) 2px, transparent 2px, transparent 14px)',
+      },
+    };
+  }
+  return {
+    texto: 'BRONCE',
+    estilo: {
+      background: 'linear-gradient(145deg, #3D2413 0%, #8B5A2B 45%, #C9793F 100%)',
+      accent: '#F0C199',
+      border: 'rgba(255,214,170,0.4)',
+      glow: '0 0 0 1px rgba(255,214,170,0.25)',
+      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 2px, transparent 2px, transparent 14px)',
+    },
+  };
+};
+
 function TarjetaJugadorPanel({
   pupiloActivo,
   setPupiloActivo,
@@ -123,13 +193,21 @@ function TarjetaJugadorPanel({
   const [mostrarSubirFoto, setMostrarSubirFoto] = useState(false);
   const [archivoFoto, setArchivoFoto] = useState(null);
   const [previewFoto, setPreviewFoto] = useState('');
-  const [quitarFondo, setQuitarFondo] = useState(false);
+  // Por defecto en true: ahora que la tarjeta coleccionable muestra la foto
+  // grande (no en un círculo chico), el fondo profesional tipo estadio se
+  // nota mucho más — conviene que la mayoría la suba ya con ese realce.
+  const [quitarFondo, setQuitarFondo] = useState(true);
   const [procesandoFoto, setProcesandoFoto] = useState(false);
   const [guardandoDiseno, setGuardandoDiseno] = useState(false);
   const [resumenAsistencia, setResumenAsistencia] = useState(null);
   const [mostrarDetalleAsistencia, setMostrarDetalleAsistencia] = useState(false);
   const [ultimaEvaluacion, setUltimaEvaluacion] = useState(null);
   const [resumenEstadisticas, setResumenEstadisticas] = useState(null);
+  const [mostrarMiQRColeccion, setMostrarMiQRColeccion] = useState(false);
+  const [mostrarEscanerColeccion, setMostrarEscanerColeccion] = useState(false);
+  const [mostrarAlbum, setMostrarAlbum] = useState(false);
+  const [album, setAlbum] = useState({ items: [], total_club: 0 });
+  const [cargandoAlbum, setCargandoAlbum] = useState(false);
 
   // pupiloActivo.asistencia nunca existe (no es un campo real de jugadores)
   // — el resumen se calcula en el backend a partir de las listas que ya
@@ -275,15 +353,7 @@ function TarjetaJugadorPanel({
         rachaActual >= 3 ? 'Racha' : 'En desarrollo',
       ];
 
-  let textoRareza = 'BRONCE';
-  let estiloRareza = {
-    // Bronce cepillado: cobre oscuro -> cobre claro, imitando metal con luz direccional.
-    background: 'linear-gradient(145deg, #3D2413 0%, #8B5A2B 45%, #C9793F 100%)',
-    accent: '#F0C199',
-    border: 'rgba(255,214,170,0.4)',
-    glow: '0 0 0 1px rgba(255,214,170,0.25)',
-    pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 2px, transparent 2px, transparent 14px)',
-  };
+  let { texto: textoRareza, estilo: estiloRareza } = obtenerEstiloRarezaPorNivel(nivelBase);
   const nivelActual = rolUsuario === 'visita' ? 'MAX' : nivelBase;
   const nivelActualNumero = Number(nivelActual) || 0;
   const rolNormalizado = String(rolUsuario || '').toLowerCase().replace('-', '_');
@@ -357,52 +427,6 @@ function TarjetaJugadorPanel({
   const categoriaDisplay = rolUsuario === 'visita' ? 'Open' : (pupiloActivo.categoria || 'General');
   const categoriaConAnio = anioNacimiento ? `${categoriaDisplay} · ${anioNacimiento}` : categoriaDisplay;
 
-  // 5 niveles de rareza (Bronce/Plata/Oro/Platino/Diamante), inspirados en las
-  // referencias de tarjetas metálicas que trajo el usuario: cada uno sube en
-  // brillo/frialdad de color y en intensidad del "glow" del marco.
-  if (nivelActual > 40) {
-    textoRareza = 'DIAMANTE';
-    estiloRareza = {
-      // Base gélida + reflejo iridiscente (rosado/celeste) simulando el
-      // borde multicolor de la referencia, sin depender de border-image
-      // (riesgoso con html2canvas — ver project_tarjeta_jugador_export).
-      background: 'linear-gradient(145deg, #0C4A6E 0%, #66D9FF 45%, #F2FDFF 100%)',
-      accent: '#F2FDFF',
-      border: 'rgba(255,255,255,0.55)',
-      glow: '0 0 0 2px rgba(255,255,255,0.55), 0 0 22px 4px rgba(150,220,255,0.4), 0 0 34px 10px rgba(255,190,250,0.22)',
-      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.18) 0px, rgba(255,255,255,0.18) 2px, transparent 2px, transparent 10px), repeating-linear-gradient(25deg, rgba(180,240,255,0.16) 0px, rgba(180,240,255,0.16) 1px, transparent 1px, transparent 16px)',
-      sparkle: true,
-    };
-  } else if (nivelActual > 30) {
-    textoRareza = 'PLATINO';
-    estiloRareza = {
-      // Más frío y luminoso que Plata: gris-azulado casi blanco.
-      background: 'linear-gradient(145deg, #4A5560 0%, #B9C6D1 45%, #F4F9FC 100%)',
-      accent: '#EAF6FF',
-      border: 'rgba(230,245,255,0.5)',
-      glow: '0 0 0 1px rgba(230,245,255,0.4), 0 0 14px 2px rgba(210,235,255,0.3)',
-      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 2px, transparent 2px, transparent 13px)',
-    };
-  } else if (nivelActual > 20) {
-    textoRareza = 'ORO';
-    estiloRareza = {
-      background: 'linear-gradient(145deg, #5C3D00 0%, #C9910B 45%, #FFD873 100%)',
-      accent: '#FFEFC2',
-      border: 'rgba(255,241,199,0.45)',
-      glow: '0 0 0 1px rgba(255,241,199,0.3), 0 0 12px 2px rgba(255,201,77,0.25)',
-      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 2px, transparent 2px, transparent 12px), repeating-linear-gradient(25deg, rgba(255,241,199,0.10) 0px, rgba(255,241,199,0.10) 1px, transparent 1px, transparent 18px)',
-    };
-  } else if (nivelActual > 10) {
-    textoRareza = 'PLATA';
-    estiloRareza = {
-      background: 'linear-gradient(145deg, #3E4750 0%, #8E97A0 45%, #E7ECEF 100%)',
-      accent: '#F5F8FA',
-      border: 'rgba(255,255,255,0.35)',
-      glow: '0 0 0 1px rgba(255,255,255,0.25)',
-      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.09) 0px, rgba(255,255,255,0.09) 2px, transparent 2px, transparent 14px)',
-    };
-  }
-
   if (rolUsuario === 'visita') {
     textoRareza = 'VISITA';
     estiloRareza = {
@@ -444,6 +468,13 @@ function TarjetaJugadorPanel({
     rut: rutValidacion,
     nombre: nombreCompletoDisplay,
     categoria: pupiloActivo.categoria || 'General',
+  });
+  // QR distinto al de asistencia: este es el que una compañera escanea para
+  // agregar ESTA tarjeta a su álbum de colección (no marca nada de asistencia).
+  const qrColeccionPayload = JSON.stringify({
+    tipo: 'coleccion_tarjeta',
+    rut: rutValidacion,
+    nombre: nombreCompletoDisplay,
   });
   const porcentajeDesdeTexto = (valor = '') => {
     const txt = String(valor || '').trim();
@@ -536,6 +567,41 @@ function TarjetaJugadorPanel({
       descargarBlob(blob, nombreArchivo);
     } catch {
       showToast({ message: 'No se pudo descargar la tarjeta en este momento.', type: 'error' });
+    }
+  };
+
+  const cargarAlbum = async () => {
+    const rut = String(pupiloActivo?.rut || '').trim();
+    if (!rut) return;
+    setCargandoAlbum(true);
+    try {
+      const data = await api.jugadoresAPI.getColeccion(rut);
+      setAlbum({ items: data?.items || [], total_club: data?.total_club || 0 });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo cargar tu álbum.', type: 'error' });
+    } finally {
+      setCargandoAlbum(false);
+    }
+  };
+
+  const abrirAlbum = () => {
+    setMostrarAlbum(true);
+    void cargarAlbum();
+  };
+
+  const handleEscaneoColeccion = async (payload) => {
+    const rut = String(pupiloActivo?.rut || '').trim();
+    if (!rut || !payload?.rut) return;
+    try {
+      const resultado = await api.jugadoresAPI.agregarAColeccion(rut, payload.rut);
+      if (resultado.nueva) {
+        showToast({ message: `¡Agregaste la tarjeta de ${resultado.nombre || payload.nombre} a tu álbum!`, type: 'success' });
+      } else {
+        showToast({ message: `Ya tenías la tarjeta de ${resultado.nombre || payload.nombre}.`, type: 'info' });
+      }
+      if (mostrarAlbum) void cargarAlbum();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo agregar esa tarjeta.', type: 'error' });
     }
   };
 
@@ -799,6 +865,52 @@ function TarjetaJugadorPanel({
           </div>
         </div>
 
+        {rolUsuario !== 'visita' && (
+          <div style={{ marginTop: '16px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+              {insignias.slice(0, 3).map((insignia) => (
+                <span key={`portada-${insignia}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '900' }}>
+                  <BadgeCheck size={13} /> {insignia}
+                </span>
+              ))}
+            </div>
+
+            <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'center' }}>
+              <RadarChart width={300} height={220} data={radarGamificacionData} outerRadius={78}>
+                <PolarGrid stroke="rgba(255,255,255,0.25)" />
+                <PolarAngleAxis dataKey="area" tick={{ fill: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: 700 }} />
+                <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} tickCount={5} />
+                <Radar dataKey="valor" stroke="#00C7BE" fill="#00C7BE" fillOpacity={0.35} strokeWidth={2} isAnimationActive={false} />
+              </RadarChart>
+            </div>
+            {!hayEvaluacionReal && (
+              <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'rgba(255,255,255,0.65)', fontWeight: '700', textAlign: 'center' }}>
+                Física/Técnica/Táctica: aún sin evaluaciones del staff.
+              </p>
+            )}
+
+            <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+              <div className="stat-box">
+                <span className="stat-label">PTS</span>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{resumenEstadisticas?.partidos > 0 ? resumenEstadisticas.pts : '—'}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="stat-label">REB</span>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{resumenEstadisticas?.partidos > 0 ? resumenEstadisticas.reb : '—'}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="stat-label">AST</span>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{resumenEstadisticas?.partidos > 0 ? resumenEstadisticas.ast : '—'}</strong>
+              </div>
+            </div>
+            {!(resumenEstadisticas?.partidos > 0) && (
+              <p style={{ margin: '6px 0 0', fontSize: '10px', color: 'rgba(255,255,255,0.65)', fontWeight: '700', textAlign: 'center' }}>
+                Promedios por partido: aún sin partidos registrados.
+              </p>
+            )}
+          </div>
+        )}
+
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
@@ -865,6 +977,20 @@ function TarjetaJugadorPanel({
           </button>
         </div>
 
+        {rolUsuario !== 'visita' && (
+          <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+            <button className="player-action-btn" onClick={() => setMostrarMiQRColeccion(true)} style={{ padding: '8px 12px' }}>
+              <QrCode size={14} /> Mi QR
+            </button>
+            <button className="player-action-btn" onClick={() => setMostrarEscanerColeccion(true)} style={{ padding: '8px 12px' }}>
+              <ScanLine size={14} /> Escanear compañera
+            </button>
+            <button className="player-action-btn" onClick={abrirAlbum} style={{ padding: '8px 12px' }}>
+              <Users size={14} /> Mi álbum
+            </button>
+          </div>
+        )}
+
         <div className="collection-preview-wrap" style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
           {vistaColeccion === 'frente' ? (
             <div className="player-collection-preview preview-front" style={{
@@ -877,20 +1003,31 @@ function TarjetaJugadorPanel({
               border: `2px solid ${estiloRareza.border}`,
               boxShadow: [`0 12px 24px rgba(15,23,42,0.25)`, estiloRareza.glow].filter(Boolean).join(', '),
               display: 'grid',
-              gridTemplateRows: 'auto auto 1fr auto'
+              gridTemplateRows: 'auto 1fr auto'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase' }}>
-                <span>CCF 2026</span>
-                <span>#{serialTexto}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{
+                  width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0,
+                  background: 'rgba(255,255,255,0.2)', border: `2px solid ${estiloRareza.accent}`,
+                  padding: '3px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {clubLogoUrl ? (
+                    <img src={clubLogoUrl} alt={`Escudo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '50%' }} />
+                  ) : (
+                    <span style={{ fontSize: '9px', fontWeight: '900' }}>{clubIniciales}</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', fontSize: '9px', fontWeight: '900', textTransform: 'uppercase' }}>
+                  <span>{textoRareza}</span>
+                  <span>Nivel {rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</span>
+                  <span>#{serialTexto}</span>
+                </div>
               </div>
-              <div style={{ marginTop: '6px', fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: '14px', fontWeight: '900', textTransform: 'uppercase' }}>
-                {nombreDisplay} {apellidoDisplay}
-              </div>
-              <div style={{ position: 'relative', marginTop: '8px', borderRadius: '12px', overflow: 'hidden', background: 'rgba(255,255,255,0.2)' }}>
+              <div style={{ position: 'relative', marginTop: '8px', borderRadius: '10px', overflow: 'hidden', border: `2px solid ${estiloRareza.accent}`, background: 'rgba(255,255,255,0.14)' }}>
                 {fotoPrincipal ? (
-                  <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.08) saturate(1.15)' }} />
                 ) : (
-                  <div style={{ height: '100%', minHeight: '130px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ height: '100%', minHeight: '110px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {esFemenino ? <Venus size={24} /> : <Mars size={24} />}
                   </div>
                 )}
@@ -909,8 +1046,13 @@ function TarjetaJugadorPanel({
                   </button>
                 )}
               </div>
-              <div style={{ marginTop: '8px', fontSize: '11px', fontWeight: '800' }}>
-                Nivel {nivelActualNumero} · {pupiloActivo.categoria || 'General'}
+              <div style={{ textAlign: 'center', marginTop: '8px' }}>
+                <div style={{ fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: '13px', fontWeight: '900', textTransform: 'uppercase', lineHeight: 1.2 }}>
+                  {nombreDisplay} {apellidoDisplay}
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '10px', fontWeight: '800', opacity: 0.9 }}>
+                  {rolUsuario === 'visita' ? 'N/A' : (pupiloActivo.posicion || 'N/A')} · {pupiloActivo.estatura || 'N/A'}
+                </div>
               </div>
             </div>
           ) : (
@@ -1033,7 +1175,7 @@ function TarjetaJugadorPanel({
         </>
       )}
 
-      {mostrarCredencialAsistencia && (
+      {mostrarCredencialAsistencia && createPortal(
         <div className="attendance-overlay" role="dialog" aria-modal="true">
           <div className="attendance-card">
             <button className="attendance-close" onClick={() => setMostrarCredencialAsistencia(false)}>
@@ -1051,7 +1193,94 @@ function TarjetaJugadorPanel({
             </div>
             <p>Presenta este QR al staff para registrar tu asistencia.</p>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {mostrarMiQRColeccion && createPortal(
+        <div className="attendance-overlay" role="dialog" aria-modal="true">
+          <div className="attendance-card">
+            <button className="attendance-close" onClick={() => setMostrarMiQRColeccion(false)}>
+              <X size={18} />
+            </button>
+            <div className="attendance-eyebrow">Mi QR de colección</div>
+            <h3>{pupiloActivo.nombre || 'Jugador'}</h3>
+            <div className="attendance-qr-wrap">
+              <QRCodeSVG value={qrColeccionPayload} size={178} bgColor="#FFFFFF" fgColor="#0D2244" level="M" includeMargin />
+            </div>
+            <p>Muéstrale este código a una compañera para que agregue tu Tarjeta a su álbum.</p>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {mostrarEscanerColeccion && (
+        <QrScanner
+          titulo="Escanear tarjeta de compañera"
+          tipoEsperado="coleccion_tarjeta"
+          onScan={handleEscaneoColeccion}
+          onClose={() => setMostrarEscanerColeccion(false)}
+        />
+      )}
+
+      {mostrarAlbum && createPortal(
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, padding: '20px',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '480px', width: '100%',
+            maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', color: 'var(--texto-principal)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <h3 style={{ margin: 0, fontSize: '17px' }}>Mi álbum</h3>
+              <button onClick={() => setMostrarAlbum(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }} aria-label="Cerrar">
+                <X size={20} />
+              </button>
+            </div>
+            <p style={{ margin: '0 0 14px 0', fontSize: '13px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+              {album.items.length} / {album.total_club} compañeras coleccionadas
+            </p>
+
+            {cargandoAlbum ? (
+              <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', textAlign: 'center', padding: '20px 0' }}>Cargando...</p>
+            ) : album.items.length === 0 ? (
+              <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>
+                Aún no coleccionas ninguna tarjeta. Usa "Escanear compañera" para agregar la primera.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '12px' }}>
+                {album.items.map((item) => {
+                  const nombreItem = `${item.nombres || ''} ${item.apellido_paterno || ''}`.trim() || 'Jugador';
+                  const { estilo: estiloItem } = obtenerEstiloRarezaPorNivel(item.nivel);
+                  return (
+                    <div key={item.rut_jugador} style={{
+                      borderRadius: '12px', padding: '10px', textAlign: 'center',
+                      background: estiloItem.background, color: 'white',
+                      border: `2px solid ${estiloItem.border}`,
+                    }}>
+                      <div style={{
+                        width: '56px', height: '56px', borderRadius: '50%', margin: '0 auto',
+                        border: `2px solid ${estiloItem.accent}`, overflow: 'hidden',
+                        background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {item.foto_jugador ? (
+                          <img src={resolverUrlFoto(item.foto_jugador)} alt={nombreItem} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <User size={22} />
+                        )}
+                      </div>
+                      <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '900', lineHeight: 1.2 }}>{nombreItem}</div>
+                      <div style={{ marginTop: '2px', fontSize: '9px', fontWeight: '800', opacity: 0.85, textTransform: 'uppercase' }}>Nivel {item.nivel}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
       )}
 
       {mostrarEditarJugador && (
@@ -1203,116 +1432,74 @@ function TarjetaJugadorPanel({
         >
           {estiloRareza.sparkle && (
             <>
-              <Sparkles size={22} style={{ position: 'absolute', top: '16px', left: '16px', opacity: 0.85, color: '#F2FDFF' }} />
-              <Sparkles size={16} style={{ position: 'absolute', bottom: '16px', right: '18px', opacity: 0.7, color: '#F2FDFF' }} />
+              <Sparkles size={20} style={{ position: 'absolute', top: '112px', left: '18px', opacity: 0.8, color: '#F2FDFF', zIndex: 1 }} />
+              <Sparkles size={16} style={{ position: 'absolute', bottom: '166px', right: '18px', opacity: 0.7, color: '#F2FDFF', zIndex: 1 }} />
             </>
           )}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-            <span style={{ fontSize: '13px', fontWeight: '900', letterSpacing: '0.9px', textTransform: 'uppercase', opacity: 0.9 }}>Tarjeta Oficial CCF 2026</span>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span style={{ fontSize: '12px', fontWeight: '900', padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>{textoRareza}</span>
-              <span style={{ fontSize: '11px', fontWeight: '900', padding: '7px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)' }}>#{serialTexto}</span>
-            </div>
-          </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '20px', alignItems: 'center' }}>
-            <div>
-              <h1 style={{ margin: '8px 0 10px', fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: '52px', lineHeight: 1, letterSpacing: '1.2px', textTransform: 'uppercase' }}>{nombreCompletoDisplay}</h1>
-              <div style={{ fontSize: '20px', fontWeight: '800', opacity: 0.95 }}>
-                N° {rolUsuario === 'visita' ? '00' : numeroCamiseta} · {categoriaConAnio}
-              </div>
-
-              <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '14px', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.16)', maxWidth: '360px' }}>
-                <div style={{ width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-                  {clubLogoUrl ? (
-                    <img src={clubLogoUrl} alt={`Logo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                  ) : (
-                    <span style={{ fontSize: '20px', fontWeight: '900' }}>{clubIniciales}</span>
-                  )}
-                </div>
-                <div>
-                  <span style={{ display: 'block', fontSize: '11px', fontWeight: '800', letterSpacing: '0.7px', textTransform: 'uppercase', opacity: 0.85 }}>Club</span>
-                  <strong style={{ fontSize: '16px', fontWeight: '900' }}>{clubNombre}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ width: '280px', height: '364px', borderRadius: '22px', background: 'linear-gradient(180deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.12) 100%)', border: '1px solid rgba(255,255,255,0.3)', padding: '10px', boxShadow: `0 10px 24px rgba(0,0,0,0.25), inset 0 0 0 2px ${estiloRareza.accent}` }}>
-              {fotoPrincipal ? (
-                <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '16px' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{
+              width: '84px', height: '84px', borderRadius: '50%', flexShrink: 0,
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.12) 100%)',
+              border: `4px solid ${estiloRareza.accent}`,
+              boxShadow: '0 8px 18px rgba(0,0,0,0.3), inset 0 0 0 2px rgba(255,255,255,0.3)',
+              padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+            }}>
+              {clubLogoUrl ? (
+                <img src={clubLogoUrl} alt={`Escudo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '50%' }} />
               ) : (
-                <div style={{ width: '100%', height: '100%', borderRadius: '16px', background: 'rgba(255,255,255,0.18)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  {esFemenino ? <Venus size={46} /> : <Mars size={46} />}
-                  <span style={{ fontSize: '12px', fontWeight: '800' }}>SIN FOTO</span>
-                </div>
+                <span style={{ fontSize: '20px', fontWeight: '900' }}>{clubIniciales}</span>
               )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+              <span style={{ fontSize: '12px', fontWeight: '900', padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>{textoRareza}</span>
+              <span style={{ fontSize: '12px', fontWeight: '900', padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>NIVEL {rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</span>
+              <span style={{ fontSize: '11px', fontWeight: '900', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)' }}>#{serialTexto}</span>
             </div>
           </div>
 
-          {rolUsuario !== 'visita' && (
-            <div style={{ marginTop: '20px' }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
-                {insignias.slice(0, 3).map((insignia) => (
-                  <span key={`front-${insignia}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '900' }}>
-                    <BadgeCheck size={13} /> {insignia}
-                  </span>
-                ))}
+          <div style={{
+            flex: 1, marginTop: '16px', borderRadius: '20px', overflow: 'hidden',
+            border: `3px solid ${estiloRareza.accent}`,
+            boxShadow: `inset 0 0 0 2px rgba(255,255,255,0.25), 0 10px 24px rgba(0,0,0,0.25)`,
+            background: 'rgba(255,255,255,0.12)',
+          }}>
+            {fotoPrincipal ? (
+              // filter: leve boost de contraste/saturación tipo "foto deportiva" — el
+              // realce fuerte con fondo de estadio ya existe en crearFotoConFondoProfesional
+              // (checkbox "Mejorar foto" al subirla); esto es solo un afinado adicional.
+              <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.08) saturate(1.15)' }} />
+            ) : (
+              <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                {esFemenino ? <Venus size={64} /> : <Mars size={64} />}
+                <span style={{ fontSize: '13px', fontWeight: '800' }}>SIN FOTO</span>
               </div>
+            )}
+          </div>
 
-              <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'center' }}>
-                <RadarChart width={300} height={220} data={radarGamificacionData} outerRadius={78}>
-                  <PolarGrid stroke="rgba(255,255,255,0.25)" />
-                  <PolarAngleAxis dataKey="area" tick={{ fill: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: 700 }} />
-                  <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} tickCount={5} />
-                  <Radar dataKey="valor" stroke="#00C7BE" fill="#00C7BE" fillOpacity={0.35} strokeWidth={2} isAnimationActive={false} />
-                </RadarChart>
-              </div>
-              {!hayEvaluacionReal && (
-                <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'rgba(255,255,255,0.65)', fontWeight: '700', textAlign: 'center' }}>
-                  Física/Técnica/Táctica: aún sin evaluaciones del staff.
-                </p>
-              )}
-
-              <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                <div className="stat-box">
-                  <span className="stat-label">PTS</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{resumenEstadisticas?.partidos > 0 ? resumenEstadisticas.pts : '—'}</strong>
-                </div>
-                <div className="stat-box">
-                  <span className="stat-label">REB</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{resumenEstadisticas?.partidos > 0 ? resumenEstadisticas.reb : '—'}</strong>
-                </div>
-                <div className="stat-box">
-                  <span className="stat-label">AST</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{resumenEstadisticas?.partidos > 0 ? resumenEstadisticas.ast : '—'}</strong>
-                </div>
-              </div>
-              {!(resumenEstadisticas?.partidos > 0) && (
-                <p style={{ margin: '6px 0 0', fontSize: '10px', color: 'rgba(255,255,255,0.65)', fontWeight: '700', textAlign: 'center' }}>
-                  Promedios por partido: aún sin partidos registrados.
-                </p>
-              )}
-            </div>
-          )}
-
-          <div style={{ marginTop: 'auto', paddingTop: '16px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-              <div className="stat-box">
-                <span className="stat-label">Posicion</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{rolUsuario === 'visita' ? 'N/A' : (pupiloActivo.posicion || 'N/A')}</strong>
-              </div>
+          <div style={{
+            marginTop: '16px', borderRadius: '18px', padding: '16px 18px',
+            background: 'rgba(10,15,25,0.32)', border: '1px solid rgba(255,255,255,0.18)',
+          }}>
+            <h1 style={{ margin: 0, fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: nombreCompletoDisplay.length > 20 ? '26px' : '32px', lineHeight: 1.15, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center' }}>{nombreCompletoDisplay}</h1>
+            <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
               <div className="stat-box">
                 <span className="stat-label">Nivel</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</strong>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</strong>
               </div>
               <div className="stat-box">
-                <span className="stat-label">Estado</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{pupiloActivo.estadoDeportivo || 'Activo'}</strong>
+                <span className="stat-label">Posición</span>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rolUsuario === 'visita' ? 'N/A' : (pupiloActivo.posicion || 'N/A')}</strong>
               </div>
-            </div>
-            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', opacity: 0.92 }}>
-              <span>Formato 2.5 x 3.5 in (vertical)</span>
-              <span>Temporada 2026</span>
+              <div className="stat-box">
+                <span className="stat-label">Estatura</span>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{pupiloActivo.estatura || 'N/A'}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="stat-label">Año</span>
+                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{anioNacimiento || 'N/A'}</strong>
+              </div>
             </div>
           </div>
         </div>

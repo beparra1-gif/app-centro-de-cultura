@@ -12,7 +12,7 @@ import { AlertTriangle, Camera, Check, X } from 'lucide-react';
 // Portal a document.body: mismo motivo que PagoForm.jsx — .ios-main tiene un
 // transform permanente que atraparía un overlay position:fixed dentro de su
 // propio alto scrolleable en vez del viewport real.
-function QrScanner({ titulo = 'Escanear QR', onScan, onClose }) {
+function QrScanner({ titulo = 'Escanear QR', tipoEsperado = 'asistencia_ccf', onScan, onClose }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -77,7 +77,7 @@ function QrScanner({ titulo = 'Escanear QR', onScan, onClose }) {
         // no es un QR con JSON — se trata igual que "no reconocido" abajo
       }
 
-      if (payload?.tipo !== 'asistencia_ccf' || !payload?.rut) {
+      if (payload?.tipo !== tipoEsperado || !payload?.rut) {
         // Sin esta pausa, un QR ajeno frente a la cámara dispararía este
         // mismo chequeo en cada frame (30-60/seg) sin que el staff sepa por
         // qué "no pasa nada" — antes simplemente no daba ningún aviso.
@@ -106,7 +106,7 @@ function QrScanner({ titulo = 'Escanear QR', onScan, onClose }) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
-  }, [onScan]);
+  }, [onScan, tipoEsperado]);
 
   return createPortal(
     <div style={{

@@ -577,6 +577,21 @@ export const jugadoresAPI = {
     });
     return handleResponse(response);
   },
+
+  // Álbum de tarjetas coleccionadas (escaneadas del QR de colección de otros jugadores)
+  getColeccion: async (rut) => {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}/coleccion`);
+    return handleResponse(response);
+  },
+
+  agregarAColeccion: async (rut, rutObjetivo) => {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}/coleccion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rut_objetivo: rutObjetivo }),
+    });
+    return handleResponse(response);
+  },
 };
 
 // ========== PAGOS MENSUALIDADES (FASE 1) ==========

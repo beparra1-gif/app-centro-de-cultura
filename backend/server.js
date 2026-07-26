@@ -1807,6 +1807,22 @@ const ensureEvaluacionesTable = async () => {
   console.log('📋 Tabla evaluaciones verificada');
 };
 
+// Álbum de tarjetas coleccionables: cada fila es "rut_coleccionista ya tiene
+// la tarjeta de rut_coleccionado en su álbum", agregada al escanear el QR de
+// colección de la tarjeta ajena. UNIQUE evita duplicados si vuelve a escanear.
+const ensureTarjetasColeccionadasTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tarjetas_coleccionadas (
+      id SERIAL PRIMARY KEY,
+      rut_coleccionista VARCHAR(20) NOT NULL REFERENCES jugadores(rut_jugador),
+      rut_coleccionado VARCHAR(20) NOT NULL REFERENCES jugadores(rut_jugador),
+      fecha_coleccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(rut_coleccionista, rut_coleccionado)
+    )
+  `);
+  console.log('🃏 Tabla tarjetas_coleccionadas verificada');
+};
+
 const ensureGamificacionPuntosTable = async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS gamificacion_puntos (
@@ -4690,6 +4706,92 @@ app.post('/api/jugadores/:rut/foto', authenticate, requireApoderadoDeJugadorOMod
   } catch (error) {
     console.error('[POST /api/jugadores/:rut/foto]', error);
     return res.status(500).json({ error: error.message || 'No se pudo subir la foto.' });
+  }
+});
+
+// POST: agrega la tarjeta de otro jugador (rut_objetivo) al álbum de :rut,
+// escaneada desde el QR de colección de la tarjeta ajena. ON CONFLICT DO
+// NOTHING porque volver a escanear una tarjeta ya coleccionada no es un
+// error — simplemente no suma una segunda vez.
+app.post('/api/jugadores/:rut/coleccion', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), async (req, res) => {
+  try {
+    const rutColeccionista = String(req.params.rut || '').trim();
+    const rutObjetivo = String(req.body?.rut_objetivo || '').trim();
+
+    if (!rutObjetivo) {
+      return res.status(400).json({ error: 'Falta el rut de la tarjeta a coleccionar.' });
+    }
+    if (normalizarRutParaComparar(rutColeccionista) === normalizarRutParaComparar(rutObjetivo)) {
+      return res.status(400).json({ error: 'No puedes coleccionar tu propia tarjeta.' });
+    }
+
+    const jugadorObjetivo = await pool.query(
+      `SELECT rut_jugador, nombres, apellido_paterno, apellido_materno FROM jugadores WHERE rut_jugador = $1`,
+      [rutObjetivo]
+    );
+    if (jugadorObjetivo.rows.length === 0) {
+      return res.status(404).json({ error: 'Esa tarjeta no corresponde a ningún jugador del club.' });
+    }
+
+    const insertado = await pool.query(
+      `INSERT INTO tarjetas_coleccionadas (rut_coleccionista, rut_coleccionado)
+       VALUES ($1, $2)
+       ON CONFLICT (rut_coleccionista, rut_coleccionado) DO NOTHING
+       RETURNING id`,
+      [rutColeccionista, rutObjetivo]
+    );
+
+    const nombreObjetivo = `${jugadorObjetivo.rows[0].nombres || ''} ${jugadorObjetivo.rows[0].apellido_paterno || ''}`.trim();
+    return res.json({
+      ok: true,
+      nueva: insertado.rows.length > 0,
+      nombre: nombreObjetivo,
+    });
+  } catch (error) {
+    console.error('[POST /api/jugadores/:rut/coleccion]', error);
+    return res.status(500).json({ error: error.message || 'No se pudo agregar la tarjeta.' });
+  }
+});
+
+// GET: álbum de tarjetas coleccionadas por :rut, con nivel calculado igual
+// que el resto de la app (xp_total real vía gamificacion_puntos, no un campo
+// estático) para que el marco de cada mini-tarjeta coleccionada muestre la
+// rareza correcta. total_club: cuántos jugadores activos hay para coleccionar
+// en total (para el progreso "X/Y"), sin exponer el roster completo.
+app.get('/api/jugadores/:rut/coleccion', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), async (req, res) => {
+  try {
+    const rutColeccionista = String(req.params.rut || '').trim();
+
+    const coleccion = await pool.query(
+      `SELECT j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.foto_jugador,
+              j.categoria, j.rama, j.numero_camiseta,
+              COALESCE(SUM(gp.puntos_obtenidos), 0) AS xp_total,
+              tc.fecha_coleccion
+       FROM tarjetas_coleccionadas tc
+       JOIN jugadores j ON j.rut_jugador = tc.rut_coleccionado
+       LEFT JOIN gamificacion_puntos gp ON gp.rut_jugador = j.rut_jugador
+       WHERE tc.rut_coleccionista = $1
+       GROUP BY j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.foto_jugador,
+                j.categoria, j.rama, j.numero_camiseta, tc.fecha_coleccion
+       ORDER BY tc.fecha_coleccion DESC`,
+      [rutColeccionista]
+    );
+
+    const totalClub = await pool.query(
+      `SELECT COUNT(*) AS total FROM jugadores WHERE estado = 'activo' AND rut_jugador != $1`,
+      [rutColeccionista]
+    );
+
+    const items = coleccion.rows.map((fila) => ({
+      ...fila,
+      xp_total: Number(fila.xp_total),
+      nivel: calcularNivelDesdeXPTotal(fila.xp_total),
+    }));
+
+    return res.json({ items, total_club: Number(totalClub.rows[0]?.total || 0) });
+  } catch (error) {
+    console.error('[GET /api/jugadores/:rut/coleccion]', error);
+    return res.status(500).json({ error: error.message || 'No se pudo cargar el álbum.' });
   }
 });
 
@@ -9064,6 +9166,10 @@ app.listen(PORT, () => {
 
   ensureNotificacionesAppTable().catch((error) => {
     console.error('❌ Error verificando tabla notificaciones_app:', error.message);
+  });
+
+  ensureTarjetasColeccionadasTable().catch((error) => {
+    console.error('❌ Error verificando tabla tarjetas_coleccionadas:', error.message);
   });
 
   ensureSuperAdminAccount().catch((error) => {
