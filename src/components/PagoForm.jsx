@@ -163,7 +163,10 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
     setDesglose(null);
   }, [modoPago, rutCuentaSocio, cuentas]);
 
-  // Actualizar desglose cuando cambia monto o meses
+  // Actualizar desglose cuando cambia monto o meses. Con monto en $0 (mes
+  // exento a propósito) no hay nada que desglosar — sin este else, el panel
+  // se quedaba mostrando el último desglose calculado con un monto anterior,
+  // como si igual se fuera a cobrar algo.
   useEffect(() => {
     if (formData.monto_total_pagado > 0 && mesesSeleccionados.length > 0) {
       const desgloseCal = calcularDesglose(
@@ -172,12 +175,17 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
         mesesSeleccionados
       );
       setDesglose(desgloseCal);
-      
+
       // Actualizar cantidad_meses_pagados basado en el desglose
       setFormData(prev => ({
         ...prev,
         cantidad_meses_pagados: desgloseCal?.mesesCubiertos || mesesSeleccionados.length
       }));
+    } else {
+      setDesglose(null);
+      if (mesesSeleccionados.length > 0) {
+        setFormData(prev => ({ ...prev, cantidad_meses_pagados: mesesSeleccionados.length }));
+      }
     }
   }, [formData.monto_total_pagado, formData.concepto_pago, mesesSeleccionados, anioSeleccionado]);
 
@@ -250,7 +258,11 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
       if (modoPago === 'deportista' && !formData.rut_jugador) throw new Error('Selecciona un deportista');
       if (modoPago === 'socio' && !rutCuentaSocio) throw new Error('Selecciona un socio');
       if (mesesSeleccionados.length === 0) throw new Error('Selecciona al menos un mes para pagar');
-      if (!formData.monto_total_pagado || formData.monto_total_pagado <= 0) throw new Error('Monto debe ser mayor a 0');
+      // $0 es válido a propósito (ej. un mes que el club decide dejar sin
+      // cobro puntual) — lo que se rechaza es vacío/negativo/no numérico.
+      if (formData.monto_total_pagado === '' || !Number.isFinite(Number(formData.monto_total_pagado)) || Number(formData.monto_total_pagado) < 0) {
+        throw new Error('Ingresa un monto válido (puede ser $0)');
+      }
 
       // rut_pagos identifica quién realmente paga (la cuenta), independiente
       // de si el pago va ligado a un deportista puntual o no — sin esto, un

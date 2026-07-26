@@ -4954,7 +4954,12 @@ app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'v
       correccionesPago.push('rut_jugador/rut_pagos vacio');
     }
     if (!String(meses_correspondientes || '').trim()) correccionesPago.push('meses_correspondientes vacio');
-    if (!Number.isFinite(Number(monto_total_pagado)) || Number(monto_total_pagado) <= 0) {
+    // $0 es válido a propósito (ej. un mes que el club decide dejar sin
+    // cobro puntual) — antes esto también marcaba "corrección requerida" y
+    // esPagoInvalidoLegacy (App.jsx) trataba ese pago como legacy inválido,
+    // ignorándolo por completo pese a haberse guardado bien.
+    if (monto_total_pagado === undefined || monto_total_pagado === null || monto_total_pagado === ''
+      || !Number.isFinite(Number(monto_total_pagado)) || Number(monto_total_pagado) < 0) {
       correccionesPago.push('monto_total_pagado invalido');
     }
 

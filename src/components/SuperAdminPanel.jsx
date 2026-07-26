@@ -2357,7 +2357,7 @@ function SuperAdminPanel({
           })}
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', marginTop: '20px' }}>
-            <h3 className="section-title" style={{ margin: 0 }}>Deportistas Morosos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
+            <h3 className="section-title" style={{ margin: 0 }}>Estatus de pagos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
             <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={notificarTodosMorosos}>
               <Bell size={13} /> Notificar Todos
             </button>
