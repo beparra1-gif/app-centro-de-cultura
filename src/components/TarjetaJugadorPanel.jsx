@@ -785,9 +785,12 @@ function TarjetaJugadorPanel({
             el disco real (padding) para que se siga viendo el anillo
             metálico del marco alrededor, como una moneda con borde —
             si el logo tapa el disco entero no se nota que es un círculo
-            de metal. */}
+            de metal. Ancho y alto en px explícitos (no aspectRatio: html2canvas
+            no soporta bien esa propiedad CSS y el círculo salía ovalado solo
+            en la descarga, no en la vista previa normal del navegador). */}
         <div style={{
-          position: 'absolute', left: `${marcoActivo.escudo.left}%`, top: `${marcoActivo.escudo.top}%`, width: `${marcoActivo.escudo.diametro}%`, aspectRatio: '1 / 1',
+          position: 'absolute', left: `${marcoActivo.escudo.left}%`, top: `${marcoActivo.escudo.top}%`,
+          width: `${ancho * (marcoActivo.escudo.diametro / 100)}px`, height: `${ancho * (marcoActivo.escudo.diametro / 100)}px`,
           borderRadius: '50%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: `${ancho * (marcoActivo.escudo.diametro / 100) * 0.09}px`, boxSizing: 'border-box',
           zIndex: 2,
