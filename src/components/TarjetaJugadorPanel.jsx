@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { BadgeCheck, Camera, Download, ClipboardEdit, Loader2, Mars, QrCode, ScanLine, ShieldCheck, Shirt, Sparkles, Trophy, User, Users, Venus, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
-import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer } from 'recharts';
+import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart } from 'recharts';
 import PupiloSelector from './PupiloSelector';
 import BuscadorJugadorAdmin from './BuscadorJugadorAdmin';
 import EditarJugadorModal from './EditarJugadorModal';
@@ -1034,7 +1034,7 @@ function TarjetaJugadorPanel({
         {rolUsuario !== 'visita' && (
           <div style={{ marginTop: '16px' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
-              {insignias.slice(0, 3).map((insignia) => (
+              {insignias.map((insignia) => (
                 <span key={`portada-${insignia}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '900' }}>
                   <BadgeCheck size={13} /> {insignia}
                 </span>
@@ -1055,7 +1055,36 @@ function TarjetaJugadorPanel({
               </p>
             )}
 
-            <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+            <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '10px' }}>
+              <div className="stat-box">
+                <span className="stat-label">XP</span>
+                <strong className="stat-value">{xpActual} XP</strong>
+              </div>
+              <div className="stat-box">
+                <span className="stat-label">Puntos</span>
+                <strong className="stat-value">{puntosGamificacion}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="stat-label">Racha</span>
+                <strong className="stat-value">{rachaActual} dias</strong>
+              </div>
+              <div className="stat-box">
+                <span className="stat-label">Siguiente nivel</span>
+                <strong className="stat-value">{xpParaSiguienteNivel} XP</strong>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', opacity: 0.85 }}>
+                <span>Progreso al proximo nivel</span>
+                <span>{progresoNivel}%</span>
+              </div>
+              <div style={{ height: '10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
+                <div style={{ width: `${progresoNivel}%`, height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg, #00C7BE 0%, #FFE066 100%)' }} />
+              </div>
+            </div>
+
+            <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
               <div className="stat-box">
                 <span className="stat-label">PTS</span>
                 <strong style={{ display: 'block', marginTop: '4px', fontSize: '14px' }}>{resumenEstadisticas?.partidos > 0 ? resumenEstadisticas.pts : '—'}</strong>
@@ -1190,72 +1219,6 @@ function TarjetaJugadorPanel({
           )}
         </div>
       </div>
-
-      {rolUsuario !== 'visita' && (
-        <div className="card" style={{ marginTop: '14px', borderRadius: '18px', background: 'linear-gradient(135deg, #101C2E 0%, #142E45 100%)', color: 'white', border: '1px solid rgba(255,255,255,0.12)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-            <div>
-              <strong style={{ fontSize: '16px', fontWeight: '900' }}>Progreso deportivo</strong>
-            </div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '900', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>
-              <Trophy size={14} /> Nivel {nivelActualNumero}
-            </div>
-          </div>
-
-          <div style={{ width: '100%', height: '230px', marginBottom: '10px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radarGamificacionData} outerRadius={80}>
-                <PolarGrid stroke="rgba(255,255,255,0.25)" />
-                <PolarAngleAxis dataKey="area" tick={{ fill: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: 700 }} />
-                <PolarRadiusAxis domain={[0, 100]} tick={{ fill: 'rgba(255,255,255,0.65)', fontSize: 10 }} tickCount={5} />
-                <Radar dataKey="valor" stroke="#00C7BE" fill="#00C7BE" fillOpacity={0.32} strokeWidth={2} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-          {!hayEvaluacionReal && (
-            <p style={{ margin: '0 0 10px 0', fontSize: '11px', color: 'rgba(255,255,255,0.6)', fontWeight: '700', textAlign: 'center' }}>
-              Física/Técnica/Táctica: aún sin evaluaciones del staff registradas.
-            </p>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
-            <div className="stat-box">
-              <span className="stat-label">XP</span>
-              <strong className="stat-value">{xpActual} XP</strong>
-            </div>
-            <div className="stat-box">
-              <span className="stat-label">Puntos</span>
-              <strong className="stat-value">{puntosGamificacion}</strong>
-            </div>
-            <div className="stat-box">
-              <span className="stat-label">Racha</span>
-              <strong className="stat-value">{rachaActual} dias</strong>
-            </div>
-            <div className="stat-box">
-              <span className="stat-label">Siguiente nivel</span>
-              <strong className="stat-value">{xpParaSiguienteNivel} XP</strong>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', opacity: 0.85 }}>
-              <span>Progreso al proximo nivel</span>
-              <span>{progresoNivel}%</span>
-            </div>
-            <div style={{ height: '10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
-              <div style={{ width: `${progresoNivel}%`, height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg, #00C7BE 0%, #FFE066 100%)' }} />
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-            {insignias.map((insignia) => (
-              <span key={insignia} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '900' }}>
-                <BadgeCheck size={13} /> {insignia}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       {rolUsuario !== 'visita' && (
         <>
