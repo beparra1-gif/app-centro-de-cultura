@@ -578,6 +578,16 @@ export const jugadoresAPI = {
     return handleResponse(response);
   },
 
+  // Foto SOLO para la tarjeta coleccionable (foto_tarjeta_coleccion), separada
+  // de subirFoto (foto de perfil general) a pedido explicito del usuario.
+  subirFotoTarjeta: async (rut, formData) => {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}/foto-tarjeta`, {
+      method: 'POST',
+      body: formData,
+    });
+    return handleResponse(response);
+  },
+
   // Álbum de tarjetas coleccionadas (escaneadas del QR de colección de otros jugadores)
   getColeccion: async (rut) => {
     const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}/coleccion`);

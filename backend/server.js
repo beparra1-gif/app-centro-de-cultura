@@ -1422,6 +1422,14 @@ const ensureJugadoresExtendedColumns = async () => {
   // marcarlo en vez de dejar la celda de mensualidad en blanco.
   await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS exento_mensualidad BOOLEAN DEFAULT false`);
   console.log('🎓 Columna exento_mensualidad de jugadores verificada');
+
+  // foto_jugador es la foto de perfil "oficial" del deportista, usada en
+  // varias pantallas (avatar del header, Tesoreria, Tarjeta Oficial CCF).
+  // foto_tarjeta_coleccion es una foto DISTINTA, solo para la tarjeta
+  // coleccionable con marco metalico — el jugador pidio explicitamente que
+  // subir una no cambiara la otra.
+  await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS foto_tarjeta_coleccion TEXT`);
+  console.log('🃏 Columna foto_tarjeta_coleccion de jugadores verificada');
 };
 
 // beca empezó como BOOLEAN (sí/no) pero el club maneja porcentajes de rebaja
@@ -4674,9 +4682,11 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
   }
 });
 
-// POST: el apoderado dueño del jugador (o admin) sube la foto para la
-// tarjeta coleccionable. Reutiliza el almacenamiento de logo_assets (misma
-// tabla BYTEA que ya sirve logos) en vez de crear otra tabla para lo mismo.
+// POST: el apoderado dueño del jugador (o admin) sube la foto de PERFIL
+// general del deportista (foto_jugador) — la que se usa en el avatar del
+// header, Tesoreria, Tarjeta Oficial CCF, etc. Reutiliza el almacenamiento
+// de logo_assets (misma tabla BYTEA que ya sirve logos) en vez de crear
+// otra tabla para lo mismo. Distinta de /foto-tarjeta (ver mas abajo).
 app.post('/api/jugadores/:rut/foto', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), uploadLogoMemoria.single('archivo'), async (req, res) => {
   try {
     if (!req.file) {
@@ -4705,6 +4715,41 @@ app.post('/api/jugadores/:rut/foto', authenticate, requireApoderadoDeJugadorOMod
     return res.json(result.rows[0]);
   } catch (error) {
     console.error('[POST /api/jugadores/:rut/foto]', error);
+    return res.status(500).json({ error: error.message || 'No se pudo subir la foto.' });
+  }
+});
+
+// POST: foto SOLO para la tarjeta coleccionable (foto_tarjeta_coleccion) —
+// campo separado de foto_jugador a pedido explicito del usuario: subir una
+// foto para la tarjeta no debe cambiar la foto de perfil general.
+app.post('/api/jugadores/:rut/foto-tarjeta', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), uploadLogoMemoria.single('archivo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Debes seleccionar una foto.' });
+    }
+
+    const rut = String(req.params.rut || '').trim();
+    const extension = path.extname(req.file.originalname).toLowerCase() || '.png';
+    const filename = `foto-tarjeta-${normalizarRutParaComparar(rut)}-${Date.now()}${extension}`;
+
+    await pool.query(
+      `INSERT INTO logo_assets (nombre, tipo, filename, mime_type, file_data)
+       VALUES ($1, 'foto-tarjeta-coleccion', $2, $3, $4)`,
+      [`Foto tarjeta ${rut}`, filename, req.file.mimetype, req.file.buffer]
+    );
+
+    const urlFoto = `/api/logo-assets/file/${encodeURIComponent(filename)}`;
+    const result = await pool.query(
+      `UPDATE jugadores SET foto_tarjeta_coleccion = $1, updated_at = NOW() WHERE rut_jugador = $2 RETURNING *`,
+      [urlFoto, rut]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Jugador no encontrado.' });
+    }
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('[POST /api/jugadores/:rut/foto-tarjeta]', error);
     return res.status(500).json({ error: error.message || 'No se pudo subir la foto.' });
   }
 });

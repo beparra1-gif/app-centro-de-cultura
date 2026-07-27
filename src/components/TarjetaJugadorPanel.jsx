@@ -146,6 +146,11 @@ function TarjetaJugadorPanel({
   const [archivoFoto, setArchivoFoto] = useState(null);
   const [previewFoto, setPreviewFoto] = useState('');
   const [procesandoFoto, setProcesandoFoto] = useState(false);
+  // El mismo modal/editor de encuadre sirve para dos fotos DISTINTAS del
+  // jugador: 'perfil' (foto_jugador, general, botón de la Tarjeta Oficial)
+  // y 'coleccion' (foto_tarjeta_coleccion, botón del panel de la tarjeta
+  // coleccionable) — nunca deben pisarse entre sí.
+  const [modoFotoObjetivo, setModoFotoObjetivo] = useState('coleccion');
   // Editor de encuadre: el jugador elige qué parte de SU foto (horizontal,
   // vertical, chica, lo que sea) se ve dentro de la ventana de la tarjeta,
   // arrastrando para mover y con el slider para acercar/alejar — en vez de
@@ -401,12 +406,18 @@ function TarjetaJugadorPanel({
   // jugador pueda elegir/ajustar la foto sabiendo cómo va a calzar.
   const fotoAspecto = (EXPORT_WIDTH * (100 - marcoActivo.foto.left - marcoActivo.foto.right))
     / (EXPORT_HEIGHT * (100 - marcoActivo.foto.top - marcoActivo.foto.bottom));
-  // Editor de encuadre: caja de recorte en pantalla (px) con la misma
-  // proporción real de la ventana de la tarjeta. cropEscalaBase es el zoom
-  // mínimo para que la foto cubra toda la caja (equivalente a objectFit:
-  // cover en zoom 1); cropZoom (>=1) lo multiplica cuando el jugador acerca.
+  // Proporción del recuadro de foto en la Tarjeta Oficial (official-player-
+  // photo-frame, width:180 height:214 más abajo) — el editor de encuadre
+  // reutiliza la misma caja para las dos fotos, así que necesita saber cuál
+  // proporción usar según modoFotoObjetivo.
+  const FOTO_ASPECTO_PERFIL = 180 / 214;
+  const aspectoActivo = modoFotoObjetivo === 'perfil' ? FOTO_ASPECTO_PERFIL : fotoAspecto;
+  // Editor de encuadre: caja de recorte en pantalla (px) con la proporción
+  // real de la ventana destino. cropEscalaBase es el zoom mínimo para que la
+  // foto cubra toda la caja (equivalente a objectFit:cover en zoom 1);
+  // cropZoom (>=1) lo multiplica cuando el jugador acerca.
   const CROP_BOX_ANCHO = 240;
-  const CROP_BOX_ALTO = Math.round(CROP_BOX_ANCHO / fotoAspecto);
+  const CROP_BOX_ALTO = Math.round(CROP_BOX_ANCHO / aspectoActivo);
   const cropEscalaBase = fotoNatural.w > 0
     ? Math.max(CROP_BOX_ANCHO / fotoNatural.w, CROP_BOX_ALTO / fotoNatural.h)
     : 1;
@@ -419,13 +430,15 @@ function TarjetaJugadorPanel({
   const rutValidacion = rolUsuario === 'visita' ? 'VISITA' : (pupiloActivo.rut || 'SIN-RUT');
   const clubNombre = pupiloActivo.club_nombre || pupiloActivo.club_procedencia || (rolUsuario === 'visita' ? 'Club invitado' : 'Centro de Cultura Física');
   const clubLogoUrl = pupiloActivo.club_logo_url || '/logos/club-logo.png';
-  // La Tarjeta usa SOLO la foto subida específicamente para ella
-  // (detalleJugador.foto_jugador, fresca desde /api/jugadores/:rut — no la
-  // versión de pupiloActivo, que puede venir mezclada con el roster de otros
-  // paneles). Nunca cae a foto_perfil_url: esa es la foto de la cuenta/perfil
-  // general (Onboarding), y el jugador puede querer una distinta para la
-  // tarjeta coleccionable.
+  // foto_jugador es la foto de perfil GENERAL del deportista (se usa en el
+  // avatar del header, Tesorería, la Tarjeta Oficial CCF, etc. — ver App.jsx
+  // y PerfilTesoreriaPanel). foto_tarjeta_coleccion es un campo aparte, solo
+  // para la tarjeta con marco metálico: el jugador pidió explícitamente que
+  // subir una no cambie la otra, ya que antes compartían el mismo campo.
+  // Ambas se leen frescas desde detalleJugador (/api/jugadores/:rut), no de
+  // pupiloActivo, que puede venir mezclado con el roster de otros paneles.
   const fotoPrincipal = resolverUrlFoto(detalleJugador?.foto_jugador || '');
+  const fotoColeccion = resolverUrlFoto(detalleJugador?.foto_tarjeta_coleccion || '');
   const disenoActivo = DISENOS_MARCO[detalleJugador?.diseno_marco || pupiloActivo.diseno_marco || 'clasico'] || DISENOS_MARCO.clasico;
   const descriptorGenero = `${pupiloActivo.genero || ''} ${pupiloActivo.sexo || ''} ${pupiloActivo.rama || ''}`.toLowerCase();
   const esFemenino = descriptorGenero.includes('femen') || descriptorGenero.includes('mujer');
@@ -609,6 +622,7 @@ function TarjetaJugadorPanel({
     setFotoNatural({ w: 0, h: 0 });
     setCropZoom(1);
     setCropOffset({ x: 0, y: 0 });
+    setModoFotoObjetivo('coleccion');
   };
 
   const handleSeleccionArchivoFoto = async (file) => {
@@ -659,12 +673,11 @@ function TarjetaJugadorPanel({
 
   // Dibuja en un canvas exactamente el encuadre que el jugador armó
   // (arrastre + zoom) y lo sube ya recortado a la proporción real de la
-  // tarjeta — así la foto de portada/perfil del jugador (foto_perfil_url,
-  // en Onboarding) queda completamente aparte: esto solo toca foto_jugador.
+  // ventana destino (distinta según modoFotoObjetivo).
   const recortarFotoParaSubir = async () => {
     const img = await cargarImagenDesdeBlob(archivoFoto);
     const TARGET_ANCHO = 700;
-    const TARGET_ALTO = Math.round(TARGET_ANCHO / fotoAspecto);
+    const TARGET_ALTO = Math.round(TARGET_ANCHO / aspectoActivo);
     const factor = TARGET_ANCHO / CROP_BOX_ANCHO;
     const canvas = document.createElement('canvas');
     canvas.width = TARGET_ANCHO;
@@ -684,10 +697,16 @@ function TarjetaJugadorPanel({
     setProcesandoFoto(true);
     try {
       const blobRecortado = await recortarFotoParaSubir();
-      const archivoParaSubir = new File([blobRecortado], 'foto-tarjeta.jpg', { type: 'image/jpeg' });
+      const nombreArchivo = modoFotoObjetivo === 'perfil' ? 'foto-perfil.jpg' : 'foto-tarjeta.jpg';
+      const archivoParaSubir = new File([blobRecortado], nombreArchivo, { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('archivo', archivoParaSubir);
-      const actualizado = await api.jugadoresAPI.subirFoto(rut, formData);
+      // Dos campos separados a pedido del usuario: subir la foto de la
+      // tarjeta coleccionable NUNCA debe cambiar la foto de perfil general,
+      // y viceversa.
+      const actualizado = modoFotoObjetivo === 'perfil'
+        ? await api.jugadoresAPI.subirFoto(rut, formData)
+        : await api.jugadoresAPI.subirFotoTarjeta(rut, formData);
       setDetalleJugador((prev) => ({ ...prev, ...actualizado }));
       showToast({ message: 'Foto actualizada correctamente.', type: 'success' });
       cerrarModalFoto();
@@ -732,8 +751,8 @@ function TarjetaJugadorPanel({
           top: `${marcoActivo.foto.top}%`, bottom: `${marcoActivo.foto.bottom}%`,
           overflow: 'hidden', background: '#F4F1EC', zIndex: 0,
         }}>
-          {fotoPrincipal ? (
-            <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.08) saturate(1.15)' }} />
+          {fotoColeccion ? (
+            <img src={fotoColeccion} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.08) saturate(1.15)' }} />
           ) : (
             <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: s(8), color: '#9A9186' }}>
               {esFemenino ? <Venus size={Math.max(14, 48 * escala)} /> : <Mars size={Math.max(14, 48 * escala)} />}
@@ -1010,8 +1029,8 @@ function TarjetaJugadorPanel({
               {puedeEditarDatosJugador && rolUsuario !== 'visita' && (
                 <button
                   type="button"
-                  onClick={() => setMostrarSubirFoto(true)}
-                  title="Cambiar foto"
+                  onClick={() => { setModoFotoObjetivo('perfil'); setMostrarSubirFoto(true); }}
+                  title="Cambiar foto de perfil"
                   style={{
                     position: 'absolute', bottom: '2px', right: '2px', width: '34px', height: '34px', borderRadius: '999px',
                     background: 'var(--azul-electrico)', color: 'white', border: '2px solid white', cursor: 'pointer',
@@ -1139,8 +1158,8 @@ function TarjetaJugadorPanel({
           <h4 className="collection-title" style={{ margin: 0, fontSize: '15px', fontWeight: '900', color: 'var(--azul-marino)' }}>Ver mi tarjeta de coleccion</h4>
           <div style={{ display: 'flex', gap: '8px' }}>
             {puedeEditarDatosJugador && rolUsuario !== 'visita' && (
-              <button className="player-action-btn" onClick={() => setMostrarSubirFoto(true)} style={{ padding: '8px 12px' }}>
-                <Camera size={14} /> {fotoPrincipal ? 'Cambiar foto' : 'Subir foto'}
+              <button className="player-action-btn" onClick={() => { setModoFotoObjetivo('coleccion'); setMostrarSubirFoto(true); }} style={{ padding: '8px 12px' }}>
+                <Camera size={14} /> {fotoColeccion ? 'Cambiar foto' : 'Subir foto'}
               </button>
             )}
             <button className="player-action-btn alt" onClick={descargarTarjetaColeccionActual} style={{ padding: '8px 12px' }}>
@@ -1328,14 +1347,16 @@ function TarjetaJugadorPanel({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h3 style={{ margin: 0, fontSize: '17px' }}>Foto para la tarjeta</h3>
+              <h3 style={{ margin: 0, fontSize: '17px' }}>{modoFotoObjetivo === 'perfil' ? 'Foto de perfil' : 'Foto para la tarjeta'}</h3>
               <button onClick={cerrarModalFoto} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }} aria-label="Cerrar">
                 <X size={20} />
               </button>
             </div>
 
             <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
-              Elige la foto y arrastra/acerca para elegir qué parte se ve en la tarjeta. Esta foto es solo para la tarjeta: no cambia la foto de perfil del jugador.
+              {modoFotoObjetivo === 'perfil'
+                ? 'Elige la foto y arrastra/acerca para elegir qué parte se ve. Esta es tu foto de perfil general: no cambia la foto de la tarjeta coleccionable.'
+                : 'Elige la foto y arrastra/acerca para elegir qué parte se ve en la tarjeta. Esta foto es solo para la tarjeta: no cambia la foto de perfil del jugador.'}
             </p>
 
             <input
