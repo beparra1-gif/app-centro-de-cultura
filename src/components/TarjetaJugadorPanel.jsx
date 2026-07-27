@@ -12,8 +12,32 @@ import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import { obtenerPorcentajeBeca } from '../utils/beca';
 
+// Los 5 marcos (public/tarjetas-marcos/) son ahora PNG sin fondo (transparente
+// fuera y dentro del marco, 2800x4968 los 5 por igual), así que se usa la
+// proporción real de esa imagen — ya no hace falta el recorte 106%/-3% que
+// se usaba antes para tapar un borde negro de mármol del recorte viejo.
 const EXPORT_WIDTH = 750;
-const EXPORT_HEIGHT = 1050;
+const EXPORT_HEIGHT = Math.round(EXPORT_WIDTH * (4968 / 2800)); // 1330
+
+// Marco real (PNG que mandó el usuario) en vez de un marco dibujado en CSS —
+// el usuario pidió que el diseño sea exacto al que mandó, no una imitación.
+// foto: bordes del hueco transparente real DENTRO de cada PNG. escudo: el
+// círculo metálico ya dibujado en el marco (arriba a la izquierda), donde va
+// el logo del club. Ambos medidos por pixel-scan automático (canal alfa) por
+// tier, porque aunque comparten tamaño no comparten exactamente el mismo
+// diseño de marco.
+const MARCO_POR_RAREZA = {
+  // foto: margen medido por pixel-scan MENOS ~1pt de "sangrado" extra hacia
+  // afuera en los 4 lados, para que la ventana quede bien metida debajo del
+  // bisel del marco (que va encima) y no quede una línea delgada de
+  // antialiasing del PNG asomando entre la foto y el metal.
+  BRONCE: { src: '/tarjetas-marcos/bronce.png', foto: { left: 8.29, right: 7.68, top: 4.01, bottom: 3.53 }, escudo: { left: 10.04, top: 5.97, diametro: 27.45 } },
+  PLATA: { src: '/tarjetas-marcos/plata.png', foto: { left: 8.32, right: 7.93, top: 3.87, bottom: 3.71 }, escudo: { left: 9.73, top: 5.91, diametro: 27.92 } },
+  ORO: { src: '/tarjetas-marcos/oro.png', foto: { left: 7.82, right: 8.25, top: 4.03, bottom: 3.55 }, escudo: { left: 9.44, top: 6.02, diametro: 28.03 } },
+  PLATINO: { src: '/tarjetas-marcos/platino.png', foto: { left: 8.89, right: 8.61, top: 4.64, bottom: 4.05 }, escudo: { left: 8.93, top: 5.31, diametro: 29.36 } },
+  DIAMANTE: { src: '/tarjetas-marcos/diamante.png', foto: { left: 8.86, right: 8.61, top: 4.54, bottom: 4.03 }, escudo: { left: 9.20, top: 5.34, diametro: 29.06 } },
+  VISITA: { src: '/tarjetas-marcos/plata.png', foto: { left: 8.32, right: 7.93, top: 3.87, bottom: 3.71 }, escudo: { left: 9.73, top: 5.91, diametro: 27.92 } },
+};
 
 // Rutas que el backend devuelve como /api/logo-assets/file/... (guardado
 // BYTEA en DB) necesitan resolverse contra el origen del backend, no del
@@ -38,8 +62,13 @@ const cargarImagenDesdeBlob = (blob) => new Promise((resolve, reject) => {
 // misma. Todo corre en el navegador (canvas), sin ningun servicio de IA.
 const crearFotoConFondoProfesional = async (blobSinFondo) => {
   const img = await cargarImagenDesdeBlob(blobSinFondo);
-  const ANCHO = 720;
-  const ALTO = 900;
+  // Mismo aspecto ancho/alto que la ventana real de foto dentro del marco
+  // (~0.52), para que este fondo profesional calce igual de bien que
+  // cualquier otra foto — antes era 720x900 (0.8), mucho más ancho que la
+  // ventana real, así que la foto quedaba recortada por los costados.
+  const ALTO = 1100;
+  const ANCHO = Math.round(ALTO * ((EXPORT_WIDTH * (100 - MARCO_POR_RAREZA.BRONCE.foto.left - MARCO_POR_RAREZA.BRONCE.foto.right))
+    / (EXPORT_HEIGHT * (100 - MARCO_POR_RAREZA.BRONCE.foto.top - MARCO_POR_RAREZA.BRONCE.foto.bottom))));
   const canvas = document.createElement('canvas');
   canvas.width = ANCHO;
   canvas.height = ALTO;
@@ -385,7 +414,6 @@ function TarjetaJugadorPanel({
   const nombreCompletoDisplay = nombreCompletoReal || (rolUsuario === 'visita' ? 'INVITADO' : 'JUGADOR');
   const partesNombre = String(nombreCompletoDisplay || '').trim().split(/\s+/).filter(Boolean);
   const nombreDisplay = partesNombre[0] || (rolUsuario === 'visita' ? 'Invitado' : 'Jugador');
-  const apellidoDisplay = (partesNombre.slice(1).join(' ') || partesNombre[0] || (rolUsuario === 'visita' ? 'TORNEO' : '')).toUpperCase();
   const anioNacimiento = (
     pupiloActivo.anioNacimiento
     || pupiloActivo.anio_nacimiento
@@ -438,6 +466,13 @@ function TarjetaJugadorPanel({
     };
   }
 
+  const marcoActivo = MARCO_POR_RAREZA[textoRareza] || MARCO_POR_RAREZA.BRONCE;
+  // Proporción real (ancho/alto) de la ventana donde se recorta la foto
+  // dentro del marco — se usa para que la vista previa al subir la foto
+  // muestre el mismo recorte que va a quedar en la tarjeta final, y el
+  // jugador pueda elegir/ajustar la foto sabiendo cómo va a calzar.
+  const fotoAspecto = (EXPORT_WIDTH * (100 - marcoActivo.foto.left - marcoActivo.foto.right))
+    / (EXPORT_HEIGHT * (100 - marcoActivo.foto.top - marcoActivo.foto.bottom));
   const rutValidacion = rolUsuario === 'visita' ? 'VISITA' : (pupiloActivo.rut || 'SIN-RUT');
   const clubNombre = pupiloActivo.club_nombre || pupiloActivo.club_procedencia || (rolUsuario === 'visita' ? 'Club invitado' : 'Centro de Cultura Física');
   const clubLogoUrl = pupiloActivo.club_logo_url || '/logos/club-logo.png';
@@ -535,8 +570,11 @@ function TarjetaJugadorPanel({
       backgroundColor: null,
       scale: 2,
       useCORS: true,
-      width: EXPORT_WIDTH,
-      height: EXPORT_HEIGHT,
+      // Sin width/height fijo: el frente ahora mide el marco real + el
+      // recuadro de datos debajo (alto variable), así que se deja que
+      // html2canvas mida el alto real en vez de recortarlo a EXPORT_HEIGHT.
+      width: targetRef.current.offsetWidth,
+      height: targetRef.current.offsetHeight,
     });
   };
 
@@ -662,6 +700,129 @@ function TarjetaJugadorPanel({
     } finally {
       setProcesandoFoto(false);
     }
+  };
+
+  // Dibuja el frente de la tarjeta (marco real + foto + escudo + nivel/EXP +
+  // datos al pie) una sola vez, a cualquier tamaño — la vista chica de "Ver
+  // mi tarjeta de colección" y el export que se descarga usan EXACTAMENTE
+  // esta misma función, solo con un ancho distinto. Antes eran dos diseños
+  // separados que se iban desalineando cada vez que se ajustaba uno solo —
+  // el usuario pidió que la vista previa sea idéntica a lo que se descarga.
+  const renderFrenteTarjeta = ({ ancho, innerRef, sombra = false }) => {
+    const escala = ancho / EXPORT_WIDTH;
+    const alto = EXPORT_HEIGHT * escala;
+    const s = (v) => `${Math.max(1, v * escala)}px`;
+    return (
+      <div
+        ref={innerRef}
+        style={{
+          boxSizing: 'border-box',
+          width: `${ancho}px`,
+          height: `${alto}px`,
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: s(24),
+          background: 'none',
+          boxShadow: sombra ? '0 12px 24px rgba(15,23,42,0.3)' : undefined,
+          filter: disenoActivo.extraFilter || undefined,
+        }}
+      >
+        {/* Foto, DETRÁS del marco — así el borde metálico real del marco tapa
+            el corte recto de la foto y se ve como una foto insertada de
+            verdad, no una pegada encima. */}
+        <div style={{
+          position: 'absolute',
+          left: `${marcoActivo.foto.left}%`, right: `${marcoActivo.foto.right}%`,
+          top: `${marcoActivo.foto.top}%`, bottom: `${marcoActivo.foto.bottom}%`,
+          overflow: 'hidden', background: '#F4F1EC', zIndex: 0,
+        }}>
+          {fotoPrincipal ? (
+            <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.08) saturate(1.15)' }} />
+          ) : (
+            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: s(8), color: '#9A9186' }}>
+              {esFemenino ? <Venus size={Math.max(14, 48 * escala)} /> : <Mars size={Math.max(14, 48 * escala)} />}
+              <span style={{ fontSize: s(11), fontWeight: '800' }}>SIN FOTO</span>
+            </div>
+          )}
+
+
+          {/* Datos al pie: sin placa de fondo, solo letra grande con sombra
+              fuerte para que se lea encima de cualquier foto. Degradado más
+              alto y con más escalones para que la transición se note menos
+              como un "corte" cuando todavía no hay foto real (placeholder
+              liso) — con foto real se nota aún menos. */}
+          <div style={{
+            position: 'absolute', left: 0, right: 0, bottom: 0, height: '52%',
+            padding: `${s(10)} ${s(14)} ${s(52)}`, color: 'white', textAlign: 'center',
+            display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+            textShadow: '0 2px 8px rgba(0,0,0,0.95), 0 0 18px rgba(0,0,0,0.8)',
+            background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.12) 20%, rgba(0,0,0,0.32) 45%, rgba(0,0,0,0.55) 70%, rgba(0,0,0,0.72) 100%)',
+          }}>
+            <h1 style={{ margin: 0, fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: nombreCompletoDisplay.length > 20 ? s(40) : s(52), lineHeight: 1.15, letterSpacing: '0.4px', textTransform: 'uppercase' }}>{nombreCompletoDisplay}</h1>
+            <div style={{ marginTop: s(22), display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: s(4), fontSize: s(15), fontWeight: '800', textTransform: 'uppercase', opacity: 0.95 }}>
+              <div>Nivel<strong style={{ display: 'block', fontSize: s(36), fontWeight: '900' }}>{rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</strong></div>
+              <div>Posición<strong style={{ display: 'block', fontSize: s(36), fontWeight: '900' }}>{rolUsuario === 'visita' ? 'N/A' : (pupiloActivo.posicion || 'N/A')}</strong></div>
+              <div>Estatura<strong style={{ display: 'block', fontSize: s(36), fontWeight: '900' }}>{pupiloActivo.estatura || 'N/A'}</strong></div>
+              <div>Año<strong style={{ display: 'block', fontSize: s(36), fontWeight: '900' }}>{anioNacimiento || 'N/A'}</strong></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Marco: el PNG real que mandó el usuario (public/tarjetas-marcos/),
+            ENCIMA de la foto — su hueco es transparente así que la foto se ve
+            igual, pero el borde/bisel real del marco queda por delante,
+            tapando cualquier corte imperfecto de la foto. pointerEvents:none
+            para que el botón de cambiar foto (debajo) se pueda seguir
+            clickeando. */}
+        <img
+          src={marcoActivo.src}
+          alt=""
+          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'fill', zIndex: 1, pointerEvents: 'none' }}
+        />
+
+        {/* Escudo del club, calzado dentro del círculo metálico ya dibujado
+            en el marco — sin fondo propio. El logo va un poco más chico que
+            el disco real (padding) para que se siga viendo el anillo
+            metálico del marco alrededor, como una moneda con borde —
+            si el logo tapa el disco entero no se nota que es un círculo
+            de metal. */}
+        <div style={{
+          position: 'absolute', left: `${marcoActivo.escudo.left}%`, top: `${marcoActivo.escudo.top}%`, width: `${marcoActivo.escudo.diametro}%`, aspectRatio: '1 / 1',
+          borderRadius: '50%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: `${ancho * (marcoActivo.escudo.diametro / 100) * 0.09}px`, boxSizing: 'border-box',
+          zIndex: 2,
+        }}>
+          {clubLogoUrl ? (
+            <img src={clubLogoUrl} alt={`Escudo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+          ) : (
+            <span style={{ fontSize: s(20), fontWeight: '900', color: '#333' }}>{clubIniciales}</span>
+          )}
+        </div>
+
+        {/* Nivel / EXP / n° de tarjeta — sin placa de fondo, solo letra con
+            sombra directamente sobre el marco/foto, como en la referencia
+            del usuario: Nivel y Exp en dos columnas lado a lado, serie debajo.
+            Bien grande — el usuario lo marcó como "se ve muy pequeño". */}
+        <div style={{
+          position: 'absolute', top: `${marcoActivo.foto.top + 3}%`, right: `${marcoActivo.foto.right + 6}%`,
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: s(5),
+          color: 'white', textShadow: '0 2px 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.75)',
+          zIndex: 2,
+        }}>
+          <div style={{ display: 'flex', gap: s(28) }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: s(19), fontWeight: '800', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Nivel</div>
+              <div style={{ fontSize: s(50), fontWeight: '900', lineHeight: 1.1 }}>{rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: s(19), fontWeight: '800', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Exp</div>
+              <div style={{ fontSize: s(50), fontWeight: '900', lineHeight: 1.1 }}>{rolUsuario === 'visita' ? '—' : xpActual}</div>
+            </div>
+          </div>
+          <div style={{ fontSize: s(26), fontWeight: '900', marginTop: s(2) }}>#{serialTexto}</div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -993,68 +1154,7 @@ function TarjetaJugadorPanel({
 
         <div className="collection-preview-wrap" style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
           {vistaColeccion === 'frente' ? (
-            <div className="player-collection-preview preview-front" style={{
-              width: '220px',
-              aspectRatio: '5 / 7',
-              borderRadius: '16px',
-              padding: '12px',
-              background: estiloRareza.background,
-              color: 'white',
-              border: `2px solid ${estiloRareza.border}`,
-              boxShadow: [`0 12px 24px rgba(15,23,42,0.25)`, estiloRareza.glow].filter(Boolean).join(', '),
-              display: 'grid',
-              gridTemplateRows: 'auto 1fr auto'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{
-                  width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0,
-                  background: 'rgba(255,255,255,0.2)', border: `2px solid ${estiloRareza.accent}`,
-                  padding: '3px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {clubLogoUrl ? (
-                    <img src={clubLogoUrl} alt={`Escudo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '50%' }} />
-                  ) : (
-                    <span style={{ fontSize: '9px', fontWeight: '900' }}>{clubIniciales}</span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px', fontSize: '9px', fontWeight: '900', textTransform: 'uppercase' }}>
-                  <span>{textoRareza}</span>
-                  <span>Nivel {rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</span>
-                  <span>#{serialTexto}</span>
-                </div>
-              </div>
-              <div style={{ position: 'relative', marginTop: '8px', borderRadius: '10px', overflow: 'hidden', border: `2px solid ${estiloRareza.accent}`, background: 'rgba(255,255,255,0.14)' }}>
-                {fotoPrincipal ? (
-                  <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.08) saturate(1.15)' }} />
-                ) : (
-                  <div style={{ height: '100%', minHeight: '110px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {esFemenino ? <Venus size={24} /> : <Mars size={24} />}
-                  </div>
-                )}
-                {puedeEditarDatosJugador && rolUsuario !== 'visita' && (
-                  <button
-                    type="button"
-                    onClick={() => setMostrarSubirFoto(true)}
-                    title="Cambiar foto"
-                    style={{
-                      position: 'absolute', bottom: '6px', right: '6px', width: '28px', height: '28px', borderRadius: '999px',
-                      background: 'var(--azul-electrico)', color: 'white', border: '2px solid white', cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(0,0,0,0.3)',
-                    }}
-                  >
-                    <Camera size={13} />
-                  </button>
-                )}
-              </div>
-              <div style={{ textAlign: 'center', marginTop: '8px' }}>
-                <div style={{ fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: '13px', fontWeight: '900', textTransform: 'uppercase', lineHeight: 1.2 }}>
-                  {nombreDisplay} {apellidoDisplay}
-                </div>
-                <div style={{ marginTop: '4px', fontSize: '10px', fontWeight: '800', opacity: 0.9 }}>
-                  {rolUsuario === 'visita' ? 'N/A' : (pupiloActivo.posicion || 'N/A')} · {pupiloActivo.estatura || 'N/A'}
-                </div>
-              </div>
-            </div>
+            renderFrenteTarjeta({ ancho: 220, sombra: true })
           ) : (
             <div className="player-collection-preview preview-back" style={{
               width: '220px',
@@ -1330,9 +1430,14 @@ function TarjetaJugadorPanel({
             />
 
             {previewFoto && (
-              <div style={{ width: '160px', height: '190px', margin: '0 auto 12px', borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--borde-suave)', background: 'repeating-conic-gradient(#e5e5e5 0% 25%, #ffffff 0% 50%) 0 0 / 16px 16px' }}>
-                <img src={previewFoto} alt="Vista previa" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              </div>
+              <>
+                <div style={{ width: `${Math.round(150 * fotoAspecto)}px`, height: '150px', margin: '0 auto 6px', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--borde-suave)', background: 'repeating-conic-gradient(#e5e5e5 0% 25%, #ffffff 0% 50%) 0 0 / 16px 16px' }}>
+                  <img src={previewFoto} alt="Vista previa" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+                <p style={{ margin: '0 0 14px 0', fontSize: '11px', color: 'var(--texto-secundario)', textAlign: 'center' }}>
+                  Así se va a recortar en tu tarjeta. Si sale mal encuadrada, prueba con otra foto más vertical/centrada.
+                </p>
+              </>
             )}
 
             <label className="checkbox-label-row" style={{ marginBottom: '14px' }}>
@@ -1411,98 +1516,7 @@ function TarjetaJugadorPanel({
       )}
 
       <div aria-hidden="true" style={{ position: 'fixed', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>
-        <div
-          ref={cardFrontExportRef}
-          className="card"
-          style={{
-            boxSizing: 'border-box',
-            width: `${EXPORT_WIDTH}px`,
-            height: `${EXPORT_HEIGHT}px`,
-            borderRadius: '26px',
-            padding: '30px',
-            display: 'flex',
-            flexDirection: 'column',
-            position: 'relative',
-            background: `radial-gradient(circle at 18% -5%, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 40%), ${estiloRareza.pattern}, ${estiloRareza.background}`,
-            color: 'white',
-            border: disenoActivo.extraBorder || `3px solid ${estiloRareza.border}`,
-            boxShadow: [`0 20px 45px rgba(9, 20, 38, 0.32)`, estiloRareza.glow, disenoActivo.extraShadow].filter(Boolean).join(', '),
-            filter: disenoActivo.extraFilter || undefined,
-          }}
-        >
-          {estiloRareza.sparkle && (
-            <>
-              <Sparkles size={20} style={{ position: 'absolute', top: '112px', left: '18px', opacity: 0.8, color: '#F2FDFF', zIndex: 1 }} />
-              <Sparkles size={16} style={{ position: 'absolute', bottom: '166px', right: '18px', opacity: 0.7, color: '#F2FDFF', zIndex: 1 }} />
-            </>
-          )}
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div style={{
-              width: '84px', height: '84px', borderRadius: '50%', flexShrink: 0,
-              background: 'linear-gradient(180deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.12) 100%)',
-              border: `4px solid ${estiloRareza.accent}`,
-              boxShadow: '0 8px 18px rgba(0,0,0,0.3), inset 0 0 0 2px rgba(255,255,255,0.3)',
-              padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-            }}>
-              {clubLogoUrl ? (
-                <img src={clubLogoUrl} alt={`Escudo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '50%' }} />
-              ) : (
-                <span style={{ fontSize: '20px', fontWeight: '900' }}>{clubIniciales}</span>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-              <span style={{ fontSize: '12px', fontWeight: '900', padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>{textoRareza}</span>
-              <span style={{ fontSize: '12px', fontWeight: '900', padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>NIVEL {rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</span>
-              <span style={{ fontSize: '11px', fontWeight: '900', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)' }}>#{serialTexto}</span>
-            </div>
-          </div>
-
-          <div style={{
-            flex: 1, marginTop: '16px', borderRadius: '20px', overflow: 'hidden',
-            border: `3px solid ${estiloRareza.accent}`,
-            boxShadow: `inset 0 0 0 2px rgba(255,255,255,0.25), 0 10px 24px rgba(0,0,0,0.25)`,
-            background: 'rgba(255,255,255,0.12)',
-          }}>
-            {fotoPrincipal ? (
-              // filter: leve boost de contraste/saturación tipo "foto deportiva" — el
-              // realce fuerte con fondo de estadio ya existe en crearFotoConFondoProfesional
-              // (checkbox "Mejorar foto" al subirla); esto es solo un afinado adicional.
-              <img src={fotoPrincipal} alt={`Foto de ${nombreDisplay}`} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'contrast(1.08) saturate(1.15)' }} />
-            ) : (
-              <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                {esFemenino ? <Venus size={64} /> : <Mars size={64} />}
-                <span style={{ fontSize: '13px', fontWeight: '800' }}>SIN FOTO</span>
-              </div>
-            )}
-          </div>
-
-          <div style={{
-            marginTop: '16px', borderRadius: '18px', padding: '16px 18px',
-            background: 'rgba(10,15,25,0.32)', border: '1px solid rgba(255,255,255,0.18)',
-          }}>
-            <h1 style={{ margin: 0, fontFamily: 'Orbitron, Segoe UI, sans-serif', fontSize: nombreCompletoDisplay.length > 20 ? '26px' : '32px', lineHeight: 1.15, letterSpacing: '0.6px', textTransform: 'uppercase', textAlign: 'center' }}>{nombreCompletoDisplay}</h1>
-            <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-              <div className="stat-box">
-                <span className="stat-label">Nivel</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rolUsuario === 'visita' ? 'MAX' : nivelActualNumero}</strong>
-              </div>
-              <div className="stat-box">
-                <span className="stat-label">Posición</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{rolUsuario === 'visita' ? 'N/A' : (pupiloActivo.posicion || 'N/A')}</strong>
-              </div>
-              <div className="stat-box">
-                <span className="stat-label">Estatura</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{pupiloActivo.estatura || 'N/A'}</strong>
-              </div>
-              <div className="stat-box">
-                <span className="stat-label">Año</span>
-                <strong style={{ display: 'block', marginTop: '4px', fontSize: '13px' }}>{anioNacimiento || 'N/A'}</strong>
-              </div>
-            </div>
-          </div>
-        </div>
+        {renderFrenteTarjeta({ ancho: EXPORT_WIDTH, innerRef: cardFrontExportRef })}
 
         <div
           ref={cardBackRef}
