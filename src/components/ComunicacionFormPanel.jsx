@@ -3,6 +3,7 @@ import { Image, Link2, Megaphone, UserPlus, Video, X } from 'lucide-react';
 import * as api from '../api/client';
 import { getColorUrgencia } from '../utils/appHelpers';
 import { showToast } from '../utils/toast';
+import { esUrlVideoInterno, esUrlYoutube, obtenerThumbnailYoutube } from '../utils/contenidoMultimedia';
 
 const TIPOS_CONTENIDO = [
   { id: 'anuncio', label: 'Anuncio', Icon: Megaphone },
@@ -27,6 +28,8 @@ function ComunicacionFormPanel({
   // cambia lo que el usuario escribe/sube ahí según el tipo elegido.
   const [tipoContenido, setTipoContenido] = useState('anuncio');
   const [subiendoImagen, setSubiendoImagen] = useState(false);
+  const [subiendoVideo, setSubiendoVideo] = useState(false);
+  const [progresoVideo, setProgresoVideo] = useState(0);
 
   const agregarComunicacion = async () => {
     try {
@@ -60,6 +63,7 @@ function ComunicacionFormPanel({
       const tituloActual = formCom.titulo;
       setFormCom({ titulo: '', mensaje: '', audiencia: ['deportistas'], rama: 'General', categoria: 'General', tipo: 'Aviso', urgencia: 'Media', solicita_asistencia: false });
       setTipoContenido('anuncio');
+      setProgresoVideo(0);
       setMostrarFormComunicaciones(false);
       addNotificacionHistorial('comunicacion', 'Nueva Comunicacion', `"${tituloActual}" publicada correctamente`);
     } catch (error) {
@@ -82,6 +86,22 @@ function ComunicacionFormPanel({
       showToast({ message: `No se pudo subir la imagen: ${error.message}`, type: 'error' });
     } finally {
       setSubiendoImagen(false);
+    }
+  };
+
+  const subirVideo = async (archivo) => {
+    if (!archivo) return;
+    setSubiendoVideo(true);
+    setProgresoVideo(0);
+    try {
+      const formData = new FormData();
+      formData.append('archivo', archivo);
+      const resultado = await api.comunicacionesAPI.subirVideo(formData, { onProgress: setProgresoVideo });
+      setFormCom({ ...formCom, mensaje: resultado?.url || '' });
+    } catch (error) {
+      showToast({ message: `No se pudo subir el video: ${error.message}`, type: 'error' });
+    } finally {
+      setSubiendoVideo(false);
     }
   };
 
@@ -150,15 +170,51 @@ function ComunicacionFormPanel({
         <textarea placeholder="Mensaje/Descripcion" value={formCom.mensaje} onChange={e => setFormCom({ ...formCom, mensaje: e.target.value })} className="form-input mb-10" style={{ width: '100%', padding: '12px', borderRadius: '16px', border: '1px solid var(--borde-suave)', minHeight: '80px', fontSize: '14px', resize: 'vertical', background: 'rgba(255,255,255,0.92)' }} />
       )}
 
-      {(tipoContenido === 'enlace' || tipoContenido === 'video') && (
+      {tipoContenido === 'enlace' && (
         <input
           type="url"
-          placeholder={tipoContenido === 'video' ? 'Enlace de YouTube, Vimeo o video directo' : 'https://...'}
+          placeholder="https://..."
           value={formCom.mensaje}
           onChange={e => setFormCom({ ...formCom, mensaje: e.target.value })}
           className="form-input mb-10"
           style={{ width: '100%', padding: '12px', borderRadius: '16px', border: '1px solid var(--borde-suave)', fontSize: '14px', background: 'rgba(255,255,255,0.92)' }}
         />
+      )}
+
+      {tipoContenido === 'video' && (
+        <div className="mb-10">
+          <input
+            type="url"
+            placeholder="Pega un enlace de YouTube o Vimeo..."
+            value={esUrlVideoInterno(formCom.mensaje) ? '' : formCom.mensaje}
+            onChange={e => setFormCom({ ...formCom, mensaje: e.target.value })}
+            disabled={subiendoVideo}
+            className="form-input"
+            style={{ width: '100%', padding: '12px', borderRadius: '16px', border: '1px solid var(--borde-suave)', fontSize: '14px', background: 'rgba(255,255,255,0.92)' }}
+          />
+          <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', margin: '8px 0' }}>— o —</div>
+          <input
+            type="file"
+            accept="video/mp4,video/webm,video/quicktime"
+            className="form-input"
+            style={{ width: '100%', padding: '10px', borderRadius: '16px', border: '1px solid var(--borde-suave)', fontSize: '13px', background: 'rgba(255,255,255,0.92)' }}
+            onChange={(e) => subirVideo(e.target.files?.[0] || null)}
+            disabled={subiendoVideo}
+          />
+          {subiendoVideo && (
+            <span style={{ display: 'block', marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+              Subiendo video... {progresoVideo}%
+            </span>
+          )}
+          {!subiendoVideo && formCom.mensaje && esUrlVideoInterno(formCom.mensaje) && (
+            <video controls preload="metadata" style={{ width: '100%', maxHeight: '220px', marginTop: '8px', borderRadius: '12px', display: 'block', background: '#000' }}>
+              <source src={`${api.API_BASE_URL_CONFIG}/${formCom.mensaje}`} />
+            </video>
+          )}
+          {!subiendoVideo && formCom.mensaje && esUrlYoutube(formCom.mensaje) && (
+            <img src={obtenerThumbnailYoutube(formCom.mensaje)} alt="Miniatura del video" style={{ marginTop: '8px', maxWidth: '100%', maxHeight: '160px', borderRadius: '12px', display: 'block' }} />
+          )}
+        </div>
       )}
 
       {tipoContenido === 'imagen' && (

@@ -10,6 +10,7 @@ import {
   Filter,
   History,
   Image,
+  Link2,
   Megaphone,
   Pencil,
   Phone,
@@ -23,11 +24,13 @@ import {
   User,
   UserPlus,
   Users,
+  Video,
   X,
   XSquare,
 } from 'lucide-react';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
+import { esUrlVideoInterno, esUrlYoutube, obtenerThumbnailYoutube } from '../utils/contenidoMultimedia';
 import { confirmAction } from '../utils/confirmDialog';
 import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
@@ -358,6 +361,47 @@ function SuperAdminPanel({
   });
   const [publicandoForm, setPublicandoForm] = useState(false);
   const [publicacionEditandoId, setPublicacionEditandoId] = useState(null);
+  // Igual que en ComunicacionFormPanel (el formulario de Publicar desde el
+  // Muro): decide qué widget de entrada mostrar y qué termina en
+  // formPublicacion.mensaje según el tipo elegido — acá también hacía falta
+  // poder subir imagen/video en vez de solo texto libre.
+  const [tipoContenidoPublicacion, setTipoContenidoPublicacion] = useState('texto');
+  const [subiendoImagenPublicacion, setSubiendoImagenPublicacion] = useState(false);
+  const [subiendoVideoPublicacion, setSubiendoVideoPublicacion] = useState(false);
+  const [progresoVideoPublicacion, setProgresoVideoPublicacion] = useState(0);
+
+  const subirImagenPublicacion = async (archivo) => {
+    if (!archivo) return;
+    setSubiendoImagenPublicacion(true);
+    try {
+      const formData = new FormData();
+      formData.append('nombre', `comunicacion-${Date.now()}`);
+      formData.append('tipo', 'comunicacion');
+      formData.append('archivo', archivo);
+      const resultado = await api.assetsAPI.uploadLogo(formData);
+      setFormPublicacion((p) => ({ ...p, mensaje: resultado?.url || '' }));
+    } catch (error) {
+      showToast({ message: `No se pudo subir la imagen: ${error.message}`, type: 'error' });
+    } finally {
+      setSubiendoImagenPublicacion(false);
+    }
+  };
+
+  const subirVideoPublicacion = async (archivo) => {
+    if (!archivo) return;
+    setSubiendoVideoPublicacion(true);
+    setProgresoVideoPublicacion(0);
+    try {
+      const formData = new FormData();
+      formData.append('archivo', archivo);
+      const resultado = await api.comunicacionesAPI.subirVideo(formData, { onProgress: setProgresoVideoPublicacion });
+      setFormPublicacion((p) => ({ ...p, mensaje: resultado?.url || '' }));
+    } catch (error) {
+      showToast({ message: `No se pudo subir el video: ${error.message}`, type: 'error' });
+    } finally {
+      setSubiendoVideoPublicacion(false);
+    }
+  };
 
   // --- RESULTADOS DE PARTIDOS ---
   const [formResultado, setFormResultado] = useState({
@@ -1227,6 +1271,8 @@ function SuperAdminPanel({
 
       setFormPublicacion({ titulo: '', mensaje: '', tipo: 'Aviso', rama: 'General', categoria: 'General', urgencia: 'Media', solicita_asistencia: false });
       setPublicacionEditandoId(null);
+      setTipoContenidoPublicacion('texto');
+      setProgresoVideoPublicacion(0);
       if (typeof onComunicacionesChanged === 'function') {
         await onComunicacionesChanged();
       }
@@ -4040,14 +4086,94 @@ function SuperAdminPanel({
               </div>
             </div>
             <div className="form-group" style={{ marginBottom: '12px' }}>
-              <label>Mensaje / Descripción *</label>
-              <textarea
-                className="form-input"
-                rows={4}
-                value={formPublicacion.mensaje}
-                onChange={(e) => setFormPublicacion((p) => ({ ...p, mensaje: e.target.value }))}
-                placeholder="Escribe el cuerpo del anuncio o noticia..."
-              />
+              <label>Contenido *</label>
+              <div style={{ display: 'flex', gap: '8px', margin: '6px 0 10px', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'texto', label: 'Texto', Icon: Megaphone },
+                  { id: 'enlace', label: 'Enlace', Icon: Link2 },
+                  { id: 'imagen', label: 'Imagen', Icon: Image },
+                  { id: 'video', label: 'Video', Icon: Video },
+                ].map(({ id, label, Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`segment-btn ${tipoContenidoPublicacion === id ? 'active' : ''}`}
+                    onClick={() => setTipoContenidoPublicacion(id)}
+                  >
+                    <Icon size={14} /> {label}
+                  </button>
+                ))}
+              </div>
+
+              {tipoContenidoPublicacion === 'texto' && (
+                <textarea
+                  className="form-input"
+                  rows={4}
+                  value={formPublicacion.mensaje}
+                  onChange={(e) => setFormPublicacion((p) => ({ ...p, mensaje: e.target.value }))}
+                  placeholder="Escribe el cuerpo del anuncio o noticia..."
+                />
+              )}
+
+              {tipoContenidoPublicacion === 'enlace' && (
+                <input
+                  type="url"
+                  className="form-input"
+                  placeholder="https://..."
+                  value={formPublicacion.mensaje}
+                  onChange={(e) => setFormPublicacion((p) => ({ ...p, mensaje: e.target.value }))}
+                />
+              )}
+
+              {tipoContenidoPublicacion === 'imagen' && (
+                <>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                    className="form-input"
+                    onChange={(e) => subirImagenPublicacion(e.target.files?.[0] || null)}
+                    disabled={subiendoImagenPublicacion}
+                  />
+                  {subiendoImagenPublicacion && <span style={{ display: 'block', marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)' }}>Subiendo imagen...</span>}
+                  {!subiendoImagenPublicacion && formPublicacion.mensaje && (
+                    <img src={formPublicacion.mensaje} alt="Vista previa" style={{ marginTop: '8px', maxWidth: '100%', maxHeight: '160px', borderRadius: '12px', display: 'block' }} />
+                  )}
+                </>
+              )}
+
+              {tipoContenidoPublicacion === 'video' && (
+                <>
+                  <input
+                    type="url"
+                    className="form-input"
+                    placeholder="Pega un enlace de YouTube o Vimeo..."
+                    value={esUrlVideoInterno(formPublicacion.mensaje) ? '' : formPublicacion.mensaje}
+                    onChange={(e) => setFormPublicacion((p) => ({ ...p, mensaje: e.target.value }))}
+                    disabled={subiendoVideoPublicacion}
+                  />
+                  <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', margin: '8px 0' }}>— o —</div>
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime"
+                    className="form-input"
+                    onChange={(e) => subirVideoPublicacion(e.target.files?.[0] || null)}
+                    disabled={subiendoVideoPublicacion}
+                  />
+                  {subiendoVideoPublicacion && (
+                    <span style={{ display: 'block', marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                      Subiendo video... {progresoVideoPublicacion}%
+                    </span>
+                  )}
+                  {!subiendoVideoPublicacion && formPublicacion.mensaje && esUrlVideoInterno(formPublicacion.mensaje) && (
+                    <video controls preload="metadata" style={{ width: '100%', maxHeight: '220px', marginTop: '8px', borderRadius: '12px', display: 'block', background: '#000' }}>
+                      <source src={`${api.API_BASE_URL_CONFIG}/${formPublicacion.mensaje}`} />
+                    </video>
+                  )}
+                  {!subiendoVideoPublicacion && formPublicacion.mensaje && esUrlYoutube(formPublicacion.mensaje) && (
+                    <img src={obtenerThumbnailYoutube(formPublicacion.mensaje)} alt="Miniatura del video" style={{ marginTop: '8px', maxWidth: '100%', maxHeight: '160px', borderRadius: '12px', display: 'block' }} />
+                  )}
+                </>
+              )}
             </div>
             <label className="checkbox-label-row mb-15">
               <input
@@ -4057,7 +4183,7 @@ function SuperAdminPanel({
               />
               Solicitar confirmación de asistencia (RSVP)
             </label>
-            <button className="btn-electric" onClick={publicarAnuncio} disabled={publicandoForm}>
+            <button className="btn-electric" onClick={publicarAnuncio} disabled={publicandoForm || subiendoImagenPublicacion || subiendoVideoPublicacion}>
               <Megaphone size={15} /> {publicandoForm ? 'Guardando...' : (publicacionEditandoId ? 'Actualizar publicación' : 'Publicar en el Muro')}
             </button>
             {publicacionEditandoId && (

@@ -7,7 +7,7 @@ import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
 import MuroHorarioEntrenamientos from './MuroHorarioEntrenamientos';
 import { calcularResumenCitacion, puedeJugadorResponderPropiaCitacion } from '../utils/citaciones';
-import { esUrlImagen, esUrlYoutube, esUrlVimeo, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
+import { esUrlImagen, esUrlYoutube, esUrlVimeo, esUrlVideoInterno, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
 
 // El post puede traer un texto libre (Anuncio) o una URL (Imagen/Video/Enlace
 // elegidos en el formulario de Publicar) — cuerpo_texto es el mismo campo en
@@ -41,6 +41,15 @@ function ContenidoComunicacion({ texto }) {
         </div>
       );
     }
+  }
+
+  if (esUrlVideoInterno(valor)) {
+    return (
+      <video controls preload="metadata" style={{ width: '100%', borderRadius: '16px', marginTop: '4px', marginBottom: '8px', background: '#000' }}>
+        <source src={`${api.API_BASE_URL_CONFIG}/${valor}`} />
+        Tu navegador no soporta reproducción de video.
+      </video>
+    );
   }
 
   if (/^https?:\/\//i.test(valor)) {

@@ -4,7 +4,16 @@
 
 export const esUrlYoutube = (url = '') => /youtube\.com\/watch\?v=|youtu\.be\//.test(url);
 export const esUrlVimeo = (url = '') => /vimeo\.com\//.test(url);
-export const esUrlVideo = (url = '') => esUrlYoutube(url) || esUrlVimeo(url);
+// Video subido como archivo (no un link externo) — guardado en la tabla
+// academia_videos y servido con soporte de Range para el <video> nativo,
+// usado tanto por Academia como por videos subidos en Comunicaciones.
+export const esUrlVideoInterno = (url = '') => /academia-videos\/file\//.test(url);
+export const esUrlVideo = (url = '') => esUrlYoutube(url) || esUrlVimeo(url) || esUrlVideoInterno(url);
+
+export const obtenerThumbnailYoutube = (url = '') => {
+  const id = obtenerIdYoutube(url);
+  return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : '';
+};
 
 export const obtenerIdYoutube = (url = '') => {
   const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);

@@ -3449,6 +3449,37 @@ app.get('/api/comunicaciones/:id', authenticateOpcional, async (req, res) => {
   }
 });
 
+// POST: sube un archivo de video para una comunicación del Muro (no de
+// Academia — mismo tipo de subida, reutiliza la tabla academia_videos
+// porque es genérica: solo guarda el blob y lo sirve con soporte de Range,
+// nada ahí es específico de Academia). Devuelve solo la URL; crear la
+// comunicación en sí sigue el flujo normal de POST /api/comunicaciones,
+// igual que ya pasa con imagen (subir → pegar URL en cuerpo_texto → Publicar).
+app.post('/api/comunicaciones/video', authenticate, requireRole('staff', 'admin', 'super_admin'), uploadVideoMemoria.single('archivo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Debes seleccionar un archivo de video.' });
+    }
+    const extension = path.extname(req.file.originalname).toLowerCase() || '.mp4';
+    const filename = `comunicacion-video-${Date.now()}${extension}`;
+
+    const inserted = await pool.query(
+      `INSERT INTO academia_videos (titulo, filename, mime_type, file_data, tamano_bytes, subido_por)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id`,
+      [filename, filename, req.file.mimetype, req.file.buffer, req.file.size, req.actor.rut]
+    );
+    const id = inserted.rows[0].id;
+    // Misma convención de ruta relativa que usa Academia (ver comentario en
+    // GET /api/academia-videos/file/:id): el frontend la resuelve contra
+    // API_BASE_URL_CONFIG, no contra el origen de Vite.
+    return res.status(201).json({ id, url: `academia-videos/file/${id}` });
+  } catch (error) {
+    console.error('[POST /api/comunicaciones/video]', error);
+    return res.status(500).json({ error: error.message || 'No se pudo subir el video.' });
+  }
+});
+
 // POST: Crear comunicación. requireRole (no requireModule('admin_dashboard'))
 // porque 'staff' publica material de Academia desde este mismo endpoint y no
 // tiene el módulo admin_dashboard — antes quedaba bloqueado con 403.

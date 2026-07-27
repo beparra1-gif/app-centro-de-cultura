@@ -119,6 +119,44 @@ export const comunicacionesAPI = {
     return handleResponse(response);
   },
 
+  // Sube un archivo de video para el cuerpo de una comunicación (distinto
+  // de pegar un link de YouTube/Vimeo) — devuelve { id, url }, la
+  // comunicación en sí se crea aparte con create() como con imagen.
+  subirVideo: async (formData, { onProgress } = {}) => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE_URL}/comunicaciones/video`);
+      if (authToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+      }
+
+      if (typeof onProgress === 'function') {
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const porcentaje = Math.round((event.loaded / event.total) * 100);
+          onProgress(Math.max(0, Math.min(100, porcentaje)));
+        };
+      }
+
+      xhr.onload = () => {
+        let payload;
+        try {
+          payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+        } catch {
+          payload = null;
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(payload || {});
+          return;
+        }
+        reject(new Error(payload?.error || payload?.message || `Error ${xhr.status}: ${xhr.statusText || 'Respuesta no válida'}`));
+      };
+      xhr.onerror = () => reject(new Error('Error de red al subir el video.'));
+      xhr.onabort = () => reject(new Error('La subida del video fue cancelada.'));
+      xhr.send(formData);
+    });
+  },
+
   // Actualizar
   update: async (id, data) => {
     const response = await apiFetch(`${API_BASE_URL}/comunicaciones/${id}`, {

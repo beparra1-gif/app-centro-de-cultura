@@ -9,16 +9,14 @@ import StaffEvaluacionPanel from './StaffEvaluacionPanel';
 import AcademiaDashboardPanel from './AcademiaDashboardPanel';
 import { filtraPorRamaCategoria } from '../utils/academia';
 import { calcularProgresoNivel } from '../utils/gamificacion';
-import { esUrlYoutube, esUrlVimeo, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
+import { esUrlYoutube, esUrlVimeo, esUrlVideoInterno, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
 
 const normalizarRutAcademia = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 
 const RAMAS = ['General', 'Masculina', 'Femenina', 'Mixta'];
 
-const esVideoInterno = (url = '') => /academia-videos\/file\//.test(url);
-
 const resolverUrlVideo = (cuerpoTexto = '') => (
-  esVideoInterno(cuerpoTexto) ? `${api.API_BASE_URL_CONFIG}/${cuerpoTexto}` : cuerpoTexto
+  esUrlVideoInterno(cuerpoTexto) ? `${api.API_BASE_URL_CONFIG}/${cuerpoTexto}` : cuerpoTexto
 );
 
 function ReproductorMaterial({ material, rutJugador }) {
@@ -68,7 +66,7 @@ function ReproductorMaterial({ material, rutJugador }) {
     }
   }
 
-  if (esVideo && esVideoInterno(url)) {
+  if (esVideo && esUrlVideoInterno(url)) {
     return (
       <video controls preload="metadata" onPlay={registrarInteraccion} style={{ width: '100%', borderRadius: '16px', marginBottom: '8px', background: '#000' }}>
         <source src={resolverUrlVideo(url)} />
