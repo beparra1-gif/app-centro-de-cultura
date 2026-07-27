@@ -2283,9 +2283,10 @@ app.post('/api/logo-assets', authenticate, uploadLogoMemoria.single('archivo'), 
 
 // Tipos que NO son logos de equipo/torneo pero comparten esta misma tabla
 // (foto de perfil de onboarding, comprobante de pago, foto de jugador desde
-// el panel admin o desde /api/jugadores/:rut/foto) — se excluyen del listado
-// para no entorpecer la búsqueda de logos reales.
-const TIPOS_LOGO_ASSET_NO_LISTABLES = ['perfil', 'comprobante', 'jugador-foto', 'foto-jugador'];
+// el panel admin o desde /api/jugadores/:rut/foto, foto de la tarjeta
+// coleccionable desde /api/jugadores/:rut/foto-tarjeta) — se excluyen del
+// listado para no entorpecer la búsqueda de logos reales.
+const TIPOS_LOGO_ASSET_NO_LISTABLES = ['perfil', 'comprobante', 'jugador-foto', 'foto-jugador', 'foto-tarjeta-coleccion'];
 
 app.get('/api/logo-assets/list', async (_req, res) => {
   try {
