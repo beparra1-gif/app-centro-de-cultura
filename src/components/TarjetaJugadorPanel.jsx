@@ -56,79 +56,6 @@ const cargarImagenDesdeBlob = (blob) => new Promise((resolve, reject) => {
   img.src = url;
 });
 
-// Compone la foto (ya sin fondo) sobre un fondo profesional tipo "tarjeta
-// coleccionable": gradiente de estadio con luces, destellos y una sombra de
-// contacto, ademas de un leve realce de contraste/saturacion sobre la foto
-// misma. Todo corre en el navegador (canvas), sin ningun servicio de IA.
-const crearFotoConFondoProfesional = async (blobSinFondo) => {
-  const img = await cargarImagenDesdeBlob(blobSinFondo);
-  // Mismo aspecto ancho/alto que la ventana real de foto dentro del marco
-  // (~0.52), para que este fondo profesional calce igual de bien que
-  // cualquier otra foto — antes era 720x900 (0.8), mucho más ancho que la
-  // ventana real, así que la foto quedaba recortada por los costados.
-  const ALTO = 1100;
-  const ANCHO = Math.round(ALTO * ((EXPORT_WIDTH * (100 - MARCO_POR_RAREZA.BRONCE.foto.left - MARCO_POR_RAREZA.BRONCE.foto.right))
-    / (EXPORT_HEIGHT * (100 - MARCO_POR_RAREZA.BRONCE.foto.top - MARCO_POR_RAREZA.BRONCE.foto.bottom))));
-  const canvas = document.createElement('canvas');
-  canvas.width = ANCHO;
-  canvas.height = ALTO;
-  const ctx = canvas.getContext('2d');
-
-  const fondo = ctx.createRadialGradient(ANCHO / 2, ALTO * 0.36, ALTO * 0.05, ANCHO / 2, ALTO * 0.45, ALTO * 0.85);
-  fondo.addColorStop(0, '#2c4d80');
-  fondo.addColorStop(0.45, '#122544');
-  fondo.addColorStop(1, '#04070f');
-  ctx.fillStyle = fondo;
-  ctx.fillRect(0, 0, ANCHO, ALTO);
-
-  ctx.save();
-  ctx.globalAlpha = 0.09;
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 46;
-  for (let i = -2; i < 6; i += 1) {
-    ctx.beginPath();
-    ctx.moveTo(-220 + i * 180, ALTO + 120);
-    ctx.lineTo(ANCHO * 0.65 + i * 180, -120);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  ctx.save();
-  ctx.fillStyle = '#ffffff';
-  for (let i = 0; i < 46; i += 1) {
-    const x = (i * 137.5) % ANCHO;
-    const y = (i * 97.3) % (ALTO * 0.7);
-    const r = (i % 3) + 1;
-    ctx.globalAlpha = 0.05 + (i % 5) * 0.015;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-
-  const escala = Math.min((ANCHO * 0.82) / img.width, (ALTO * 0.86) / img.height);
-  const wDibujo = img.width * escala;
-  const hDibujo = img.height * escala;
-  const x = (ANCHO - wDibujo) / 2;
-  const y = ALTO - hDibujo - ALTO * 0.05;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(ANCHO / 2, y + hDibujo - 4, wDibujo * 0.32, 16, 0, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.4)';
-  ctx.shadowColor = 'rgba(0,0,0,0.5)';
-  ctx.shadowBlur = 18;
-  ctx.fill();
-  ctx.restore();
-
-  ctx.save();
-  ctx.filter = 'contrast(1.12) saturate(1.18) brightness(1.04)';
-  ctx.drawImage(img, x, y, wDibujo, hDibujo);
-  ctx.restore();
-
-  return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
-};
-
 const DISENOS_MARCO = {
   clasico: { etiqueta: 'Clásico', extraBorder: null, extraShadow: null, extraFilter: null },
   neon: { etiqueta: 'Neón', extraBorder: '2px solid #39FF88', extraShadow: '0 0 4px 1px rgba(57,255,136,0.55), 0 0 26px 6px rgba(57,255,136,0.35)', extraFilter: null },
@@ -222,11 +149,16 @@ function TarjetaJugadorPanel({
   const [mostrarSubirFoto, setMostrarSubirFoto] = useState(false);
   const [archivoFoto, setArchivoFoto] = useState(null);
   const [previewFoto, setPreviewFoto] = useState('');
-  // Por defecto en true: ahora que la tarjeta coleccionable muestra la foto
-  // grande (no en un círculo chico), el fondo profesional tipo estadio se
-  // nota mucho más — conviene que la mayoría la suba ya con ese realce.
-  const [quitarFondo, setQuitarFondo] = useState(true);
   const [procesandoFoto, setProcesandoFoto] = useState(false);
+  // Editor de encuadre: el jugador elige qué parte de SU foto (horizontal,
+  // vertical, chica, lo que sea) se ve dentro de la ventana de la tarjeta,
+  // arrastrando para mover y con el slider para acercar/alejar — en vez de
+  // un recorte automático "a ciegas" con objectFit:cover que podía cortar
+  // mal fotos horizontales o muy chicas.
+  const [fotoNatural, setFotoNatural] = useState({ w: 0, h: 0 });
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  const cropDragRef = useRef(null);
   const [guardandoDiseno, setGuardandoDiseno] = useState(false);
   const [resumenAsistencia, setResumenAsistencia] = useState(null);
   const [mostrarDetalleAsistencia, setMostrarDetalleAsistencia] = useState(false);
@@ -473,6 +405,21 @@ function TarjetaJugadorPanel({
   // jugador pueda elegir/ajustar la foto sabiendo cómo va a calzar.
   const fotoAspecto = (EXPORT_WIDTH * (100 - marcoActivo.foto.left - marcoActivo.foto.right))
     / (EXPORT_HEIGHT * (100 - marcoActivo.foto.top - marcoActivo.foto.bottom));
+  // Editor de encuadre: caja de recorte en pantalla (px) con la misma
+  // proporción real de la ventana de la tarjeta. cropEscalaBase es el zoom
+  // mínimo para que la foto cubra toda la caja (equivalente a objectFit:
+  // cover en zoom 1); cropZoom (>=1) lo multiplica cuando el jugador acerca.
+  const CROP_BOX_ANCHO = 240;
+  const CROP_BOX_ALTO = Math.round(CROP_BOX_ANCHO / fotoAspecto);
+  const cropEscalaBase = fotoNatural.w > 0
+    ? Math.max(CROP_BOX_ANCHO / fotoNatural.w, CROP_BOX_ALTO / fotoNatural.h)
+    : 1;
+  const cropImgAncho = fotoNatural.w * cropEscalaBase * cropZoom;
+  const cropImgAlto = fotoNatural.h * cropEscalaBase * cropZoom;
+  const clampCropOffset = (offset, imgAncho = cropImgAncho, imgAlto = cropImgAlto) => ({
+    x: Math.min(0, Math.max(CROP_BOX_ANCHO - imgAncho, offset.x)),
+    y: Math.min(0, Math.max(CROP_BOX_ALTO - imgAlto, offset.y)),
+  });
   const rutValidacion = rolUsuario === 'visita' ? 'VISITA' : (pupiloActivo.rut || 'SIN-RUT');
   const clubNombre = pupiloActivo.club_nombre || pupiloActivo.club_procedencia || (rolUsuario === 'visita' ? 'Club invitado' : 'Centro de Cultura Física');
   const clubLogoUrl = pupiloActivo.club_logo_url || '/logos/club-logo.png';
@@ -665,16 +612,76 @@ function TarjetaJugadorPanel({
       if (prev) URL.revokeObjectURL(prev);
       return '';
     });
-    setQuitarFondo(false);
+    setFotoNatural({ w: 0, h: 0 });
+    setCropZoom(1);
+    setCropOffset({ x: 0, y: 0 });
   };
 
-  const handleSeleccionArchivoFoto = (file) => {
+  const handleSeleccionArchivoFoto = async (file) => {
     if (!file) return;
     setArchivoFoto(file);
     setPreviewFoto((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
     });
+    setCropZoom(1);
+    try {
+      const img = await cargarImagenDesdeBlob(file);
+      const natW = img.naturalWidth || img.width;
+      const natH = img.naturalHeight || img.height;
+      setFotoNatural({ w: natW, h: natH });
+      // Centrado por defecto (equivalente al objectFit:cover de antes),
+      // el jugador puede arrastrar desde ahí para elegir otro encuadre.
+      const baseScale = Math.max(CROP_BOX_ANCHO / natW, CROP_BOX_ALTO / natH);
+      setCropOffset({
+        x: (CROP_BOX_ANCHO - natW * baseScale) / 2,
+        y: (CROP_BOX_ALTO - natH * baseScale) / 2,
+      });
+    } catch {
+      setFotoNatural({ w: 0, h: 0 });
+    }
+  };
+
+  const handleCropPointerDown = (e) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    cropDragRef.current = { startX: e.clientX, startY: e.clientY, offset: cropOffset };
+  };
+  const handleCropPointerMove = (e) => {
+    if (!cropDragRef.current) return;
+    const { startX, startY, offset } = cropDragRef.current;
+    setCropOffset(clampCropOffset({
+      x: offset.x + (e.clientX - startX),
+      y: offset.y + (e.clientY - startY),
+    }));
+  };
+  const handleCropPointerUp = () => { cropDragRef.current = null; };
+
+  const handleCropZoomChange = (nuevoZoom) => {
+    const nuevoImgAncho = fotoNatural.w * cropEscalaBase * nuevoZoom;
+    const nuevoImgAlto = fotoNatural.h * cropEscalaBase * nuevoZoom;
+    setCropZoom(nuevoZoom);
+    setCropOffset((prev) => clampCropOffset(prev, nuevoImgAncho, nuevoImgAlto));
+  };
+
+  // Dibuja en un canvas exactamente el encuadre que el jugador armó
+  // (arrastre + zoom) y lo sube ya recortado a la proporción real de la
+  // tarjeta — así la foto de portada/perfil del jugador (foto_perfil_url,
+  // en Onboarding) queda completamente aparte: esto solo toca foto_jugador.
+  const recortarFotoParaSubir = async () => {
+    const img = await cargarImagenDesdeBlob(archivoFoto);
+    const TARGET_ANCHO = 700;
+    const TARGET_ALTO = Math.round(TARGET_ANCHO / fotoAspecto);
+    const factor = TARGET_ANCHO / CROP_BOX_ANCHO;
+    const canvas = document.createElement('canvas');
+    canvas.width = TARGET_ANCHO;
+    canvas.height = TARGET_ALTO;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(
+      img,
+      cropOffset.x * factor, cropOffset.y * factor,
+      cropImgAncho * factor, cropImgAlto * factor,
+    );
+    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92));
   };
 
   const handleConfirmarFoto = async () => {
@@ -682,13 +689,8 @@ function TarjetaJugadorPanel({
     if (!rut || !archivoFoto) return;
     setProcesandoFoto(true);
     try {
-      let archivoParaSubir = archivoFoto;
-      if (quitarFondo) {
-        const { removeBackground } = await import('@imgly/background-removal');
-        const blobSinFondo = await removeBackground(archivoFoto);
-        const blobMejorado = await crearFotoConFondoProfesional(blobSinFondo);
-        archivoParaSubir = new File([blobMejorado], 'foto-mejorada.png', { type: 'image/png' });
-      }
+      const blobRecortado = await recortarFotoParaSubir();
+      const archivoParaSubir = new File([blobRecortado], 'foto-tarjeta.jpg', { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('archivo', archivoParaSubir);
       const actualizado = await api.jugadoresAPI.subirFoto(rut, formData);
@@ -1395,7 +1397,7 @@ function TarjetaJugadorPanel({
         />
       )}
 
-      {mostrarSubirFoto && (
+      {mostrarSubirFoto && createPortal(
         <div
           role="dialog"
           aria-modal="true"
@@ -1422,7 +1424,7 @@ function TarjetaJugadorPanel({
             </div>
 
             <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
-              Elige la foto que más te guste. Puedes mejorarla automáticamente con un fondo profesional tipo tarjeta coleccionable.
+              Elige la foto y arrastra/acerca para elegir qué parte se ve en la tarjeta. Esta foto es solo para la tarjeta: no cambia la foto de perfil del jugador.
             </p>
 
             <input
@@ -1432,21 +1434,42 @@ function TarjetaJugadorPanel({
               onChange={(e) => handleSeleccionArchivoFoto(e.target.files?.[0] || null)}
             />
 
-            {previewFoto && (
+            {previewFoto && fotoNatural.w > 0 && (
               <>
-                <div style={{ width: `${Math.round(150 * fotoAspecto)}px`, height: '150px', margin: '0 auto 6px', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--borde-suave)', background: 'repeating-conic-gradient(#e5e5e5 0% 25%, #ffffff 0% 50%) 0 0 / 16px 16px' }}>
-                  <img src={previewFoto} alt="Vista previa" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div
+                  style={{
+                    width: `${CROP_BOX_ANCHO}px`, height: `${CROP_BOX_ALTO}px`, margin: '0 auto 10px',
+                    borderRadius: '12px', overflow: 'hidden', position: 'relative', touchAction: 'none',
+                    border: '1px solid var(--borde-suave)', cursor: 'grab',
+                    background: 'repeating-conic-gradient(#e5e5e5 0% 25%, #ffffff 0% 50%) 0 0 / 16px 16px',
+                  }}
+                  onPointerDown={handleCropPointerDown}
+                  onPointerMove={handleCropPointerMove}
+                  onPointerUp={handleCropPointerUp}
+                  onPointerLeave={handleCropPointerUp}
+                >
+                  <img
+                    src={previewFoto}
+                    alt="Vista previa"
+                    draggable={false}
+                    style={{
+                      position: 'absolute', left: `${cropOffset.x}px`, top: `${cropOffset.y}px`,
+                      width: `${cropImgAncho}px`, height: `${cropImgAlto}px`, maxWidth: 'none', userSelect: 'none',
+                    }}
+                  />
                 </div>
-                <p style={{ margin: '0 0 14px 0', fontSize: '11px', color: 'var(--texto-secundario)', textAlign: 'center' }}>
-                  Así se va a recortar en tu tarjeta. Si sale mal encuadrada, prueba con otra foto más vertical/centrada.
-                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>Acercar</span>
+                  <input
+                    type="range"
+                    min="1" max="3" step="0.01"
+                    value={cropZoom}
+                    onChange={(e) => handleCropZoomChange(Number(e.target.value))}
+                    style={{ flex: 1 }}
+                  />
+                </div>
               </>
             )}
-
-            <label className="checkbox-label-row" style={{ marginBottom: '14px' }}>
-              <input type="checkbox" checked={quitarFondo} onChange={(e) => setQuitarFondo(e.target.checked)} disabled={procesandoFoto} />
-              <Sparkles size={13} /> Mejorar foto y ponerle fondo profesional
-            </label>
 
             <button
               className="btn-electric"
@@ -1455,10 +1478,11 @@ function TarjetaJugadorPanel({
               disabled={!archivoFoto || procesandoFoto}
             >
               {procesandoFoto ? <Loader2 size={16} className="spin" /> : <Camera size={16} />}
-              {procesandoFoto ? (quitarFondo ? 'Mejorando foto y subiendo...' : 'Subiendo...') : 'Guardar foto'}
+              {procesandoFoto ? 'Subiendo...' : 'Guardar foto'}
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {mostrarDetalleAsistencia && createPortal(
