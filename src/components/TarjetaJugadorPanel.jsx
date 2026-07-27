@@ -10,7 +10,6 @@ import EditarJugadorModal from './EditarJugadorModal';
 import QrScanner from './QrScanner';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
-import { obtenerPorcentajeBeca } from '../utils/beca';
 
 // Los 5 marcos (public/tarjetas-marcos/) son ahora PNG sin fondo (transparente
 // fuera y dentro del marco, 2800x4968 los 5 por igual), así que se usa la
@@ -140,11 +139,8 @@ function TarjetaJugadorPanel({
 }) {
   const cardRef = useRef(null);
   const cardFrontExportRef = useRef(null);
-  const cardBackRef = useRef(null);
   const [mostrarCredencialAsistencia, setMostrarCredencialAsistencia] = useState(false);
   const [mostrarEditarJugador, setMostrarEditarJugador] = useState(false);
-  const estiloColeccion = 'coleccionista';
-  const [vistaColeccion, setVistaColeccion] = useState('frente');
   const [detalleJugador, setDetalleJugador] = useState(null);
   const [mostrarSubirFoto, setMostrarSubirFoto] = useState(false);
   const [archivoFoto, setArchivoFoto] = useState(null);
@@ -526,13 +522,11 @@ function TarjetaJugadorPanel({
   };
 
   const descargarTarjetaColeccionActual = async () => {
-    const refObjetivo = vistaColeccion === 'reverso' ? cardBackRef : cardFrontExportRef;
-    const sufijo = vistaColeccion === 'reverso' ? 'reverso' : 'frente';
-    if (!refObjetivo.current) return;
+    if (!cardFrontExportRef.current) return;
     try {
-      const canvas = await capturarRefExport(refObjetivo);
+      const canvas = await capturarRefExport(cardFrontExportRef);
       const blob = await canvasABlob(canvas);
-      const nombreArchivo = `tarjeta-coleccion-${sufijo}-${String(nombreDisplay || 'jugador').toLowerCase()}.png`;
+      const nombreArchivo = `tarjeta-coleccion-${String(nombreDisplay || 'jugador').toLowerCase()}.png`;
 
       // En móviles con soporte de Web Share (con archivos), compartir es más
       // útil que descargar a una carpeta que el jugador no revisa — permite
@@ -1155,23 +1149,6 @@ function TarjetaJugadorPanel({
           </div>
         </div>
 
-        <div className="collection-style-switch mt-10" role="radiogroup" aria-label="Vista tarjeta de coleccion">
-          <button
-            type="button"
-            className={vistaColeccion === 'frente' ? 'active' : ''}
-            onClick={() => setVistaColeccion('frente')}
-          >
-            Frente
-          </button>
-          <button
-            type="button"
-            className={vistaColeccion === 'reverso' ? 'active' : ''}
-            onClick={() => setVistaColeccion('reverso')}
-          >
-            Reverso
-          </button>
-        </div>
-
         {rolUsuario !== 'visita' && (
           <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
             <button className="player-action-btn" onClick={() => setMostrarMiQRColeccion(true)} style={{ padding: '8px 12px' }}>
@@ -1187,36 +1164,7 @@ function TarjetaJugadorPanel({
         )}
 
         <div className="collection-preview-wrap" style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
-          {vistaColeccion === 'frente' ? (
-            renderFrenteTarjeta({ ancho: 220, sombra: true })
-          ) : (
-            <div className="player-collection-preview preview-back" style={{
-              width: '220px',
-              aspectRatio: '5 / 7',
-              borderRadius: '16px',
-              padding: '12px',
-              background: 'linear-gradient(160deg, #0b1d3a 0%, #133a66 46%, #0e2b4d 100%)',
-              color: 'white',
-              boxShadow: '0 12px 24px rgba(15,23,42,0.25)',
-              display: 'grid',
-              gridTemplateRows: 'auto auto 1fr auto'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase' }}>
-                <span>Reverso CCF</span>
-                <span>#{serialTexto}</span>
-              </div>
-              <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '900' }}>{pupiloActivo.nombre || 'Jugador'}</div>
-              <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '11px', fontWeight: '800' }}>
-                <span>Nivel {nivelActualNumero}</span>
-                <span>XP {xpActual}</span>
-                <span>Racha {rachaActual} dias</span>
-                <span>Puntos {puntosGamificacion}</span>
-              </div>
-              <div style={{ marginTop: '8px', fontSize: '11px', opacity: 0.9 }}>
-                Formato 2.5 x 3.5 in vertical
-              </div>
-            </div>
-          )}
+          {renderFrenteTarjeta({ ancho: 220, sombra: true })}
         </div>
       </div>
 
@@ -1507,124 +1455,6 @@ function TarjetaJugadorPanel({
 
       <div aria-hidden="true" style={{ position: 'fixed', left: '-9999px', top: '-9999px', opacity: 0, pointerEvents: 'none' }}>
         {renderFrenteTarjeta({ ancho: EXPORT_WIDTH, innerRef: cardFrontExportRef })}
-
-        <div
-          ref={cardBackRef}
-          className="card"
-          style={{
-            boxSizing: 'border-box',
-            width: `${EXPORT_WIDTH}px`,
-            height: `${EXPORT_HEIGHT}px`,
-            borderRadius: '24px',
-            padding: '24px',
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'linear-gradient(160deg, #0b1d3a 0%, #133a66 46%, #0e2b4d 100%)',
-            color: 'white',
-            border: `2px solid ${estiloRareza.border}`,
-            boxShadow: [`0 20px 45px rgba(9, 20, 38, 0.32)`, estiloRareza.glow].filter(Boolean).join(', ')
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <span style={{ fontSize: '12px', fontWeight: '900', letterSpacing: '0.8px', textTransform: 'uppercase' }}>Reverso Coleccionable CCF</span>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span style={{ fontSize: '11px', fontWeight: '900', padding: '5px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>{textoRareza}</span>
-              <span style={{ fontSize: '11px', fontWeight: '900', padding: '5px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)' }}>#{serialTexto}</span>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '16px', alignItems: 'center' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '28px', fontWeight: '900', lineHeight: 1.1 }}>{pupiloActivo.nombre || 'Jugador'}</h3>
-              <p style={{ margin: '8px 0 0', fontSize: '13px', opacity: 0.9, fontWeight: '700' }}>
-                Categoria: {categoriaConAnio} · Club: {clubNombre}
-              </p>
-            </div>
-            <div style={{ width: '78px', height: '78px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-              {clubLogoUrl ? (
-                <img src={clubLogoUrl} alt={`Logo de ${clubNombre}`} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              ) : (
-                <span style={{ fontSize: '20px', fontWeight: '900' }}>{clubIniciales}</span>
-              )}
-            </div>
-          </div>
-
-          {estiloColeccion === 'coleccionista' ? (
-            <>
-              <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                <div className="stat-box">
-                  <span className="stat-label">Nivel</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '16px' }}>{nivelActualNumero}</strong>
-                </div>
-                <div className="stat-box">
-                  <span className="stat-label">XP</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '16px' }}>{xpActual}</strong>
-                </div>
-                <div className="stat-box">
-                  <span className="stat-label">Racha</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '16px' }}>{rachaActual} dias</strong>
-                </div>
-              </div>
-
-              <div style={{ marginTop: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase' }}>
-                  <span>Progreso</span>
-                  <span>{progresoNivel}%</span>
-                </div>
-                <div style={{ height: '10px', borderRadius: '999px', background: 'rgba(255,255,255,0.18)', overflow: 'hidden' }}>
-                  <div style={{ width: `${progresoNivel}%`, height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg, #00C7BE 0%, #FFE066 100%)' }} />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '14px' }}>
-                {insignias.map((insignia) => (
-                  <span key={`back-${insignia}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '900' }}>
-                    <BadgeCheck size={13} /> {insignia}
-                  </span>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-                <div className="stat-box">
-                  <span className="stat-label">POS</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{pupiloActivo.posicion || 'N/A'}</strong>
-                </div>
-                <div className="stat-box">
-                  <span className="stat-label">PTS</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{puntosGamificacion}</strong>
-                </div>
-                <div className="stat-box">
-                  <span className="stat-label">EST</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{pupiloActivo.estatura || 'N/A'}</strong>
-                </div>
-                <div className="stat-box">
-                  <span className="stat-label">PESO</span>
-                  <strong style={{ display: 'block', marginTop: '4px', fontSize: '15px' }}>{pupiloActivo.peso || 'N/A'}</strong>
-                </div>
-              </div>
-
-              <div style={{ marginTop: '14px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.18)', padding: '10px 12px', background: 'rgba(255,255,255,0.08)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', fontWeight: '800' }}>
-                  <span>Estado: {pupiloActivo.estadoDeportivo || 'Activo'}</span>
-                  <span>Beca: {obtenerPorcentajeBeca(pupiloActivo) > 0 ? `${obtenerPorcentajeBeca(pupiloActivo)}%` : 'Sin beca'}</span>
-                  <span>XP total: {xpActual}</span>
-                  <span>Nivel: {nivelActualNumero}</span>
-                </div>
-              </div>
-
-              <div style={{ marginTop: '14px', fontSize: '11px', opacity: 0.9, fontWeight: '700' }}>
-                Perfil tecnico del jugador para seguimiento deportivo y evaluacion interna del club.
-              </div>
-            </>
-          )}
-
-          <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', opacity: 0.9 }}>
-            <span>Formato 2.5 x 3.5 in</span>
-            <span>Temporada 2026</span>
-          </div>
-        </div>
       </div>
     </div>
   );

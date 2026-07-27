@@ -1499,29 +1499,6 @@ button,
 .player-action-btn:hover {
   transform: translateY(-1px);
 }
-.collection-style-switch {
-  display: inline-flex;
-  gap: 6px;
-  padding: 4px;
-  border-radius: 999px;
-  background: rgba(11, 29, 58, 0.08);
-  border: 1px solid rgba(11, 29, 58, 0.14);
-  width: fit-content;
-}
-.collection-style-switch button {
-  border: none;
-  border-radius: 999px;
-  padding: 7px 12px;
-  font-size: 11px;
-  font-weight: 800;
-  color: #20406e;
-  background: transparent;
-  cursor: pointer;
-}
-.collection-style-switch button.active {
-  background: linear-gradient(135deg, #0d2f64 0%, #0d58b7 100%);
-  color: #ffffff;
-}
 .collection-panel {
   background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(245,250,255,0.95) 100%);
   box-shadow: 0 12px 26px rgba(10, 31, 68, 0.08);
@@ -1610,10 +1587,6 @@ button,
 .player-collection-preview.preview-front {
   outline: 2px solid rgba(255,255,255,0.14);
 }
-.player-collection-preview.preview-back {
-  outline: 2px solid rgba(145, 208, 255, 0.24);
-}
-
 @keyframes collectionCardIn {
   from {
     opacity: 0;
