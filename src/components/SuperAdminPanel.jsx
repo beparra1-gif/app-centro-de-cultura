@@ -764,6 +764,22 @@ function SuperAdminPanel({
     [jugadoresSinApoderado]
   );
 
+  const normalizarRutUsuarios = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+
+  // Una deportista puede tener su propia cuenta de acceso (rol/perfil
+  // 'deportista', con el mismo rut que su ficha en jugadores) además de —o en
+  // vez de— la de su apoderado. Este mapa deja encontrar esa cuenta propia
+  // desde la ficha del jugador, para poder restablecerle la clave ahí mismo
+  // en vez de obligar a buscarla aparte en la pestaña "Cuentas".
+  const cuentaPropiaPorRutJugador = useMemo(() => {
+    const mapa = new Map();
+    (cuentasAdmin || []).forEach((c) => {
+      const rut = normalizarRutUsuarios(c.rut);
+      if (rut) mapa.set(rut, c);
+    });
+    return mapa;
+  }, [cuentasAdmin]);
+
   const cuentasApoderadoParaAsignar = useMemo(() => {
     return (cuentasAdmin || [])
       .filter((c) => String(c.correo || '').trim())
@@ -919,6 +935,9 @@ function SuperAdminPanel({
       : idsCuentasIncompletas.has(String(u.raw.id));
     const sinApoderado = u.tipo === 'jugador' && rutsJugadoresSinApoderado.has(String(u.raw.rut_jugador || ''));
     const mostrandoAsignar = asignandoApoderadoRut === u.raw.rut_jugador;
+    const cuentaPropiaJugador = u.tipo === 'jugador'
+      ? cuentaPropiaPorRutJugador.get(normalizarRutUsuarios(u.raw.rut_jugador))
+      : null;
 
     return (
       <div
@@ -975,6 +994,22 @@ function SuperAdminPanel({
               >
                 <Lock size={13} /> {reseteandoClaveId === u.raw.id ? 'Restableciendo...' : 'Restablecer clave'}
               </button>
+            )}
+            {u.tipo === 'jugador' && (esAdmin || esSuperAdmin) && (
+              cuentaPropiaJugador ? (
+                <button
+                  className="btn-secondary"
+                  style={{ width: 'auto' }}
+                  onClick={() => resetearClaveDesdeLista(cuentaPropiaJugador)}
+                  disabled={reseteandoClaveId === cuentaPropiaJugador.id}
+                >
+                  <Lock size={13} /> {reseteandoClaveId === cuentaPropiaJugador.id ? 'Restableciendo...' : 'Restablecer clave'}
+                </button>
+              ) : (
+                <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', color: 'var(--texto-secundario)', background: 'rgba(120,120,128,0.12)' }}>
+                  Sin cuenta propia
+                </span>
+              )
             )}
             {esSuperAdmin && (
               <button
