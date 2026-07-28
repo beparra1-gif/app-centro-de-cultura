@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BadgeCheck, Camera, Download, ClipboardEdit, Loader2, Mars, QrCode, ScanLine, ShieldCheck, Shirt, Sparkles, Trophy, User, Users, Venus, X } from 'lucide-react';
+import { BadgeCheck, Camera, CalendarOff, Download, ClipboardEdit, Loader2, Mars, QrCode, ScanLine, ShieldCheck, Shirt, Sparkles, Trophy, User, Users, Venus, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart } from 'recharts';
@@ -10,6 +10,7 @@ import EditarJugadorModal from './EditarJugadorModal';
 import QrScanner from './QrScanner';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
+import { confirmAction } from '../utils/confirmDialog';
 
 // Los 5 marcos (public/tarjetas-marcos/) son ahora PNG sin fondo (transparente
 // fuera y dentro del marco, 2800x4968 los 5 por igual), así que se usa la
@@ -165,6 +166,11 @@ function TarjetaJugadorPanel({
   const [mostrarDetalleAsistencia, setMostrarDetalleAsistencia] = useState(false);
   const [ultimaEvaluacion, setUltimaEvaluacion] = useState(null);
   const [resumenEstadisticas, setResumenEstadisticas] = useState(null);
+  const [historialAusencias, setHistorialAusencias] = useState([]);
+  const [refrescarAusenciasContador, setRefrescarAusenciasContador] = useState(0);
+  const [mostrarModalAusencia, setMostrarModalAusencia] = useState(false);
+  const [formAusencia, setFormAusencia] = useState({ motivo: '', fecha_inicio: '', fecha_fin: '' });
+  const [guardandoAusencia, setGuardandoAusencia] = useState(false);
   const [mostrarMiQRColeccion, setMostrarMiQRColeccion] = useState(false);
   const [mostrarEscanerColeccion, setMostrarEscanerColeccion] = useState(false);
   const [mostrarAlbum, setMostrarAlbum] = useState(false);
@@ -231,6 +237,37 @@ function TarjetaJugadorPanel({
       cancelled = true;
     };
   }, [pupiloActivo?.rut, rolUsuario]);
+
+  // Ausencia prolongada: motivo + período que el apoderado (o admin) reportó
+  // para este jugador. Mientras hoy caiga dentro del período, bloquea
+  // citaciones y Pasar Lista avisa en vez de pedir marcar presente/ausente.
+  useEffect(() => {
+    let cancelled = false;
+
+    const cargarAusencias = async () => {
+      const rut = String(pupiloActivo?.rut || '').trim();
+      if (!rut || rolUsuario === 'visita') {
+        setHistorialAusencias([]);
+        return;
+      }
+
+      try {
+        const historial = await api.jugadoresAPI.getAusencias(rut);
+        if (!cancelled) {
+          setHistorialAusencias(Array.isArray(historial) ? historial : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setHistorialAusencias([]);
+        }
+      }
+    };
+
+    void cargarAusencias();
+    return () => {
+      cancelled = true;
+    };
+  }, [pupiloActivo?.rut, rolUsuario, refrescarAusenciasContador]);
 
   // El radar de Físico/Técnica/Táctica leía detalleJugador.fisico_score/
   // tecnica_score/tactica_score, campos que jamás existieron — siempre
@@ -322,6 +359,30 @@ function TarjetaJugadorPanel({
   const mostrarIndumentaria = ['admin', 'super_admin'].includes(rolNormalizado);
   const esAdminDatosJugador = ['admin', 'super_admin'].includes(rolNormalizado);
   const puedeEditarDatosJugador = rolUsuario !== 'visita';
+
+  // Ausencia "activa" = la primera cuyo período (fecha_inicio..fecha_fin)
+  // incluye hoy. Puede haber más de un registro histórico; ninguna otra
+  // cuenta como bloqueante aunque esté en el futuro (recién empieza a
+  // bloquear el día de fecha_inicio, no antes).
+  const hoyISO = new Date().toISOString().slice(0, 10);
+  const ausenciaActiva = historialAusencias.find((a) => {
+    const inicio = String(a.fecha_inicio || '').slice(0, 10);
+    const fin = String(a.fecha_fin || '').slice(0, 10);
+    return inicio && fin && hoyISO >= inicio && hoyISO <= fin;
+  }) || null;
+  const diasTotalesAusencia = ausenciaActiva
+    ? Math.round((new Date(ausenciaActiva.fecha_fin) - new Date(ausenciaActiva.fecha_inicio)) / 86400000) + 1
+    : 0;
+  const diasTranscurridosAusencia = ausenciaActiva
+    ? Math.min(diasTotalesAusencia, Math.round((new Date(hoyISO) - new Date(ausenciaActiva.fecha_inicio)) / 86400000) + 1)
+    : 0;
+  const puedeGestionarRegresoAusencia = ['admin', 'super_admin', 'staff'].includes(rolNormalizado);
+  const formatearFechaCorta = (iso = '') => {
+    const s = String(iso || '').slice(0, 10);
+    if (!s) return '—';
+    const [y, m, d] = s.split('-');
+    return y && m && d ? `${d}-${m}-${y}` : s;
+  };
   const normalizarRut = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
   const pupiloDesdeListado = Array.isArray(pupilosDisponibles)
     ? pupilosDisponibles.find((item) => normalizarRut(item?.rut) === normalizarRut(pupiloActivo?.rut))
@@ -717,6 +778,64 @@ function TarjetaJugadorPanel({
     }
   };
 
+  const cerrarModalAusencia = () => {
+    setMostrarModalAusencia(false);
+    setFormAusencia({ motivo: '', fecha_inicio: '', fecha_fin: '' });
+  };
+
+  const reportarAusencia = async () => {
+    const rut = String(pupiloActivo?.rut || '').trim();
+    if (!rut) return;
+    if (!formAusencia.motivo.trim() || !formAusencia.fecha_inicio || !formAusencia.fecha_fin) {
+      showToast({ message: 'Completa el motivo y el período (inicio y fin).', type: 'error' });
+      return;
+    }
+    if (formAusencia.fecha_fin < formAusencia.fecha_inicio) {
+      showToast({ message: 'La fecha de término no puede ser anterior a la de inicio.', type: 'error' });
+      return;
+    }
+    setGuardandoAusencia(true);
+    try {
+      await api.jugadoresAPI.reportarAusencia(rut, formAusencia);
+      showToast({ message: 'Ausencia registrada. Quedará bloqueada para citaciones durante el período indicado.', type: 'success' });
+      cerrarModalAusencia();
+      setRefrescarAusenciasContador((n) => n + 1);
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo registrar la ausencia.', type: 'error' });
+    } finally {
+      setGuardandoAusencia(false);
+    }
+  };
+
+  const cancelarAusenciaActiva = async () => {
+    if (!ausenciaActiva?.id) return;
+    if (!(await confirmAction({
+      title: 'Cancelar ausencia',
+      message: `¿Cancelar el reporte de ausencia de ${nombreDisplay}? Volverá a estar disponible de inmediato para citaciones y Pasar Lista.`,
+      confirmText: 'Sí, cancelar',
+    }))) {
+      return;
+    }
+    try {
+      await api.ausenciasAPI.cancelar(ausenciaActiva.id);
+      showToast({ message: 'Ausencia cancelada.', type: 'success' });
+      setRefrescarAusenciasContador((n) => n + 1);
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo cancelar la ausencia.', type: 'error' });
+    }
+  };
+
+  const confirmarRegresoAusencia = async () => {
+    if (!ausenciaActiva?.id) return;
+    try {
+      await api.ausenciasAPI.confirmarRegreso(ausenciaActiva.id);
+      showToast({ message: `${nombreDisplay} quedó confirmada como apta para volver a jugar.`, type: 'success' });
+      setRefrescarAusenciasContador((n) => n + 1);
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo confirmar el regreso.', type: 'error' });
+    }
+  };
+
   // Dibuja el frente de la tarjeta (marco real + foto + escudo + nivel/EXP +
   // datos al pie) una sola vez, a cualquier tamaño — la vista chica de "Ver
   // mi tarjeta de colección" y el export que se descarga usan EXACTAMENTE
@@ -941,6 +1060,98 @@ function TarjetaJugadorPanel({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {rolUsuario !== 'visita' && (
+        <div
+          className="card"
+          style={{
+            marginTop: '4px',
+            borderRadius: '18px',
+            padding: '16px',
+            background: ausenciaActiva ? 'linear-gradient(135deg, rgba(245,158,11,0.16), rgba(245,158,11,0.05))' : 'var(--blanco-tarjeta)',
+            border: ausenciaActiva ? '1.5px solid rgba(245,158,11,0.5)' : '1px solid rgba(0,0,0,0.08)',
+          }}
+        >
+          {ausenciaActiva ? (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <CalendarOff size={18} color="#b45309" />
+                <strong style={{ fontSize: '14px', fontWeight: '900', color: '#b45309' }}>Ausencia prolongada activa</strong>
+              </div>
+              <div style={{ fontSize: '13px', color: 'var(--texto-principal)', marginBottom: '6px', lineHeight: 1.4 }}>
+                <strong>{nombreDisplay}</strong> está ausente del {formatearFechaCorta(ausenciaActiva.fecha_inicio)} al {formatearFechaCorta(ausenciaActiva.fecha_fin)}.
+                Mientras dure, no será citada a partidos ni se le pasará lista con normalidad.
+              </div>
+              <div style={{ fontSize: '12px', fontStyle: 'italic', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
+                Motivo: {ausenciaActiva.motivo}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                <div style={{ flex: 1, height: '8px', borderRadius: '999px', background: 'rgba(245,158,11,0.2)', overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.min(100, Math.round((diasTranscurridosAusencia / Math.max(1, diasTotalesAusencia)) * 100))}%`, height: '100%', background: '#f59e0b' }} />
+                </div>
+                <span style={{ fontSize: '12px', fontWeight: '800', color: '#b45309', whiteSpace: 'nowrap' }}>
+                  Día {diasTranscurridosAusencia} de {diasTotalesAusencia}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                {puedeEditarDatosJugador && (
+                  <button
+                    type="button"
+                    onClick={cancelarAusenciaActiva}
+                    style={{ fontSize: '12px', fontWeight: '800', padding: '8px 14px', borderRadius: '10px', border: '1.5px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}
+                  >
+                    Cancelar ausencia
+                  </button>
+                )}
+                {puedeGestionarRegresoAusencia && !ausenciaActiva.confirmada_vuelta && (
+                  <button
+                    type="button"
+                    onClick={confirmarRegresoAusencia}
+                    style={{ fontSize: '12px', fontWeight: '800', padding: '8px 14px', borderRadius: '10px', border: 'none', background: '#10b981', color: 'white', cursor: 'pointer' }}
+                  >
+                    Confirmar apta para volver a jugar
+                  </button>
+                )}
+                {ausenciaActiva.confirmada_vuelta && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: '800', color: '#10b981' }}>
+                    <ShieldCheck size={14} /> Confirmada apta para volver
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--texto-secundario)', fontWeight: '600' }}>
+                <CalendarOff size={16} color="var(--texto-secundario)" /> Sin ausencias prolongadas activas
+              </div>
+              {puedeEditarDatosJugador && (
+                <button
+                  type="button"
+                  onClick={() => setMostrarModalAusencia(true)}
+                  style={{ fontSize: '12px', fontWeight: '800', padding: '8px 14px', borderRadius: '10px', border: '1.5px solid var(--azul-electrico)', background: 'transparent', color: 'var(--azul-electrico)', cursor: 'pointer' }}
+                >
+                  Informar ausencia prolongada
+                </button>
+              )}
+            </div>
+          )}
+
+          {historialAusencias.length > (ausenciaActiva ? 1 : 0) && (
+            <details style={{ marginTop: '10px' }}>
+              <summary style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', cursor: 'pointer' }}>
+                Historial de ausencias ({historialAusencias.length})
+              </summary>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                {historialAusencias.map((a) => (
+                  <div key={a.id} style={{ fontSize: '12px', color: 'var(--texto-secundario)', padding: '8px 10px', borderRadius: '10px', background: 'rgba(0,0,0,0.03)' }}>
+                    <strong style={{ color: 'var(--texto-principal)' }}>{formatearFechaCorta(a.fecha_inicio)} al {formatearFechaCorta(a.fecha_fin)}</strong> — {a.motivo}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
       )}
 
@@ -1469,6 +1680,84 @@ function TarjetaJugadorPanel({
                 ))}
               </div>
             )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {mostrarModalAusencia && createPortal(
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, padding: '20px',
+        }}>
+          <div style={{
+            background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '440px', width: '100%',
+            maxHeight: '86vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', color: 'var(--texto-principal)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <h3 style={{ margin: 0 }}>Informar ausencia prolongada</h3>
+              <button onClick={cerrarModalAusencia} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                <X size={22} color="var(--gris-secundario)" strokeWidth={1.5} />
+              </button>
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: '0 0 18px' }}>
+              Mientras dure el período indicado, {nombreDisplay} quedará bloqueada/o para citaciones y se informará su ausencia al pasar lista.
+            </p>
+
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', marginBottom: '6px' }}>Motivo</label>
+            <textarea
+              value={formAusencia.motivo}
+              onChange={(e) => setFormAusencia((prev) => ({ ...prev, motivo: e.target.value }))}
+              placeholder="Ej: Lesión, viaje, tratamiento médico..."
+              rows={3}
+              style={{
+                width: '100%', boxSizing: 'border-box', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.15)',
+                padding: '10px', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical', marginBottom: '14px',
+              }}
+            />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '18px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', marginBottom: '6px' }}>Desde</label>
+                <input
+                  type="date"
+                  value={formAusencia.fecha_inicio}
+                  onChange={(e) => setFormAusencia((prev) => ({ ...prev, fecha_inicio: e.target.value }))}
+                  style={{ width: '100%', boxSizing: 'border-box', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.15)', padding: '9px', fontSize: '13px', fontFamily: 'inherit' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '800', marginBottom: '6px' }}>Hasta</label>
+                <input
+                  type="date"
+                  value={formAusencia.fecha_fin}
+                  onChange={(e) => setFormAusencia((prev) => ({ ...prev, fecha_fin: e.target.value }))}
+                  min={formAusencia.fecha_inicio || undefined}
+                  style={{ width: '100%', boxSizing: 'border-box', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.15)', padding: '9px', fontSize: '13px', fontFamily: 'inherit' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={cerrarModalAusencia}
+                disabled={guardandoAusencia}
+                style={{ fontSize: '13px', fontWeight: '800', padding: '10px 16px', borderRadius: '10px', border: '1.5px solid rgba(0,0,0,0.15)', background: 'transparent', color: 'var(--texto-secundario)', cursor: guardandoAusencia ? 'default' : 'pointer' }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={reportarAusencia}
+                disabled={guardandoAusencia}
+                style={{ fontSize: '13px', fontWeight: '800', padding: '10px 16px', borderRadius: '10px', border: 'none', background: 'var(--azul-electrico)', color: 'white', cursor: guardandoAusencia ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                {guardandoAusencia && <Loader2 size={14} className="spin" />}
+                {guardandoAusencia ? 'Guardando...' : 'Informar ausencia'}
+              </button>
+            </div>
           </div>
         </div>,
         document.body

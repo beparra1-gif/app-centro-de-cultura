@@ -1831,6 +1831,35 @@ const ensureTarjetasColeccionadasTable = async () => {
   console.log('🃏 Tabla tarjetas_coleccionadas verificada');
 };
 
+// Ausencia prolongada: la reporta el apoderado (o admin/staff) con un motivo
+// y un período obligatorio (fecha_inicio/fecha_fin). Mientras hoy caiga
+// dentro de ese rango, la jugadora queda bloqueada para ser citada y Pasar
+// Lista debe avisar que está de baja en vez de pedir marcar presente/ausente.
+// confirmada_vuelta es un paso aparte y OPCIONAL (staff/DT confirma que ya
+// está apta para jugar) — no condiciona el des-bloqueo automático, que
+// depende solo de la fecha: como pidió el usuario, "cuando haya pasado el
+// período se habilita" sin depender de una confirmación manual.
+const ensureAusenciasJugadorTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ausencias_jugador (
+      id SERIAL PRIMARY KEY,
+      rut_jugador VARCHAR(20) NOT NULL REFERENCES jugadores(rut_jugador),
+      motivo TEXT NOT NULL,
+      fecha_inicio DATE NOT NULL,
+      fecha_fin DATE NOT NULL,
+      reportado_por_rut VARCHAR(20),
+      reportado_por_nombre VARCHAR(255),
+      confirmada_vuelta BOOLEAN NOT NULL DEFAULT false,
+      fecha_confirmacion TIMESTAMP,
+      confirmada_por_nombre VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ausencias_jugador_rut ON ausencias_jugador(rut_jugador)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ausencias_jugador_vigencia ON ausencias_jugador(fecha_inicio, fecha_fin)`);
+  console.log('🚑 Tabla ausencias_jugador verificada');
+};
+
 const ensureGamificacionPuntosTable = async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS gamificacion_puntos (
@@ -4869,6 +4898,117 @@ app.get('/api/jugadores/:rut/coleccion', authenticate, requireApoderadoDeJugador
   } catch (error) {
     console.error('[GET /api/jugadores/:rut/coleccion]', error);
     return res.status(500).json({ error: error.message || 'No se pudo cargar el álbum.' });
+  }
+});
+
+// POST: reporta una ausencia prolongada (motivo + período obligatorio). Solo
+// el apoderado del jugador o admin/superadmin — igual que el resto de
+// /api/jugadores/:rut/*. Mientras la fecha de hoy caiga dentro del período,
+// GET /api/ausencias/activas la va a devolver, y de ahí Pasar Lista y
+// Citaciones la usan para bloquear/avisar.
+app.post('/api/jugadores/:rut/ausencias', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), async (req, res) => {
+  try {
+    const rutJugador = String(req.params.rut || '').trim();
+    const motivo = String(req.body?.motivo || '').trim();
+    const fechaInicio = String(req.body?.fecha_inicio || '').trim();
+    const fechaFin = String(req.body?.fecha_fin || '').trim();
+
+    if (!motivo) return res.status(400).json({ error: 'Falta el motivo de la ausencia.' });
+    if (!fechaInicio || !fechaFin) return res.status(400).json({ error: 'Falta el período (fecha de inicio y fin).' });
+    if (new Date(fechaFin) < new Date(fechaInicio)) {
+      return res.status(400).json({ error: 'La fecha de término no puede ser anterior a la de inicio.' });
+    }
+
+    const nombreReporta = `${req.actor.nombres || ''} ${req.actor.apellido_paterno || ''}`.trim() || req.actor.correo || req.actor.rut;
+
+    const result = await pool.query(
+      `INSERT INTO ausencias_jugador (rut_jugador, motivo, fecha_inicio, fecha_fin, reportado_por_rut, reportado_por_nombre)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [rutJugador, motivo, fechaInicio, fechaFin, req.actor.rut || null, nombreReporta]
+    );
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('[POST /api/jugadores/:rut/ausencias]', error);
+    return res.status(500).json({ error: error.message || 'No se pudo registrar la ausencia.' });
+  }
+});
+
+// GET: historial de ausencias de UN jugador (para mostrar en su ficha/tarjeta).
+app.get('/api/jugadores/:rut/ausencias', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM ausencias_jugador WHERE rut_jugador = $1 ORDER BY fecha_inicio DESC`,
+      [String(req.params.rut || '').trim()]
+    );
+    return res.json(result.rows);
+  } catch (error) {
+    console.error('[GET /api/jugadores/:rut/ausencias]', error);
+    return res.status(500).json({ error: error.message || 'No se pudo obtener el historial de ausencias.' });
+  }
+});
+
+// GET: TODAS las ausencias vigentes hoy (fecha_inicio <= hoy <= fecha_fin),
+// con datos del jugador — lo consumen Pasar Lista y Citaciones para saber a
+// quién bloquear/avisar sin tener que consultar jugador por jugador.
+app.get('/api/ausencias/activas', authenticate, requireAnyModule('admin_dashboard', 'asistencia_staff', 'citaciones'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT a.*, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria
+       FROM ausencias_jugador a
+       JOIN jugadores j ON j.rut_jugador = a.rut_jugador
+       WHERE CURRENT_DATE BETWEEN a.fecha_inicio AND a.fecha_fin
+       ORDER BY a.fecha_fin ASC`
+    );
+    return res.json(result.rows);
+  } catch (error) {
+    console.error('[GET /api/ausencias/activas]', error);
+    return res.status(500).json({ error: error.message || 'No se pudo obtener las ausencias vigentes.' });
+  }
+});
+
+// POST: confirma que la jugadora ya está apta para volver a jugar. Paso
+// OPCIONAL del staff/DT — no condiciona el des-bloqueo, que ya pasa solo con
+// que la fecha_fin haya quedado atrás; esto es solo para dejar constancia.
+app.post('/api/ausencias/:id/confirmar-regreso', authenticate, requireAnyModule('admin_dashboard', 'asistencia_staff'), async (req, res) => {
+  try {
+    const nombreConfirma = `${req.actor.nombres || ''} ${req.actor.apellido_paterno || ''}`.trim() || req.actor.correo || req.actor.rut;
+    const result = await pool.query(
+      `UPDATE ausencias_jugador
+       SET confirmada_vuelta = true, fecha_confirmacion = NOW(), confirmada_por_nombre = $1
+       WHERE id = $2
+       RETURNING *`,
+      [nombreConfirma, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Ausencia no encontrada.' });
+    return res.json(result.rows[0]);
+  } catch (error) {
+    console.error('[POST /api/ausencias/:id/confirmar-regreso]', error);
+    return res.status(500).json({ error: error.message || 'No se pudo confirmar el regreso.' });
+  }
+});
+
+// DELETE: cancela un reporte de ausencia (ej. error de fecha) — solo quien
+// la reportó o admin/superadmin, mismo criterio que editar un video de
+// Academia (PUT /api/academia-videos/:id, ver más arriba).
+app.delete('/api/ausencias/:id', authenticate, async (req, res) => {
+  try {
+    const existente = await pool.query('SELECT reportado_por_rut FROM ausencias_jugador WHERE id = $1', [req.params.id]);
+    if (existente.rows.length === 0) return res.status(404).json({ error: 'Ausencia no encontrada.' });
+
+    const permisos = await resolverPermisosDeActor(req.actor);
+    if (!permisos.admin_dashboard) {
+      const rutReporto = normalizarRutParaComparar(existente.rows[0].reportado_por_rut || '');
+      if (!rutReporto || rutReporto !== normalizarRutParaComparar(req.actor.rut)) {
+        return res.status(403).json({ error: 'No puedes cancelar una ausencia reportada por otra persona.' });
+      }
+    }
+
+    await pool.query('DELETE FROM ausencias_jugador WHERE id = $1', [req.params.id]);
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('[DELETE /api/ausencias/:id]', error);
+    return res.status(500).json({ error: error.message || 'No se pudo cancelar la ausencia.' });
   }
 });
 
@@ -9247,6 +9387,10 @@ app.listen(PORT, () => {
 
   ensureTarjetasColeccionadasTable().catch((error) => {
     console.error('❌ Error verificando tabla tarjetas_coleccionadas:', error.message);
+  });
+
+  ensureAusenciasJugadorTable().catch((error) => {
+    console.error('❌ Error verificando tabla ausencias_jugador:', error.message);
   });
 
   ensureSuperAdminAccount().catch((error) => {

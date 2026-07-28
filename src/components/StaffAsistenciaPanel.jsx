@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSwipeable } from 'react-swipeable';
 import {
-  Save, Check, X, LayoutGrid, List, Search, QrCode,
+  Save, Check, X, LayoutGrid, List, Search, QrCode, CalendarOff,
   Trash2, Pencil, ChevronDown, ChevronUp, Calendar, Loader2,
 } from 'lucide-react';
 import { showToast } from '../utils/toast';
@@ -19,19 +19,36 @@ const ESTADO_COLOR = {
 
 const etiquetaEstado = (estado) => (estado === 'presente' ? 'Presente' : estado === 'ausente' ? 'Ausente' : estado === 'justificado' ? 'Justificado' : 'Pendiente');
 
+const COLOR_AUSENCIA_PROLONGADA = '#8b5cf6';
+
+// Cuenta los días transcurridos/totales de una ausencia prolongada activa
+// (misma fórmula que usa TarjetaJugadorPanel para el jugador/apoderado).
+const diasAusencia = (ausencia) => {
+  if (!ausencia) return null;
+  const hoy = new Date().toISOString().slice(0, 10);
+  const inicio = String(ausencia.fecha_inicio || '').slice(0, 10);
+  const fin = String(ausencia.fecha_fin || '').slice(0, 10);
+  if (!inicio || !fin) return null;
+  const total = Math.round((new Date(fin) - new Date(inicio)) / 86400000) + 1;
+  const transcurridos = Math.min(total, Math.round((new Date(hoy) - new Date(inicio)) / 86400000) + 1);
+  return { total, transcurridos };
+};
+
 function FilaJugadorSwipe({ jugador, onPresente, onAusente }) {
   const [dragX, setDragX] = useState(0);
+  const bloqueada = Boolean(jugador.ausenciaProlongada);
   const handlers = useSwipeable({
-    onSwiping: (e) => setDragX(Math.max(-110, Math.min(110, e.deltaX))),
+    onSwiping: (e) => !bloqueada && setDragX(Math.max(-110, Math.min(110, e.deltaX))),
     onSwiped: () => setDragX(0),
-    onSwipedRight: () => onPresente(jugador),
-    onSwipedLeft: () => onAusente(jugador),
+    onSwipedRight: () => !bloqueada && onPresente(jugador),
+    onSwipedLeft: () => !bloqueada && onAusente(jugador),
     trackMouse: true,
     delta: 45,
   });
 
   const estado = jugador.estadoAsistencia || 'pendiente';
   const colores = ESTADO_COLOR[estado] || ESTADO_COLOR.pendiente;
+  const dias = diasAusencia(jugador.ausenciaProlongada);
 
   return (
     <div style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', marginBottom: '10px' }}>
@@ -45,13 +62,13 @@ function FilaJugadorSwipe({ jugador, onPresente, onAusente }) {
         {dragX < -6 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>AUSENTE <X size={16} /></span>}
       </div>
       <div
-        {...handlers}
+        {...(bloqueada ? {} : handlers)}
         style={{
           position: 'relative', display: 'flex', flexDirection: 'column', gap: '8px',
-          padding: '14px', borderRadius: '16px', background: 'var(--blanco-tarjeta)',
-          borderLeft: `4px solid ${colores.bg}`,
+          padding: '14px', borderRadius: '16px', background: bloqueada ? 'rgba(139,92,246,0.06)' : 'var(--blanco-tarjeta)',
+          borderLeft: `4px solid ${bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg}`,
           transform: `translateX(${dragX}px)`, transition: dragX === 0 ? 'transform 0.25s ease' : 'none',
-          touchAction: 'pan-y', cursor: 'grab', boxShadow: '0 2px 8px rgba(15,23,42,0.05)',
+          touchAction: 'pan-y', cursor: bloqueada ? 'default' : 'grab', boxShadow: '0 2px 8px rgba(15,23,42,0.05)',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
@@ -59,15 +76,24 @@ function FilaJugadorSwipe({ jugador, onPresente, onAusente }) {
             <strong style={{ fontSize: '14px', color: 'var(--texto-principal)' }}>{jugador.nombre}</strong>
             <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{jugador.rama || 'Sin rama'} · {jugador.categoria || 'Sin categoría'}</div>
           </div>
-          <span style={{ fontSize: '10px', fontWeight: '900', padding: '4px 9px', borderRadius: '999px', background: colores.bgSoft, color: colores.bg, textTransform: 'uppercase' }}>
-            {etiquetaEstado(estado)}
+          <span style={{ fontSize: '10px', fontWeight: '900', padding: '4px 9px', borderRadius: '999px', background: bloqueada ? 'rgba(139,92,246,0.14)' : colores.bgSoft, color: bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg, textTransform: 'uppercase' }}>
+            {bloqueada ? 'Ausencia prolongada' : etiquetaEstado(estado)}
           </span>
         </div>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button onClick={() => onPresente(jugador)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '10px', background: estado === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: estado === 'presente' ? 'white' : 'var(--texto-secundario)' }}>PRESENTE</button>
-          <button onClick={() => onAusente(jugador)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '10px', background: (estado === 'ausente' || estado === 'justificado') ? colores.bg : 'rgba(255,59,48,0.08)', color: (estado === 'ausente' || estado === 'justificado') ? 'white' : 'var(--texto-secundario)' }}>AUSENTE</button>
-        </div>
-        <span style={{ fontSize: '9px', color: 'var(--texto-secundario)', textAlign: 'center', fontWeight: '700' }}>Desliza la tarjeta → presente · ← ausente</span>
+        {bloqueada ? (
+          <div style={{ fontSize: '11px', color: COLOR_AUSENCIA_PROLONGADA, fontWeight: '700', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <CalendarOff size={13} />
+            <span>{jugador.ausenciaProlongada.motivo}{dias ? ` · Día ${dias.transcurridos} de ${dias.total}` : ''}</span>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button onClick={() => onPresente(jugador)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '10px', background: estado === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: estado === 'presente' ? 'white' : 'var(--texto-secundario)' }}>PRESENTE</button>
+              <button onClick={() => onAusente(jugador)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '10px', background: (estado === 'ausente' || estado === 'justificado') ? colores.bg : 'rgba(255,59,48,0.08)', color: (estado === 'ausente' || estado === 'justificado') ? 'white' : 'var(--texto-secundario)' }}>AUSENTE</button>
+            </div>
+            <span style={{ fontSize: '9px', color: 'var(--texto-secundario)', textAlign: 'center', fontWeight: '700' }}>Desliza la tarjeta → presente · ← ausente</span>
+          </>
+        )}
       </div>
     </div>
   );
@@ -76,19 +102,26 @@ function FilaJugadorSwipe({ jugador, onPresente, onAusente }) {
 function TarjetaJugadorGrid({ jugador, onPresente, onAusente }) {
   const estado = jugador.estadoAsistencia || 'pendiente';
   const colores = ESTADO_COLOR[estado] || ESTADO_COLOR.pendiente;
+  const bloqueada = Boolean(jugador.ausenciaProlongada);
   return (
-    <div style={{ borderRadius: '16px', padding: '12px', background: 'var(--blanco-tarjeta)', borderTop: `4px solid ${colores.bg}`, boxShadow: '0 2px 8px rgba(15,23,42,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <div style={{ borderRadius: '16px', padding: '12px', background: bloqueada ? 'rgba(139,92,246,0.06)' : 'var(--blanco-tarjeta)', borderTop: `4px solid ${bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg}`, boxShadow: '0 2px 8px rgba(15,23,42,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <div style={{ textAlign: 'center' }}>
         <strong style={{ fontSize: '12px', display: 'block', color: 'var(--texto-principal)' }}>{jugador.nombre}</strong>
         <span style={{ fontSize: '10px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{jugador.categoria || 'Sin categoría'}</span>
       </div>
-      <span style={{ fontSize: '9px', fontWeight: '900', padding: '3px 8px', borderRadius: '999px', background: colores.bgSoft, color: colores.bg, textTransform: 'uppercase', textAlign: 'center' }}>
-        {etiquetaEstado(estado)}
+      <span style={{ fontSize: '9px', fontWeight: '900', padding: '3px 8px', borderRadius: '999px', background: bloqueada ? 'rgba(139,92,246,0.14)' : colores.bgSoft, color: bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg, textTransform: 'uppercase', textAlign: 'center' }}>
+        {bloqueada ? 'Ausente (prolongada)' : etiquetaEstado(estado)}
       </span>
-      <div style={{ display: 'flex', gap: '5px' }}>
-        <button onClick={() => onPresente(jugador)} style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '9px', fontWeight: '800', fontSize: '9px', background: estado === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: estado === 'presente' ? 'white' : 'var(--texto-secundario)' }}><Check size={11} /></button>
-        <button onClick={() => onAusente(jugador)} style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '9px', fontWeight: '800', fontSize: '9px', background: (estado === 'ausente' || estado === 'justificado') ? colores.bg : 'rgba(255,59,48,0.08)', color: (estado === 'ausente' || estado === 'justificado') ? 'white' : 'var(--texto-secundario)' }}><X size={11} /></button>
-      </div>
+      {bloqueada ? (
+        <div style={{ display: 'flex', justifyContent: 'center', color: COLOR_AUSENCIA_PROLONGADA }}>
+          <CalendarOff size={13} />
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: '5px' }}>
+          <button onClick={() => onPresente(jugador)} style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '9px', fontWeight: '800', fontSize: '9px', background: estado === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: estado === 'presente' ? 'white' : 'var(--texto-secundario)' }}><Check size={11} /></button>
+          <button onClick={() => onAusente(jugador)} style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '9px', fontWeight: '800', fontSize: '9px', background: (estado === 'ausente' || estado === 'justificado') ? colores.bg : 'rgba(255,59,48,0.08)', color: (estado === 'ausente' || estado === 'justificado') ? 'white' : 'var(--texto-secundario)' }}><X size={11} /></button>
+        </div>
+      )}
     </div>
   );
 }
@@ -115,6 +148,22 @@ function StaffAsistenciaPanel({
   const [detalleSesion, setDetalleSesion] = useState([]);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [editandoRegistroId, setEditandoRegistroId] = useState(null);
+
+  const [ausenciasActivas, setAusenciasActivas] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cargarAusenciasActivas = async () => {
+      try {
+        const datos = await api.ausenciasAPI.getActivas();
+        if (!cancelled) setAusenciasActivas(Array.isArray(datos) ? datos : []);
+      } catch {
+        if (!cancelled) setAusenciasActivas([]);
+      }
+    };
+    void cargarAusenciasActivas();
+    return () => { cancelled = true; };
+  }, []);
 
   const [filtroResumenRama, setFiltroResumenRama] = useState('todas');
   const [filtroResumenCategoria, setFiltroResumenCategoria] = useState('');
@@ -146,9 +195,27 @@ function StaffAsistenciaPanel({
   // resetea al guardar o al cambiar de sesión, sin tocar rosterBase.
   const [estadosAsistencia, setEstadosAsistencia] = useState({});
 
+  const ausenciasPorRut = useMemo(() => {
+    const mapa = new Map();
+    ausenciasActivas.forEach((a) => {
+      if (a.rut_jugador) mapa.set(a.rut_jugador, a);
+    });
+    return mapa;
+  }, [ausenciasActivas]);
+
+  // Una jugadora/or con ausencia prolongada activa se informa como
+  // "justificada" automáticamente (no se registra como falta sin aviso) y
+  // queda bloqueada para el swipe/botones manuales — ver FilaJugadorSwipe.
   const rosterConEstado = useMemo(() => (
-    rosterBase.map((j) => ({ ...j, estadoAsistencia: estadosAsistencia[j.rut_jugador] || 'pendiente' }))
-  ), [rosterBase, estadosAsistencia]);
+    rosterBase.map((j) => {
+      const ausenciaProlongada = ausenciasPorRut.get(j.rut_jugador) || null;
+      return {
+        ...j,
+        ausenciaProlongada,
+        estadoAsistencia: ausenciaProlongada ? 'justificado' : (estadosAsistencia[j.rut_jugador] || 'pendiente'),
+      };
+    })
+  ), [rosterBase, estadosAsistencia, ausenciasPorRut]);
 
   const categoriasDisponibles = useMemo(() => {
     const setCategorias = new Set(
@@ -176,14 +243,25 @@ function StaffAsistenciaPanel({
   const totalLista = rosterFiltrado.length;
   const baseAsistencia = Math.max(totalLista - justificados, 1);
   const porcentaje = totalLista > 0 ? Math.round((presentes / baseAsistencia) * 100) : 0;
+  const ausenciasProlongadasEnLista = rosterFiltrado.filter(j => j.ausenciaProlongada).length;
 
   const cambiarEstado = (id, nuevoEstado) => {
     setEstadosAsistencia((prev) => ({ ...prev, [id]: nuevoEstado }));
   };
 
-  const marcarPresente = (jugador) => cambiarEstado(jugador.id, 'presente');
+  const marcarPresente = (jugador) => {
+    if (jugador.ausenciaProlongada) {
+      showToast({ message: `${jugador.nombre} tiene una ausencia prolongada informada (hasta ${String(jugador.ausenciaProlongada.fecha_fin || '').slice(0, 10)}) y no se puede marcar manualmente.`, type: 'info' });
+      return;
+    }
+    cambiarEstado(jugador.id, 'presente');
+  };
 
   const marcarAusente = async (jugador) => {
+    if (jugador.ausenciaProlongada) {
+      showToast({ message: `${jugador.nombre} tiene una ausencia prolongada informada (hasta ${String(jugador.ausenciaProlongada.fecha_fin || '').slice(0, 10)}) y no se puede marcar manualmente.`, type: 'info' });
+      return;
+    }
     const justificada = await confirmAction({
       title: 'Registrar ausencia',
       message: `¿La ausencia de ${jugador.nombre} está justificada (licencia médica, aviso previo, etc.)?`,
@@ -201,6 +279,10 @@ function StaffAsistenciaPanel({
     const jugador = rosterFiltrado.find((j) => (j.rut_jugador || j.rut) === payload.rut);
     if (!jugador) {
       showToast({ message: `${payload.nombre || payload.rut} no está en la nómina filtrada actual.`, type: 'error' });
+      return;
+    }
+    if (jugador.ausenciaProlongada) {
+      showToast({ message: `${jugador.nombre} tiene una ausencia prolongada informada y no puede marcarse presente.`, type: 'error' });
       return;
     }
     if (jugador.estadoAsistencia === 'presente') {
@@ -244,7 +326,9 @@ function StaffAsistenciaPanel({
           nombre_jugador: j.nombre,
           categoria: j.categoria || '',
           estado_asistencia: j.estadoAsistencia || 'pendiente',
-          observacion: j.estadoAsistencia === 'justificado' ? 'Justificada' : null,
+          observacion: j.ausenciaProlongada
+            ? `Ausencia prolongada: ${j.ausenciaProlongada.motivo}`
+            : (j.estadoAsistencia === 'justificado' ? 'Justificada' : null),
         })),
       });
       showToast({ message: `Asistencia guardada: ${presentes} presentes, ${ausentes} ausentes, ${justificados} justificados.`, type: 'success' });
@@ -479,6 +563,9 @@ function StaffAsistenciaPanel({
             <div className="desglose-row"><span>Presentes en Cancha:</span><strong>{presentes}</strong></div>
             <div className="desglose-row"><span>Ausentes (Sin aviso):</span><strong style={{ color: 'var(--rojo-alerta)' }}>{ausentes}</strong></div>
             <div className="desglose-row"><span>Con Licencia Médica:</span><strong style={{ color: '#FF9500' }}>{justificados}</strong></div>
+            {ausenciasProlongadasEnLista > 0 && (
+              <div className="desglose-row"><span>Con ausencia prolongada informada:</span><strong style={{ color: COLOR_AUSENCIA_PROLONGADA }}>{ausenciasProlongadasEnLista}</strong></div>
+            )}
           </div>
 
           <button className="btn-electric mt-20" onClick={guardarSesionAsistencia} disabled={guardandoSesion}>

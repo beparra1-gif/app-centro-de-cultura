@@ -640,6 +640,37 @@ export const jugadoresAPI = {
     });
     return handleResponse(response);
   },
+
+  // Ausencias prolongadas: motivo + período obligatorio, bloquea citaciones
+  // y avisa en Pasar Lista mientras esté vigente.
+  reportarAusencia: async (rut, { motivo, fecha_inicio, fecha_fin }) => {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}/ausencias`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motivo, fecha_inicio, fecha_fin }),
+    });
+    return handleResponse(response);
+  },
+
+  getAusencias: async (rut) => {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}/ausencias`);
+    return handleResponse(response);
+  },
+};
+
+export const ausenciasAPI = {
+  getActivas: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/ausencias/activas`);
+    return handleResponse(response);
+  },
+  confirmarRegreso: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/ausencias/${id}/confirmar-regreso`, { method: 'POST' });
+    return handleResponse(response);
+  },
+  cancelar: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/ausencias/${id}`, { method: 'DELETE' });
+    return handleResponse(response);
+  },
 };
 
 // ========== PAGOS MENSUALIDADES (FASE 1) ==========

@@ -449,6 +449,7 @@ function SuperAdminPanel({
   const [citaRama, setCitaRama] = useState('todas');
   const [citaCategoria, setCitaCategoria] = useState('todas');
   const [categoriasExtraCitacion, setCategoriasExtraCitacion] = useState([]);
+  const [ausenciasActivasCitacion, setAusenciasActivasCitacion] = useState([]);
   const [seleccionCitacion, setSeleccionCitacion] = useState({});
   const [autorizacionMorosos, setAutorizacionMorosos] = useState({});
   const [citacionActivaId, setCitacionActivaId] = useState(null);
@@ -807,8 +808,29 @@ function SuperAdminPanel({
     });
   }, [pagosMensualidadesAdmin]);
 
+  // Las jugadoras/es con una ausencia prolongada activa (informada desde su
+  // ficha) quedan bloqueadas para citación mientras dure el período — se
+  // carga una vez al entrar al panel, igual que el resto de listados admin.
+  useEffect(() => {
+    let cancelled = false;
+    const cargarAusenciasActivasCitacion = async () => {
+      try {
+        const datos = await api.ausenciasAPI.getActivas();
+        if (!cancelled) setAusenciasActivasCitacion(Array.isArray(datos) ? datos : []);
+      } catch {
+        if (!cancelled) setAusenciasActivasCitacion([]);
+      }
+    };
+    void cargarAusenciasActivasCitacion();
+    return () => { cancelled = true; };
+  }, []);
+
+  const rutsConAusenciaActiva = useMemo(() => (
+    new Set(ausenciasActivasCitacion.map((a) => String(a.rut_jugador || '').trim()).filter(Boolean))
+  ), [ausenciasActivasCitacion]);
+
   const jugadorasCitacion = useMemo(() => {
-    const base = (jugadoresAdmin || []).filter((j) => (j.estado || 'ACTIVO').toUpperCase() !== 'BAJA');
+    const base = (jugadoresAdmin || []).filter((j) => (j.estado || 'ACTIVO').toUpperCase() !== 'BAJA' && !rutsConAusenciaActiva.has(String(j.rut_jugador || '').trim()));
     const categoriasPermitidas = new Set(
       [citaCategoria, ...categoriasExtraCitacion]
         .map((c) => String(c || '').trim().toLowerCase())
@@ -823,7 +845,7 @@ function SuperAdminPanel({
       if (categoriasPermitidas.size > 0 && !categoriasPermitidas.has(categoria)) return false;
       return true;
     });
-  }, [jugadoresAdmin, citaRama, citaCategoria, categoriasExtraCitacion]);
+  }, [jugadoresAdmin, citaRama, citaCategoria, categoriasExtraCitacion, rutsConAusenciaActiva]);
 
   const cuposCitados = Object.values(seleccionCitacion).filter(Boolean).length;
 
@@ -1924,7 +1946,7 @@ function SuperAdminPanel({
 
     return (jugadoresAdmin || []).filter((jugador) => {
       const rut = String(jugador.rut_jugador || '').trim();
-      if (!rut || convocadosSet.has(rut)) return false;
+      if (!rut || convocadosSet.has(rut) || rutsConAusenciaActiva.has(rut)) return false;
 
       const ramaJugador = String(jugador.rama || '').trim().toLowerCase();
       if (ramaObjetivo !== 'todas' && ramaJugador !== ramaObjetivo) return false;
