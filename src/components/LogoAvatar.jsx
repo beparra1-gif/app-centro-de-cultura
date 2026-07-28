@@ -12,6 +12,7 @@ function LogoAvatar({
   fallbackText = '',
   title = '',
   style = {},
+  objectFit = 'cover',
 }) {
   const candidatos = useMemo(
     () => construirLogoCandidates({ nombre, logoUrl, slug, tipo }),
@@ -78,7 +79,7 @@ function LogoAvatar({
             setUsarFallback(true);
           }
         }}
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        style={{ width: '100%', height: '100%', objectFit }}
       />
     </div>
   );

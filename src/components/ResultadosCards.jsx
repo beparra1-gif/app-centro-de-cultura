@@ -62,15 +62,22 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
         >
           {/* Header - Torneo y Categoría */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '14px', gap: isMobile ? '8px' : '0', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
               {partido.torneoLogoUrl && (
-                <LogoAvatar nombre={partido.torneo || 'Torneo'} logoUrl={partido.torneoLogoUrl} size={26} borderRadius="999px" />
+                <LogoAvatar
+                  nombre={partido.torneo || 'Torneo'}
+                  logoUrl={partido.torneoLogoUrl}
+                  size={56}
+                  borderRadius="12px"
+                  objectFit="contain"
+                  style={{ background: 'transparent', border: 'none' }}
+                />
               )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                <span style={{ fontSize: '22px', fontWeight: '800', color: 'var(--texto-principal)', textTransform: 'uppercase', letterSpacing: '0.3px', lineHeight: '1.15', overflowWrap: 'anywhere' }}>
                   {partido.torneo || 'Competencia'}
                 </span>
-                <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', opacity: 0.7 }}>
+                <span style={{ fontSize: '13px', color: 'var(--texto-secundario)', opacity: 0.8, fontWeight: '600' }}>
                   {partido.categoria || 'General'}
                 </span>
               </div>
@@ -100,11 +107,12 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
           }}>
             {/* Local */}
             <div style={{ textAlign: 'center', minWidth: 0 }}>
-              <LogoAvatar 
-                nombre={partido.equipoLocalNombre || 'Centro de Cultura Física'} 
-                logoUrl={partido.equipoLocalLogoUrl || '/logos/club-logo.png'} 
-                size={isMobile ? 60 : 82} 
+              <LogoAvatar
+                nombre={partido.equipoLocalNombre || 'Centro de Cultura Física'}
+                logoUrl={partido.equipoLocalLogoUrl || '/logos/club-logo.png'}
+                size={isMobile ? 60 : 82}
                 borderRadius="14px"
+                objectFit="contain"
                 style={{ border: 'none', background: 'transparent', boxShadow: 'none' }}
               />
               <div style={{ 
@@ -144,11 +152,12 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
 
             {/* Visitante */}
             <div style={{ textAlign: 'center', minWidth: 0 }}>
-              <LogoAvatar 
-                nombre={partido.nombreRival} 
-                logoUrl={partido.rivalLogoUrl || partido.equipoVisitaLogoUrl || ''} 
-                size={isMobile ? 60 : 82} 
+              <LogoAvatar
+                nombre={partido.nombreRival}
+                logoUrl={partido.rivalLogoUrl || partido.equipoVisitaLogoUrl || ''}
+                size={isMobile ? 60 : 82}
                 borderRadius="14px"
+                objectFit="contain"
                 fallbackText={partido.nombreRival?.substring(0, 3).toUpperCase()}
                 style={{ border: 'none', background: 'transparent', boxShadow: 'none' }}
               />
