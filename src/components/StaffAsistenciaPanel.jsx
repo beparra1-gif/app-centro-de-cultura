@@ -99,8 +99,7 @@ function StaffAsistenciaPanel({
   setVistaStaff,
   filtroRamaStaff,
   setFiltroRamaStaff,
-  rosterEquipo,
-  setRosterEquipo,
+  todosJugadores,
 }) {
   const [fechaLista, setFechaLista] = useState(() => new Date().toISOString().slice(0, 10));
   const [horaInicio, setHoraInicio] = useState('18:00');
@@ -127,22 +126,49 @@ function StaffAsistenciaPanel({
 
   const nombreEntrenador = `${usuarioAutenticado?.nombres || ''} ${usuarioAutenticado?.apellido_paterno || ''}`.trim() || usuarioAutenticado?.correo || 'Staff';
 
+  // Nómina real del club (todos los deportistas), independiente del roster
+  // de un partido en vivo de Mesa de Control — antes "Pasar Lista" usaba el
+  // mismo estado que esa pantalla y, apenas alguien armaba o restauraba un
+  // partido (roster chico o vacío), la lista de asistencia se quedaba sin
+  // jugadores y sin categorías para filtrar (las categorías se calculan a
+  // partir del roster disponible).
+  const rosterBase = useMemo(() => (
+    (Array.isArray(todosJugadores) ? todosJugadores : []).map((j) => ({
+      id: j.rut_jugador,
+      rut_jugador: j.rut_jugador,
+      nombre: `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''}`.trim(),
+      rama: j.rama || '',
+      categoria: j.categoria || '',
+    }))
+  ), [todosJugadores]);
+
+  // Estado de asistencia de la sesión actual, aparte de la nómina — se
+  // resetea al guardar o al cambiar de sesión, sin tocar rosterBase.
+  const [estadosAsistencia, setEstadosAsistencia] = useState({});
+
+  const rosterConEstado = useMemo(() => (
+    rosterBase.map((j) => ({ ...j, estadoAsistencia: estadosAsistencia[j.rut_jugador] || 'pendiente' }))
+  ), [rosterBase, estadosAsistencia]);
+
   const categoriasDisponibles = useMemo(() => {
     const setCategorias = new Set(
-      (rosterEquipo || []).map((j) => String(j.categoria || '').trim()).filter(Boolean)
+      rosterConEstado
+        .filter((j) => filtroRamaStaff === 'todas' || String(j.rama || '').toLowerCase() === String(filtroRamaStaff || '').toLowerCase())
+        .map((j) => String(j.categoria || '').trim())
+        .filter(Boolean)
     );
     return Array.from(setCategorias).sort((a, b) => a.localeCompare(b, 'es'));
-  }, [rosterEquipo]);
+  }, [rosterConEstado, filtroRamaStaff]);
 
   const rosterFiltrado = useMemo(() => {
-    return (rosterEquipo || []).filter((j) => {
+    return rosterConEstado.filter((j) => {
       const rama = String(j.rama || '').toLowerCase();
       const categoria = String(j.categoria || '').trim();
       const coincideRama = filtroRamaStaff === 'todas' || rama === String(filtroRamaStaff || '').toLowerCase();
       const coincideCategoria = categoriasSeleccionadas.length === 0 || categoriasSeleccionadas.includes(categoria);
       return coincideRama && coincideCategoria;
     });
-  }, [rosterEquipo, filtroRamaStaff, categoriasSeleccionadas]);
+  }, [rosterConEstado, filtroRamaStaff, categoriasSeleccionadas]);
 
   const presentes = rosterFiltrado.filter(j => j.estadoAsistencia === 'presente').length;
   const ausentes = rosterFiltrado.filter(j => j.estadoAsistencia === 'ausente').length;
@@ -152,7 +178,7 @@ function StaffAsistenciaPanel({
   const porcentaje = totalLista > 0 ? Math.round((presentes / baseAsistencia) * 100) : 0;
 
   const cambiarEstado = (id, nuevoEstado) => {
-    setRosterEquipo(rosterEquipo.map(j => j.id === id ? { ...j, estadoAsistencia: nuevoEstado } : j));
+    setEstadosAsistencia((prev) => ({ ...prev, [id]: nuevoEstado }));
   };
 
   const marcarPresente = (jugador) => cambiarEstado(jugador.id, 'presente');
@@ -222,7 +248,7 @@ function StaffAsistenciaPanel({
         })),
       });
       showToast({ message: `Asistencia guardada: ${presentes} presentes, ${ausentes} ausentes, ${justificados} justificados.`, type: 'success' });
-      setRosterEquipo(rosterEquipo.map((j) => ({ ...j, estadoAsistencia: 'pendiente' })));
+      setEstadosAsistencia({});
       setFechaLista(new Date().toISOString().slice(0, 10));
       setHoraInicio('18:00');
       setHoraFin('19:30');

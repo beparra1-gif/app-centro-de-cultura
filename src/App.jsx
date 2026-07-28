@@ -193,8 +193,7 @@ function App() {
   // --- ESTADOS: STAFF TÉCNICO (DT) ---
   const [vistaStaff, setVistaStaff] = useState('asistencia'); // asistencia, evaluacion, historial
   const [filtroRamaStaff, setFiltroRamaStaff] = useState('Masculina');
-  const [filtroCatStaff, setFiltroCatStaff] = useState('U15');
-  
+
   const [rosterEquipo, setRosterEquipo] = useState([]);
   
   const [evalTiro, setEvalTiro] = useState(70);
@@ -3072,10 +3071,7 @@ function App() {
                 setVistaStaff={setVistaStaff}
                 filtroRamaStaff={filtroRamaStaff}
                 setFiltroRamaStaff={setFiltroRamaStaff}
-                filtroCatStaff={filtroCatStaff}
-                setFiltroCatStaff={setFiltroCatStaff}
-                rosterEquipo={rosterEquipo}
-                setRosterEquipo={setRosterEquipo}
+                todosJugadores={jugadoresAdmin}
               />
             )}
             {puedeVerPantalla('scoreboard_live') && pantallaActiva === 'scoreboard_live' && (
