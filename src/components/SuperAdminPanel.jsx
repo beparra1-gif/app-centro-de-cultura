@@ -442,6 +442,7 @@ function SuperAdminPanel({
   // acepta un campo password opcional y lo hashea si viene.
   const [nuevaClaveCuenta, setNuevaClaveCuenta] = useState('');
   const [mostrarNuevaClaveCuenta, setMostrarNuevaClaveCuenta] = useState(false);
+  const [reseteandoClaveId, setReseteandoClaveId] = useState(null);
   const [tipoNuevoUsuario, setTipoNuevoUsuario] = useState('cuenta');
   const [guardandoUsuario, setGuardandoUsuario] = useState(false);
   const [eliminandoUsuarioId, setEliminandoUsuarioId] = useState('');
@@ -943,6 +944,16 @@ function SuperAdminPanel({
             <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
               Modificar
             </button>
+            {u.tipo === 'cuenta' && (esAdmin || esSuperAdmin) && (
+              <button
+                className="btn-secondary"
+                style={{ width: 'auto' }}
+                onClick={() => resetearClaveDesdeLista(u.raw)}
+                disabled={reseteandoClaveId === u.raw.id}
+              >
+                <Lock size={13} /> {reseteandoClaveId === u.raw.id ? 'Restableciendo...' : 'Restablecer clave'}
+              </button>
+            )}
             {esSuperAdmin && (
               <button
                 className="btn-secondary"
@@ -1470,6 +1481,35 @@ function SuperAdminPanel({
     let clave = '';
     for (let i = 0; i < 8; i += 1) clave += chars[Math.floor(Math.random() * chars.length)];
     return clave;
+  };
+
+  // Acción directa desde la fila de la lista (sin tener que abrir "Modificar"
+  // primero) — genera y guarda la clave nueva en un solo clic, la copia al
+  // portapapeles y la deja igual en el toast por si el portapapeles no está
+  // disponible (ej. sin HTTPS).
+  const resetearClaveDesdeLista = async (cuenta) => {
+    const nombreMostrar = `${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim() || cuenta.correo || cuenta.rut;
+    const clave = generarClaveAleatoria();
+    setReseteandoClaveId(cuenta.id);
+    try {
+      await guardarCuentaAdmin({ password: clave, forzar_clave: true }, cuenta.id);
+      let copiada = false;
+      try {
+        await navigator.clipboard.writeText(clave);
+        copiada = true;
+      } catch {
+        // Portapapeles no disponible (ej. sin HTTPS) — igual se muestra en el toast.
+      }
+      showToast({
+        message: `Nueva clave para ${nombreMostrar}: ${clave}${copiada ? ' (copiada al portapapeles)' : ''}`,
+        type: 'success',
+        duration: 10000,
+      });
+    } catch (error) {
+      showToast({ message: `No se pudo restablecer la contraseña: ${error.message}`, type: 'error' });
+    } finally {
+      setReseteandoClaveId(null);
+    }
   };
 
   const guardarEdicionActual = async () => {
