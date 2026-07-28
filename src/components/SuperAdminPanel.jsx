@@ -2737,7 +2737,7 @@ function SuperAdminPanel({
                 </label>
               </div>
 
-              {esSuperAdmin && (
+              {(esAdmin || esSuperAdmin) && (
                 <div className="form-group" style={{ marginBottom: '12px', padding: '12px', borderRadius: '14px', background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.18)' }}>
                   <label>Restablecer contraseña (si el usuario la olvidó)</label>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
