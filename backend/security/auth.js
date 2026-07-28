@@ -203,7 +203,12 @@ const normalizarRutParaComparar = (rut = '') => String(rut || '').replace(/\./g,
 // o si su RUT coincide con el rut_apoderado registrado del jugador (apoderado
 // editando el perfil de su propio pupilo). Consulta la tabla en cada request
 // para reflejar reasignaciones de apoderado sin depender del token.
-const requireApoderadoDeJugadorOModule = (pool, moduloId) => async (req, res, next) => {
+// permitirPropioJugador (default false, para no cambiar el comportamiento de
+// las rutas que ya usaban esto): si es true, el jugador con cuenta propia
+// (rol jugador/deportista) también puede actuar sobre su propio rut, no solo
+// su apoderado — usado por ejemplo en la foto de la tarjeta coleccionable,
+// donde el club pidió explícitamente que el deportista pueda subir la suya.
+const requireApoderadoDeJugadorOModule = (pool, moduloId, { permitirPropioJugador = false } = {}) => async (req, res, next) => {
   const actor = req.actor;
   if (!actor) {
     return res.status(401).json({ error: 'Falta token de autenticación.' });
@@ -216,6 +221,11 @@ const requireApoderadoDeJugadorOModule = (pool, moduloId) => async (req, res, ne
   const rutActor = normalizarRutParaComparar(actor.rut);
   if (!rutJugador || !rutActor) {
     return res.status(403).json({ error: 'No tienes acceso a este recurso.' });
+  }
+
+  if (permitirPropioJugador && normalizarRutParaComparar(rutJugador) === rutActor) {
+    req.esJugadorDueno = true;
+    return next();
   }
 
   pool.query('SELECT rut_apoderado FROM jugadores WHERE rut_jugador = $1', [rutJugador])

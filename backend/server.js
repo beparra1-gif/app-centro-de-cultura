@@ -4754,7 +4754,7 @@ app.post('/api/jugadores/:rut/foto', authenticate, requireApoderadoDeJugadorOMod
 // POST: foto SOLO para la tarjeta coleccionable (foto_tarjeta_coleccion) —
 // campo separado de foto_jugador a pedido explicito del usuario: subir una
 // foto para la tarjeta no debe cambiar la foto de perfil general.
-app.post('/api/jugadores/:rut/foto-tarjeta', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), uploadLogoMemoria.single('archivo'), async (req, res) => {
+app.post('/api/jugadores/:rut/foto-tarjeta', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), uploadLogoMemoria.single('archivo'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Debes seleccionar una foto.' });
