@@ -1,4 +1,5 @@
-import { ChevronRight, HeartPulse, Lock, User } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronRight, Eye, EyeOff, HeartPulse, Lock, User } from 'lucide-react';
 
 function OnboardingModal({
   onboardingProgress,
@@ -14,6 +15,7 @@ function OnboardingModal({
   onboardingSubiendoFoto,
   subirFotoOnboarding,
 }) {
+  const [mostrarClaveOnboarding, setMostrarClaveOnboarding] = useState(false);
   const muestraCampo = (campo) => Array.isArray(onboardingCamposPendientes) && onboardingCamposPendientes.includes(campo);
 
   const labelCampo = {
@@ -39,18 +41,29 @@ function OnboardingModal({
             <h3 style={{ fontWeight: '900' }}><Lock size={20} color="var(--azul-marino)" /> Clave de Seguridad</h3>
             <p>Debes cambiar tu contraseña inicial por una personal y segura para continuar.</p>
             <label htmlFor="onboarding-password-nueva" className="form-label mt-10">Nueva contraseña</label>
-            <input
-              id="onboarding-password-nueva"
-              type="password"
-              placeholder="Nueva contraseña"
-              className="form-input"
-              value={onboardingPassword}
-              onChange={(e) => setOnboardingPassword(e.target.value)}
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                id="onboarding-password-nueva"
+                type={mostrarClaveOnboarding ? 'text' : 'password'}
+                placeholder="Nueva contraseña"
+                className="form-input"
+                style={{ paddingRight: '40px' }}
+                value={onboardingPassword}
+                onChange={(e) => setOnboardingPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => setMostrarClaveOnboarding((v) => !v)}
+                aria-label={mostrarClaveOnboarding ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--gris-secundario)' }}
+              >
+                {mostrarClaveOnboarding ? <EyeOff size={16} strokeWidth={1.5} /> : <Eye size={16} strokeWidth={1.5} />}
+              </button>
+            </div>
             <label htmlFor="onboarding-password-repetir" className="form-label mt-10">Repetir contraseña</label>
             <input
               id="onboarding-password-repetir"
-              type="password"
+              type={mostrarClaveOnboarding ? 'text' : 'password'}
               placeholder="Repetir contraseña"
               className="form-input"
               value={onboardingPasswordConfirm}

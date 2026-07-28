@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bell, ChevronLeft, Lock, QrCode, Trophy, User } from 'lucide-react';
+import { Bell, ChevronLeft, Eye, EyeOff, Lock, QrCode, Trophy, User } from 'lucide-react';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
@@ -196,8 +196,22 @@ function PublicFacadePanel({
   galeriaPublica,
   partidos,
 }) {
+  const [mostrarClave, setMostrarClave] = useState(false);
+
   const abrirContactoWhatsApp = () => {
     const mensaje = encodeURIComponent('Hola! Quiero ser parte de la familia deportiva del Club Centro de Cultura Física.');
+    window.open(`https://wa.me/56953297869?text=${mensaje}`, '_blank');
+  };
+
+  // No hay envío de correo/SMS para recuperación automática — reutiliza el
+  // mismo canal de WhatsApp que ya usa "Contáctanos" para que el club pueda
+  // restablecerla desde el panel de Administración (el superadmin ya tiene
+  // esa opción en Usuarios y Cuentas).
+  const abrirRecuperarClave = () => {
+    const rut = String(rutInput || '').trim();
+    const mensaje = encodeURIComponent(
+      `Hola! Olvidé mi contraseña de acceso al club.${rut ? ` Mi RUT es: ${rut}.` : ''} ¿Me pueden ayudar a restablecerla?`
+    );
     window.open(`https://wa.me/56953297869?text=${mensaje}`, '_blank');
   };
 
@@ -261,8 +275,19 @@ function PublicFacadePanel({
               </div>
               <div className="input-group-login mt-10">
                 <Lock size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
-                <input type="password" placeholder="Contraseña" value={passInput} onChange={e => setPassInput(e.target.value)} required />
+                <input type={mostrarClave ? 'text' : 'password'} placeholder="Contraseña" value={passInput} onChange={e => setPassInput(e.target.value)} required />
+                <button
+                  type="button"
+                  onClick={() => setMostrarClave((v) => !v)}
+                  aria-label={mostrarClave ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--gris-secundario)' }}
+                >
+                  {mostrarClave ? <EyeOff size={18} strokeWidth={1.5} /> : <Eye size={18} strokeWidth={1.5} />}
+                </button>
               </div>
+              <button type="button" className="btn-volver-texto" style={{ padding: '8px 0', fontSize: '13px' }} onClick={abrirRecuperarClave}>
+                ¿Olvidaste tu contraseña?
+              </button>
               <button type="submit" className="btn-electric mt-20">Ingresar al Sistema</button>
               <button type="button" className="btn-volver-texto mt-15" onClick={volverInicioLogin}>
                 <ChevronLeft size={16} /> Volver a opciones

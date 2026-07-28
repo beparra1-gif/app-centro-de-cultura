@@ -6,6 +6,8 @@ import {
   Check,
   CheckSquare,
   ChevronDown,
+  Eye,
+  EyeOff,
   FileText,
   Filter,
   History,
@@ -434,6 +436,11 @@ function SuperAdminPanel({
   const [editandoTipo, setEditandoTipo] = useState(null);
   const [cuentaAdminEdit, setCuentaAdminEdit] = useState(null);
   const [jugadorAdminEdit, setJugadorAdminEdit] = useState(null);
+  // Restablecer contraseña: separado de cuentaAdminEdit para no mostrar/enviar
+  // nada si el superadmin no la toca — el backend (PUT /api/cuentas/:id) ya
+  // acepta un campo password opcional y lo hashea si viene.
+  const [nuevaClaveCuenta, setNuevaClaveCuenta] = useState('');
+  const [mostrarNuevaClaveCuenta, setMostrarNuevaClaveCuenta] = useState(false);
   const [tipoNuevoUsuario, setTipoNuevoUsuario] = useState('cuenta');
   const [guardandoUsuario, setGuardandoUsuario] = useState(false);
   const [eliminandoUsuarioId, setEliminandoUsuarioId] = useState('');
@@ -1220,6 +1227,8 @@ function SuperAdminPanel({
       setEditandoTipo('cuenta');
       setJugadorAdminEdit(null);
       setCuentaAdminEdit(aplicarReglaMensualidad({ ...item.raw }));
+      setNuevaClaveCuenta('');
+      setMostrarNuevaClaveCuenta(false);
       return;
     }
 
@@ -1243,6 +1252,8 @@ function SuperAdminPanel({
     setEditandoTipo(null);
     setCuentaAdminEdit(null);
     setJugadorAdminEdit(null);
+    setNuevaClaveCuenta('');
+    setMostrarNuevaClaveCuenta(false);
     if (typeof onCancelEdit === 'function') onCancelEdit(permisosSnapshotAntesEdicion);
   };
 
@@ -1451,6 +1462,15 @@ function SuperAdminPanel({
     return () => window.clearTimeout(timer);
   }, [editandoTipo]);
 
+  // Sin 0/O/1/l/I para que no se confundan al transcribirla a mano cuando
+  // el superadmin se la dicte o escriba al usuario que olvidó su clave.
+  const generarClaveAleatoria = () => {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let clave = '';
+    for (let i = 0; i < 8; i += 1) clave += chars[Math.floor(Math.random() * chars.length)];
+    return clave;
+  };
+
   const guardarEdicionActual = async () => {
     try {
       setGuardandoUsuario(true);
@@ -1459,9 +1479,15 @@ function SuperAdminPanel({
         const cuentaPreparada = aplicarReglaMensualidad({
           ...cuentaAdminEdit,
           permisos_override: getPermisosPersistibles(cuentaAdminEdit),
+          // Solo se envía si el superadmin realmente escribió/generó una
+          // clave nueva — nunca se manda vacío para no pisar la existente.
+          ...(nuevaClaveCuenta.trim() ? { password: nuevaClaveCuenta.trim() } : {}),
         });
         await guardarCuentaAdmin(cuentaPreparada, cuentaAdminEdit.id);
-        showToast({ message: 'Cuenta actualizada correctamente.', type: 'success' });
+        showToast({
+          message: nuevaClaveCuenta.trim() ? 'Cuenta actualizada y contraseña restablecida.' : 'Cuenta actualizada correctamente.',
+          type: 'success',
+        });
       }
 
       if (editandoTipo === 'jugador' && jugadorAdminEdit) {
@@ -1480,6 +1506,8 @@ function SuperAdminPanel({
       setEditandoTipo(null);
       setCuentaAdminEdit(null);
       setJugadorAdminEdit(null);
+      setNuevaClaveCuenta('');
+      setMostrarNuevaClaveCuenta(false);
     } catch (error) {
       showToast({ message: `No se pudo guardar: ${error.message}`, type: 'error' });
     } finally {
@@ -2708,6 +2736,50 @@ function SuperAdminPanel({
                   Autoriza derechos de imagen
                 </label>
               </div>
+
+              {esSuperAdmin && (
+                <div className="form-group" style={{ marginBottom: '12px', padding: '12px', borderRadius: '14px', background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.18)' }}>
+                  <label>Restablecer contraseña (si el usuario la olvidó)</label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <input
+                        type={mostrarNuevaClaveCuenta ? 'text' : 'password'}
+                        className="form-input"
+                        style={{ paddingRight: '40px' }}
+                        placeholder="Dejar vacío para no cambiarla"
+                        value={nuevaClaveCuenta}
+                        onChange={(e) => setNuevaClaveCuenta(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMostrarNuevaClaveCuenta((v) => !v)}
+                        aria-label={mostrarNuevaClaveCuenta ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                        style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--gris-secundario)' }}
+                      >
+                        {mostrarNuevaClaveCuenta ? <EyeOff size={16} strokeWidth={1.5} /> : <Eye size={16} strokeWidth={1.5} />}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ width: 'auto', whiteSpace: 'nowrap' }}
+                      onClick={() => {
+                        const clave = generarClaveAleatoria();
+                        setNuevaClaveCuenta(clave);
+                        setMostrarNuevaClaveCuenta(true);
+                        setCuentaAdminEdit((p) => ({ ...p, forzar_clave: true }));
+                      }}
+                    >
+                      Generar clave
+                    </button>
+                  </div>
+                  {nuevaClaveCuenta.trim() && (
+                    <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                      Se guardará al hacer clic en "Guardar cambios". Comunícasela al usuario — no queda visible después.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {renderPermisosCuenta({
                 cuenta: cuentaAdminEdit,
