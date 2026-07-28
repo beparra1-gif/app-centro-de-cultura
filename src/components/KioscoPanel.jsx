@@ -920,6 +920,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
 
       {vista === 'pos' && (
         <div className="kiosco-tablet-layout">
+          <div className="kiosco-productos-columna">
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginBottom: '8px' }}>
             <button
               type="button"
@@ -966,6 +967,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
               );
             })}
             {productos.length === 0 && <p className="text-muted text-center" style={{ gridColumn: '1 / -1' }}>Sin productos en el catálogo. Agrégalos en Inventario.</p>}
+          </div>
           </div>
 
           <div className="card kiosco-cart mt-20">
