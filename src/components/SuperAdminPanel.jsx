@@ -13,6 +13,7 @@ import {
   History,
   Image,
   Link2,
+  Lock,
   Megaphone,
   Pencil,
   Phone,
@@ -2679,6 +2680,61 @@ function SuperAdminPanel({
           {editandoTipo === 'cuenta' && cuentaAdminEdit && (
             <div ref={edicionCuentaRef} className="card" style={{ borderRadius: '24px' }}>
               <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
+
+              {(esAdmin || esSuperAdmin) && (
+                <div style={{ marginBottom: '16px', padding: '14px', borderRadius: '16px', background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.18)' }}>
+                  <label style={{ display: 'block', fontWeight: '800', marginBottom: '8px' }}>¿El usuario olvidó su contraseña?</label>
+                  {nuevaClaveCuenta.trim() ? (
+                    <>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <input
+                            type={mostrarNuevaClaveCuenta ? 'text' : 'password'}
+                            className="form-input"
+                            style={{ paddingRight: '40px' }}
+                            value={nuevaClaveCuenta}
+                            onChange={(e) => setNuevaClaveCuenta(e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setMostrarNuevaClaveCuenta((v) => !v)}
+                            aria-label={mostrarNuevaClaveCuenta ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--gris-secundario)' }}
+                          >
+                            {mostrarNuevaClaveCuenta ? <EyeOff size={16} strokeWidth={1.5} /> : <Eye size={16} strokeWidth={1.5} />}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ width: 'auto', whiteSpace: 'nowrap' }}
+                          onClick={() => setNuevaClaveCuenta('')}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                      <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                        Se guardará al hacer clic en "Guardar cambios" (más abajo). Comunícasela al usuario — no queda visible después.
+                      </p>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-electric"
+                      style={{ width: 'auto' }}
+                      onClick={() => {
+                        const clave = generarClaveAleatoria();
+                        setNuevaClaveCuenta(clave);
+                        setMostrarNuevaClaveCuenta(true);
+                        setCuentaAdminEdit((p) => ({ ...p, forzar_clave: true }));
+                      }}
+                    >
+                      <Lock size={15} /> Restablecer contraseña
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div className="grid-auto-220">
                 <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaAdminEdit.correo || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, correo: e.target.value }))} /></div>
                 <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaAdminEdit.rut || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rut: e.target.value }))} /></div>
@@ -2736,50 +2792,6 @@ function SuperAdminPanel({
                   Autoriza derechos de imagen
                 </label>
               </div>
-
-              {(esAdmin || esSuperAdmin) && (
-                <div className="form-group" style={{ marginBottom: '12px', padding: '12px', borderRadius: '14px', background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.18)' }}>
-                  <label>Restablecer contraseña (si el usuario la olvidó)</label>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
-                    <div style={{ position: 'relative', flex: 1 }}>
-                      <input
-                        type={mostrarNuevaClaveCuenta ? 'text' : 'password'}
-                        className="form-input"
-                        style={{ paddingRight: '40px' }}
-                        placeholder="Dejar vacío para no cambiarla"
-                        value={nuevaClaveCuenta}
-                        onChange={(e) => setNuevaClaveCuenta(e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setMostrarNuevaClaveCuenta((v) => !v)}
-                        aria-label={mostrarNuevaClaveCuenta ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                        style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--gris-secundario)' }}
-                      >
-                        {mostrarNuevaClaveCuenta ? <EyeOff size={16} strokeWidth={1.5} /> : <Eye size={16} strokeWidth={1.5} />}
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      style={{ width: 'auto', whiteSpace: 'nowrap' }}
-                      onClick={() => {
-                        const clave = generarClaveAleatoria();
-                        setNuevaClaveCuenta(clave);
-                        setMostrarNuevaClaveCuenta(true);
-                        setCuentaAdminEdit((p) => ({ ...p, forzar_clave: true }));
-                      }}
-                    >
-                      Generar clave
-                    </button>
-                  </div>
-                  {nuevaClaveCuenta.trim() && (
-                    <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
-                      Se guardará al hacer clic en "Guardar cambios". Comunícasela al usuario — no queda visible después.
-                    </p>
-                  )}
-                </div>
-              )}
 
               {renderPermisosCuenta({
                 cuenta: cuentaAdminEdit,
