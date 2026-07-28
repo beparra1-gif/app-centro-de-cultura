@@ -15,6 +15,13 @@ const normalizarRutAcademia = (rut = '') => String(rut || '').replace(/\./g, '')
 
 const RAMAS = ['General', 'Masculina', 'Femenina', 'Mixta'];
 
+const ETIQUETAS_LATERALIDAD = {
+  derecha: 'Derecha definida',
+  izquierda: 'Izquierda definida',
+  cruzada: 'Cruzada',
+  no_definida: 'No definida / en desarrollo',
+};
+
 const resolverUrlVideo = (cuerpoTexto = '') => (
   esUrlVideoInterno(cuerpoTexto) ? `${api.API_BASE_URL_CONFIG}/${cuerpoTexto}` : cuerpoTexto
 );
@@ -603,14 +610,27 @@ function AcademiaPanel({
                       <strong style={{ fontSize: '12px' }}>{ev.fecha_evaluacion ? new Date(ev.fecha_evaluacion).toLocaleDateString('es-CL') : 'Sin fecha'}</strong>
                       <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{ev.tipo_evaluacion || 'Evaluación'}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px', fontSize: '11px', fontWeight: '800' }}>
-                      <span>Tiro: {ev.puntaje_tecnica ?? '-'}</span>
-                      <span>Defensa: {ev.puntaje_actitud ?? '-'}</span>
-                      <span>Físico: {ev.puntaje_condicion ?? '-'}</span>
-                      <span>Táctica: {ev.puntaje_mental ?? '-'}</span>
-                    </div>
+                    {ev.tipo_evaluacion === 'Evaluación Psicomotriz' ? (
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px', fontSize: '11px', fontWeight: '800' }}>
+                        <span>Coordinación: {ev.puntaje_coordinacion ?? '-'}</span>
+                        <span>Coord. óculo-manual: {ev.puntaje_coordinacion_ocular ?? '-'}</span>
+                        <span>Equilibrio: {ev.puntaje_equilibrio ?? '-'}</span>
+                        <span>Orientación: {ev.puntaje_orientacion ?? '-'}</span>
+                        {ETIQUETAS_LATERALIDAD[ev.lateralidad] && <span>Lateralidad: {ETIQUETAS_LATERALIDAD[ev.lateralidad]}</span>}
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px', fontSize: '11px', fontWeight: '800' }}>
+                        <span>Tiro: {ev.puntaje_tecnica ?? '-'}</span>
+                        <span>Defensa: {ev.puntaje_actitud ?? '-'}</span>
+                        <span>Físico: {ev.puntaje_condicion ?? '-'}</span>
+                        <span>Táctica: {ev.puntaje_mental ?? '-'}</span>
+                      </div>
+                    )}
                     {ev.comentarios && (
                       <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--texto-secundario)', whiteSpace: 'pre-line' }}>{ev.comentarios}</p>
+                    )}
+                    {ev.recomendaciones && (
+                      <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: 'var(--azul-electrico)', whiteSpace: 'pre-line' }}><strong>Recomendaciones:</strong> {ev.recomendaciones}</p>
                     )}
                   </div>
                 ))}

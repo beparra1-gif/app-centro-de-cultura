@@ -1806,12 +1806,24 @@ const ensureEvaluacionesTable = async () => {
       puntaje_actitud INT,
       puntaje_condicion INT,
       puntaje_mental INT,
+      puntaje_coordinacion INT,
+      puntaje_coordinacion_ocular INT,
+      puntaje_equilibrio INT,
+      puntaje_orientacion INT,
+      lateralidad VARCHAR(20),
       comentarios TEXT,
       recomendaciones TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  // La tabla ya existía en producción antes de sumar la evaluación
+  // psicomotriz — CREATE TABLE IF NOT EXISTS no le agrega columnas nuevas.
+  await pool.query(`ALTER TABLE evaluaciones ADD COLUMN IF NOT EXISTS puntaje_coordinacion INT`);
+  await pool.query(`ALTER TABLE evaluaciones ADD COLUMN IF NOT EXISTS puntaje_coordinacion_ocular INT`);
+  await pool.query(`ALTER TABLE evaluaciones ADD COLUMN IF NOT EXISTS puntaje_equilibrio INT`);
+  await pool.query(`ALTER TABLE evaluaciones ADD COLUMN IF NOT EXISTS puntaje_orientacion INT`);
+  await pool.query(`ALTER TABLE evaluaciones ADD COLUMN IF NOT EXISTS lateralidad VARCHAR(20)`);
   console.log('📋 Tabla evaluaciones verificada');
 };
 
@@ -6815,13 +6827,28 @@ app.get('/api/evaluaciones/jugador/:rut', authenticate, requireAnyModule('evalua
 
 // POST: Crear evaluación
 app.post('/api/evaluaciones', authenticate, requireModule('evaluacion_staff'), async (req, res) => {
-  const { rut_jugador, evaluador_rut, tipo_evaluacion, puntaje_tecnica, puntaje_actitud, puntaje_condicion, puntaje_mental, comentarios } = req.body;
+  const {
+    rut_jugador, evaluador_rut, tipo_evaluacion,
+    puntaje_tecnica, puntaje_actitud, puntaje_condicion, puntaje_mental,
+    puntaje_coordinacion, puntaje_coordinacion_ocular, puntaje_equilibrio, puntaje_orientacion, lateralidad,
+    comentarios, recomendaciones,
+  } = req.body;
   try {
     const result = await pool.query(
-      `INSERT INTO evaluaciones (rut_jugador, evaluador_rut, fecha_evaluacion, tipo_evaluacion, puntaje_tecnica, puntaje_actitud, puntaje_condicion, puntaje_mental, comentarios)
-       VALUES ($1, $2, CURRENT_DATE, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO evaluaciones (
+         rut_jugador, evaluador_rut, fecha_evaluacion, tipo_evaluacion,
+         puntaje_tecnica, puntaje_actitud, puntaje_condicion, puntaje_mental,
+         puntaje_coordinacion, puntaje_coordinacion_ocular, puntaje_equilibrio, puntaje_orientacion, lateralidad,
+         comentarios, recomendaciones
+       )
+       VALUES ($1, $2, CURRENT_DATE, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
-      [rut_jugador, evaluador_rut, tipo_evaluacion, puntaje_tecnica, puntaje_actitud, puntaje_condicion, puntaje_mental, comentarios]
+      [
+        rut_jugador, evaluador_rut, tipo_evaluacion,
+        puntaje_tecnica, puntaje_actitud, puntaje_condicion, puntaje_mental,
+        puntaje_coordinacion, puntaje_coordinacion_ocular, puntaje_equilibrio, puntaje_orientacion, lateralidad || null,
+        comentarios, recomendaciones,
+      ]
     );
     res.json(result.rows[0]);
   } catch (err) {
