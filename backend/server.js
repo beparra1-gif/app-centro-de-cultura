@@ -4457,10 +4457,63 @@ app.put('/api/encuestas/:encuestaId/votar', authenticate, requireModule('comunic
 // 8. TASKS AUTOMÁTICAS (Cron)
 // ==========================================
 
-// Sincronizar con Google Sheets cada 24h (configurable después)
-cron.schedule('0 2 * * *', async () => {
-  console.log('[CRON] Sincronizando con Google Sheets...');
-  // TODO: Implementar sincronización con Google Sheets API
+// Trae automáticamente lo que se cargue directo en el Google Sheet (ej. altas
+// masivas de CUENTAS o JUGADORES) hacia Postgres, sin depender de que alguien
+// entre a Panel > Auditoría a apretar "Sincronizar ahora". Mismo motor
+// incremental (solo agrega filas nuevas, no pisa lo que ya existe en la app)
+// y mismo lock isSheetsSyncRunning que usa ese botón manual, para que nunca
+// corran los dos a la vez. La dirección app -> Sheet ya es automática aparte
+// (ver el middleware de auto-export más arriba, sheetsSyncManager.enqueueTable).
+cron.schedule('*/10 * * * *', async () => {
+  if (!process.env.GOOGLE_SHEET_ID) return;
+  if (isSheetsSyncRunning) return;
+
+  isSheetsSyncRunning = true;
+  lastSheetsSyncStatus = {
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    syncedAt: lastSheetsSyncStatus?.syncedAt || null,
+    totals: lastSheetsSyncStatus?.totals || null,
+    mode: 'incremental-cron',
+  };
+
+  try {
+    const result = await runImportFromSheets({ logger: console, incrementalOnly: true });
+    const totals = result.summary.reduce(
+      (acc, item) => {
+        acc.total += item.total;
+        acc.importadas += item.imported;
+        acc.omitidas += item.skipped;
+        acc.errores += item.errors;
+        return acc;
+      },
+      { total: 0, importadas: 0, omitidas: 0, errores: 0 }
+    );
+
+    lastSheetsSyncStatus = {
+      status: 'success',
+      sheetId: result.sheetId,
+      totals,
+      detail: result.summary,
+      mode: 'incremental-cron',
+      startedAt: lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
+      syncedAt: new Date().toISOString(),
+    };
+
+    if (totals.importadas > 0) {
+      console.log(`[CRON] Sincronización Google Sheets: ${totals.importadas} fila(s) nueva(s) importada(s).`);
+    }
+  } catch (err) {
+    lastSheetsSyncStatus = {
+      status: 'error',
+      startedAt: lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
+      syncedAt: new Date().toISOString(),
+      error: err.message,
+    };
+    console.error('[CRON] Error sincronizando desde Google Sheets:', err.message);
+  } finally {
+    isSheetsSyncRunning = false;
+  }
 });
 
 // Limpiar notificaciones antiguas cada 7 días

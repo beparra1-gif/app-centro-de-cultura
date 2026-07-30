@@ -3564,9 +3564,11 @@ function SuperAdminPanel({
               <div>
                 <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><RefreshCcw size={16} /> Sincronización Google Sheets</h4>
                 <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
-                  "Sincronizar ahora" trae filas nuevas desde la hoja maestra hacia PostgreSQL. "Exportar cambios al Sheet"
-                  hace lo inverso: reescribe JUGADORES, CUENTAS y PAGOS_MENSUALIDADES en el Sheet con el estado actual del
-                  app (los cambios del app también se exportan solos, poco después de guardarse).
+                  Las filas nuevas que cargues directo en el Sheet se traen solas a PostgreSQL cada 10 minutos — "Sincronizar
+                  ahora" hace lo mismo al instante en vez de esperar al próximo ciclo. Ojo: esta importación solo agrega filas
+                  nuevas (por RUT/correo); si editas una fila que ya se había importado antes, ese cambio no se trae solo.
+                  La otra dirección sí es un espejo completo: cada cambio guardado en el app reescribe JUGADORES, CUENTAS y
+                  PAGOS_MENSUALIDADES enteros en el Sheet poco después, así que ahí sí se reflejan tanto altas como ediciones.
                 </p>
               </div>
               <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '6px 10px', borderRadius: '999px' }}>
