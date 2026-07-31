@@ -482,11 +482,20 @@ async function runImportFromSheets(options = {}) {
 
     for (const mapping of SHEET_TABLE_MAP) {
       logger.log(`\nImportando hoja ${mapping.sheet} -> tabla ${mapping.table} ...`);
-      const result = await importSheetToTable(client, sheetId, mapping, { incrementalOnly });
-      summary.push(result);
-      logger.log(
-        `OK ${mapping.sheet}: total=${result.total}, importadas=${result.imported}, omitidas=${result.skipped}, errores=${result.errors}`
-      );
+      try {
+        const result = await importSheetToTable(client, sheetId, mapping, { incrementalOnly });
+        summary.push(result);
+        logger.log(
+          `OK ${mapping.sheet}: total=${result.total}, importadas=${result.imported}, omitidas=${result.skipped}, errores=${result.errors}`
+        );
+      } catch (err) {
+        // Una hoja individual puede fallar por su cuenta (pestaña renombrada,
+        // hecha privada, borrada) sin que eso deba tumbar la sincronizacion
+        // completa — antes, si UNA hoja no se podia leer, ninguna de las
+        // siguientes en SHEET_TABLE_MAP llegaba a importarse.
+        summary.push({ sheet: mapping.sheet, table: mapping.table, total: 0, imported: 0, skipped: 0, errors: 1, note: err.message });
+        logger.error(`FALLO ${mapping.sheet} -> ${mapping.table}: ${err.message}`);
+      }
     }
 
     logger.log('\n===== RESUMEN FINAL =====');
