@@ -207,6 +207,8 @@ function AcademiaPanel({
   setEvalTactico,
   notasEvaluacion,
   setNotasEvaluacion,
+  rutParaEvaluar,
+  limpiarRutParaEvaluar,
 }) {
   const esProfesor = rolUsuario === 'staff' || rolUsuario === 'admin' || rolUsuario === 'super_admin';
   const [evaluacionesJugador, setEvaluacionesJugador] = useState([]);
@@ -250,6 +252,12 @@ function AcademiaPanel({
   // "Mis Publicaciones": panel de gestión del staff (ver/editar/borrar/publicar
   // lo que él mismo subió, en los 4 tipos de contenido).
   const [vistaDocente, setVistaDocente] = useState('publicar');
+
+  // Deep-link "Evaluar" desde la ficha del jugador (ver App.jsx / TarjetaJugadorPanel):
+  // si llega un rut pendiente, saltar directo a la pestaña Evaluar del Panel Docente.
+  useEffect(() => {
+    if (rutParaEvaluar) setVistaDocente('evaluar');
+  }, [rutParaEvaluar]);
   const [seccionPublicarAbierta, setSeccionPublicarAbierta] = useState(null); // 'contenido' | 'quiz' | 'pizarra' | null
   const [itemEnEdicion, setItemEnEdicion] = useState(null); // `${tipo}-${id}` o null
   const [editForm, setEditForm] = useState({ titulo: '', url: '', nombre_tactica: '', descripcion: '', pregunta: '', opcionA: '', opcionB: '', opcionC: '', respuestaCorrecta: 'A', rama: 'General', categorias: [] });
@@ -924,6 +932,8 @@ function AcademiaPanel({
               setEvalTactico={setEvalTactico}
               notasEvaluacion={notasEvaluacion}
               setNotasEvaluacion={setNotasEvaluacion}
+              rutInicial={rutParaEvaluar}
+              onRutInicialConsumido={limpiarRutParaEvaluar}
             />
           )}
         </div>

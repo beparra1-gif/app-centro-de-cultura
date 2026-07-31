@@ -192,6 +192,11 @@ function App() {
   
   // --- ESTADOS: STAFF TÉCNICO (DT) ---
   const [vistaStaff, setVistaStaff] = useState('asistencia'); // asistencia, evaluacion, historial
+  // Deep-link "Evaluar" desde la ficha del jugador (staff) hacia Academia >
+  // Evaluar, con ese jugador ya preseleccionado — AcademiaPanel/StaffEvaluacionPanel
+  // lo consumen y avisan de vuelta (limpiarRutParaEvaluar) para no re-disparar
+  // la preselección en cada render mientras el staff sigue en esa pantalla.
+  const [rutParaEvaluar, setRutParaEvaluar] = useState(null);
   const [filtroRamaStaff, setFiltroRamaStaff] = useState('Masculina');
 
   const [rosterEquipo, setRosterEquipo] = useState([]);
@@ -1226,6 +1231,12 @@ function App() {
     if (pantalla === pantallaActiva) return;
     setPantallaActiva(pantalla);
     setIsAppLoading(false);
+  };
+
+  const irAEvaluarJugador = (rut) => {
+    if (!rut) return;
+    setRutParaEvaluar(rut);
+    cambiarPantallaConLoader('academia');
   };
 
   const getUsuarioActivoPermisos = () => {
@@ -3031,6 +3042,8 @@ function App() {
                 setEvalTactico={setEvalTactico}
                 notasEvaluacion={notasEvaluacion}
                 setNotasEvaluacion={setNotasEvaluacion}
+                rutParaEvaluar={rutParaEvaluar}
+                limpiarRutParaEvaluar={() => setRutParaEvaluar(null)}
               />
             )}
             {puedeVerPantalla('perfil') && pantallaActiva === 'perfil' && (
@@ -3062,6 +3075,7 @@ function App() {
                 setPupiloActivo={setPupiloActivo}
                 pupilosDisponibles={pupilosDisponibles}
                 rolUsuario={rolUsuario}
+                onEvaluarJugador={irAEvaluarJugador}
               />
             )}
             {puedeVerPantalla('asistencia_staff') && pantallaActiva === 'asistencia_staff' && (

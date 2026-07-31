@@ -5000,7 +5000,7 @@ app.post('/api/jugadores/:rut/ausencias', authenticate, requireApoderadoDeJugado
 });
 
 // GET: historial de ausencias de UN jugador (para mostrar en su ficha/tarjeta).
-app.get('/api/jugadores/:rut/ausencias', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), async (req, res) => {
+app.get('/api/jugadores/:rut/ausencias', authenticate, requireApoderadoDeJugadorOModule(pool, ['admin_dashboard', 'asistencia_staff'], { permitirPropioJugador: true }), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM ausencias_jugador WHERE rut_jugador = $1 ORDER BY fecha_inicio DESC`,

@@ -214,8 +214,11 @@ const requireApoderadoDeJugadorOModule = (pool, moduloId, { permitirPropioJugado
     return res.status(401).json({ error: 'Falta token de autenticación.' });
   }
 
+  // moduloId acepta un string o un array (ej. lectura de ausencias: admin
+  // O staff via asistencia_staff, sin abrir también el POST/DELETE a staff).
+  const moduloIds = Array.isArray(moduloId) ? moduloId : [moduloId];
   const permisos = await resolverPermisosDeActor(actor);
-  if (permisos[moduloId]) return next();
+  if (moduloIds.some((id) => permisos[id])) return next();
 
   const rutJugador = String(req.params.rut || '').trim();
   const rutActor = normalizarRutParaComparar(actor.rut);

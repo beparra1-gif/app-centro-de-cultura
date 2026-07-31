@@ -35,7 +35,7 @@ const ROLES_BASE = {
   socio_apoderado: ['comunicaciones', 'academia', 'perfil', 'jugador'],
   'socio-apoderado': ['comunicaciones', 'academia', 'perfil', 'jugador'],
   directiva: ['comunicaciones', 'academia', 'perfil', 'jugador'],
-  staff: ['comunicaciones', 'academia', 'asistencia_staff', 'evaluacion_staff', 'citaciones', 'resultados'],
+  staff: ['comunicaciones', 'academia', 'jugador', 'asistencia_staff', 'evaluacion_staff', 'citaciones', 'resultados'],
   mesa: ['scoreboard_live'],
   admin: ['comunicaciones', 'perfil', 'kiosco', 'admin_dashboard', 'citaciones', 'resultados', 'auditoria', 'reportes', 'validacion_pagos', 'inventario', 'salud', 'invitados', 'cancha_arriendo', 'torneos', 'horarios_entrenamiento'],
   super_admin: MODULOS_ACCESO.map((modulo) => modulo.id),

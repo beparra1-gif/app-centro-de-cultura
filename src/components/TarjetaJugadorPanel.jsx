@@ -137,6 +137,7 @@ function TarjetaJugadorPanel({
   setPupiloActivo,
   pupilosDisponibles,
   rolUsuario,
+  onEvaluarJugador,
 }) {
   const cardRef = useRef(null);
   const cardFrontExportRef = useRef(null);
@@ -358,6 +359,12 @@ function TarjetaJugadorPanel({
   const rolNormalizado = String(rolUsuario || '').toLowerCase().replace('-', '_');
   const mostrarIndumentaria = ['admin', 'super_admin'].includes(rolNormalizado);
   const esAdminDatosJugador = ['admin', 'super_admin'].includes(rolNormalizado);
+  // Staff ve la misma ficha/buscador que admin (útil en la cancha, en Kiosco,
+  // etc.) pero sin la tarjeta coleccionable — esa parte es del jugador, no
+  // algo que el staff deba gestionar. En cambio sí puede abrir la evaluación
+  // del jugador que está mirando, en vez de tener que ir aparte a Academia.
+  const esStaffJugador = rolNormalizado === 'staff';
+  const puedeUsarBuscadorJugador = esAdminDatosJugador || esStaffJugador;
   const puedeEditarDatosJugador = rolUsuario !== 'visita';
 
   // Ausencia "activa" = la primera cuyo período (fecha_inicio..fecha_fin)
@@ -964,7 +971,7 @@ function TarjetaJugadorPanel({
 
   return (
     <div className="player-screen-shell">
-      {esAdminDatosJugador ? (
+      {puedeUsarBuscadorJugador ? (
         <BuscadorJugadorAdmin
           jugadores={pupilosDisponibles}
           pupiloActivo={pupiloActivo}
@@ -1364,6 +1371,7 @@ function TarjetaJugadorPanel({
 
       </div>
 
+      {!esStaffJugador && (
       <div className="card collection-panel" style={{ marginTop: '8px', borderRadius: '18px', border: '1px solid var(--borde-suave)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <h4 className="collection-title" style={{ margin: 0, fontSize: '15px', fontWeight: '900', color: 'var(--azul-marino)' }}>Ver mi tarjeta de coleccion</h4>
@@ -1397,6 +1405,19 @@ function TarjetaJugadorPanel({
           {renderFrenteTarjeta({ ancho: 220, sombra: true })}
         </div>
       </div>
+      )}
+
+      {esStaffJugador && rolUsuario !== 'visita' && (
+        <div className="card" style={{ marginTop: '8px', borderRadius: '18px', border: '1px solid var(--borde-suave)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div>
+            <strong style={{ fontSize: '14px', display: 'block' }}>Evaluación del jugador</strong>
+            <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Abre Academia &gt; Evaluar con {nombreDisplay} ya seleccionada.</span>
+          </div>
+          <button className="player-action-btn alt" style={{ padding: '10px 14px' }} onClick={() => onEvaluarJugador?.(pupiloActivo?.rut)}>
+            <ClipboardEdit size={14} /> Evaluar
+          </button>
+        </div>
+      )}
 
       {rolUsuario !== 'visita' && (
         <>

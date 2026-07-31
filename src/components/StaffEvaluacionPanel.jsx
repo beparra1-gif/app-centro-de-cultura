@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FileText, Save } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import { showToast } from '../utils/toast';
@@ -27,6 +27,8 @@ function StaffEvaluacionPanel({
   setEvalTactico,
   notasEvaluacion,
   setNotasEvaluacion,
+  rutInicial,
+  onRutInicialConsumido,
 }) {
   const [filtroRama, setFiltroRama] = useState('Todas');
   const [filtroCategoria, setFiltroCategoria] = useState('Todas');
@@ -87,6 +89,17 @@ function StaffEvaluacionPanel({
     setRutJugadorSeleccionado(rut);
     cargarHistorial(rut);
   };
+
+  // Deep-link desde la ficha del jugador (botón "Evaluar" en TarjetaJugadorPanel):
+  // preselecciona ese rut una sola vez y avisa al padre para que no se re-dispare
+  // si el staff después elige a otro jugador manualmente.
+  useEffect(() => {
+    if (rutInicial) {
+      seleccionarJugador(rutInicial);
+      onRutInicialConsumido?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rutInicial]);
 
   const dataEvalLive = [
     { subject: 'Tiro', score: evalTiro, fullMark: 100 },
