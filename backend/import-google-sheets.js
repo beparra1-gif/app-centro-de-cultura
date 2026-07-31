@@ -385,6 +385,8 @@ async function importSheetToTable(client, sheetId, mapping, options = {}) {
   let imported = 0;
   let skipped = 0;
   let errors = 0;
+  let huerfanas = 0;
+  const notasHuerfanas = [];
 
   for (const row of rows) {
     const mapped = mapRowToTableColumns(row, columns);
@@ -401,6 +403,17 @@ async function importSheetToTable(client, sheetId, mapping, options = {}) {
       // CONFLICT ya buscaba: no insertar un duplicado, no romper el import).
       if (err.code === '23505') {
         skipped += 1;
+      } else if (err.code === '23503') {
+        // 23503 = foreign_key_violation. La fila referencia un padre (torneo,
+        // partido, jugador, etc.) que no existe en esta base — es una fila
+        // huerfana en el Sheet (el padre se borro o nunca se creo formalmente
+        // via la app), no un fallo del import. Se cuenta aparte de "errors"
+        // para no alarmar por algo que no es un bug: la fila solo necesita
+        // que exista su padre, o si no, conviene borrarla del Sheet.
+        huerfanas += 1;
+        if (notasHuerfanas.length < 3) {
+          notasHuerfanas.push(err.detail || err.message);
+        }
       } else {
         errors += 1;
         if (errors <= 3) {
@@ -410,7 +423,12 @@ async function importSheetToTable(client, sheetId, mapping, options = {}) {
     }
   }
 
-  return { sheet, table, total: rows.length, imported, skipped, errors };
+  const resultado = { sheet, table, total: rows.length, imported, skipped, errors };
+  if (huerfanas > 0) {
+    resultado.huerfanas = huerfanas;
+    resultado.notaHuerfanas = `${huerfanas} fila(s) referencian un registro padre que no existe (ej: ${notasHuerfanas[0]})`;
+  }
+  return resultado;
 }
 
 async function buildDataQualitySummary(client) {
