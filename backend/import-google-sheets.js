@@ -32,7 +32,13 @@ const SHEET_TABLE_MAP = [
   { sheet: 'RESULTADOS', table: 'resultados' },
   { sheet: 'QUIZ_PREGUNTAS', table: 'quiz_preguntas' },
   { sheet: 'JUGADORES_VISITA', table: 'jugadores_visita' },
-  { sheet: 'AUDITORIA', table: 'auditoria' },
+  // auditoria es un espejo de solo escritura: la app la reescribe sola en
+  // cada accion mutante (ver sheetsSyncManager.enqueueTable en server.js),
+  // nadie agrega filas a mano ahi. noImport la deja fuera del lado de
+  // lectura (runImportFromSheets) sin afectar el auto-export ni el boton
+  // manual "Exportar cambios al Sheet" (syncAllMappedTables en
+  // google-sheets-sync.js), que siguen usando esta misma entrada.
+  { sheet: 'AUDITORIA', table: 'auditoria', noImport: true },
   { sheet: 'STAFF', table: 'staff' },
   { sheet: 'TORNEOS', table: 'torneos' },
   { sheet: 'CLUBES', table: 'clubes' },
@@ -499,6 +505,7 @@ async function runImportFromSheets(options = {}) {
     logger.log(`Spreadsheet ID: ${sheetId}`);
 
     for (const mapping of SHEET_TABLE_MAP) {
+      if (mapping.noImport) continue;
       logger.log(`\nImportando hoja ${mapping.sheet} -> tabla ${mapping.table} ...`);
       try {
         const result = await importSheetToTable(client, sheetId, mapping, { incrementalOnly });
