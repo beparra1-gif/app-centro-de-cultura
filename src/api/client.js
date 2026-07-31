@@ -803,6 +803,14 @@ export const citacionesAPI = {
     });
     return handleResponse(response);
   },
+  resolverExcepcionMorosidad: async (citacionId, rutJugador, aprobar) => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados/${rutJugador}/resolver-excepcion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aprobar }),
+    });
+    return handleResponse(response);
+  },
   marcarAsistencia: async (citacionId, rutJugador) => {
     const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados/${rutJugador}/asistencia`, {
       method: 'PATCH',

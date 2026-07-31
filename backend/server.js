@@ -5636,6 +5636,29 @@ const resolverDestinatariosRSVP = async (responsableRut) => {
   return ruts;
 };
 
+// citacion_convocados ya guardaba estado_excepcion='solicitada' al convocar
+// a un moroso (columna que existía desde antes), pero nadie se enteraba: no
+// se avisaba a admin/super_admin ni había forma de resolverlo, así que
+// quedaba en 'solicitada' para siempre sin bloquear ni aprobar nada de
+// verdad. Esto notifica esa solicitud pendiente; el endpoint
+// POST /api/citaciones/:id/convocados/:rut/resolver-excepcion (admin/super_admin
+// only) es lo que ahora sí puede resolverla.
+const notificarExcepcionMorosidadPendiente = async (morosos, citacion, responsableNombre) => {
+  if (!Array.isArray(morosos) || morosos.length === 0) return;
+  try {
+    const adminsRes = await pool.query("SELECT rut FROM cuentas WHERE LOWER(rol) IN ('admin', 'super_admin', 'superadmin')");
+    if (adminsRes.rows.length === 0) return;
+    const nombresMorosos = morosos.map((m) => m.nombre || m.rut_jugador).filter(Boolean).join(', ');
+    const titulo = `Autorización pendiente: ${morosos.length} deportista${morosos.length > 1 ? 's' : ''} con deuda`;
+    const cuerpo = `${responsableNombre || 'Un integrante del staff'} citó a ${nombresMorosos} (mensualidad pendiente) para ${citacion.tipo_competencia || ''} ${citacion.competencia_nombre} vs ${citacion.rival_nombre}. Requiere tu autorización.`.trim();
+    await Promise.all(adminsRes.rows.map((row) => crearNotificacionApp({
+      rut: row.rut, tipo: 'citacion_excepcion_pendiente', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: citacion.id,
+    })));
+  } catch (err) {
+    console.error('[notificarExcepcionMorosidadPendiente]', err.message);
+  }
+};
+
 // Barrido idempotente: cualquier convocado 'pendiente' cuya citación ya pasó
 // su hora_maxima_confirmacion se marca 'no' automáticamente (sin
 // justificación, respondido_automaticamente=true). Se puede correr tantas
@@ -5838,6 +5861,12 @@ app.post('/api/citaciones', authenticate, requireModule('citaciones'), async (re
       rut, tipo: 'citacion', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: citacion.id,
     })));
 
+    await notificarExcepcionMorosidadPendiente(
+      convocados.filter((c) => c.requiere_excepcion_morosidad),
+      citacion,
+      responsableNombre
+    );
+
     const completa = await cargarCitacionConConvocados(citacion.id);
     res.status(201).json(completa);
   } catch (err) {
@@ -6037,9 +6066,58 @@ app.post('/api/citaciones/:id/convocados', authenticate, requireModule('citacion
       rut, tipo: 'citacion', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: Number(req.params.id),
     })));
 
+    if (requiere_excepcion_morosidad) {
+      const actorRow = await pool.query('SELECT nombres, apellido_paterno, correo FROM cuentas WHERE rut = $1', [req.actor.rut]);
+      const actorNombre = `${actorRow.rows[0]?.nombres || ''} ${actorRow.rows[0]?.apellido_paterno || ''}`.trim() || actorRow.rows[0]?.correo;
+      await notificarExcepcionMorosidadPendiente(
+        [{ nombre: nombre || rut_jugador, rut_jugador }],
+        { id: Number(req.params.id), ...citacion.rows[0] },
+        actorNombre
+      );
+    }
+
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('[POST /api/citaciones/:id/convocados]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: admin/super_admin aprueba o rechaza la excepción de morosidad de un
+// convocado (estado_excepcion 'solicitada' -> 'aprobada'/'rechazada'). Antes
+// no existía ningún endpoint que resolviera esto — la fila quedaba en
+// 'solicitada' para siempre sin que nadie se enterara ni pudiera actuar.
+app.post('/api/citaciones/:id/convocados/:rut/resolver-excepcion', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  const { aprobar } = req.body;
+  const nuevoEstado = aprobar ? 'aprobada' : 'rechazada';
+  try {
+    const result = await pool.query(
+      `UPDATE citacion_convocados
+       SET estado_excepcion = $1, actualizado_en = NOW()
+       WHERE citacion_id = $2 AND rut_jugador = $3 AND estado_excepcion = 'solicitada'
+       RETURNING *`,
+      [nuevoEstado, req.params.id, req.params.rut]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'No hay una solicitud pendiente para ese convocado en esta citación.' });
+    }
+
+    const citaRow = await pool.query('SELECT responsable_rut, tipo_competencia, competencia_nombre, rival_nombre FROM citaciones WHERE id = $1', [req.params.id]);
+    const cita = citaRow.rows[0];
+    if (cita?.responsable_rut) {
+      await crearNotificacionApp({
+        rut: cita.responsable_rut,
+        tipo: 'citacion_excepcion_resuelta',
+        titulo: aprobar ? 'Autorización aprobada' : 'Autorización rechazada',
+        cuerpo: `${result.rows[0].nombre || req.params.rut} ${aprobar ? 'fue autorizada/o' : 'no fue autorizada/o'} para citar a ${cita.tipo_competencia || ''} ${cita.competencia_nombre} vs ${cita.rival_nombre}.`.trim(),
+        referenciaTipo: 'citacion',
+        referenciaId: Number(req.params.id),
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[POST /api/citaciones/:id/convocados/:rut/resolver-excepcion]', err);
     res.status(500).json({ error: err.message });
   }
 });

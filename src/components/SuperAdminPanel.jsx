@@ -2087,6 +2087,27 @@ function SuperAdminPanel({
     }
   };
 
+  // Resuelve la excepción de morosidad de un convocado (admin/super_admin,
+  // ver requireModule('admin_dashboard') en el backend). Antes esto quedaba
+  // guardado como estado_excepcion='solicitada' para siempre: nadie se
+  // enteraba ni había forma de aprobarla o rechazarla.
+  const resolverExcepcionMorosidadConvocado = async (cita, conv, aprobar) => {
+    if (aprobar === false && !(await confirmAction({
+      title: 'Rechazar autorización',
+      message: `¿Rechazar la excepción de morosidad de ${conv.nombre}? Seguirá en la nómina, pero quedará marcada como no autorizada.`,
+      danger: true,
+    }))) return;
+
+    try {
+      await api.citacionesAPI.resolverExcepcionMorosidad(cita.id, conv.rut_jugador, aprobar);
+      const citaActualizada = normalizarCitacion(await api.citacionesAPI.getById(cita.id));
+      setNominaCita((prev) => (prev || []).map((item) => (item.id === cita.id ? citaActualizada : item)));
+      showToast({ message: `${conv.nombre}: excepción ${aprobar ? 'aprobada' : 'rechazada'}.`, type: aprobar ? 'success' : 'info' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo resolver la excepción.', type: 'error' });
+    }
+  };
+
   const crearCitacion = async () => {
     if (!String(citaForm.competencia_nombre || '').trim()) {
       showToast({ message: 'Debes indicar el nombre de la competencia o torneo.', type: 'error' });
@@ -4047,8 +4068,33 @@ function SuperAdminPanel({
                               </div>
                             )}
                             {esMorosoActual ? (
-                              <div style={{ marginTop: '5px', fontSize: '11px', color: '#b36200', fontWeight: '800' }}>
-                                Moroso: requiere excepción · Estado: {conv.estado_excepcion === 'solicitada' ? 'solicitada' : conv.estado_excepcion === 'aprobada' ? 'aprobada' : 'pendiente'}
+                              <div style={{ marginTop: '5px' }}>
+                                <div style={{ fontSize: '11px', color: '#b36200', fontWeight: '800' }}>
+                                  Moroso: requiere excepción · Estado: {
+                                    conv.estado_excepcion === 'aprobada' ? 'aprobada'
+                                      : conv.estado_excepcion === 'rechazada' ? 'rechazada'
+                                        : conv.estado_excepcion === 'solicitada' ? 'solicitada, pendiente de autorización'
+                                          : 'pendiente'
+                                  }
+                                </div>
+                                {conv.estado_excepcion === 'solicitada' && (esAdmin || esSuperAdmin) && (
+                                  <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                                    <button
+                                      className="btn-secondary"
+                                      style={{ width: 'auto', padding: '6px 10px', fontSize: '11px', borderColor: 'rgba(52,199,89,0.4)', color: '#15803d' }}
+                                      onClick={() => resolverExcepcionMorosidadConvocado(cita, conv, true)}
+                                    >
+                                      <ShieldCheck size={12} /> Autorizar
+                                    </button>
+                                    <button
+                                      className="btn-secondary"
+                                      style={{ width: 'auto', padding: '6px 10px', fontSize: '11px', borderColor: 'rgba(255,59,48,0.4)', color: '#b91c1c' }}
+                                      onClick={() => resolverExcepcionMorosidadConvocado(cita, conv, false)}
+                                    >
+                                      Rechazar
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             ) : conv.requiere_excepcion_morosidad && (
                               <div style={{ marginTop: '5px', fontSize: '11px', color: '#15803d', fontWeight: '800' }}>
