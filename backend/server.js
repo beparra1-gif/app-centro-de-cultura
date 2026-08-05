@@ -5727,19 +5727,17 @@ const obtenerPupilosDeActor = async (actor) => {
 // etc.) mantiene el comportamiento actual sin cambios.
 const ROLES_JUGADORES_ACOTADOS = ['jugador', 'apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'];
 
+// Antes también hacía visible una citación a CUALQUIER apoderado/jugador de
+// la misma rama/categoría, aunque su pupilo no estuviera convocado — y como
+// cargarCitacionConConvocados siempre devuelve el arreglo COMPLETO de
+// convocados (nombres, respuesta, morosidad de cada uno), esa familia veía
+// la nómina entera de otras/os deportistas que no eran su hija/o. Ahora la
+// nómina llega única y exclusivamente a quien fue efectivamente convocado
+// (o a quien también esté convocado en esa misma citación, como corresponde
+// a un roster compartido de un mismo evento).
 const citacionEsVisibleParaPupilos = (citacion, pupilos) => {
   const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
-  const esConvocado = (citacion.convocados || []).some((c) => rutsPupilos.has(normalizarRutParaComparar(c.rut_jugador)));
-  if (esConvocado) return true;
-
-  const categoriasApoyo = Array.isArray(citacion.categorias_apoyo) ? citacion.categorias_apoyo : [];
-  return pupilos.some((p) => {
-    const ramaCoincide = !citacion.rama || citacion.rama === 'todas' || String(citacion.rama).toLowerCase() === String(p.rama || '').toLowerCase();
-    if (!ramaCoincide) return false;
-    const categoriaBaseCoincide = !citacion.categoria_base || citacion.categoria_base === 'todas' || String(citacion.categoria_base).toLowerCase() === String(p.categoria || '').toLowerCase();
-    const enApoyo = categoriasApoyo.some((cat) => String(cat).toLowerCase() === String(p.categoria || '').toLowerCase());
-    return categoriaBaseCoincide || enApoyo;
-  });
+  return (citacion.convocados || []).some((c) => rutsPupilos.has(normalizarRutParaComparar(c.rut_jugador)));
 };
 
 // Mismo criterio que ya usaba el frontend para materiales (AcademiaPanel.jsx
