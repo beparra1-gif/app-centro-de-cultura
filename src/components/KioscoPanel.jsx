@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown, Lock, User, Ticket, Trash2, Banknote, Smartphone, NotebookPen, BookOpen, XCircle, Search, PlusCircle, History, AlertTriangle, BarChart3, Pencil, Check, ChevronDown, ChevronUp, LayoutGrid, List } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { getColorPorCategoria } from '../utils/appHelpers';
@@ -84,6 +85,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
   const [nuevoProducto, setNuevoProducto] = useState({ nombre: '', emoji: '', costo: '', precio: '', categoria: 'Bebida', talla: '' });
   const [vistaProductos, setVistaProductos] = useState('grid');
   const [productoEditandoId, setProductoEditandoId] = useState(null);
+  const [busquedaProducto, setBusquedaProducto] = useState('');
 
   const [fiados, setFiados] = useState([]);
   const [fiadoModo, setFiadoModo] = useState('nueva');
@@ -110,6 +112,21 @@ function KioscoPanel({ nombreResponsable = '' }) {
   const [detalleTurno, setDetalleTurno] = useState({ egresos: [], ventas: [] });
   const [cargandoDetalleTurno, setCargandoDetalleTurno] = useState(false);
   const [exportandoTurnoId, setExportandoTurnoId] = useState(null);
+
+  // Sin tilde/mayúscula para que "bebidas" encuentre "Bebida" y "BEBIDA" por igual.
+  const normalizarBusqueda = (texto = '') => String(texto || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(new RegExp('[\\u0300-\\u036f]', 'g'), '')
+    .trim();
+
+  const productosFiltrados = useMemo(() => {
+    const termino = normalizarBusqueda(busquedaProducto);
+    if (!termino) return productos;
+    return productos.filter((prod) => (
+      normalizarBusqueda(prod.nombre).includes(termino) || normalizarBusqueda(prod.categoria).includes(termino)
+    ));
+  }, [productos, busquedaProducto]);
 
   const totalCarrito = carrito.reduce((a, b) => a + (b.precio * b.cant), 0);
   const totalGastos = egresos.reduce((a, b) => a + Number(b.monto || 0), 0);
@@ -921,28 +938,51 @@ function KioscoPanel({ nombreResponsable = '' }) {
       {vista === 'pos' && (
         <div className="kiosco-tablet-layout">
           <div className="kiosco-productos-columna">
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginBottom: '8px' }}>
-            <button
-              type="button"
-              className="btn-circle"
-              title="Vista en grilla"
-              style={{ background: vistaProductos === 'grid' ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.12)', color: vistaProductos === 'grid' ? 'white' : 'var(--azul-electrico)' }}
-              onClick={() => setVistaProductos('grid')}
-            >
-              <LayoutGrid size={14} />
-            </button>
-            <button
-              type="button"
-              className="btn-circle"
-              title="Vista en lista"
-              style={{ background: vistaProductos === 'list' ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.12)', color: vistaProductos === 'list' ? 'white' : 'var(--azul-electrico)' }}
-              onClick={() => setVistaProductos('list')}
-            >
-              <List size={14} />
-            </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+            <div className="kiosco-buscador-wrap" style={{ position: 'relative', flex: '1 1 200px', minWidth: '160px' }}>
+              <Search size={15} color="var(--gris-secundario)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Buscar producto o categoría..."
+                value={busquedaProducto}
+                onChange={(e) => setBusquedaProducto(e.target.value)}
+                style={{ paddingLeft: '36px', width: '100%', boxSizing: 'border-box' }}
+              />
+              {busquedaProducto && (
+                <button
+                  type="button"
+                  onClick={() => setBusquedaProducto('')}
+                  aria-label="Limpiar búsqueda"
+                  style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: 'var(--gris-secundario)' }}
+                >
+                  <XCircle size={16} />
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+              <button
+                type="button"
+                className="btn-circle"
+                title="Vista en grilla"
+                style={{ background: vistaProductos === 'grid' ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.12)', color: vistaProductos === 'grid' ? 'white' : 'var(--azul-electrico)' }}
+                onClick={() => setVistaProductos('grid')}
+              >
+                <LayoutGrid size={14} />
+              </button>
+              <button
+                type="button"
+                className="btn-circle"
+                title="Vista en lista"
+                style={{ background: vistaProductos === 'list' ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.12)', color: vistaProductos === 'list' ? 'white' : 'var(--azul-electrico)' }}
+                onClick={() => setVistaProductos('list')}
+              >
+                <List size={14} />
+              </button>
+            </div>
           </div>
           <div className={`kiosco-grid ${vistaProductos === 'list' ? 'modo-lista' : ''}`}>
-            {productos.map((prod) => {
+            {productosFiltrados.map((prod) => {
               const stock = Number(prod.stock);
               const isCritico = stock > 0 && stock <= 5;
               const sinStock = stock <= 0;
@@ -967,10 +1007,23 @@ function KioscoPanel({ nombreResponsable = '' }) {
               );
             })}
             {productos.length === 0 && <p className="text-muted text-center" style={{ gridColumn: '1 / -1' }}>Sin productos en el catálogo. Agrégalos en Inventario.</p>}
+            {productos.length > 0 && productosFiltrados.length === 0 && (
+              <p className="text-muted text-center" style={{ gridColumn: '1 / -1' }}>Sin resultados para "{busquedaProducto}".</p>
+            )}
           </div>
           </div>
 
-          <div className="card kiosco-cart mt-20">
+        </div>
+      )}
+
+      {/* Portal a document.body: .ios-main tiene un transform permanente (ver
+          .screen-loading/.screen-ready) que convierte cualquier position:fixed
+          DENTRO suyo en "fixed relativo a .ios-main" — se mueve junto con su
+          propio scroll interno en vez de quedar pegado a la pantalla real.
+          Mismo patrón ya usado en los modales de esta app (createPortal a
+          document.body) para que el carrito quede genuinamente fijo. */}
+      {vista === 'pos' && createPortal(
+          <div className={`card kiosco-cart${carrito.length === 0 ? ' kiosco-cart-vacio' : ''}`}>
             <div className="cart-header-row">
               <h4 className="form-subtitle" style={{ margin: 0 }}>Ticket #{ticketActual.toString().padStart(3, '0')}</h4>
               {carrito.length > 0 && (
@@ -979,7 +1032,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
                 </button>
               )}
             </div>
-            {carrito.length === 0 && <p className="text-center text-muted" style={{ fontStyle: 'italic', margin: '20px 0' }}>Carrito vacío.</p>}
+            {carrito.length === 0 && <p className="text-center text-muted" style={{ fontStyle: 'italic', margin: '4px 0 0' }}>Carrito vacío. Toca un producto para empezar.</p>}
             {carrito.length > 0 && (
               <>
                 <div className="cart-items-list-scroll">
@@ -1000,8 +1053,8 @@ function KioscoPanel({ nombreResponsable = '' }) {
                 </div>
               </>
             )}
-          </div>
-        </div>
+          </div>,
+        document.body
       )}
 
       {vista === 'caja' && !turno && (

@@ -167,9 +167,18 @@ button,
   .fiba-botones-grid { grid-template-columns: repeat(4, 1fr) !important; }
   .checkbox-grid { grid-template-columns: repeat(3, 1fr) !important; }
 
-  /* Kiosco: productos + carrito lado a lado; el carrito es sidebar, se pega arriba */
-  .kiosco-tablet-layout { display: grid !important; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; }
-  .kiosco-cart { position: sticky !important; top: 12px; bottom: auto; }
+  /* Kiosco: productos a la izquierda, carrito fijo como sidebar a la derecha.
+     .kiosco-tablet-layout ya no necesita 2 columnas de grid porque el
+     carrito es position:fixed (fuera del flujo) — padding-right en la
+     columna de productos reserva su ancho + gap para que nada quede debajo. */
+  .kiosco-tablet-layout { display: block !important; }
+  .kiosco-productos-columna { padding-bottom: 0 !important; padding-right: 420px !important; }
+  .kiosco-cart {
+    position: fixed !important; left: auto !important; top: 470px !important; right: 20px !important;
+    bottom: auto !important; width: 360px !important; max-height: calc(100vh - 490px) !important;
+    padding: 20px !important; border-radius: 0 0 26px 26px !important;
+  }
+  .cart-total-row h2 { font-size: 30px; }
   .kiosco-grid { max-height: none; overflow: visible; }
 
   /* Noticias en 2 columnas */
@@ -235,9 +244,16 @@ button,
   .fiba-botones-grid { grid-template-columns: repeat(4, 1fr) !important; }
   .checkbox-grid { grid-template-columns: repeat(4, 1fr) !important; }
 
-  /* Layout del kiosco 2 columnas en escritorio; el carrito es sidebar, se pega arriba */
-  .kiosco-tablet-layout { display: grid !important; grid-template-columns: 1fr 420px; gap: 24px; align-items: start; }
-  .kiosco-cart { position: sticky !important; top: 12px; bottom: auto; }
+  /* Kiosco en escritorio: productos a la izquierda, carrito fijo a la derecha
+     (mismo criterio que tablet, con más ancho porque sobra más espacio). */
+  .kiosco-tablet-layout { display: block !important; }
+  .kiosco-productos-columna { padding-bottom: 0 !important; padding-right: 490px !important; }
+  .kiosco-cart {
+    position: fixed !important; left: auto !important; top: 400px !important; right: 28px !important;
+    bottom: auto !important; width: 420px !important; max-height: calc(100vh - 420px) !important;
+    padding: 22px !important; border-radius: 0 0 26px 26px !important;
+  }
+  .cart-total-row h2 { font-size: 32px; }
   .kiosco-grid { max-height: none; overflow: visible; }
 
   /* Noticias en 3 columnas */
@@ -1817,38 +1833,58 @@ button,
   box-shadow: 0 4px 16px rgba(0,0,0,0.06);
 }
 
-/* Layout Vender: el ticket (con los botones de pago) queda "pegado" a la vista
-   con position:sticky en vez de forzar todo dentro de una altura fija — así se
-   adapta a cualquier alto de pantalla sin depender de calcular el header/banner.
-   En móvil se pega abajo (como una barra de checkout); en tablet/escritorio,
-   donde el carrito vive en su propia columna al lado de la grilla, se pega
-   arriba (patrón de sidebar sticky clásico). El scroll ocurre dentro de
-   .ios-main, así que sticky se ancla correctamente a esa área visible. */
+/* Layout Vender: el ticket queda REALMENTE fijo (position:fixed, no sticky)
+   según el tamaño de pantalla, en vez de empujar contenido o depender de
+   scroll para volver a verlo. En móvil se pega abajo como una barra de
+   checkout compacta, por encima del bottom nav; en tablet/escritorio, donde
+   el carrito vive a la derecha de la grilla, se pega fijo en esa columna.
+   .kiosco-productos-columna reserva el espacio correspondiente (padding)
+   para que la grilla de productos nunca quede tapada detrás del carrito. */
 .kiosco-cart {
-  position: sticky;
-  bottom: 8px;
-  z-index: 5;
-  box-shadow: 0 -10px 28px rgba(15,23,42,0.16);
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: 96px;
+  z-index: 40;
+  /* Red de seguridad, no el mecanismo de scroll principal: .cart-items-list-scroll
+     ya acota la lista de items por su cuenta, así que en el uso normal esto
+     no debería llegar a activarse — evita un scroll doblemente anidado. */
+  max-height: 70vh;
+  overflow-y: auto;
+  box-shadow: 0 -10px 28px rgba(15,23,42,0.22), 0 2px 10px rgba(15,23,42,0.12);
 }
+
+/* Carrito vacío en móvil: una barra angosta en vez de la tarjeta completa,
+   para no comerse una fila entera de productos con un "Carrito vacío" antes
+   de que el cliente haya elegido algo. Tablet/escritorio no lo necesitan:
+   ahí el carrito vive en su propia columna lateral, sin tapar productos. */
+.kiosco-cart-vacio {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.kiosco-cart-vacio .cart-header-row { margin-bottom: 2px; }
 
 /* Envuelve los botones de vista (grilla/lista) + .kiosco-grid en un solo
    hijo directo de .kiosco-tablet-layout — si quedan sueltos, el grid de 2
    columnas (productos/carrito) los cuenta como un tercer ítem y todo se
    corre: los botones ocupan la columna ancha, los productos quedan
    apretados en la columna angosta y el carrito termina abajo en su propia
-   fila. min-width:0 evita que el contenido interno fuerce la columna. */
-.kiosco-productos-columna { min-width: 0; }
+   fila. min-width:0 evita que el contenido interno fuerce la columna;
+   padding-bottom reserva el espacio del carrito fijo (ver arriba) para que
+   no tape el final de la grilla de productos en móvil. */
+.kiosco-productos-columna { min-width: 0; padding-bottom: 46vh; }
 
-/* --- Cuadrícula de Productos --- */
+/* --- Cuadrícula de Productos ---
+   Sin max-height/overflow propio: antes tenía su scroll interno acotado a
+   50vh en móvil, un segundo scrollbox anidado dentro de .ios-main que
+   obligaba a hacer scroll "dentro de scroll" para ver todo el catálogo.
+   Ahora la grilla fluye normal y .ios-main (una sola área de scroll) se
+   encarga de todo, igual que ya pasaba en tablet/escritorio. */
 .kiosco-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  max-height: 50vh;
-  overflow-y: auto;
-  overflow-x: hidden;
   padding: 2px 4px 2px 2px;
-  scrollbar-width: thin;
 }
 .kiosco-item {
   border-radius: 22px;
@@ -1924,9 +1960,9 @@ button,
 .kiosco-grid.modo-lista .kiosco-stock-label { margin-bottom: 0; }
 
 .kiosco-cart {
-  padding: 20px;
+  padding: 14px;
   border-top: 4px solid var(--azul-marino);
-  border-radius: 0 0 26px 26px;
+  border-radius: 20px;
 }
 .cart-header-row {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
@@ -1969,7 +2005,7 @@ button,
   border-top: 1px solid var(--borde-suave);
 }
 .cart-total-row span { font-weight: 800; color: var(--texto-secundario); font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
-.cart-total-row h2 { margin: 0; color: var(--azul-marino); font-weight: 900; font-size: 32px; letter-spacing: -1px; }
+.cart-total-row h2 { margin: 0; color: var(--azul-marino); font-weight: 900; font-size: 24px; letter-spacing: -1px; }
 
 .cart-pay-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px;}
 .btn-pago {
