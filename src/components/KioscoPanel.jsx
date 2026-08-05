@@ -661,6 +661,11 @@ function KioscoPanel({ nombreResponsable = '' }) {
           doc.setTextColor(0, 0, 0);
           doc.setFontSize(10);
           y += lineGap - 4;
+          if (eg.firma_receptor) {
+            salto(40);
+            try { doc.addImage(eg.firma_receptor, 'PNG', marginX + 4, y, 90, 34); } catch { /* firma corrupta, se omite */ }
+            y += 40;
+          }
         }
       });
     }
