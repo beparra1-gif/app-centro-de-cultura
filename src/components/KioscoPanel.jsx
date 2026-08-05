@@ -654,18 +654,16 @@ function KioscoPanel({ nombreResponsable = '' }) {
         doc.setTextColor(0, 0, 0);
         y += lineGap;
         if (eg.nombre_receptor || eg.rut_receptor) {
-          salto();
+          salto(14);
           doc.setFontSize(8);
           doc.setTextColor(...colorGrisTexto);
           doc.text(`   Recibe: ${eg.nombre_receptor || ''} ${eg.apellido_receptor || ''} · RUT ${eg.rut_receptor || 'N/D'}`, marginX + 4, y);
           doc.setTextColor(0, 0, 0);
           doc.setFontSize(10);
-          y += lineGap - 4;
           if (eg.firma_receptor) {
-            salto(40);
-            try { doc.addImage(eg.firma_receptor, 'PNG', marginX + 4, y, 90, 34); } catch { /* firma corrupta, se omite */ }
-            y += 40;
+            try { doc.addImage(eg.firma_receptor, 'PNG', pageWidth - marginX - 70, y - 13, 70, 18); } catch { /* firma corrupta, se omite */ }
           }
+          y += lineGap - 4;
         }
       });
     }
