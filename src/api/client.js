@@ -840,6 +840,12 @@ export const notificacionesAppAPI = {
     });
     return handleResponse(response);
   },
+  eliminar: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/notificaciones/${id}`, {
+      method: 'DELETE',
+    });
+    return handleResponse(response);
+  },
 };
 
 // ========== EVENTOS (FASE 1) ==========

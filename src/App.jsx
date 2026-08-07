@@ -1054,17 +1054,23 @@ function App() {
             .map(c => `${c.nombres || 'Sin nombre'} ${c.apellido_paterno || ''}`.trim())
             .join(', ');
 
-          setNotificaciones(prev => ([
-            {
-              id: nextId(),
-              tipo: 'datos',
-              titulo: 'Cuentas con datos pendientes',
-              mensaje: `Hay ${cuentasIncompletasRes.length} cuentas que deben actualizar datos (ej: ${nombres}).`,
-              leida: false,
-              firmada: false
-            },
-            ...prev
-          ]));
+          setNotificaciones(prev => {
+            // cargarDatos() se vuelve a llamar en cada refresco manual (no solo
+            // al iniciar sesión): sin este chequeo, el mismo aviso se duplicaba
+            // cada vez que se guardaba cualquier cosa en el panel admin.
+            if (prev.some(n => n.tipo === 'datos')) return prev;
+            return [
+              {
+                id: nextId(),
+                tipo: 'datos',
+                titulo: 'Cuentas con datos pendientes',
+                mensaje: `Hay ${cuentasIncompletasRes.length} cuentas que deben actualizar datos (ej: ${nombres}).`,
+                leida: false,
+                firmada: false
+              },
+              ...prev
+            ];
+          });
         }
       }
 
@@ -1237,6 +1243,49 @@ function App() {
     if (!rut) return;
     setRutParaEvaluar(rut);
     cambiarPantallaConLoader('academia');
+  };
+
+  // A dónde debe llevar el botón "Ir a" de una notificación según su tipo y
+  // el rol de quien la ve: quien gestiona citaciones (staff/admin) va a la
+  // nómina en el panel admin; un apoderado/jugador va al Muro, que es donde
+  // realmente responde el RSVP (ver ComunicacionesPanel). Devuelve null si el
+  // tipo no tiene un destino conocido, para no mostrar el botón sin sentido.
+  const resolverDestinoNotificacion = (notif) => {
+    const tipo = notif?.tipo || '';
+    if (tipo.startsWith('citacion')) {
+      return puedeVerPantalla('citaciones')
+        ? { pantalla: 'admin_dashboard', vistaAdmin: 'citaciones' }
+        : { pantalla: 'comunicaciones', vistaMuro: 'noticias' };
+    }
+    if (tipo === 'asistencia') {
+      return puedeVerPantalla('asistencia_staff')
+        ? { pantalla: 'asistencia_staff' }
+        : { pantalla: 'jugador' };
+    }
+    if (tipo === 'datos') {
+      return { pantalla: 'admin_dashboard', vistaAdmin: 'usuarios' };
+    }
+    return null;
+  };
+
+  const borrarNotificacion = (notif) => {
+    setNotificaciones((prev) => prev.filter((n) => n.id !== notif.id));
+    if (notif?.origenId) {
+      api.notificacionesAppAPI.eliminar(notif.origenId).catch(() => {
+        // Si falla el borrado remoto no interrumpe: en el peor caso vuelve a
+        // aparecer en el próximo poll, no es una acción crítica.
+      });
+    }
+  };
+
+  const irANotificacion = (notif) => {
+    const destino = resolverDestinoNotificacion(notif);
+    if (!destino) return;
+    setMostrarNotificaciones(false);
+    if (destino.vistaAdmin) setVistaAdmin(destino.vistaAdmin);
+    if (destino.vistaMuro) setVistaMuro(destino.vistaMuro);
+    cambiarPantallaConLoader(destino.pantalla);
+    borrarNotificacion(notif);
   };
 
   const getUsuarioActivoPermisos = () => {
@@ -2839,7 +2888,9 @@ function App() {
         <div ref={notificationsPanelRef}>
           <NotificationsPanel
             notificaciones={notificaciones}
-            setNotificaciones={setNotificaciones}
+            onBorrar={borrarNotificacion}
+            onIrA={irANotificacion}
+            resolverDestino={resolverDestinoNotificacion}
           />
         </div>
       )}

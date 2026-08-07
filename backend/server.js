@@ -4516,13 +4516,19 @@ cron.schedule('*/10 * * * *', async () => {
   }
 });
 
-// Limpiar notificaciones antiguas cada 7 días
+// Limpiar notificaciones antiguas cada 7 días (la tabla real es
+// notificaciones_app; esta consulta apuntaba a una tabla "notificaciones"
+// que nunca existió con ese nombre y fallaba en silencio cada domingo).
 cron.schedule('0 3 * * 0', async () => {
   console.log('[CRON] Limpiando notificaciones antiguas...');
-  await pool.query(`
-    DELETE FROM notificaciones
-    WHERE created_at < NOW() - INTERVAL '30 days'
-  `);
+  try {
+    await pool.query(`
+      DELETE FROM notificaciones_app
+      WHERE creado_en < NOW() - INTERVAL '30 days'
+    `);
+  } catch (err) {
+    console.error('[CRON] Error limpiando notificaciones antiguas:', err.message);
+  }
 });
 
 // Marca 'no asiste' automáticamente a quien no respondió una citación antes
@@ -6273,6 +6279,25 @@ app.patch('/api/notificaciones/:id/leida', authenticate, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[PATCH /api/notificaciones/:id/leida]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE: borra una notificación propia (botón "Borrar" / al usar "Ir a").
+app.delete('/api/notificaciones/:id', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM notificaciones_app
+       WHERE id = $1 AND REPLACE(REPLACE(UPPER(rut_destinatario), '.', ''), '-', '') = $2
+       RETURNING id`,
+      [req.params.id, normalizarRutParaComparar(req.actor.rut)]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notificación no encontrada.' });
+    }
+    res.json({ ok: true, deleted: { id: result.rows[0].id } });
+  } catch (err) {
+    console.error('[DELETE /api/notificaciones/:id]', err);
     res.status(500).json({ error: err.message });
   }
 });
