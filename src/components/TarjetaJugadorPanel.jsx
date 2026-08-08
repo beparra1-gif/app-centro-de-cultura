@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BadgeCheck, Camera, CalendarOff, Download, ClipboardEdit, Loader2, Mars, QrCode, ScanLine, ShieldCheck, Shirt, Sparkles, Trophy, User, Users, Venus, X } from 'lucide-react';
-import html2canvas from 'html2canvas';
 import { QRCodeSVG } from 'qrcode.react';
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart } from 'recharts';
 import PupiloSelector from './PupiloSelector';
@@ -11,42 +10,18 @@ import QrScanner from './QrScanner';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
-
-// Los 5 marcos (public/tarjetas-marcos/) son ahora PNG sin fondo (transparente
-// fuera y dentro del marco, 2800x4968 los 5 por igual), así que se usa la
-// proporción real de esa imagen — ya no hace falta el recorte 106%/-3% que
-// se usaba antes para tapar un borde negro de mármol del recorte viejo.
-const EXPORT_WIDTH = 750;
-const EXPORT_HEIGHT = Math.round(EXPORT_WIDTH * (4968 / 2800)); // 1330
-
-// Marco real (PNG que mandó el usuario) en vez de un marco dibujado en CSS —
-// el usuario pidió que el diseño sea exacto al que mandó, no una imitación.
-// foto: bordes del hueco transparente real DENTRO de cada PNG. escudo: el
-// círculo metálico ya dibujado en el marco (arriba a la izquierda), donde va
-// el logo del club. Ambos medidos por pixel-scan automático (canal alfa) por
-// tier, porque aunque comparten tamaño no comparten exactamente el mismo
-// diseño de marco.
-const MARCO_POR_RAREZA = {
-  // foto: margen medido por pixel-scan MENOS ~1pt de "sangrado" extra hacia
-  // afuera en los 4 lados, para que la ventana quede bien metida debajo del
-  // bisel del marco (que va encima) y no quede una línea delgada de
-  // antialiasing del PNG asomando entre la foto y el metal.
-  BRONCE: { src: '/tarjetas-marcos/bronce.png', foto: { left: 8.29, right: 7.68, top: 4.01, bottom: 3.53 }, escudo: { left: 10.04, top: 5.97, diametro: 27.45 } },
-  PLATA: { src: '/tarjetas-marcos/plata.png', foto: { left: 8.32, right: 7.93, top: 3.87, bottom: 3.71 }, escudo: { left: 9.73, top: 5.91, diametro: 27.92 } },
-  ORO: { src: '/tarjetas-marcos/oro.png', foto: { left: 7.82, right: 8.25, top: 4.03, bottom: 3.55 }, escudo: { left: 9.44, top: 6.02, diametro: 28.03 } },
-  PLATINO: { src: '/tarjetas-marcos/platino.png', foto: { left: 8.89, right: 8.61, top: 4.64, bottom: 4.05 }, escudo: { left: 8.93, top: 5.31, diametro: 29.36 } },
-  DIAMANTE: { src: '/tarjetas-marcos/diamante.png', foto: { left: 8.86, right: 8.61, top: 4.54, bottom: 4.03 }, escudo: { left: 9.20, top: 5.34, diametro: 29.06 } },
-  VISITA: { src: '/tarjetas-marcos/plata.png', foto: { left: 8.32, right: 7.93, top: 3.87, bottom: 3.71 }, escudo: { left: 9.73, top: 5.91, diametro: 27.92 } },
-};
-
-// Rutas que el backend devuelve como /api/logo-assets/file/... (guardado
-// BYTEA en DB) necesitan resolverse contra el origen del backend, no del
-// frontend: en dev corren en puertos distintos (Vite no proxya /api).
-const resolverUrlFoto = (foto = '') => {
-  if (!foto || !foto.startsWith('/api/')) return foto;
-  const origen = String(api.API_BASE_URL_CONFIG || '').replace(/\/api\/?$/, '');
-  return `${origen}${foto}`;
-};
+import TarjetaColeccionable from './TarjetaColeccionable';
+import {
+  EXPORT_WIDTH,
+  EXPORT_HEIGHT,
+  MARCO_POR_RAREZA,
+  DISENOS_MARCO,
+  obtenerEstiloRarezaPorNivel,
+  resolverUrlFoto,
+  canvasABlob,
+  descargarBlob,
+  capturarRefExport,
+} from '../utils/tarjetaColeccionable';
 
 const cargarImagenDesdeBlob = (blob) => new Promise((resolve, reject) => {
   const url = URL.createObjectURL(blob);
@@ -55,82 +30,6 @@ const cargarImagenDesdeBlob = (blob) => new Promise((resolve, reject) => {
   img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
   img.src = url;
 });
-
-const DISENOS_MARCO = {
-  clasico: { etiqueta: 'Clásico', extraBorder: null, extraShadow: null, extraFilter: null },
-  neon: { etiqueta: 'Neón', extraBorder: '2px solid #39FF88', extraShadow: '0 0 4px 1px rgba(57,255,136,0.55), 0 0 26px 6px rgba(57,255,136,0.35)', extraFilter: null },
-  vintage: { etiqueta: 'Vintage', extraBorder: '2px solid #C9A66B', extraShadow: '0 0 0 4px rgba(201,166,107,0.2)', extraFilter: 'sepia(0.3) saturate(1.1)' },
-  holografico: { etiqueta: 'Holográfico', extraBorder: '2px solid rgba(255,255,255,0.65)', extraShadow: '0 0 6px 2px rgba(255,105,180,0.45), 0 0 18px 6px rgba(120,190,255,0.4), 0 0 30px 10px rgba(255,230,120,0.3)', extraFilter: null },
-};
-
-// 5 niveles de rareza (Bronce/Plata/Oro/Platino/Diamante), inspirados en las
-// referencias de tarjetas metálicas que trajo el usuario. Extraído como
-// función pura (no depende de props/estado del componente) para poder
-// aplicar el mismo marco tanto a la tarjeta propia como a cada mini-tarjeta
-// del álbum de colección (cada compañera tiene su propio nivel).
-const obtenerEstiloRarezaPorNivel = (nivel) => {
-  const nivelNumero = Number(nivel) || 0;
-
-  if (nivelNumero > 40) {
-    return {
-      texto: 'DIAMANTE',
-      estilo: {
-        background: 'linear-gradient(145deg, #0C4A6E 0%, #66D9FF 45%, #F2FDFF 100%)',
-        accent: '#F2FDFF',
-        border: 'rgba(255,255,255,0.55)',
-        glow: '0 0 0 2px rgba(255,255,255,0.55), 0 0 22px 4px rgba(150,220,255,0.4), 0 0 34px 10px rgba(255,190,250,0.22)',
-        pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.18) 0px, rgba(255,255,255,0.18) 2px, transparent 2px, transparent 10px), repeating-linear-gradient(25deg, rgba(180,240,255,0.16) 0px, rgba(180,240,255,0.16) 1px, transparent 1px, transparent 16px)',
-        sparkle: true,
-      },
-    };
-  }
-  if (nivelNumero > 30) {
-    return {
-      texto: 'PLATINO',
-      estilo: {
-        background: 'linear-gradient(145deg, #4A5560 0%, #B9C6D1 45%, #F4F9FC 100%)',
-        accent: '#EAF6FF',
-        border: 'rgba(230,245,255,0.5)',
-        glow: '0 0 0 1px rgba(230,245,255,0.4), 0 0 14px 2px rgba(210,235,255,0.3)',
-        pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 2px, transparent 2px, transparent 13px)',
-      },
-    };
-  }
-  if (nivelNumero > 20) {
-    return {
-      texto: 'ORO',
-      estilo: {
-        background: 'linear-gradient(145deg, #5C3D00 0%, #C9910B 45%, #FFD873 100%)',
-        accent: '#FFEFC2',
-        border: 'rgba(255,241,199,0.45)',
-        glow: '0 0 0 1px rgba(255,241,199,0.3), 0 0 12px 2px rgba(255,201,77,0.25)',
-        pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 2px, transparent 2px, transparent 12px), repeating-linear-gradient(25deg, rgba(255,241,199,0.10) 0px, rgba(255,241,199,0.10) 1px, transparent 1px, transparent 18px)',
-      },
-    };
-  }
-  if (nivelNumero > 10) {
-    return {
-      texto: 'PLATA',
-      estilo: {
-        background: 'linear-gradient(145deg, #3E4750 0%, #8E97A0 45%, #E7ECEF 100%)',
-        accent: '#F5F8FA',
-        border: 'rgba(255,255,255,0.35)',
-        glow: '0 0 0 1px rgba(255,255,255,0.25)',
-        pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.09) 0px, rgba(255,255,255,0.09) 2px, transparent 2px, transparent 14px)',
-      },
-    };
-  }
-  return {
-    texto: 'BRONCE',
-    estilo: {
-      background: 'linear-gradient(145deg, #3D2413 0%, #8B5A2B 45%, #C9793F 100%)',
-      accent: '#F0C199',
-      border: 'rgba(255,214,170,0.4)',
-      glow: '0 0 0 1px rgba(255,214,170,0.25)',
-      pattern: 'repeating-linear-gradient(115deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 2px, transparent 2px, transparent 14px)',
-    },
-  };
-};
 
 function TarjetaJugadorPanel({
   pupiloActivo,
@@ -178,6 +77,7 @@ function TarjetaJugadorPanel({
   const [mostrarAlbum, setMostrarAlbum] = useState(false);
   const [album, setAlbum] = useState({ items: [], total_club: 0 });
   const [cargandoAlbum, setCargandoAlbum] = useState(false);
+  const [tarjetaAmpliada, setTarjetaAmpliada] = useState(null);
 
   // pupiloActivo.asistencia nunca existe (no es un campo real de jugadores)
   // — el resumen se calcula en el backend a partir de las listas que ya
@@ -572,36 +472,6 @@ function TarjetaJugadorPanel({
     { area: 'Progreso', valor: progresoRadar },
   ];
 
-  const canvasABlob = (canvas) => new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('No se pudo generar la imagen.'))), 'image/png');
-  });
-
-  const descargarBlob = (blob, nombreArchivo) => {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = nombreArchivo;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    // Revocar después de un tick: algunos navegadores inician la descarga
-    // de forma asíncrona y revocar de inmediato la corta a mitad de camino.
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-  };
-
-  const capturarRefExport = async (targetRef) => {
-    if (!targetRef.current) throw new Error('No se pudo preparar la tarjeta para exportar.');
-    return html2canvas(targetRef.current, {
-      backgroundColor: null,
-      scale: 2,
-      useCORS: true,
-      // Sin width/height fijo: el frente ahora mide el marco real + el
-      // recuadro de datos debajo (alto variable), así que se deja que
-      // html2canvas mida el alto real en vez de recortarlo a EXPORT_HEIGHT.
-      width: targetRef.current.offsetWidth,
-      height: targetRef.current.offsetHeight,
-    });
-  };
 
   const descargarTarjetaColeccionActual = async () => {
     if (!cardFrontExportRef.current) return;
@@ -647,6 +517,7 @@ function TarjetaJugadorPanel({
 
   const abrirAlbum = () => {
     setMostrarAlbum(true);
+    setTarjetaAmpliada(null);
     void cargarAlbum();
   };
 
@@ -1499,12 +1370,12 @@ function TarjetaJugadorPanel({
           zIndex: 1000, padding: '20px',
         }}>
           <div style={{
-            background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '480px', width: '100%',
-            maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', color: 'var(--texto-principal)',
+            background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '560px', width: '100%',
+            maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', color: 'var(--texto-principal)',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
               <h3 style={{ margin: 0, fontSize: '17px' }}>Mi álbum</h3>
-              <button onClick={() => setMostrarAlbum(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }} aria-label="Cerrar">
+              <button onClick={() => { setMostrarAlbum(false); setTarjetaAmpliada(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }} aria-label="Cerrar">
                 <X size={20} />
               </button>
             </div>
@@ -1518,33 +1389,29 @@ function TarjetaJugadorPanel({
               <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>
                 Aún no coleccionas ninguna tarjeta. Usa "Escanear compañera" para agregar la primera.
               </p>
+            ) : tarjetaAmpliada ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                <button
+                  onClick={() => setTarjetaAmpliada(null)}
+                  style={{ alignSelf: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '12px', fontWeight: '800', color: 'var(--azul-electrico)' }}
+                >
+                  ← Volver al álbum
+                </button>
+                <TarjetaColeccionable jugador={tarjetaAmpliada} ancho={260} mostrarDescarga />
+              </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '12px' }}>
-                {album.items.map((item) => {
-                  const nombreItem = `${item.nombres || ''} ${item.apellido_paterno || ''}`.trim() || 'Jugador';
-                  const { estilo: estiloItem } = obtenerEstiloRarezaPorNivel(item.nivel);
-                  return (
-                    <div key={item.rut_jugador} style={{
-                      borderRadius: '12px', padding: '10px', textAlign: 'center',
-                      background: estiloItem.background, color: 'white',
-                      border: `2px solid ${estiloItem.border}`,
-                    }}>
-                      <div style={{
-                        width: '56px', height: '56px', borderRadius: '50%', margin: '0 auto',
-                        border: `2px solid ${estiloItem.accent}`, overflow: 'hidden',
-                        background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        {item.foto_jugador ? (
-                          <img src={resolverUrlFoto(item.foto_jugador)} alt={nombreItem} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          <User size={22} />
-                        )}
-                      </div>
-                      <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '900', lineHeight: 1.2 }}>{nombreItem}</div>
-                      <div style={{ marginTop: '2px', fontSize: '9px', fontWeight: '800', opacity: 0.85, textTransform: 'uppercase' }}>Nivel {item.nivel}</div>
-                    </div>
-                  );
-                })}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '14px' }}>
+                {album.items.map((item) => (
+                  <button
+                    key={item.rut_jugador}
+                    type="button"
+                    onClick={() => setTarjetaAmpliada(item)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                    aria-label={`Ver tarjeta de ${item.nombres || 'jugador'}`}
+                  >
+                    <TarjetaColeccionable jugador={item} ancho={120} sombra={false} />
+                  </button>
+                ))}
               </div>
             )}
           </div>

@@ -4941,7 +4941,8 @@ app.get('/api/jugadores/:rut/coleccion', authenticate, requireApoderadoDeJugador
 
     const coleccion = await pool.query(
       `SELECT j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.foto_jugador,
-              j.categoria, j.rama, j.numero_camiseta,
+              j.foto_tarjeta_coleccion, j.diseno_marco, j.posicion_de_juego, j.estatura,
+              j.año_nacimiento, j.categoria, j.rama, j.numero_camiseta,
               COALESCE(SUM(gp.puntos_obtenidos), 0) AS xp_total,
               tc.fecha_coleccion
        FROM tarjetas_coleccionadas tc
@@ -4949,13 +4950,17 @@ app.get('/api/jugadores/:rut/coleccion', authenticate, requireApoderadoDeJugador
        LEFT JOIN gamificacion_puntos gp ON gp.rut_jugador = j.rut_jugador
        WHERE tc.rut_coleccionista = $1
        GROUP BY j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.foto_jugador,
-                j.categoria, j.rama, j.numero_camiseta, tc.fecha_coleccion
+                j.foto_tarjeta_coleccion, j.diseno_marco, j.posicion_de_juego, j.estatura,
+                j.año_nacimiento, j.categoria, j.rama, j.numero_camiseta, tc.fecha_coleccion
        ORDER BY tc.fecha_coleccion DESC`,
       [rutColeccionista]
     );
 
     const totalClub = await pool.query(
-      `SELECT COUNT(*) AS total FROM jugadores WHERE estado = 'activo' AND rut_jugador != $1`,
+      // UPPER(): datos importados desde Google Sheets guardan "ACTIVO" en
+      // mayúscula, mientras el resto de la app escribe "activo" — sin esto
+      // el conteo daba 0 aunque hubiera cientos de jugadores activos.
+      `SELECT COUNT(*) AS total FROM jugadores WHERE UPPER(estado) = 'ACTIVO' AND rut_jugador != $1`,
       [rutColeccionista]
     );
 
