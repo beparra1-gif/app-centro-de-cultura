@@ -2416,6 +2416,43 @@ app.delete('/api/logo-assets/:filename', authenticate, requireModule('admin_dash
   }
 });
 
+// Videos/pizarras de Academia se sirven directo desde <video>/<img src=...>,
+// que el navegador no puede acompañar con header Authorization — por eso
+// estas dos rutas de archivo no llevan "authenticate". Sin esto, sus IDs
+// autoincrementales (1, 2, 3...) quedaban adivinables por cualquiera sin
+// sesión. La firma no reemplaza el login: solo evita que alguien enumere
+// contenido a ciegas sin haber pasado antes por un endpoint autenticado que
+// la entregue (la subida del video, o el listado de pizarras). Sin fecha de
+// expiración a propósito: la URL del video queda guardada tal cual en
+// comunicaciones.cuerpo_texto al subirlo (no se reconstruye después), así
+// que una firma que expirara rompería videos ya publicados sin forma de
+// refrescarla.
+const firmarArchivoAcademia = (tipo, id) => crypto
+  .createHmac('sha256', String(process.env.JWT_SECRET || ''))
+  .update(`${tipo}:${id}`)
+  .digest('hex')
+  .slice(0, 24);
+
+// Corre una vez al arrancar: cualquier video subido ANTES de que
+// firmarArchivoAcademia empezara a exigirse (cuerpo_texto guardado sin
+// "?sig=") se re-firma en el momento, para no dejar videos ya publicados
+// rotos por el nuevo candado. Idempotente — si ya tiene "?sig=" no la toca.
+const refirmarUrlsAcademiaVideo = async () => {
+  const filas = await pool.query(
+    `SELECT id, academia_video_id, cuerpo_texto FROM comunicaciones
+     WHERE cuerpo_texto LIKE 'academia-videos/file/%' AND cuerpo_texto NOT LIKE '%?sig=%'`
+  );
+  for (const fila of filas.rows) {
+    const idVideo = fila.academia_video_id || fila.cuerpo_texto.replace('academia-videos/file/', '').split('?')[0];
+    if (!idVideo) continue;
+    const urlFirmada = `academia-videos/file/${idVideo}?sig=${firmarArchivoAcademia('video', idVideo)}`;
+    await pool.query('UPDATE comunicaciones SET cuerpo_texto = $1 WHERE id = $2', [urlFirmada, fila.id]);
+  }
+  if (filas.rows.length > 0) {
+    console.log(`🔏 Re-firmadas ${filas.rows.length} URL(s) de video de Academia ya publicadas.`);
+  }
+};
+
 // POST: sube un video corto y de paso crea la comunicación "Academia-Video"
 // que lo hace aparecer en el mismo listado que el material por enlace.
 app.post('/api/academia-videos', authenticate, requireRole('staff', 'admin', 'super_admin'), uploadVideoMemoria.single('archivo'), async (req, res) => {
@@ -2442,7 +2479,7 @@ app.post('/api/academia-videos', authenticate, requireRole('staff', 'admin', 'su
     // Ruta relativa a la raíz de la API (sin protocolo/host ni prefijo /api):
     // el frontend la resuelve contra su propio API_BASE_URL_CONFIG, que en dev
     // apunta a un puerto distinto (3000) del de Vite (5173).
-    const urlVideo = `academia-videos/file/${video.id}`;
+    const urlVideo = `academia-videos/file/${video.id}?sig=${firmarArchivoAcademia('video', video.id)}`;
 
     const comunicacion = await pool.query(
       `INSERT INTO comunicaciones
@@ -2466,10 +2503,13 @@ app.post('/api/academia-videos', authenticate, requireRole('staff', 'admin', 'su
 // pueda buscar/adelantar sin descargar el archivo completo de una vez.
 // Sin "authenticate": esta URL se usa directo en <video><source>, que el
 // navegador no puede acompañar con header Authorization (ídem <img> de
-// pizarras arriba) — mismo criterio: no servir un video despublicado, el
-// listado autenticado sigue siendo el control de acceso principal.
+// pizarras arriba) — en cambio exige la firma de firmarArchivoAcademia, que
+// solo se entrega desde la subida (autenticada); ver comentario ahí arriba.
 app.get('/api/academia-videos/file/:id', async (req, res) => {
   try {
+    if (String(req.query.sig || '') !== firmarArchivoAcademia('video', req.params.id)) {
+      return res.status(403).json({ error: 'Enlace de video inválido.' });
+    }
     const result = await pool.query('SELECT mime_type, file_data, activo FROM academia_videos WHERE id = $1', [req.params.id]);
     const row = result.rows?.[0];
     if (!row || row.activo === false) {
@@ -2603,10 +2643,15 @@ app.get('/api/academia-pizarras', authenticate, requireAnyModule('academia'), as
       `SELECT id, nombre_tactica, descripcion, imagen_filename, rama, categorias_objetivo, creado_por, activo, created_at
        FROM academia_pizarras ORDER BY created_at DESC LIMIT 300`
     );
+    // imagen_sig: la URL de la imagen (GET .../imagen/:id, sin authenticate
+    // porque la sirve un <img src=...>) exige esta firma — así solo quien ya
+    // pasó por este listado autenticado puede construir una URL válida, en
+    // vez de poder adivinar IDs secuenciales sin sesión.
+    const conFirma = result.rows.map((p) => ({ ...p, imagen_sig: firmarArchivoAcademia('pizarra', p.id) }));
     if (esProfesor) {
-      return res.json(result.rows);
+      return res.json(conFirma);
     }
-    const pizarrasActivas = result.rows.filter((p) => p.activo !== false);
+    const pizarrasActivas = conFirma.filter((p) => p.activo !== false);
     const pupilos = await obtenerPupilosDeActor(req.actor);
     res.json(pizarrasActivas.filter((p) => academiaContenidoEsVisibleParaPupilos(p, pupilos)));
   } catch (error) {
@@ -2642,7 +2687,7 @@ app.post('/api/academia-pizarras', authenticate, requireRole('staff', 'admin', '
         req.body.rama || 'General', JSON.stringify(JSON.parse(req.body.categorias_objetivo || '[]')), req.actor.rut,
       ]
     );
-    res.status(201).json(result.rows[0]);
+    res.status(201).json({ ...result.rows[0], imagen_sig: firmarArchivoAcademia('pizarra', result.rows[0].id) });
   } catch (error) {
     console.error('[POST /api/academia-pizarras]', error);
     res.status(500).json({ error: error.message || 'No se pudo guardar la pizarra.' });
@@ -2651,12 +2696,14 @@ app.post('/api/academia-pizarras', authenticate, requireRole('staff', 'admin', '
 
 // Sin "authenticate": esta URL se usa directo en <img src>, que el navegador
 // no puede acompañar con header Authorization — exigir token acá rompería la
-// carga de imagen para cualquier usuario, logueado o no. Como mitigación
-// real (en vez de un candado que no puede funcionar aquí), no se sirve una
-// pizarra despublicada; el listado (GET /api/academia-pizarras, ese sí
-// autenticado y filtrado) sigue siendo el control de acceso principal.
+// carga de imagen para cualquier usuario, logueado o no. En cambio exige la
+// firma que entrega GET /api/academia-pizarras (ese sí autenticado y
+// filtrado), que sigue siendo el control de acceso principal.
 app.get('/api/academia-pizarras/imagen/:id', async (req, res) => {
   try {
+    if (String(req.query.sig || '') !== firmarArchivoAcademia('pizarra', req.params.id)) {
+      return res.status(403).json({ error: 'Enlace de imagen inválido.' });
+    }
     const result = await pool.query('SELECT imagen_mime_type, imagen_data, activo FROM academia_pizarras WHERE id = $1', [req.params.id]);
     const row = result.rows?.[0];
     if (!row || !row.imagen_data || row.activo === false) {
@@ -3514,7 +3561,7 @@ app.post('/api/comunicaciones/video', authenticate, requireRole('staff', 'admin'
     // Misma convención de ruta relativa que usa Academia (ver comentario en
     // GET /api/academia-videos/file/:id): el frontend la resuelve contra
     // API_BASE_URL_CONFIG, no contra el origen de Vite.
-    return res.status(201).json({ id, url: `academia-videos/file/${id}` });
+    return res.status(201).json({ id, url: `academia-videos/file/${id}?sig=${firmarArchivoAcademia('video', id)}` });
   } catch (error) {
     console.error('[POST /api/comunicaciones/video]', error);
     return res.status(500).json({ error: error.message || 'No se pudo subir el video.' });
@@ -9651,6 +9698,10 @@ app.listen(PORT, () => {
 
   ensureNotificacionesAppTable().catch((error) => {
     console.error('❌ Error verificando tabla notificaciones_app:', error.message);
+  });
+
+  refirmarUrlsAcademiaVideo().catch((error) => {
+    console.error('❌ Error re-firmando URLs de video de Academia:', error.message);
   });
 
   ensureTarjetasColeccionadasTable().catch((error) => {

@@ -947,7 +947,7 @@ function AcademiaPanel({
               <div key={pz.id || `${pz.nombre_tactica || 'tactica'}-${idx}`} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '18px', padding: '12px', background: 'rgba(255,255,255,0.84)' }}>
                 {pz.imagen_filename && (
                   <img
-                    src={`${api.API_BASE_URL_CONFIG}/academia-pizarras/imagen/${pz.id}`}
+                    src={`${api.API_BASE_URL_CONFIG}/academia-pizarras/imagen/${pz.id}?sig=${pz.imagen_sig || ''}`}
                     alt={pz.nombre_tactica || 'Pizarra táctica'}
                     style={{ width: '100%', borderRadius: '12px', marginBottom: '8px' }}
                   />
