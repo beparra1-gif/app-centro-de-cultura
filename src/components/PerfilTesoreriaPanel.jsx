@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Camera, Clock, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
 import { getUTMLastDayPreviousMonth } from '../utils/appHelpers';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from '../utils/beca';
@@ -29,6 +29,7 @@ function PerfilTesoreriaPanel({
   onIrAPagoManual,
 }) {
   const [archivoComprobante, setArchivoComprobante] = useState(null);
+  const inputComprobanteRef = useRef(null);
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
   const [errorComprobante, setErrorComprobante] = useState('');
   const [busquedaCuenta, setBusquedaCuenta] = useState('');
@@ -435,13 +436,18 @@ function PerfilTesoreriaPanel({
     reader.readAsDataURL(archivo);
   });
 
-  const enviarComprobantePago = async () => {
+  const enviarComprobantePago = async (archivoDirecto) => {
+    // archivoDirecto: el <input type="file"> llama esto en su propio onChange
+    // pasando el File recién elegido, para que se envíe de inmediato en un
+    // solo paso (elegir archivo = enviar) sin esperar a que el state
+    // archivoComprobante termine de propagarse (evita leer un valor viejo).
+    const archivo = archivoDirecto || archivoComprobante;
     if (totalMesesSeleccionados === 0) {
       setErrorComprobante('Selecciona al menos un mes (cuota socio, deportista, o ambas) para registrar el pago.');
       return;
     }
 
-    if (!archivoComprobante) {
+    if (!archivo) {
       setErrorComprobante('Debes adjuntar un comprobante (imagen o PDF).');
       return;
     }
@@ -457,15 +463,15 @@ function PerfilTesoreriaPanel({
       setErrorComprobante('');
 
       let comprobanteUrl = '';
-      if (String(archivoComprobante.type || '').startsWith('image/')) {
+      if (String(archivo.type || '').startsWith('image/')) {
         const formData = new FormData();
         formData.append('nombre', `comprobante-${rutPupiloActivo || Date.now()}`);
         formData.append('tipo', 'comprobante');
-        formData.append('archivo', archivoComprobante);
+        formData.append('archivo', archivo);
         const uploadRes = await api.assetsAPI.uploadLogo(formData);
         comprobanteUrl = uploadRes?.url || '';
       } else {
-        comprobanteUrl = await convertirArchivoABase64(archivoComprobante);
+        comprobanteUrl = await convertirArchivoABase64(archivo);
       }
 
       const payloadBase = {
@@ -876,38 +882,45 @@ function PerfilTesoreriaPanel({
               <h2 style={{ fontSize: '38px' }}>${totalFinalPagar.toLocaleString('es-CL')}</h2>
             </div>
             <div style={{ marginTop: '10px', border: '1px solid rgba(0,122,255,0.2)', borderRadius: '14px', padding: '12px', background: 'linear-gradient(180deg, rgba(0,122,255,0.07), rgba(0,122,255,0.02))' }}>
-              <label style={{ fontSize: '12px', fontWeight: '900', display: 'block', marginBottom: '8px' }}>Subir comprobante (foto, imagen o archivo)</label>
+              {/* Un solo botón: al tocarlo abre el selector nativo de archivos
+                  (galería/cámara/PDF), y apenas se elige uno se envía solo —
+                  sin un segundo click de "enviar" aparte. El <input> real
+                  queda oculto, el botón grande es lo único que se toca. */}
               <input
+                ref={inputComprobanteRef}
                 type="file"
-                className="form-input"
                 accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf"
-                onChange={(e) => setArchivoComprobante(e.target.files?.[0] || null)}
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const archivo = e.target.files?.[0] || null;
+                  setArchivoComprobante(archivo);
+                  if (archivo) void enviarComprobantePago(archivo);
+                  e.target.value = '';
+                }}
               />
-              <span style={{ display: 'block', marginTop: '6px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
-                Puedes subir JPG, PNG, WEBP o PDF (máx recomendado 5MB).
-              </span>
-              {archivoComprobante && (
-                <span style={{ display: 'block', marginTop: '6px', fontSize: '11px', color: 'var(--azul-electrico)', fontWeight: '700' }}>
-                  Archivo seleccionado: {archivoComprobante.name}
+
+              {archivoComprobante && subiendoComprobante && (
+                <span style={{ display: 'block', marginBottom: '8px', fontSize: '11px', color: 'var(--azul-electrico)', fontWeight: '700' }}>
+                  Enviando: {archivoComprobante.name}
                 </span>
               )}
 
               {errorComprobante && (
-                <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '700' }}>
+                <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--rojo-alerta)', fontWeight: '700' }}>
                   {errorComprobante}
                 </div>
               )}
 
               <button
-                className="btn-pago-cta mt-10"
+                className="btn-pago-cta"
                 style={{ width: '100%', border: 'none', cursor: subiendoComprobante ? 'wait' : 'pointer', opacity: subiendoComprobante ? 0.8 : 1, padding: '14px 16px', borderRadius: '14px' }}
-                onClick={enviarComprobantePago}
+                onClick={() => inputComprobanteRef.current?.click()}
                 disabled={subiendoComprobante || totalMesesSeleccionados === 0}
               >
                 <Camera size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <div>
                   <strong style={{ display: 'block', fontSize: '14px' }}>{subiendoComprobante ? 'Enviando comprobante...' : 'Adjuntar y Enviar Comprobante'}</strong>
-                  <span style={{ fontSize: '11px', opacity: 0.8 }}>Tesorería validará y marcará en verde los meses aprobados.</span>
+                  <span style={{ fontSize: '11px', opacity: 0.8 }}>JPG, PNG, WEBP o PDF · Tesorería validará y marcará en verde los meses aprobados.</span>
                 </div>
               </button>
             </div>
