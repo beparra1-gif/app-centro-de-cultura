@@ -999,6 +999,21 @@ function App() {
     }
   };
 
+  // Mismo problema que las citaciones: si el superadmin edita a un pupilo
+  // mientras su apoderado tiene la app abierta en otra sesión/dispositivo,
+  // sin esto no se entera hasta recargar. Se usa jugadoresAPI.getAll() (una
+  // sola llamada liviana) en vez de recargarUsuariosAdmin() (que además trae
+  // cuentas/cuentasIncompletas/jugadoresVisita — de más para cada sesión
+  // apoderado/jugador que solo necesita ver a su propio pupilo al día).
+  const recargarJugadoresLigero = async () => {
+    try {
+      const jugadoresRes = await api.jugadoresAPI.getAll();
+      if (Array.isArray(jugadoresRes)) setJugadoresAdmin(jugadoresRes);
+    } catch {
+      // Un fallo puntual del poll no debe interrumpir la UI.
+    }
+  };
+
   const cargarDatos = async ({ manual = false, rolActivo } = {}) => {
     if (manual) setApiRetrying(true);
     // El invitado no tiene token real: jugadoresAPI.getAll() (protegido) 401ea
@@ -1805,6 +1820,7 @@ function App() {
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       void cargarCitacionesYNotificaciones();
+      void recargarJugadoresLigero();
     }, 20000);
 
     return () => window.clearInterval(intervalId);
@@ -2731,16 +2747,21 @@ function App() {
       return;
     }
 
-    const pupiloPropio = pupilosDisponibles[0];
+    // Antes esto siempre comparaba contra pupilosDisponibles[0] — en una
+    // familia con más de un pupilo, apenas el apoderado cambiaba manualmente
+    // al segundo (onChangePupilo), este efecto lo hacía saltar de vuelta al
+    // primero en el siguiente render (pupilosDisponibles es un array nuevo
+    // cada vez). Ahora busca el MISMO rut que ya estaba activo dentro de la
+    // lista fresca, y solo cae al primero si no hay ninguno activo todavía.
     const rutActivo = normalizarRutComparacion(pupiloActivo?.rut || '');
-    const rutPropio = normalizarRutComparacion(pupiloPropio.rut || '');
-    const anioActivo = obtenerAnioNacimientoJugador(pupiloActivo);
-    const anioPropio = obtenerAnioNacimientoJugador(pupiloPropio);
-    const numeroActivo = obtenerNumeroCamisetaJugador(pupiloActivo, 0);
-    const numeroPropio = obtenerNumeroCamisetaJugador(pupiloPropio, 0);
+    const pupiloVigente = (rutActivo && pupilosDisponibles.find((p) => normalizarRutComparacion(p.rut) === rutActivo))
+      || pupilosDisponibles[0];
 
-    if (rutActivo !== rutPropio || anioActivo !== anioPropio || numeroActivo !== numeroPropio) {
-      setPupiloActivo(pupiloPropio);
+    // Comparación completa (no solo rut/año/número) para que CUALQUIER
+    // edición del pupilo — propia o de otra sesión vía recargarJugadoresLigero
+    // — se refleje sin tener que cerrar y volver a abrir la app.
+    if (JSON.stringify(pupiloVigente) !== JSON.stringify(pupiloActivo)) {
+      setPupiloActivo(pupiloVigente);
     }
   }, [esJugadorAutenticado, esPerfilFamiliar, pupilosDisponibles, pupiloActivo]);
 
