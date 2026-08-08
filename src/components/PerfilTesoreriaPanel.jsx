@@ -27,6 +27,7 @@ function PerfilTesoreriaPanel({
   pagoViewMode,
   setPageViewMode,
   onIrAPagoManual,
+  puedeRegistrarPagoManual,
 }) {
   const [archivoComprobante, setArchivoComprobante] = useState(null);
   const inputComprobanteRef = useRef(null);
@@ -529,7 +530,7 @@ function PerfilTesoreriaPanel({
 
   return (
     <div className="fade-in">
-      {esVistaAdmin && rolUsuario === 'super_admin' && onIrAPagoManual && (
+      {esVistaAdmin && puedeRegistrarPagoManual && onIrAPagoManual && (
         <div className="card mb-15" style={{ borderRadius: '18px', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <div>

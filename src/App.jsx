@@ -3194,6 +3194,7 @@ function App() {
                 pagoViewMode={pagoViewMode}
                 setPageViewMode={setPageViewMode}
                 onIrAPagoManual={irARegistrarPagoManual}
+                puedeRegistrarPagoManual={puedeVerPantalla('validacion_pagos')}
               />
             )}
             {puedeVerPantalla('jugador') && pantallaActiva === 'jugador' && (
@@ -3253,6 +3254,7 @@ function App() {
                 rolUsuario={rolUsuario}
                 puedeAdminCompleto={puedeVerPantalla('admin_dashboard')}
                 puedeVerCitaciones={puedeVerPantalla('citaciones')}
+                puedeRegistrarPagoManual={puedeVerPantalla('validacion_pagos')}
                 puedeVerResultados={puedeVerPantalla('resultados')}
                 usuarioAutenticado={usuarioAutenticado}
                 vistaAdmin={vistaAdmin}
