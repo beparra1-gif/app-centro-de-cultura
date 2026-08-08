@@ -72,7 +72,6 @@ function SuperAdminPanel({
   puedeAdminCompleto,
   puedeVerCitaciones,
   puedeVerResultados,
-  puedeRegistrarPagoManual,
   usuarioAutenticado,
   vistaAdmin,
   setVistaAdmin,
@@ -3315,13 +3314,13 @@ function SuperAdminPanel({
         <div className="fade-in">
           <h3 className="section-title">Bandeja de Validación</h3>
 
-          {puedeRegistrarPagoManual && (
+          {rolUsuario === 'super_admin' && (
             <div className="card mb-15" style={{ borderRadius: '18px', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div>
                   <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>Pago manual</h4>
                   <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
-                    Elige un deportista o socio y registra un pago ya confirmado (mes o meses, pasados o futuros), sin pasar por la bandeja de validación.
+                    Elige un deportista o socio y registra un pago ya confirmado (mes o meses, pasados o futuros), sin pasar por la bandeja de validación. Solo superadmin.
                   </p>
                 </div>
                 <button
