@@ -138,6 +138,7 @@ function TarjetaJugadorPanel({
   pupilosDisponibles,
   rolUsuario,
   onEvaluarJugador,
+  onJugadorActualizado,
 }) {
   const cardRef = useRef(null);
   const cardFrontExportRef = useRef(null);
@@ -672,6 +673,7 @@ function TarjetaJugadorPanel({
     try {
       const actualizado = await api.jugadoresAPI.update(rut, { diseno_marco: nuevoValor });
       setDetalleJugador((prev) => ({ ...prev, ...actualizado }));
+      onJugadorActualizado?.(actualizado);
       showToast({ message: 'Diseño de tarjeta actualizado.', type: 'success' });
     } catch (error) {
       showToast({ message: error.message || 'No se pudo cambiar el diseño.', type: 'error' });
@@ -1555,7 +1557,10 @@ function TarjetaJugadorPanel({
           jugador={detalleJugador || pupiloActivo}
           esAdmin={esAdminDatosJugador}
           onClose={() => setMostrarEditarJugador(false)}
-          onSaved={(actualizado) => setDetalleJugador((prev) => ({ ...prev, ...actualizado }))}
+          onSaved={(actualizado) => {
+            setDetalleJugador((prev) => ({ ...prev, ...actualizado }));
+            onJugadorActualizado?.(actualizado);
+          }}
         />
       )}
 

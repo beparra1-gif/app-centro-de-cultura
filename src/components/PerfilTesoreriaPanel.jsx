@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Camera, Clock, LayoutGrid, List, Search, User, X } from 'lucide-react';
+import { AlertTriangle, Camera, Clock, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
 import { getUTMLastDayPreviousMonth } from '../utils/appHelpers';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from '../utils/beca';
 import { showToast } from '../utils/toast';
@@ -26,6 +26,7 @@ function PerfilTesoreriaPanel({
   setPagosPendientesAdmin,
   pagoViewMode,
   setPageViewMode,
+  onIrAPagoManual,
 }) {
   const [archivoComprobante, setArchivoComprobante] = useState(null);
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
@@ -522,6 +523,29 @@ function PerfilTesoreriaPanel({
 
   return (
     <div className="fade-in">
+      {esVistaAdmin && rolUsuario === 'super_admin' && onIrAPagoManual && (
+        <div className="card mb-15" style={{ borderRadius: '18px', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div>
+              <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>Pago manual</h4>
+              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
+                Registra un pago ya confirmado (efectivo, transferencia) sin pasar por la bandeja de validación.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onIrAPagoManual}
+              style={{
+                padding: '10px 16px', background: 'var(--azul-electrico)', color: 'white', border: 'none',
+                borderRadius: '8px', fontWeight: '600', fontSize: '12px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
+              }}
+            >
+              <Plus size={14} /> Registrar pago manual
+            </button>
+          </div>
+        </div>
+      )}
       {esVistaAdmin && (
         <div className="card" style={{ borderRadius: '22px', padding: '14px', position: 'relative' }}>
           <label style={{ fontSize: '12px', fontWeight: '900', color: 'var(--texto-heading)', display: 'block', marginBottom: '8px' }}>

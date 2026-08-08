@@ -1245,6 +1245,15 @@ function App() {
     cambiarPantallaConLoader('academia');
   };
 
+  // Registro de pago manual: vive en la "Bandeja de Validación" del panel
+  // admin, no en la pantalla de Tesorería — este atajo lleva directo ahí en
+  // vez de duplicar el formulario/estado (mostrarFormularioPago, etc., que
+  // son locales a SuperAdminPanel).
+  const irARegistrarPagoManual = () => {
+    cambiarPantallaConLoader('admin_dashboard');
+    setVistaAdmin('pagos');
+  };
+
   // A dónde debe llevar el botón "Ir a" de una notificación según su tipo y
   // el rol de quien la ve: quien gestiona citaciones (staff/admin) va a la
   // nómina en el panel admin; un apoderado/jugador va al Muro, que es donde
@@ -2601,7 +2610,11 @@ function App() {
   // 5. MÓDULOS DE JUGADOR, ACADEMIA Y TESORERÍA
   // ==========================================
 
-  const pupilosDisponiblesBase = (jugadoresAdmin || []).map((j, idx) => ({
+  // Extraída como función reusable (no solo inline en el .map de abajo) para
+  // poder reconstruir un único "pupilo" transformado tras editar un jugador,
+  // sin tener que esperar a un refetch completo de jugadoresAdmin — ver
+  // actualizarJugadorEnMemoria más abajo.
+  const mapearJugadorAPupilo = (j, idx = 0) => ({
     id: idx + 1,
     rut: j.rut_jugador,
     nombre: `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''}`.trim(),
@@ -2632,7 +2645,29 @@ function App() {
     valor_mensualidad: j.valor_mensualidad ?? null,
     anioNacimiento: obtenerAnioNacimientoJugador(j),
     foto_jugador: j.foto_jugador || j.foto_perfil_url || j.club_logo_url || '',
-  }));
+  });
+
+  const pupilosDisponiblesBase = (jugadoresAdmin || []).map((j, idx) => mapearJugadorAPupilo(j, idx));
+
+  // Tras un PUT exitoso a /api/jugadores/:rut (apoderado o admin editando un
+  // pupilo, o cambiando el diseño de marco de su tarjeta), el backend
+  // devuelve la fila completa (RETURNING *) pero nada volvía a poner ese dato
+  // fresco en jugadoresAdmin/pupiloActivo — el guardado se sentía exitoso
+  // (toast) pero la tarjeta seguía mostrando los valores viejos hasta cerrar
+  // y volver a abrir la app (que forzaba un refetch completo). Esto corrige
+  // ambos states en memoria al toque, sin depender de un refetch.
+  const actualizarJugadorEnMemoria = (jugadorActualizado) => {
+    const rut = jugadorActualizado?.rut_jugador;
+    if (!rut) return;
+    setJugadoresAdmin((prev) => (prev || []).map((j) => (
+      String(j.rut_jugador) === String(rut) ? { ...j, ...jugadorActualizado } : j
+    )));
+    setPupiloActivo((prev) => (
+      prev && normalizarRutComparacion(prev.rut) === normalizarRutComparacion(rut)
+        ? mapearJugadorAPupilo({ ...prev, ...jugadorActualizado })
+        : prev
+    ));
+  };
 
   const rolSesionNormalizado = normalizarRol(rolUsuario || usuarioAutenticado?.rol || '');
   const esJugadorAutenticado = rolSesionNormalizado === 'jugador';
@@ -3118,6 +3153,7 @@ function App() {
                 setPagosPendientesAdmin={setPagosPendientesAdmin}
                 pagoViewMode={pagoViewMode}
                 setPageViewMode={setPageViewMode}
+                onIrAPagoManual={irARegistrarPagoManual}
               />
             )}
             {puedeVerPantalla('jugador') && pantallaActiva === 'jugador' && (
@@ -3127,6 +3163,7 @@ function App() {
                 pupilosDisponibles={pupilosDisponibles}
                 rolUsuario={rolUsuario}
                 onEvaluarJugador={irAEvaluarJugador}
+                onJugadorActualizado={actualizarJugadorEnMemoria}
               />
             )}
             {puedeVerPantalla('asistencia_staff') && pantallaActiva === 'asistencia_staff' && (

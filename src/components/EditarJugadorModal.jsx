@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Lock, Save, X } from 'lucide-react';
+import { Save, X } from 'lucide-react';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 
@@ -95,34 +95,27 @@ function EditarJugadorModal({ jugador, esAdmin, onClose, onSaved }) {
     }
   };
 
-  const renderCampo = ({ campo, etiqueta, tipo }, bloqueado) => {
+  const renderCampo = ({ campo, etiqueta, tipo }) => {
     if (tipo === 'checkbox') {
       return (
-        <label key={campo} className="checkbox-label-row" style={bloqueado ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}>
+        <label key={campo} className="checkbox-label-row">
           <input
             type="checkbox"
             checked={Boolean(valores[campo])}
-            disabled={bloqueado}
             onChange={(e) => actualizarCampo(campo, e.target.checked)}
           />
           {etiqueta}
-          {bloqueado && <Lock size={12} color="var(--texto-secundario)" />}
         </label>
       );
     }
     return (
       <div key={campo} className="input-group">
-        <label style={{ fontSize: '12px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {etiqueta}
-          {bloqueado && <Lock size={12} color="var(--texto-secundario)" />}
-        </label>
+        <label style={{ fontSize: '12px', fontWeight: '800' }}>{etiqueta}</label>
         <input
           type={tipo === 'date' ? 'date' : tipo === 'number' ? 'number' : 'text'}
           className="form-input mt-5"
           value={valores[campo] ?? ''}
-          disabled={bloqueado}
           onChange={(e) => actualizarCampo(campo, e.target.value)}
-          style={bloqueado ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
         />
       </div>
     );
@@ -156,19 +149,23 @@ function EditarJugadorModal({ jugador, esAdmin, onClose, onSaved }) {
         <p style={{ margin: '4px 0 16px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
           {esAdmin
             ? 'Puedes editar todos los campos, incluyendo los administrativos.'
-            : 'Revisa y completa los datos de tu jugador. Los campos con candado son administrativos y solo el club puede modificarlos.'}
+            : 'Aquí puedes actualizar los datos personales, físicos y deportivos de tu jugador. Los datos administrativos (categoría, tesorería, vínculo de cuenta) los gestiona el club desde Gestión de Cuentas y Usuarios.'}
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-          {CAMPOS_APODERADO.map((c) => renderCampo(c, false))}
+          {CAMPOS_APODERADO.map((c) => renderCampo(c))}
         </div>
 
-        <h4 style={{ margin: '18px 0 10px', fontSize: '13px', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-          Datos administrativos
-        </h4>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-          {CAMPOS_SOLO_ADMIN.map((c) => renderCampo(c, !esAdmin))}
-        </div>
+        {esAdmin && (
+          <>
+            <h4 style={{ margin: '18px 0 10px', fontSize: '13px', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+              Datos administrativos
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+              {CAMPOS_SOLO_ADMIN.map((c) => renderCampo(c))}
+            </div>
+          </>
+        )}
 
         <button
           className="btn-electric mt-20"

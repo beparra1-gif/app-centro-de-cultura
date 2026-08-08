@@ -873,7 +873,7 @@ function SuperAdminPanel({
         const perfil = String(c.perfil_principal || c.rol || 'apoderado').toLowerCase();
         return perfil === 'deportista' ? 'jugador' : perfil;
       })(),
-      nombre: `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || c.correo,
+      nombre: `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || String(c.correo || c.rut || 'Sin nombre'),
       busqueda: `${c.nombres || ''} ${c.apellido_paterno || ''} ${c.apellido_materno || ''} ${c.correo || ''} ${c.rut || ''} ${c.rol || ''} ${c.perfil_principal || ''} ${c.cargo_directiva || ''}`.toLowerCase(),
       rama: null,
       categoria: null,
@@ -884,7 +884,7 @@ function SuperAdminPanel({
       id: `jugador-${j.rut_jugador}`,
       tipo: 'jugador',
       perfil: 'jugador',
-      nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim() || j.rut_jugador,
+      nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim() || String(j.rut_jugador || 'Sin nombre'),
       busqueda: `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''} ${j.rut_jugador || ''} ${j.rama || ''} ${j.categoria || ''}`.toLowerCase(),
       rama: (j.rama || '').toLowerCase(),
       categoria: (j.categoria || '').toLowerCase(),
