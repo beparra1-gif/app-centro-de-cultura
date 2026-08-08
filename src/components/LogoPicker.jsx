@@ -66,15 +66,21 @@ function LogoPicker({
 
     // Static extras (highest priority)
     for (const item of extraOptions) {
-      const key = normalizarSlugLogo(item.nombre);
-      if (key) byNombre.set(key, { nombre: item.nombre, logoUrl: absolutizarLogoUrl(item.logoUrl || '') });
+      const nombreExtra = String(item.nombre || '').trim();
+      const key = normalizarSlugLogo(nombreExtra);
+      if (key) byNombre.set(key, { nombre: nombreExtra, logoUrl: absolutizarLogoUrl(item.logoUrl || '') });
     }
 
-    // Clubs from DB
+    // Clubs from DB — nombre_club puede venir null en un club creado al
+    // vuelo con datos incompletos; sin el String(...) acá, normalizarSlugLogo
+    // (que solo usa su default en undefined, no en null) devolvía la clave
+    // "null" en vez de vacía, colando un nombre no-string que reventaba el
+    // .sort()/.localeCompare() de más abajo.
     for (const c of clubes) {
-      const key = normalizarSlugLogo(c.nombre_club);
+      const nombreClub = String(c.nombre_club || '').trim();
+      const key = normalizarSlugLogo(nombreClub);
       if (key && !byNombre.has(key)) {
-        byNombre.set(key, { nombre: c.nombre_club, logoUrl: absolutizarLogoUrl(c.logo_url || ''), idClub: c.id_club, colorHex: c.color_hex || '' });
+        byNombre.set(key, { nombre: nombreClub, logoUrl: absolutizarLogoUrl(c.logo_url || ''), idClub: c.id_club, colorHex: c.color_hex || '' });
       }
     }
 

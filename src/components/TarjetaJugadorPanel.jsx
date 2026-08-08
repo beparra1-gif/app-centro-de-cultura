@@ -11,6 +11,7 @@ import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
 import TarjetaColeccionable from './TarjetaColeccionable';
+import { calcularProgresoNivel } from '../utils/gamificacion';
 import {
   EXPORT_WIDTH,
   EXPORT_HEIGHT,
@@ -244,8 +245,12 @@ function TarjetaJugadorPanel({
     ?? Math.max(0, Math.round(xpActual / 10))
   );
   const rachaActual = Number(pupiloActivo.racha ?? pupiloActivo.racha_actual ?? Math.max(1, Math.floor(xpActual / 500))) || 1;
-  const xpParaSiguienteNivel = Math.max(0, 150 - (xpActual % 150));
-  const progresoNivel = Math.min(100, Math.round(((xpActual % 150) / 150) * 100));
+  // Antes esta barra usaba un divisor propio (÷150) que no coincidía con la
+  // fórmula real de nivel (÷100, calcularNivelDesdeXP) — el nivel mostrado
+  // arriba y el "% para el siguiente nivel" de aquí abajo podían no calzar.
+  const progresoNivelInfo = calcularProgresoNivel(xpActual);
+  const xpParaSiguienteNivel = progresoNivelInfo.xpFaltante;
+  const progresoNivel = progresoNivelInfo.porcentaje;
   const insignias = Array.isArray(pupiloActivo.insignias) && pupiloActivo.insignias.length > 0
     ? pupiloActivo.insignias
     : [
