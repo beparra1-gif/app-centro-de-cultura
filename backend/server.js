@@ -3620,8 +3620,12 @@ app.delete('/api/comunicaciones/:id', authenticate, requireRole('staff', 'admin'
 // 2. ENDPOINTS: COMENTARIOS
 // ==========================================
 
-// GET: Comentarios de una comunicación
-app.get('/api/comunicaciones/:comId/comentarios', async (req, res) => {
+// GET: Comentarios de una comunicación — antes sin "authenticate" (a
+// diferencia del POST justo debajo, que sí lo exige), así que cualquiera sin
+// sesión podía leer comentarios/usuario_id de contenido pensado para
+// apoderados de pupilos o staff. El frontend nunca llama esto desde la vista
+// pública/sin login, así que no rompe nada.
+app.get('/api/comunicaciones/:comId/comentarios', authenticate, requireModule('comunicaciones'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM comentarios 
@@ -5196,7 +5200,21 @@ app.delete('/api/jugadores/:rut', authenticate, requireRole('super_admin'), asyn
 // 10. ENDPOINTS: PAGOS MENSUALIDADES (FASE 1)
 // ==========================================
 
-// GET: Todos los pagos de mensualidades
+// Un pago "pertenece" al actor si él fue quien pagó (rut_pagos, o su correo
+// si el rut no quedó registrado) o si es de uno de sus propios pupilos —
+// mismo criterio de pertenencia que ya usa /api/jugadores.
+const pagoEsDelActor = (pago, actor, rutsPupilos, correoActor) => {
+  const rutActor = normalizarRutParaComparar(actor.rut);
+  if (rutActor && normalizarRutParaComparar(pago.rut_pagos) === rutActor) return true;
+  if (correoActor && String(pago.correo_apoderado || '').trim().toLowerCase() === correoActor) return true;
+  if (pago.rut_jugador && rutsPupilos.has(normalizarRutParaComparar(pago.rut_jugador))) return true;
+  return false;
+};
+
+// GET: Todos los pagos de mensualidades — sin módulo de tesorería, un actor
+// solo ve SUS PROPIOS pagos (los suyos como socio o los de sus pupilos), no
+// los de otras familias. Antes cualquier sesión logueada recibía la tabla
+// completa (monto, comprobante_url, notas de tesorería de todo el club).
 app.get('/api/pagos-mensualidades', authenticate, async (req, res) => {
   try {
     const incluirLegacy = ['1', 'true', 'yes', 'si'].includes(String(req.query.includeLegacy || '').trim().toLowerCase());
@@ -5217,7 +5235,18 @@ app.get('/api/pagos-mensualidades', authenticate, async (req, res) => {
        ${whereLegacy}
        ORDER BY pm.fecha_registro DESC`
     );
-    res.json(result.rows);
+
+    const permisos = await resolverPermisosDeActor(req.actor);
+    if (permisos.validacion_pagos || permisos.admin_dashboard) {
+      return res.json(result.rows);
+    }
+    const [pupilos, cuentaActor] = await Promise.all([
+      obtenerPupilosDeActor(req.actor),
+      pool.query('SELECT correo FROM cuentas WHERE rut = $1', [req.actor.rut]),
+    ]);
+    const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
+    const correoActor = String(cuentaActor.rows[0]?.correo || '').trim().toLowerCase();
+    res.json(result.rows.filter((pago) => pagoEsDelActor(pago, req.actor, rutsPupilos, correoActor)));
   } catch (err) {
     console.error('[GET /api/pagos-mensualidades]', err);
     res.status(500).json({ error: err.message });
@@ -5405,7 +5434,9 @@ app.put('/api/pagos-mensualidades/:id/validar', authenticate, requireModule('val
   }
 });
 
-// GET: Obtener pago específico por ID
+// GET: Obtener pago específico por ID — mismo criterio de pertenencia que la
+// lista completa (antes cualquier sesión podía pedir por ID el pago de
+// cualquier otra familia, sin comprobar dueño).
 app.get('/api/pagos-mensualidades/:id', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
@@ -5418,7 +5449,21 @@ app.get('/api/pagos-mensualidades/:id', authenticate, async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Pago no encontrado' });
     }
-    res.json(result.rows[0]);
+    const pago = result.rows[0];
+
+    const permisos = await resolverPermisosDeActor(req.actor);
+    if (!permisos.validacion_pagos && !permisos.admin_dashboard) {
+      const [pupilos, cuentaActor] = await Promise.all([
+        obtenerPupilosDeActor(req.actor),
+        pool.query('SELECT correo FROM cuentas WHERE rut = $1', [req.actor.rut]),
+      ]);
+      const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
+      const correoActor = String(cuentaActor.rows[0]?.correo || '').trim().toLowerCase();
+      if (!pagoEsDelActor(pago, req.actor, rutsPupilos, correoActor)) {
+        return res.status(403).json({ error: 'No tienes acceso a este pago.' });
+      }
+    }
+    res.json(pago);
   } catch (err) {
     console.error('[GET /api/pagos-mensualidades/:id]', err);
     res.status(500).json({ error: err.message });
@@ -5734,9 +5779,15 @@ const obtenerPupilosDeActor = async (actor) => {
 
 // Roles cuyo acceso a /api/jugadores debe quedar acotado a sus propios
 // pupilos (mismo criterio que esJugadorAutenticado/esPerfilFamiliar en
-// App.jsx). Cualquier otro rol (staff, admin, super_admin, mesa, visita,
-// etc.) mantiene el comportamiento actual sin cambios.
-const ROLES_JUGADORES_ACOTADOS = ['jugador', 'apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'];
+// App.jsx). Cualquier otro rol (staff, admin, super_admin, etc.) mantiene el
+// comportamiento actual sin cambios. 'mesa' (solo módulo scoreboard_live) y
+// 'visita' (solo comunicaciones/jugador propio/mesa_publica) recibían el
+// roster COMPLETO sin filtrar — incluyendo tipo_sangre, alergias y RUT de
+// todos los deportistas, muchos menores de edad — pese a no tener ningún
+// módulo que justifique ver el roster ajeno. Ninguno de los dos necesita
+// esta lista para su función real (scoreboard/marcador en vivo, o su propia
+// ficha), así que quedan acotados igual que jugador/apoderado/socio.
+const ROLES_JUGADORES_ACOTADOS = ['jugador', 'apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva', 'mesa', 'visita'];
 
 // Antes también hacía visible una citación a CUALQUIER apoderado/jugador de
 // la misma rama/categoría, aunque su pupilo no estuviera convocado — y como
@@ -6380,9 +6431,9 @@ app.get('/api/asistencia/sesiones', authenticate, requireAnyModule('citaciones',
         sesion_id, fecha, rama, entrenador_cargo, hora_inicio, hora_fin,
         array_agg(DISTINCT categoria) FILTER (WHERE categoria IS NOT NULL AND categoria != '') AS categorias,
         COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE estado_asistencia = 'presente') AS presentes,
-        COUNT(*) FILTER (WHERE estado_asistencia = 'ausente') AS ausentes,
-        COUNT(*) FILTER (WHERE estado_asistencia = 'justificado') AS justificados,
+        COUNT(*) FILTER (WHERE LOWER(estado_asistencia) = 'presente') AS presentes,
+        COUNT(*) FILTER (WHERE LOWER(estado_asistencia) = 'ausente') AS ausentes,
+        COUNT(*) FILTER (WHERE LOWER(estado_asistencia) = 'justificado') AS justificados,
         MAX(created_at) AS creado_en
        FROM asistencia
        ${where}
@@ -6427,11 +6478,11 @@ app.get('/api/asistencia/jugador/:rut', authenticate, async (req, res) => {
 
     const result = await pool.query(
       `SELECT
-        COUNT(*) FILTER (WHERE estado_asistencia IN ('presente', 'ausente', 'justificado')) AS total,
-        COUNT(*) FILTER (WHERE estado_asistencia = 'presente') AS presentes,
-        COUNT(*) FILTER (WHERE estado_asistencia = 'ausente') AS ausentes,
-        COUNT(*) FILTER (WHERE estado_asistencia = 'justificado') AS justificados,
-        MAX(fecha) FILTER (WHERE estado_asistencia = 'presente') AS ultima_presente
+        COUNT(*) FILTER (WHERE LOWER(estado_asistencia) IN ('presente', 'ausente', 'justificado')) AS total,
+        COUNT(*) FILTER (WHERE LOWER(estado_asistencia) = 'presente') AS presentes,
+        COUNT(*) FILTER (WHERE LOWER(estado_asistencia) = 'ausente') AS ausentes,
+        COUNT(*) FILTER (WHERE LOWER(estado_asistencia) = 'justificado') AS justificados,
+        MAX(fecha) FILTER (WHERE LOWER(estado_asistencia) = 'presente') AS ultima_presente
        FROM asistencia
        WHERE rut_jugador = $1`,
       [req.params.rut]
