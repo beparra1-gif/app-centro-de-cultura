@@ -20,6 +20,8 @@ function SettingsPanel({
   reproducirSonido,
   onProbarPush,
   onCerrarConfiguracion,
+  modoSimple,
+  setModoSimple,
 }) {
   if (rolUsuario === 'admin' || rolUsuario === 'super_admin') {
     // Todos los módulos reales son asignables acá (antes era una lista
@@ -140,6 +142,34 @@ function SettingsPanel({
       <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: '900' }}>Mi Perfil</h4>
       <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>Tema único activo: Claro</div>
       <button onClick={() => showToast({ message: 'Próximamente', type: 'info' })} style={{ padding: '8px 10px', borderRadius: '999px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '700', border: '1px solid rgba(0,122,255,0.18)', cursor: 'pointer' }}>Contraseña</button>
+      {typeof setModoSimple === 'function' && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: '16px', background: 'var(--fondo-card-sutil)', border: '1px solid var(--borde-suave)' }}>
+          <div>
+            <strong style={{ fontSize: '12px', display: 'block' }}>Modo Fácil</strong>
+            <span style={{ fontSize: '10px', color: 'var(--texto-secundario)' }}>Letra grande, 3 botones: ficha, comprobante, noticias.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const activando = !modoSimple;
+              setModoSimple(activando);
+              // Al activarlo, cerramos este panel para que se vea de
+              // inmediato el Modo Fácil, en vez de quedar tapado detrás.
+              if (activando && typeof onCerrarConfiguracion === 'function') onCerrarConfiguracion();
+            }}
+            style={{
+              flexShrink: 0, width: '46px', height: '26px', borderRadius: '999px', border: 'none', cursor: 'pointer',
+              background: modoSimple ? 'var(--verde-victoria)' : 'rgba(120,120,128,0.3)', position: 'relative', transition: 'background 0.2s',
+            }}
+            aria-label="Activar o desactivar Modo Fácil"
+          >
+            <span style={{
+              position: 'absolute', top: '3px', left: modoSimple ? '23px' : '3px', width: '20px', height: '20px',
+              borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+            }} />
+          </button>
+        </div>
+      )}
       <hr style={{ margin: '10px 0', border: 'none', borderTop: '1px solid var(--borde-suave)' }} />
       <PushPreferenciasPanel
         preferenciasSonido={preferenciasSonido}

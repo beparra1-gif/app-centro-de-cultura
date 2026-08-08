@@ -47,6 +47,7 @@ const PerfilTesoreriaPanel = lazy(() => import('./components/PerfilTesoreriaPane
 const StaffAsistenciaPanel = lazy(() => import('./components/StaffAsistenciaPanel'));
 const AcademiaPanel = lazy(() => import('./components/AcademiaPanel'));
 const TarjetaJugadorPanel = lazy(() => import('./components/TarjetaJugadorPanel'));
+const ModoSimplePanel = lazy(() => import('./components/ModoSimplePanel'));
 const PushToast = lazy(() => import('./components/PushToast'));
 const PushHistorialModal = lazy(() => import('./components/PushHistorialModal'));
 const WhatsAppPanel = lazy(() => import('./components/WhatsAppPanel'));
@@ -72,8 +73,18 @@ function App() {
   const [isAppLoading, setIsAppLoading] = useState(false); // Skeleton Loaders
   
   // --- ESTADOS: NAVEGACIÓN Y LOGIN ---
-  const [rolUsuario, setRolUsuario] = useState(null); 
-  const [pantallaActiva, setPantallaActiva] = useState('comunicaciones'); 
+  const [rolUsuario, setRolUsuario] = useState(null);
+  const [pantallaActiva, setPantallaActiva] = useState('comunicaciones');
+  // Modo Fácil (letra grande, 3 botones): persiste en localStorage, no en la
+  // cuenta — pensado para un dispositivo compartido de la familia donde el
+  // abuelo/abuela siempre usa el mismo teléfono/tablet. Se activa/desactiva
+  // desde Configuración > Mi Perfil, o con el botón "Salir" dentro del modo.
+  const [modoSimple, setModoSimple] = useState(() => {
+    try { return window.localStorage.getItem('modoSimple') === 'true'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem('modoSimple', modoSimple ? 'true' : 'false'); } catch { /* localStorage no disponible (modo privado, etc.) */ }
+  }, [modoSimple]);
   const [showModalSalir, setShowModalSalir] = useState(false);
   const [mostrarFormularioLogin, setMostrarFormularioLogin] = useState(false);
   const [tipoLoginSeleccionado, setTipoLoginSeleccionado] = useState('');
@@ -1669,7 +1680,7 @@ function App() {
   }, []);
 
   const toggleSettingsPanel = () => {
-    if (rolUsuario !== 'admin' && rolUsuario !== 'super_admin') return;
+    if (!rolUsuario) return;
     setShowSettings((prev) => {
       const next = !prev;
       if (next) {
@@ -2672,6 +2683,7 @@ function App() {
   const rolSesionNormalizado = normalizarRol(rolUsuario || usuarioAutenticado?.rol || '');
   const esJugadorAutenticado = rolSesionNormalizado === 'jugador';
   const esPerfilFamiliar = ['apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'].includes(rolSesionNormalizado);
+  const modoSimpleActivo = modoSimple && (esJugadorAutenticado || esPerfilFamiliar);
   const rutUsuarioAutenticado = normalizarRutComparacion(usuarioAutenticado?.rut || '');
   const correoUsuarioAutenticado = String(usuarioAutenticado?.correo || '').trim().toLowerCase();
 
@@ -2853,11 +2865,9 @@ function App() {
         <div className="header-btn-zone right">
           {rolUsuario && (
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'flex-end', width: '100%', flexWrap: 'nowrap' }}>
-              {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && (
-                <button ref={settingsButtonRef} className="btn-icon-header" onClick={toggleSettingsPanel} title="Configuración y Perfil">
-                  <Settings size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
-                </button>
-              )}
+              <button ref={settingsButtonRef} className="btn-icon-header" onClick={toggleSettingsPanel} title="Configuración y Perfil">
+                <Settings size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
+              </button>
               <button
                 type="button"
                 className="btn-icon-header"
@@ -2896,7 +2906,7 @@ function App() {
         </section>
       )}
 
-      {(rolUsuario === 'admin' || rolUsuario === 'super_admin') && showSettings && (
+      {rolUsuario && showSettings && (
         <div ref={settingsPanelRef} className="floating-panel settings-panel" style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
           <SettingsPanel
             rolUsuario={rolUsuario}
@@ -2915,6 +2925,8 @@ function App() {
             reproducirSonido={reproducirSonido}
             onProbarPush={probarPushNotificacion}
             onCerrarConfiguracion={() => setShowSettings(false)}
+            modoSimple={modoSimple}
+            setModoSimple={setModoSimple}
           />
         </div>
       )}
@@ -3023,7 +3035,14 @@ function App() {
 
       {/* RUTEADOR CENTRAL CON SKELETON LOADERS */}
       <main className={`ios-main ${isAppLoading ? 'screen-loading' : 'screen-ready'}`}>
-        {isAppLoading ? <SkeletonLoaderPanel /> : (
+        {isAppLoading ? <SkeletonLoaderPanel /> : modoSimpleActivo ? (
+          <ModoSimplePanel
+            pupiloActivo={pupiloActivo}
+            comunicaciones={comunicaciones}
+            usuarioAutenticado={usuarioAutenticado}
+            onSalir={() => setModoSimple(false)}
+          />
+        ) : (
           <>
             {!rolUsuario && (
               <PublicFacadePanel
@@ -3274,6 +3293,7 @@ function App() {
       </main>
 
       {/* NAVEGACIÓN GLASSMORPHISM */}
+      {!modoSimpleActivo && (
       <nav className="ios-bottom-nav">
         {!rolUsuario ? (
           <>
@@ -3356,6 +3376,7 @@ function App() {
           </>
         ) : null}
       </nav>
+      )}
 
       {/* MODAL DE CIERRE DE SESIÓN */}
       {showModalSalir && (
