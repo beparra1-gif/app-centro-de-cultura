@@ -6544,6 +6544,23 @@ app.post('/api/asistencia/sesion', authenticate, requireAnyModule('citaciones', 
     const creada = await pool.query('SELECT * FROM asistencia WHERE sesion_id = $1 ORDER BY nombre_jugador ASC', [sesionId]);
     res.status(201).json({ sesion_id: sesionId, registros: creada.rows });
 
+    // XP real por asistencia confirmada — antes la tarjeta mostraba
+    // "Asistencia" como parte del progreso de nivel sin que ninguna acción
+    // real sumara XP (el único mecanismo activo era el quiz semanal). No
+    // bloquea la respuesta: si falla no debe tumbar el guardado de la lista.
+    const presentes = registros.filter((r) => r.estado_asistencia === 'presente' && r.rut_jugador);
+    for (const registro of presentes) {
+      try {
+        await pool.query(
+          `INSERT INTO gamificacion_puntos (rut_jugador, tipo_logro, puntos_obtenidos, descripcion)
+           VALUES ($1, 'asistencia_confirmada', 10, $2)`,
+          [registro.rut_jugador, `Asistencia a entrenamiento del ${fecha || 'día'}`]
+        );
+      } catch (xpErr) {
+        console.error('[POST /api/asistencia/sesion] error sumando XP de asistencia:', xpErr.message);
+      }
+    }
+
     // Avisar solo lo accionable: ausencia SIN aviso (no "justificado", que ya
     // implica que el apoderado avisó antes). No se avisa "presente" en cada
     // entrenamiento — con 2-3 sesiones por semana sería puro ruido.
@@ -7010,6 +7027,20 @@ app.post('/api/evaluaciones', authenticate, requireModule('evaluacion_staff'), a
       ]
     );
     res.json(result.rows[0]);
+
+    // XP real por evaluación completada (deportiva o psicomotriz) — mismo
+    // criterio que la asistencia: no bloquea la respuesta si falla.
+    if (rut_jugador) {
+      try {
+        await pool.query(
+          `INSERT INTO gamificacion_puntos (rut_jugador, tipo_logro, puntos_obtenidos, descripcion)
+           VALUES ($1, 'evaluacion_completada', 30, $2)`,
+          [rut_jugador, `Evaluación ${tipo_evaluacion || 'deportiva'} completada`]
+        );
+      } catch (xpErr) {
+        console.error('[POST /api/evaluaciones] error sumando XP de evaluación:', xpErr.message);
+      }
+    }
   } catch (err) {
     console.error('[POST /api/evaluaciones]', err);
     res.status(500).json({ error: err.message });
