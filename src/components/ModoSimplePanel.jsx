@@ -51,7 +51,7 @@ const BotonVolver = ({ onClick }) => (
 // las pantallas normales (ver App.jsx, modoSimpleActivo) y no las reemplaza:
 // solo ofrece un camino directo a lo más usado, con menos pasos y más
 // contraste. El botón "Salir del Modo Fácil" siempre está visible.
-function ModoSimplePanel({ pupiloActivo, comunicaciones, usuarioAutenticado, onSalir }) {
+function ModoSimplePanel({ pupiloActivo, comunicaciones, usuarioAutenticado, puedeSubirComprobante, onSalir }) {
   const [vista, setVista] = useState('home');
   const [enviando, setEnviando] = useState(false);
   const inputRef = useRef(null);
@@ -132,13 +132,15 @@ function ModoSimplePanel({ pupiloActivo, comunicaciones, usuarioAutenticado, onS
             color="linear-gradient(135deg, #0B1D3A 0%, #1B4B8F 100%)"
             onClick={() => setVista('ficha')}
           />
-          <BotonGrande
-            icono={<Camera size={44} />}
-            titulo="Subir Comprobante"
-            descripcion="Enviar el pago de este mes"
-            color="linear-gradient(135deg, #1D7A46 0%, #34C759 100%)"
-            onClick={() => setVista('comprobante')}
-          />
+          {puedeSubirComprobante && (
+            <BotonGrande
+              icono={<Camera size={44} />}
+              titulo="Subir Comprobante"
+              descripcion="Enviar el pago de este mes"
+              color="linear-gradient(135deg, #1D7A46 0%, #34C759 100%)"
+              onClick={() => setVista('comprobante')}
+            />
+          )}
           <BotonGrande
             icono={<Megaphone size={44} />}
             titulo="Noticias"

@@ -3078,6 +3078,7 @@ function App() {
             pupiloActivo={pupiloActivo}
             comunicaciones={comunicaciones}
             usuarioAutenticado={usuarioAutenticado}
+            puedeSubirComprobante={puedeVerPantalla('perfil')}
             onSalir={() => setModoSimple(false)}
           />
         ) : (
