@@ -28,8 +28,8 @@ const MODULOS_ACCESO = [
 
 const ROLES_BASE = {
   visita: ['comunicaciones', 'jugador', 'mesa_publica'],
-  jugador: ['comunicaciones', 'academia', 'jugador'],
-  deportista: ['comunicaciones', 'academia', 'jugador'],
+  jugador: ['comunicaciones', 'academia', 'perfil', 'jugador'],
+  deportista: ['comunicaciones', 'academia', 'perfil', 'jugador'],
   apoderado: ['comunicaciones', 'academia', 'perfil', 'jugador'],
   socio: ['comunicaciones', 'academia', 'perfil', 'jugador'],
   socio_apoderado: ['comunicaciones', 'academia', 'perfil', 'jugador'],
