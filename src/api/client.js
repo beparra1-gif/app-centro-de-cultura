@@ -673,6 +673,15 @@ export const ausenciasAPI = {
   },
 };
 
+// ========== UTM VIGENTE (para la cuota socio, 0.3 UTM) ==========
+
+export const utmAPI = {
+  getVigente: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/utm-vigente`);
+    return handleResponse(response);
+  },
+};
+
 // ========== PAGOS MENSUALIDADES (FASE 1) ==========
 
 export const pagosMensualidadesAPI = {

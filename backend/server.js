@@ -5300,6 +5300,71 @@ app.get('/api/pagos-mensualidades', authenticate, async (req, res) => {
   }
 });
 
+// UTM (Unidad Tributaria Mensual) real, consultada a mindicador.cl — antes
+// getUTMLastDayPreviousMonth (src/utils/appHelpers.js) era una tabla fija a
+// mano que ni siquiera distinguía año (mismo valor para "agosto 2025" y
+// "agosto 2026"). La cuota socio (0.3 UTM) depende de que este número sea
+// real y se actualice solo — se consulta con el valor del ÚLTIMO DÍA DEL MES
+// ANTERIOR (mismo criterio que ya usaba appHelpers), y se cachea en memoria
+// por mes calendario para no golpear la API externa en cada request: el
+// valor no cambia dentro del mismo mes, así que basta refrescarlo una vez
+// al mes (o al reiniciar el server).
+let utmCache = { claveMes: null, valor: null, fechaConsultada: null, actualizadoEn: null };
+const UTM_FALLBACK_ULTIMO_CONOCIDO = 71649; // agosto 2026 — solo si la API externa y el caché fallan a la vez.
+
+const calcularUltimoDiaMesAnterior = () => {
+  const hoy = new Date();
+  return new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+};
+
+const formatearFechaMindicador = (fecha) => {
+  const dd = String(fecha.getDate()).padStart(2, '0');
+  const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+  return `${dd}-${mm}-${fecha.getFullYear()}`;
+};
+
+const obtenerUTMVigente = async () => {
+  const fechaObjetivo = calcularUltimoDiaMesAnterior();
+  const claveMes = `${fechaObjetivo.getFullYear()}-${fechaObjetivo.getMonth() + 1}`;
+  if (utmCache.claveMes === claveMes && Number.isFinite(utmCache.valor)) {
+    return utmCache;
+  }
+  try {
+    const fechaTexto = formatearFechaMindicador(fechaObjetivo);
+    const respuesta = await fetch(`https://mindicador.cl/api/utm/${fechaTexto}`);
+    if (!respuesta.ok) throw new Error(`mindicador.cl respondió ${respuesta.status}`);
+    const datos = await respuesta.json();
+    const valor = Number(datos?.serie?.[0]?.valor);
+    if (!Number.isFinite(valor) || valor <= 0) throw new Error('Respuesta de mindicador.cl sin un valor de UTM válido.');
+    utmCache = {
+      claveMes,
+      valor,
+      fechaConsultada: fechaObjetivo.toISOString().slice(0, 10),
+      actualizadoEn: new Date().toISOString(),
+    };
+    return utmCache;
+  } catch (err) {
+    console.error('[obtenerUTMVigente] Error consultando mindicador.cl:', err.message);
+    // Caché de un mes anterior sirve mejor que un valor fijo desactualizado
+    // años atrás; solo cae al fallback fijo si nunca se logró consultar.
+    if (Number.isFinite(utmCache.valor)) return { ...utmCache, claveMes, esCacheAnterior: true };
+    return { claveMes, valor: UTM_FALLBACK_ULTIMO_CONOCIDO, fechaConsultada: null, actualizadoEn: null, esFallback: true };
+  }
+};
+
+// GET: valor de UTM vigente para calcular la cuota socio (0.3 UTM). No
+// requiere ningún módulo especial: es un dato de referencia, no algo que
+// pueda modificarse desde acá.
+app.get('/api/utm-vigente', authenticate, async (req, res) => {
+  try {
+    const info = await obtenerUTMVigente();
+    res.json(info);
+  } catch (err) {
+    console.error('[GET /api/utm-vigente]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST: Crear pago de mensualidad
 const ANIO_OBJETIVO_TESORERIA = 2026;
 const MESES_ABREV_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];

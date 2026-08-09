@@ -25,7 +25,6 @@ import { confirmAction } from './utils/confirmDialog';
 import { esNuestroClub } from './utils/logoResolver';
 import { cuentasDemo } from './data/demoAccounts';
 import {
-  getUTMLastDayPreviousMonth,
   getColorUrgencia,
 } from './utils/appHelpers';
 import {
@@ -164,7 +163,12 @@ function App() {
   const [cuentasIncompletas, setCuentasIncompletas] = useState([]);
   const [cuentasAdmin, setCuentasAdmin] = useState([]);
   const [jugadoresAdmin, setJugadoresAdmin] = useState([]);
-  
+  // Valor real de UTM (última consultada al backend, que a su vez la trae de
+  // mindicador.cl) para calcular la cuota socio (0.3 UTM) — null hasta que
+  // cargarDatos() la traiga la primera vez; los cálculos usan un fallback
+  // fijo mientras tanto para no romperse en el primer render.
+  const [utmVigente, setUtmVigente] = useState(null);
+
   // --- ESTADOS: FASE 6 - REPORTES AVANZADOS, PDF, GRÁFICOS ---
   const [historialNotificaciones, setHistorialNotificaciones] = useState([]);
   const [mostrarHistorialNotif, setMostrarHistorialNotif] = useState(false);
@@ -916,7 +920,7 @@ function App() {
 
       // Mismo cálculo de cuota automática de socio que PerfilTesoreriaPanel:
       // monto_mensual_base de la cuenta si existe, si no 30% de la UTM.
-      const utmCuenta = Number(cuenta?.utm_valor_referencia || getUTMLastDayPreviousMonth(71506));
+      const utmCuenta = Number(cuenta?.utm_valor_referencia || utmVigente?.valor || 71649);
       const cuotaBase = Number(cuenta?.monto_mensual_base || 0);
       const cuotaRef = Math.round(cuotaBase > 0 ? cuotaBase : (utmCuenta * 0.3));
 
@@ -1036,6 +1040,7 @@ function App() {
         api.quizAPI.getAll(),
         api.citacionesAPI.getAll(),
         api.notificacionesAppAPI.getAll(),
+        api.utmAPI.getVigente(),
       ]);
 
       const getResult = (index, fallback = []) => (
@@ -1057,7 +1062,12 @@ function App() {
       const quizRes = getResult(10, []);
       const citacionesRes = getResult(11, []);
       const notificacionesAppRes = getResult(12, []);
+      const utmVigenteRes = getResult(13, null);
       const totalErrores = resultados.filter((r) => r.status === 'rejected').length;
+
+      if (utmVigenteRes?.valor) {
+        setUtmVigente(utmVigenteRes);
+      }
 
       if (Array.isArray(comunicacionesRes)) {
         const comunicacionesTransformadas = mapComunicacionesResumen(comunicacionesRes);
@@ -3201,6 +3211,7 @@ function App() {
                 pagoViewMode={pagoViewMode}
                 setPageViewMode={setPageViewMode}
                 onIrAPagoManual={irARegistrarPagoManual}
+                utmVigente={utmVigente}
               />
             )}
             {puedeVerPantalla('jugador') && pantallaActiva === 'jugador' && (

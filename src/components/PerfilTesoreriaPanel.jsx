@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Camera, Clock, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
-import { getUTMLastDayPreviousMonth } from '../utils/appHelpers';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from '../utils/beca';
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
@@ -27,6 +26,7 @@ function PerfilTesoreriaPanel({
   pagoViewMode,
   setPageViewMode,
   onIrAPagoManual,
+  utmVigente,
 }) {
   const [archivoComprobante, setArchivoComprobante] = useState(null);
   const inputComprobanteRef = useRef(null);
@@ -343,7 +343,7 @@ function PerfilTesoreriaPanel({
   const fechaCorte = new Date(now.getFullYear(), now.getMonth(), 0);
   const fechaCorteTexto = fechaCorte.toLocaleDateString('es-CL');
 
-  const utmActual = Number(cuentaActual?.utm_valor_referencia || getUTMLastDayPreviousMonth(71506));
+  const utmActual = Number(cuentaActual?.utm_valor_referencia || utmVigente?.valor || 71649);
   const cuotaSocioBase = Number(cuentaActual?.monto_mensual_base || 0);
   const cuotaSocio = Math.round(cuotaSocioBase > 0 ? cuotaSocioBase : (utmActual * 0.3));
 
