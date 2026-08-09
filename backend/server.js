@@ -4707,7 +4707,7 @@ const CAMPOS_JUGADOR_SOLO_ADMIN = [
 // El apoderado dueño (rut_apoderado registrado) puede editar el perfil de su propio
 // pupilo (datos personales, salud, contacto, tallas); los campos administrativos
 // (categoría, mensualidad, beca, vínculo de cuenta, etc.) quedan reservados a admin.
-app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), stripFieldsUnlessModule(CAMPOS_JUGADOR_SOLO_ADMIN, 'admin_dashboard'), async (req, res) => {
+app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), stripFieldsUnlessModule(CAMPOS_JUGADOR_SOLO_ADMIN, 'admin_dashboard'), async (req, res) => {
   const {
     rut_apoderado,
     correo_apoderado,
@@ -4870,7 +4870,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
 // header, Tesoreria, Tarjeta Oficial CCF, etc. Reutiliza el almacenamiento
 // de logo_assets (misma tabla BYTEA que ya sirve logos) en vez de crear
 // otra tabla para lo mismo. Distinta de /foto-tarjeta (ver mas abajo).
-app.post('/api/jugadores/:rut/foto', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), uploadLogoMemoria.single('archivo'), async (req, res) => {
+app.post('/api/jugadores/:rut/foto', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), uploadLogoMemoria.single('archivo'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Debes seleccionar una foto.' });
@@ -4941,7 +4941,7 @@ app.post('/api/jugadores/:rut/foto-tarjeta', authenticate, requireApoderadoDeJug
 // escaneada desde el QR de colección de la tarjeta ajena. ON CONFLICT DO
 // NOTHING porque volver a escanear una tarjeta ya coleccionada no es un
 // error — simplemente no suma una segunda vez.
-app.post('/api/jugadores/:rut/coleccion', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), async (req, res) => {
+app.post('/api/jugadores/:rut/coleccion', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), async (req, res) => {
   try {
     const rutColeccionista = String(req.params.rut || '').trim();
     const rutObjetivo = String(req.body?.rut_objetivo || '').trim();
@@ -4986,7 +4986,7 @@ app.post('/api/jugadores/:rut/coleccion', authenticate, requireApoderadoDeJugado
 // estático) para que el marco de cada mini-tarjeta coleccionada muestre la
 // rareza correcta. total_club: cuántos jugadores activos hay para coleccionar
 // en total (para el progreso "X/Y"), sin exponer el roster completo.
-app.get('/api/jugadores/:rut/coleccion', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard'), async (req, res) => {
+app.get('/api/jugadores/:rut/coleccion', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), async (req, res) => {
   try {
     const rutColeccionista = String(req.params.rut || '').trim();
 
