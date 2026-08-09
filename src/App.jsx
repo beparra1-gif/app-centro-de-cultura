@@ -2666,6 +2666,13 @@ function App() {
     asistencia: j.asistencia || 'N/A',
     estadoDeportivo: j.estado_deportivo || 'Activo',
     beca: j.beca || 'Sin beca',
+    // Faltaba en este mapeo — noDebeMensualidad/estaExentoDeMensualidad
+    // (src/utils/beca.js) leen pupilo.exento_mensualidad para decidir si
+    // el mes se pinta en verde sin cobrar, pero como este campo nunca
+    // llegaba hasta acá, quedaba siempre undefined (=false): marcar el
+    // checkbox de "Exento de mensualidad" nunca tuvo efecto real en
+    // Tesorería, aunque el dato sí se guardaba bien en la base.
+    exento_mensualidad: Boolean(j.exento_mensualidad),
     fecha_ingreso: j.fecha_ingreso || null,
     mes_inicio_cobro: j.mes_inicio_cobro || '',
     anio_ingreso: j.anio_ingreso ?? j.año_ingreso ?? null,

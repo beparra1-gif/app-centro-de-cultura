@@ -28,6 +28,13 @@ const CAMPOS_APODERADO = [
   { campo: 'derechos_imagen', etiqueta: 'Autoriza derechos de imagen', tipo: 'checkbox' },
 ];
 
+// mes_inicio_cobro, beca, valor_mensualidad, exento_mensualidad y
+// matricula_pagada NO viven aquí a propósito: son datos de tesorería y solo
+// se editan/visualizan desde SuperAdminPanel > Usuarios y Cuentas (el
+// formulario de editar jugador ahí, jugadorAdminEdit), aunque quien esté
+// mirando este modal sea admin/super_admin. El backend ya los protege igual
+// (stripFieldsUnlessModule, ver PUT /api/jugadores/:rut) — esto solo evita
+// que existan dos lugares distintos para editar el mismo dato.
 const CAMPOS_SOLO_ADMIN = [
   { campo: 'rut_apoderado', etiqueta: 'RUT apoderado (vínculo de cuenta)' },
   { campo: 'correo_apoderado', etiqueta: 'Correo apoderado' },
@@ -37,11 +44,6 @@ const CAMPOS_SOLO_ADMIN = [
   { campo: 'categoria', etiqueta: 'Categoría' },
   { campo: 'numero_camiseta', etiqueta: 'Número camiseta' },
   { campo: 'fecha_ingreso', etiqueta: 'Fecha de ingreso', tipo: 'date' },
-  { campo: 'mes_inicio_cobro', etiqueta: 'Mes inicio cobro' },
-  { campo: 'beca', etiqueta: 'Beca (% de rebaja)', tipo: 'number' },
-  { campo: 'valor_mensualidad', etiqueta: 'Valor mensualidad' },
-  { campo: 'exento_mensualidad', etiqueta: 'Exento de mensualidad (no paga nada)', tipo: 'checkbox' },
-  { campo: 'matricula_pagada', etiqueta: 'Matrícula pagada', tipo: 'checkbox' },
   { campo: 'polera_entregada', etiqueta: 'Polera entregada', tipo: 'checkbox' },
   { campo: 'poleron_entregado', etiqueta: 'Polerón entregado', tipo: 'checkbox' },
   { campo: 'estado', etiqueta: 'Estado' },
