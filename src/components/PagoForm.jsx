@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Upload, Search, ClipboardList, Check, Pin, Lightbulb, BarChart2 } from 'lucide-react';
+import { X, Upload, Search, ClipboardList, Check, Pin, Lightbulb } from 'lucide-react';
 import * as api from '../api/client.js';
 import { calcularCuotaFinal } from '../utils/beca';
 import { confirmAction } from '../utils/confirmDialog';
@@ -35,6 +35,15 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [anioSeleccionado, setAnioSeleccionado] = useState(new Date().getFullYear());
   const [mesesSeleccionados, setMesesSeleccionados] = useState([]);
+  // Monto propio por cada mes seleccionado (rut_mes -> monto). Antes un pago de
+  // varios meses guardaba UN solo registro con meses_correspondientes como
+  // rango de texto ("Junio-Julio 2026") y un monto total — pero el cálculo de
+  // morosidad de Tesorería (monthFromPago en PerfilTesoreriaPanel) solo lee el
+  // PRIMER mes de ese texto, así que el segundo mes seguía apareciendo impago
+  // aunque el dinero ya estuviera registrado. Ahora cada mes se guarda como su
+  // propio registro (ver handleSubmit), así ningún cálculo aguas abajo necesita
+  // parsear rangos.
+  const [montosPorMes, setMontosPorMes] = useState({});
   const [apoderadoAsignado, setApoderadoAsignado] = useState(null);
 
   // Modo "socio": permite registrar la cuota de un socio que no tiene ningún
@@ -47,7 +56,6 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
   
   // Datos del jugador seleccionado
   const [valorMensualidad, setValorMensualidad] = useState(0);
-  const [desglose, setDesglose] = useState(null);
 
   // Filtrar deportistas según búsqueda
   const deportistasFiltrados = searchTerm.trim() ? jugadores.filter(j => {
@@ -69,40 +77,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
   }) : [];
 
   const puedeContinuar = modoPago === 'deportista' ? Boolean(formData.rut_jugador) : Boolean(rutCuentaSocio);
-
-  // Calcular desglose de abono automáticamente
-  const calcularDesglose = (monto, concepto, meses) => {
-    if (monto <= 0 || meses.length === 0) return null;
-
-    const valorConcepto = VALORES_CONCEPTO[concepto] || 25000;
-    let montoRestante = monto;
-    const detalles = [];
-    let mesesCubiertos = 0;
-
-    for (let i = 0; i < meses.length && montoRestante > 0; i++) {
-      const mesIdx = meses[i];
-      const montoDelMes = Math.min(montoRestante, valorConcepto);
-      
-      detalles.push({
-        mes: `${MESES[mesIdx]} ${anioSeleccionado}`,
-        monto: montoDelMes,
-        cubierto: montoDelMes >= valorConcepto ? 'Completo' : `Parcial (${(montoDelMes / valorConcepto * 100).toFixed(0)}%)`
-      });
-
-      if (montoDelMes >= valorConcepto) {
-        mesesCubiertos++;
-      }
-
-      montoRestante -= montoDelMes;
-    }
-
-    return {
-      detalles,
-      montoRestante,
-      mesesCubiertos,
-      totalAplicado: monto - montoRestante
-    };
-  };
+  const montoTotalMeses = mesesSeleccionados.reduce((acc, idx) => acc + (Number(montosPorMes[idx]) || 0), 0);
 
   // Actualizar cuando se selecciona un deportista
   useEffect(() => {
@@ -140,7 +115,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
 
         // Resetear selección de meses
         setMesesSeleccionados([]);
-        setDesglose(null);
+        setMontosPorMes({});
       }
     }
   }, [formData.rut_jugador, jugadores, cuentas]);
@@ -160,34 +135,8 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
       concepto_pago: 'Mensualidad Socio',
     }));
     setMesesSeleccionados([]);
-    setDesglose(null);
+    setMontosPorMes({});
   }, [modoPago, rutCuentaSocio, cuentas]);
-
-  // Actualizar desglose cuando cambia monto o meses. Con monto en $0 (mes
-  // exento a propósito) no hay nada que desglosar — sin este else, el panel
-  // se quedaba mostrando el último desglose calculado con un monto anterior,
-  // como si igual se fuera a cobrar algo.
-  useEffect(() => {
-    if (formData.monto_total_pagado > 0 && mesesSeleccionados.length > 0) {
-      const desgloseCal = calcularDesglose(
-        Number(formData.monto_total_pagado),
-        formData.concepto_pago,
-        mesesSeleccionados
-      );
-      setDesglose(desgloseCal);
-
-      // Actualizar cantidad_meses_pagados basado en el desglose
-      setFormData(prev => ({
-        ...prev,
-        cantidad_meses_pagados: desgloseCal?.mesesCubiertos || mesesSeleccionados.length
-      }));
-    } else {
-      setDesglose(null);
-      if (mesesSeleccionados.length > 0) {
-        setFormData(prev => ({ ...prev, cantidad_meses_pagados: mesesSeleccionados.length }));
-      }
-    }
-  }, [formData.monto_total_pagado, formData.concepto_pago, mesesSeleccionados, anioSeleccionado]);
 
   // Actualizar meses_correspondientes cuando cambian meses seleccionados
   useEffect(() => {
@@ -224,15 +173,25 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
     const nuevoValor = Number(e.target.value) || 0;
     setValorMensualidad(nuevoValor);
 
-    // Recalcular monto automáticamente
+    // Aplica el nuevo valor unitario a cada mes seleccionado — el admin puede
+    // seguir ajustando el monto de un mes puntual después de esto.
     if (mesesSeleccionados.length > 0) {
-      const nuevoMonto = nuevoValor * mesesSeleccionados.length;
-      setFormData(prev => ({
-        ...prev,
-        monto_total_pagado: nuevoMonto
-      }));
+      setMontosPorMes(
+        Object.fromEntries(mesesSeleccionados.map((idx) => [idx, nuevoValor]))
+      );
+      if (mesesSeleccionados.length === 1) {
+        setFormData(prev => ({ ...prev, monto_total_pagado: nuevoValor }));
+      }
     }
     setError('');
+  };
+
+  const actualizarMontoMes = (idx, valor) => {
+    const numero = valor === '' ? '' : Number(valor);
+    setMontosPorMes(prev => ({ ...prev, [idx]: numero }));
+    if (mesesSeleccionados.length === 1) {
+      setFormData(prev => ({ ...prev, monto_total_pagado: numero }));
+    }
   };
 
   const handleArchivoChange = (e) => {
@@ -258,59 +217,89 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
       if (modoPago === 'deportista' && !formData.rut_jugador) throw new Error('Selecciona un deportista');
       if (modoPago === 'socio' && !rutCuentaSocio) throw new Error('Selecciona un socio');
       if (mesesSeleccionados.length === 0) throw new Error('Selecciona al menos un mes para pagar');
+
       // $0 es válido a propósito (ej. un mes que el club decide dejar sin
-      // cobro puntual) — lo que se rechaza es vacío/negativo/no numérico.
-      if (formData.monto_total_pagado === '' || !Number.isFinite(Number(formData.monto_total_pagado)) || Number(formData.monto_total_pagado) < 0) {
-        throw new Error('Ingresa un monto válido (puede ser $0)');
+      // cobro puntual) — lo que se rechaza es vacío/negativo/no numérico, mes
+      // por mes cuando hay más de uno seleccionado.
+      for (const idx of mesesSeleccionados) {
+        const montoMes = mesesSeleccionados.length === 1 ? formData.monto_total_pagado : montosPorMes[idx];
+        if (montoMes === '' || montoMes === undefined || !Number.isFinite(Number(montoMes)) || Number(montoMes) < 0) {
+          throw new Error(`Ingresa un monto válido para ${MESES[idx]} (puede ser $0)`);
+        }
       }
 
       // rut_pagos identifica quién realmente paga (la cuenta), independiente
       // de si el pago va ligado a un deportista puntual o no — sin esto, un
       // pago de "solo cuota de socio" (rut_jugador vacío) queda huérfano y
       // ningún cálculo de morosidad puede atribuírselo a nadie.
-      const datosGuardar = {
-        ...formData,
-        rut_pagos: modoPago === 'socio' ? rutCuentaSocio : (apoderadoAsignado?.rut || ''),
-      };
+      const rutPagosResuelto = modoPago === 'socio' ? rutCuentaSocio : (apoderadoAsignado?.rut || '');
 
-      // Si hay archivo, convertir a base64
+      // Si hay archivo, convertir a base64 una sola vez — el mismo comprobante
+      // respalda cada mes creado a continuación (un solo depósito puede cubrir
+      // varios meses).
+      let comprobanteUrlFinal = formData.comprobante_url;
       if (archivo) {
         const reader = new FileReader();
-        await new Promise((resolve, reject) => {
-          reader.onload = () => {
-            datosGuardar.comprobante_url = reader.result;
-            resolve();
-          };
+        comprobanteUrlFinal = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result);
           reader.onerror = reject;
           reader.readAsDataURL(archivo);
         });
       }
 
       if (pago?.id) {
-        // Actualizar
-        await api.pagosMensualidadesAPI.update(pago.id, datosGuardar);
-        setSuccess('Pago actualizado exitosamente');
-      } else if (autoAprobar) {
-        // Pago manual del superadmin: se salta la bandeja de validación, así
-        // que pide confirmación explícita antes de dejarlo marcado como pagado.
-        const confirmado = await confirmAction({
-          title: 'Confirmar pago manual',
-          message: `¿Confirmas registrar este pago como YA PAGADO por $${Number(datosGuardar.monto_total_pagado).toLocaleString('es-CL')} (${datosGuardar.meses_correspondientes})? Queda aprobado de inmediato, sin pasar por la bandeja de validación.`,
-          confirmText: 'Registrar y confirmar',
+        // Actualizar (siempre un único registro existente)
+        await api.pagosMensualidadesAPI.update(pago.id, {
+          ...formData,
+          rut_pagos: rutPagosResuelto,
+          comprobante_url: comprobanteUrlFinal,
         });
-        if (!confirmado) {
-          setCargando(false);
-          return;
-        }
-        const nuevoPago = await api.pagosMensualidadesAPI.create(datosGuardar);
-        if (nuevoPago?.id) {
-          await api.pagosMensualidadesAPI.validar(nuevoPago.id, 'aprobado');
-        }
-        setSuccess('Pago registrado y confirmado.');
+        setSuccess('Pago actualizado exitosamente');
       } else {
-        // Crear
-        await api.pagosMensualidadesAPI.create(datosGuardar);
-        setSuccess('Pago creado exitosamente');
+        // Crear: un registro POR CADA mes seleccionado, cada uno con su propio
+        // monto y su propio mes en meses_correspondientes (nunca un rango de
+        // texto) — así el cálculo de morosidad y el calendario de Tesorería,
+        // que solo entienden un mes por registro, ven correctamente TODOS los
+        // meses pagados y no solo el primero.
+        const pagosACrear = mesesSeleccionados.map((idx) => ({
+          rut_jugador: formData.rut_jugador,
+          rut_pagos: rutPagosResuelto,
+          correo_apoderado: formData.correo_apoderado,
+          concepto_pago: formData.concepto_pago,
+          cantidad_meses_pagados: 1,
+          meses_correspondientes: `${MESES[idx]} ${anioSeleccionado}`,
+          monto_total_pagado: Number(mesesSeleccionados.length === 1 ? formData.monto_total_pagado : montosPorMes[idx]),
+          comprobante_url: comprobanteUrlFinal,
+          notas_tesoreria: formData.notas_tesoreria,
+        }));
+
+        if (autoAprobar) {
+          // Pago manual del superadmin: se salta la bandeja de validación, así
+          // que pide confirmación explícita antes de dejarlo marcado como pagado.
+          const totalConfirmar = pagosACrear.reduce((acc, p) => acc + p.monto_total_pagado, 0);
+          const listaMeses = pagosACrear.map((p) => p.meses_correspondientes).join(', ');
+          const confirmado = await confirmAction({
+            title: 'Confirmar pago manual',
+            message: `¿Confirmas registrar ${pagosACrear.length > 1 ? `estos ${pagosACrear.length} meses` : 'este pago'} como YA PAGADO por un total de $${totalConfirmar.toLocaleString('es-CL')} (${listaMeses})? Queda${pagosACrear.length > 1 ? 'n' : ''} aprobado${pagosACrear.length > 1 ? 's' : ''} de inmediato, sin pasar por la bandeja de validación.`,
+            confirmText: 'Registrar y confirmar',
+          });
+          if (!confirmado) {
+            setCargando(false);
+            return;
+          }
+          for (const datosGuardar of pagosACrear) {
+            const nuevoPago = await api.pagosMensualidadesAPI.create(datosGuardar);
+            if (nuevoPago?.id) {
+              await api.pagosMensualidadesAPI.validar(nuevoPago.id, 'aprobado');
+            }
+          }
+          setSuccess(pagosACrear.length > 1 ? `${pagosACrear.length} meses registrados y confirmados.` : 'Pago registrado y confirmado.');
+        } else {
+          for (const datosGuardar of pagosACrear) {
+            await api.pagosMensualidadesAPI.create(datosGuardar);
+          }
+          setSuccess(pagosACrear.length > 1 ? `${pagosACrear.length} meses creados exitosamente` : 'Pago creado exitosamente');
+        }
       }
 
       setTimeout(() => {
@@ -674,24 +663,31 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                       key={idx}
                       type="button"
                       onClick={() => {
-                        const nuevosMeses = mesesSeleccionados.includes(idx)
+                        const yaSeleccionado = mesesSeleccionados.includes(idx);
+                        const nuevosMeses = yaSeleccionado
                           ? mesesSeleccionados.filter(m => m !== idx)
                           : [...mesesSeleccionados, idx].sort((a, b) => a - b);
-                        
+
                         setMesesSeleccionados(nuevosMeses);
 
-                        // Auto-calcular monto basado en cantidad de meses
-                        if (nuevosMeses.length > 0) {
-                          const nuevoMonto = valorMensualidad * nuevosMeses.length;
+                        setMontosPorMes(prev => {
+                          const siguiente = { ...prev };
+                          if (yaSeleccionado) {
+                            delete siguiente[idx];
+                          } else {
+                            siguiente[idx] = valorMensualidad;
+                          }
+                          return siguiente;
+                        });
+
+                        if (nuevosMeses.length === 1) {
+                          const soloMes = nuevosMeses[0];
                           setFormData(prev => ({
                             ...prev,
-                            monto_total_pagado: nuevoMonto
+                            monto_total_pagado: soloMes === idx && !yaSeleccionado ? valorMensualidad : (montosPorMes[soloMes] ?? valorMensualidad)
                           }));
-                        } else {
-                          setFormData(prev => ({
-                            ...prev,
-                            monto_total_pagado: ''
-                          }));
+                        } else if (nuevosMeses.length === 0) {
+                          setFormData(prev => ({ ...prev, monto_total_pagado: '' }));
                         }
                       }}
                       style={{
@@ -798,15 +794,17 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
             </div>
           )}
 
-          {/* Monto pagado y desglose */}
-          {puedeContinuar && mesesSeleccionados.length > 0 && (
+          {/* Monto pagado — un solo campo si es un mes, uno por mes si son varios
+              (cada mes seleccionado queda como su propio registro al guardar,
+              con su propio monto — ver handleSubmit). */}
+          {puedeContinuar && mesesSeleccionados.length === 1 && (
             <div className="form-group">
               <label style={{ fontWeight: '600', fontSize: '13px' }}>Monto pagado ($) *</label>
               <input
                 type="number"
                 name="monto_total_pagado"
                 value={formData.monto_total_pagado}
-                onChange={handleChange}
+                onChange={(e) => { handleChange(e); actualizarMontoMes(mesesSeleccionados[0], e.target.value); }}
                 placeholder="0"
                 required
                 min="0"
@@ -826,73 +824,75 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
               <div style={{
                 fontSize: '11px',
                 color: 'var(--gris-secundario)',
-                marginBottom: '10px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '4px'
               }}>
-                <Lightbulb size={12} /> Sugerencia: ${(valorMensualidad * mesesSeleccionados.length).toLocaleString()} ({mesesSeleccionados.length} meses × ${valorMensualidad.toLocaleString()})
+                <Lightbulb size={12} /> Sugerencia: ${valorMensualidad.toLocaleString()}
               </div>
+            </div>
+          )}
 
-              {/* Desglose automático */}
-              {desglose && (
-                <div style={{
-                  padding: '12px',
-                  background: 'var(--gris-fondo)',
-                  borderRadius: '8px',
-                  fontSize: '12px'
-                }}>
-                  <div style={{ fontWeight: '600', marginBottom: '8px', color: 'var(--texto-heading)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <BarChart2 size={14} /> Desglose del abono:
-                  </div>
-                  {desglose.detalles.map((detalle, idx) => (
-                    <div
-                      key={idx}
+          {puedeContinuar && mesesSeleccionados.length > 1 && (
+            <div className="form-group">
+              <label style={{ fontWeight: '600', fontSize: '13px' }}>Monto pagado por mes ($) *</label>
+              <div style={{
+                fontSize: '11px',
+                color: 'var(--gris-secundario)',
+                marginBottom: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}>
+                <Lightbulb size={12} /> Ajusta el monto de cada mes si no todos se pagan igual (ej. un mes parcial o $0).
+              </div>
+              <div style={{
+                padding: '10px',
+                background: 'var(--gris-fondo)',
+                borderRadius: '8px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                {mesesSeleccionados.map((idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '90px', fontSize: '13px', fontWeight: '600' }}>
+                      {MESES[idx]} {anioSeleccionado}
+                    </div>
+                    <input
+                      type="number"
+                      value={montosPorMes[idx] ?? ''}
+                      onChange={(e) => actualizarMontoMes(idx, e.target.value)}
+                      placeholder="0"
+                      required
+                      min="0"
+                      step="1000"
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        padding: '6px 0',
-                        borderBottom: idx < desglose.detalles.length - 1 ? '1px solid var(--borde)' : 'none'
+                        flex: 1,
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--borde)',
+                        fontSize: '13px',
+                        boxSizing: 'border-box',
+                        fontWeight: '600',
+                        color: 'var(--verde-victoria)'
                       }}
-                    >
-                      <div>
-                        <strong>{detalle.mes}</strong>
-                        <div style={{ fontSize: '11px', color: 'var(--gris-secundario)' }}>
-                          {detalle.cubierto}
-                        </div>
-                      </div>
-                      <div style={{ fontWeight: '600', color: 'var(--verde-victoria)' }}>
-                        ${detalle.monto.toLocaleString()}
-                      </div>
-                    </div>
-                  ))}
-                  <div style={{
-                    marginTop: '8px',
-                    paddingTop: '8px',
-                    borderTop: '2px solid var(--borde)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    fontWeight: '600'
-                  }}>
-                    <div>Total a aplicar:</div>
-                    <div style={{ color: 'var(--verde-victoria)' }}>
-                      ${desglose.totalAplicado.toLocaleString()}
-                    </div>
+                    />
                   </div>
-                  {desglose.montoRestante > 0 && (
-                    <div style={{
-                      marginTop: '6px',
-                      padding: '6px',
-                      background: 'rgba(255, 193, 7, 0.1)',
-                      borderRadius: '4px',
-                      color: 'var(--texto-primario)',
-                      fontSize: '11px'
-                    }}>
-                      ℹ️ Excedente de ${desglose.montoRestante.toLocaleString()} (se aplica a próximos meses)
-                    </div>
-                  )}
+                ))}
+                <div style={{
+                  marginTop: '4px',
+                  paddingTop: '8px',
+                  borderTop: '2px solid var(--borde)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontWeight: '600',
+                  fontSize: '13px'
+                }}>
+                  <div>Total ({mesesSeleccionados.length} meses):</div>
+                  <div style={{ color: 'var(--verde-victoria)' }}>${montoTotalMeses.toLocaleString()}</div>
                 </div>
-              )}
+              </div>
             </div>
           )}
 
