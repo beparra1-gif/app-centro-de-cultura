@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, Search, ClipboardList, Check, Pin, Lightbulb } from 'lucide-react';
 import * as api from '../api/client.js';
@@ -15,7 +15,47 @@ const VALORES_CONCEPTO = {
   'Matrícula': 50000
 };
 
-export default function PagoForm({ pago = null, jugadores = [], cuentas = [], onClose, onSave, autoAprobar = false, objetivoInicial = null }) {
+const normalizarRutPago = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+
+const DIACRITICOS_REGEX = new RegExp('[̀-ͯ]', 'g');
+const getMesNumeroDesdeTexto = (texto = '') => {
+  const token = String(texto || '').trim().toLowerCase().normalize('NFD').replace(DIACRITICOS_REGEX, '').slice(0, 3);
+  const idx = MESES_ABREV.findIndex((m) => m.toLowerCase() === token);
+  return idx >= 0 ? idx + 1 : null;
+};
+
+// Igual que parseMesesDePago (App.jsx): expande rangos de texto legacy
+// ("Enero-Marzo 2026") a la lista de meses que cubren — un pago manual
+// nuevo nunca vuelve a guardar un rango (ver handleSubmit), pero pagos ya
+// existentes (migrados o de antes de este fix) sí pueden traerlo, y no
+// queremos que esos meses se vean como "sin pagar" solo porque el texto
+// no es un mes único.
+const expandirMesesDePago = (textoMeses = '', anioObjetivo) => {
+  const texto = String(textoMeses || '').trim();
+  if (!texto) return [];
+  const anioMatch = texto.match(/(20\d{2})/);
+  const anio = anioMatch ? Number(anioMatch[1]) : anioObjetivo;
+  if (anio !== anioObjetivo) return [];
+
+  const partes = texto.replace(/20\d{2}/g, '').replace(/[,]/g, ' ').split(/\s+/).map((p) => p.trim()).filter(Boolean);
+  const candidatos = [];
+  partes.forEach((parte) => {
+    if (parte.includes('-')) {
+      const [inicio, fin] = parte.split('-');
+      const mIni = getMesNumeroDesdeTexto(inicio);
+      const mFin = getMesNumeroDesdeTexto(fin);
+      if (mIni && mFin && mIni <= mFin) {
+        for (let m = mIni; m <= mFin; m += 1) candidatos.push(m);
+        return;
+      }
+    }
+    const mes = getMesNumeroDesdeTexto(parte);
+    if (mes) candidatos.push(mes);
+  });
+  return [...new Set(candidatos)];
+};
+
+export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pagosExistentes = [], onClose, onSave, autoAprobar = false, objetivoInicial = null }) {
   const [formData, setFormData] = useState({
     rut_jugador: pago?.rut_jugador || (objetivoInicial?.modoPago === 'deportista' ? objetivoInicial.rut : ''),
     correo_apoderado: pago?.correo_apoderado || '',
@@ -78,6 +118,26 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
 
   const puedeContinuar = modoPago === 'deportista' ? Boolean(formData.rut_jugador) : Boolean(rutCuentaSocio);
   const montoTotalMeses = mesesSeleccionados.reduce((acc, idx) => acc + (Number(montosPorMes[idx]) || 0), 0);
+
+  // Meses ya pagados (aprobado/validado) del deportista o socio elegido, para
+  // el año en pantalla — un mes pagado queda bloqueado y en verde: solo se
+  // pueden registrar manualmente meses morosos (impagos, ya vencidos) o
+  // futuros que todavía no se pagan.
+  const rutParaVerificarPagos = modoPago === 'socio' ? rutCuentaSocio : formData.rut_jugador;
+  const mesesYaPagados = useMemo(() => {
+    const rutNormalizado = normalizarRutPago(rutParaVerificarPagos);
+    if (!rutNormalizado) return new Set();
+    const pagados = new Set();
+    (pagosExistentes || []).forEach((p) => {
+      const estado = String(p.estado_pago || '').toLowerCase();
+      if (estado !== 'aprobado' && estado !== 'validado') return;
+      const coincideJugador = normalizarRutPago(p.rut_jugador) === rutNormalizado;
+      const coincidePagador = normalizarRutPago(p.rut_pagos) === rutNormalizado;
+      if (!coincideJugador && !coincidePagador) return;
+      expandirMesesDePago(p.meses_correspondientes, anioSeleccionado).forEach((mes) => pagados.add(mes));
+    });
+    return pagados;
+  }, [pagosExistentes, rutParaVerificarPagos, anioSeleccionado]);
 
   // Actualizar cuando se selecciona un deportista
   useEffect(() => {
@@ -650,7 +710,9 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                 </select>
               </div>
 
-              {/* Botones de meses */}
+              {/* Botones de meses — verde y bloqueado si ya está pagado, rojo si
+                  está pendiente/moroso o es un mes futuro aún sin pagar (solo
+                  esos dos casos se pueden seleccionar para registrar). */}
               <div>
                 <label style={{ fontSize: '12px', color: 'var(--gris-secundario)', display: 'block', marginBottom: '6px' }}>Selecciona meses:</label>
                 <div style={{
@@ -658,11 +720,17 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                   gridTemplateColumns: 'repeat(4, 1fr)',
                   gap: '6px'
                 }}>
-                  {MESES_ABREV.map((mesAbrev, idx) => (
+                  {MESES_ABREV.map((mesAbrev, idx) => {
+                    const pagado = mesesYaPagados.has(idx + 1);
+                    const seleccionado = mesesSeleccionados.includes(idx);
+                    return (
                     <button
                       key={idx}
                       type="button"
+                      disabled={pagado}
+                      title={pagado ? 'Ya pagado — no se puede volver a registrar' : undefined}
                       onClick={() => {
+                        if (pagado) return;
                         const yaSeleccionado = mesesSeleccionados.includes(idx);
                         const nuevosMeses = yaSeleccionado
                           ? mesesSeleccionados.filter(m => m !== idx)
@@ -693,24 +761,37 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], on
                       style={{
                         padding: '8px',
                         borderRadius: '6px',
-                        border: mesesSeleccionados.includes(idx)
-                          ? '2px solid var(--azul-electrico)'
-                          : '1px solid var(--borde)',
-                        background: mesesSeleccionados.includes(idx)
-                          ? 'rgba(0, 122, 255, 0.1)'
-                          : 'white',
-                        color: mesesSeleccionados.includes(idx)
-                          ? 'var(--azul-electrico)'
-                          : 'var(--texto-primario)',
-                        fontWeight: mesesSeleccionados.includes(idx) ? '600' : '500',
+                        border: pagado
+                          ? '2px solid var(--verde-victoria)'
+                          : seleccionado
+                            ? '2px solid var(--azul-electrico)'
+                            : '1px solid rgba(255,59,48,0.35)',
+                        background: pagado
+                          ? 'rgba(52,199,89,0.12)'
+                          : seleccionado
+                            ? 'rgba(0, 122, 255, 0.1)'
+                            : 'rgba(255,59,48,0.05)',
+                        color: pagado
+                          ? 'var(--verde-victoria)'
+                          : seleccionado
+                            ? 'var(--azul-electrico)'
+                            : 'var(--rojo-alerta)',
+                        fontWeight: (seleccionado || pagado) ? '600' : '500',
                         fontSize: '12px',
-                        cursor: 'pointer',
+                        cursor: pagado ? 'not-allowed' : 'pointer',
+                        opacity: pagado ? 0.85 : 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
                         transition: 'all 0.2s'
                       }}
                     >
+                      {pagado && <Check size={11} />}
                       {mesAbrev}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

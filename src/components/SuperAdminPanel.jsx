@@ -4728,6 +4728,7 @@ function SuperAdminPanel({
           pago={pagoEditandoId ? pagosPendientesAdmin?.find(p => p.id === Number(pagoEditandoId)) : null}
           jugadores={jugadoresAdmin || []}
           cuentas={cuentasAdmin || []}
+          pagosExistentes={pagosMensualidadesAdmin || []}
           autoAprobar={pagoManualAutoAprobar}
           objetivoInicial={pagoManualObjetivo}
           onClose={() => {
