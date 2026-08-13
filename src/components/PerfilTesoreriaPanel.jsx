@@ -683,7 +683,10 @@ function PerfilTesoreriaPanel({
             <span className="status-rol">{esSocio ? 'Socio Activo Club Cultura Física' : 'Apoderado Base'}</span>
             {esSocio && (
               <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'block', marginTop: '5px' }}>
-                UTM referencia ({fechaCorteTexto}): ${utmActual.toLocaleString('es-CL')} · Cuota socio automática: ${cuotaSocio.toLocaleString('es-CL')}
+                UTM referencia ({fechaCorteTexto}): ${utmActual.toLocaleString('es-CL')} · Cuota socio (0,3 UTM): ${cuotaSocio.toLocaleString('es-CL')}
+                {cuotaDeportistas > 0 && (
+                  <> + ${cuotaDeportistas.toLocaleString('es-CL')} por deportistas a cargo = <strong style={{ color: 'white' }}>${tarifaRedondeada.toLocaleString('es-CL')}/mes</strong></>
+                )}
               </span>
             )}
           </div>
