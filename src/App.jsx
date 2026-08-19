@@ -1310,6 +1310,11 @@ function App() {
     if (tipo === 'datos') {
       return { pantalla: 'admin_dashboard', vistaAdmin: 'usuarios' };
     }
+    if (tipo === 'pago') {
+      return puedeVerPantalla('validacion_pagos')
+        ? { pantalla: 'admin_dashboard', vistaAdmin: 'pagos' }
+        : { pantalla: 'perfil' };
+    }
     return null;
   };
 

@@ -5528,18 +5528,75 @@ app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'v
   }
 });
 
-// PUT: Validar pago de mensualidad (admin)
+// Resuelve a quién avisar cuando se aprueba/rechaza un pago (manual o de la
+// bandeja de validación): quien realmente pagó (rut_pagos), su cuenta por
+// correo_apoderado como respaldo, y la cuenta propia del jugador si inició
+// sesión alguna vez con su propio RUT — mismo criterio que
+// resolverDestinatariosCitacion, para que un pago registrado sin pasar por
+// la familia (ej. pago manual del admin) también le llegue.
+const resolverDestinatariosPago = async (pago) => {
+  const ruts = new Set();
+  const rutPagos = String(pago.rut_pagos || '').trim();
+  if (rutPagos) ruts.add(normalizarRutParaComparar(rutPagos));
+
+  const correoApoderado = String(pago.correo_apoderado || '').trim();
+  if (correoApoderado) {
+    const cuentaPorCorreo = await pool.query('SELECT rut FROM cuentas WHERE LOWER(correo) = LOWER($1)', [correoApoderado]);
+    if (cuentaPorCorreo.rows[0]?.rut) ruts.add(normalizarRutParaComparar(cuentaPorCorreo.rows[0].rut));
+  }
+
+  const rutJugador = String(pago.rut_jugador || '').trim();
+  if (rutJugador) {
+    const cuentaJugador = await pool.query(
+      "SELECT rut FROM cuentas WHERE REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = $1",
+      [normalizarRutParaComparar(rutJugador)]
+    );
+    if (cuentaJugador.rows[0]?.rut) ruts.add(normalizarRutParaComparar(cuentaJugador.rows[0].rut));
+  }
+
+  return ruts;
+};
+
+// PUT: Validar pago de mensualidad (admin) — también es el paso final del
+// pago manual (create + validar en el mismo flujo), así que notificar acá
+// cubre ambos casos con un solo cambio.
 app.put('/api/pagos-mensualidades/:id/validar', authenticate, requireModule('validacion_pagos'), async (req, res) => {
   const { estado_pago } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE pagos_mensualidades 
+      `UPDATE pagos_mensualidades
        SET estado_pago = $1, fecha_aprobacion = NOW(), updated_at = NOW()
        WHERE id = $2
        RETURNING *`,
       [estado_pago, req.params.id]
     );
-    res.json(result.rows[0]);
+    const pagoActualizado = result.rows[0];
+    res.json(pagoActualizado);
+
+    // No debe tumbar la validación si falla — mismo criterio que las
+    // notificaciones de citaciones/asistencia.
+    try {
+      const estadoNormalizado = String(estado_pago || '').toLowerCase();
+      if (pagoActualizado && (estadoNormalizado === 'aprobado' || estadoNormalizado === 'rechazado')) {
+        const destinatarios = await resolverDestinatariosPago(pagoActualizado);
+        const monto = Number(pagoActualizado.monto_total_pagado || 0);
+        const detalle = `${pagoActualizado.concepto_pago || 'Pago'} · ${pagoActualizado.meses_correspondientes || ''} · $${monto.toLocaleString('es-CL')}`.trim();
+        const titulo = estadoNormalizado === 'aprobado' ? 'Pago aprobado' : 'Pago rechazado';
+        const cuerpo = estadoNormalizado === 'aprobado'
+          ? `Se registró y aprobó tu pago: ${detalle}.`
+          : `Tu pago fue rechazado: ${detalle}. Revisa el comprobante o contacta a tesorería.`;
+        await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
+          rut,
+          tipo: 'pago',
+          titulo,
+          cuerpo,
+          referenciaTipo: 'pago',
+          referenciaId: pagoActualizado.id,
+        })));
+      }
+    } catch (notifErr) {
+      console.error('[PUT /api/pagos-mensualidades/:id/validar] error notificando:', notifErr.message);
+    }
   } catch (err) {
     console.error('[PUT /api/pagos-mensualidades/:id/validar]', err);
     res.status(500).json({ error: err.message });
