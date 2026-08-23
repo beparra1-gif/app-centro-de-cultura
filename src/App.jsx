@@ -2613,11 +2613,26 @@ function App() {
 
   // ========== FASE 9: INTEGRACIÓN WHATSAPP + WEBHOOKS BIDIRECCIONALES ==========
 
+  // Antes esto SOLO llamaba a /api/whatsapp/enviar, que es un endpoint
+  // simulado (guarda "enviado" en la base, no manda nada real) — el admin
+  // creía que la familia recibía el aviso y nunca le llegaba nada. Mismo
+  // patrón real que ya usa "¿Olvidaste tu contraseña?" en
+  // PublicFacadePanel.jsx: un link wa.me abre WhatsApp con el mensaje ya
+  // escrito, listo para que el admin toque enviar — no requiere cuenta de
+  // Twilio/WhatsApp Business ni nada externo. El registro en historial se
+  // mantiene como respaldo de auditoría, pero ya no es lo único que pasa.
   const enviarPorWhatsApp = async (numero, mensaje, tipo = 'general', comId = null) => {
+    const numeroLimpio = String(numero || '').replace(/[^0-9]/g, '');
+    if (!numeroLimpio) {
+      showToast({ message: 'Número de WhatsApp inválido.', type: 'error' });
+      return;
+    }
+
+    window.open(`https://wa.me/${numeroLimpio}?text=${encodeURIComponent(mensaje)}`, '_blank', 'noopener,noreferrer');
+
     try {
-      // Enviar por API
       const respuesta = await api.whatsappAPI.enviarMensaje(numero, mensaje, tipo);
-      
+
       const nuevoMensaje = {
         id: respuesta.mensaje_id,
         contacto: contactosWhatsApp.find(c => c.numero === numero)?.nombre || 'Desconocido',
@@ -2630,10 +2645,12 @@ function App() {
       };
 
       setHistorialWhatsApp(prev => [...prev, nuevoMensaje]);
-      crearPushNotificacion('whatsapp', 'Mensaje Enviado', `Enviado a ${nuevoMensaje.contacto}`, 'Baja');
+      crearPushNotificacion('whatsapp', 'WhatsApp abierto', `Mensaje listo para enviar a ${nuevoMensaje.contacto}`, 'Baja');
     } catch (error) {
-      console.error('Error enviando mensaje WhatsApp:', error);
-      showToast({ message: 'Error al enviar el mensaje', type: 'error' });
+      // WhatsApp ya se abrió con el mensaje real -- que es lo que importa --
+      // así que un fallo al registrar el historial no debe verse como un
+      // error del envío en sí.
+      console.error('Error registrando WhatsApp en historial:', error);
     }
   };
   

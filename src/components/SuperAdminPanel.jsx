@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Activity,
   AlertTriangle,
@@ -305,7 +306,7 @@ function SuperAdminPanel({
       return;
     }
     await enviarPorWhatsApp(s.telefono, construirMensajeRecordatorioSocio(s), 'pago');
-    showToast({ message: `Recordatorio enviado a ${s.nombre} · ${s.telefono}`, type: 'success' });
+    showToast({ message: `WhatsApp abierto para ${s.nombre} · ${s.telefono}`, type: 'success' });
   };
 
   const [busquedaMorosos, setBusquedaMorosos] = useState('');
@@ -343,25 +344,34 @@ function SuperAdminPanel({
       return;
     }
     await enviarPorWhatsApp(m.telefono, construirMensajeRecordatorioMoroso(m), 'pago');
-    showToast({ message: `Recordatorio enviado a ${m.nombre} · ${m.telefono}`, type: 'success' });
+    showToast({ message: `WhatsApp abierto para ${m.nombre} · ${m.telefono}`, type: 'success' });
   };
 
-  const notificarTodosMorosos = async () => {
+  // WhatsApp real (wa.me) solo puede abrir UNA conversación por click — no
+  // existe un "enviar a todos de una" real sin una cuenta de WhatsApp
+  // Business/Twilio que este club no tiene. Antes "Notificar Todos" hacía
+  // un loop silencioso llamando al endpoint simulado N veces (por eso podía
+  // fingir mandarle a todos con un solo clic); ahora abre una lista real
+  // donde el admin va tocando "Enviar" uno por uno — cada toque es un
+  // WhatsApp real que se abre. avisadosEnLote solo trackea, en memoria local,
+  // a quién ya se le abrió el chat en esta sesión del modal (para mostrar el
+  // check y no perder el lugar si lo interrumpen).
+  const [mostrarModalNotificarTodos, setMostrarModalNotificarTodos] = useState(false);
+  const [avisadosEnLote, setAvisadosEnLote] = useState(new Set());
+
+  const abrirModalNotificarTodos = () => {
     const conTelefono = morososFiltrados.filter((m) => m.telefono);
     if (conTelefono.length === 0) {
       showToast({ message: 'Ningún deudor de esta lista tiene teléfono registrado.', type: 'error' });
       return;
     }
-    for (const m of conTelefono) {
-      await enviarPorWhatsApp(m.telefono, construirMensajeRecordatorioMoroso(m), 'pago');
-    }
-    const sinTelefono = morososFiltrados.length - conTelefono.length;
-    showToast({
-      message: sinTelefono > 0
-        ? `Recordatorio enviado a ${conTelefono.length} deudores. ${sinTelefono} sin teléfono registrado.`
-        : `Recordatorio enviado a ${conTelefono.length} deudores.`,
-      type: 'success',
-    });
+    setAvisadosEnLote(new Set());
+    setMostrarModalNotificarTodos(true);
+  };
+
+  const avisarMorosoEnLote = async (m) => {
+    await avisarMoroso(m);
+    setAvisadosEnLote((prev) => new Set(prev).add(m.id));
   };
 
   // Deportistas (tabla jugadores) y Cuentas (tabla cuentas: apoderados, socios,
@@ -3274,7 +3284,7 @@ function SuperAdminPanel({
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', marginTop: '20px' }}>
             <h3 className="section-title" style={{ margin: 0 }}>Estatus de pagos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
-            <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={notificarTodosMorosos}>
+            <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={abrirModalNotificarTodos}>
               <Bell size={13} /> Notificar Todos
             </button>
           </div>
@@ -4889,6 +4899,57 @@ function SuperAdminPanel({
             window.location.reload();
           }}
         />
+      )}
+
+      {mostrarModalNotificarTodos && createPortal(
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+          onClick={() => setMostrarModalNotificarTodos(false)}
+        >
+          <div
+            style={{ background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '480px', width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+              <h3 style={{ margin: 0, color: 'var(--texto-heading)' }}>Notificar morosos por WhatsApp</h3>
+              <button onClick={() => setMostrarModalNotificarTodos(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }} aria-label="Cerrar">
+                <X size={22} color="var(--gris-secundario)" strokeWidth={1.5} />
+              </button>
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '16px' }}>
+              WhatsApp solo abre una conversación por vez — toca "Enviar" en cada fila para abrirle su recordatorio, ya escrito, listo para mandar.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {morososFiltrados.filter((m) => m.telefono).map((m) => {
+                const yaAvisado = avisadosEnLote.has(m.id);
+                return (
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '12px', background: yaAvisado ? 'rgba(52,199,89,0.08)' : 'var(--gris-fondo)', border: `1px solid ${yaAvisado ? 'rgba(52,199,89,0.3)' : 'var(--borde)'}` }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: '700', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.nombre}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{m.telefono} · ${m.montoDeuda.toLocaleString('es-CL')}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => avisarMorosoEnLote(m)}
+                      style={{
+                        padding: '8px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
+                        background: yaAvisado ? 'rgba(52,199,89,0.15)' : 'var(--verde-victoria)',
+                        color: yaAvisado ? 'var(--verde-victoria)' : 'white',
+                        display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {yaAvisado ? <><Check size={13} /> Reenviar</> : <><Bell size={13} /> Enviar</>}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <p style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '14px', marginBottom: 0 }}>
+              {avisadosEnLote.size} de {morososFiltrados.filter((m) => m.telefono).length} enviados en esta ronda.
+            </p>
+          </div>
+        </div>,
+        document.body
       )}
 
       {comprobanteEnVista && (
