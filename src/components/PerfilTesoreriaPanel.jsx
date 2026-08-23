@@ -4,6 +4,7 @@ import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
+import { normalizarRol } from '../security/accessControl';
 
 function PerfilTesoreriaPanel({
   pupiloActivo,
@@ -188,7 +189,10 @@ function PerfilTesoreriaPanel({
   const titular = cuentaActual
     ? `${cuentaActual.nombres || ''} ${cuentaActual.apellido_paterno || ''}`.trim()
     : (pupiloActivo?.nombre || pupilosActivos[0]?.nombre || 'Cuenta principal');
-  const perfilPrincipal = String(cuentaActual?.perfil_principal || cuentaActual?.rol || '').toLowerCase();
+  // normalizarRol colapsa 'socio-apoderado' (guión) a 'socio_apoderado' —
+  // antes esta comparación solo miraba la forma con guión bajo, así que una
+  // cuenta guardada con guión no disparaba el reparto de cuota socio+hijos.
+  const perfilPrincipal = normalizarRol(cuentaActual?.perfil_principal || cuentaActual?.rol || '');
   const esSocio = Boolean(cuentaActual?.es_socio) || ['socio', 'socio_apoderado', 'directiva'].includes(perfilPrincipal);
   const esSocioApoderado = perfilPrincipal === 'socio_apoderado';
 

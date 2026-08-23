@@ -16,6 +16,7 @@ import {
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from './utils/beca';
+import { mapearJugadorAPupilo, obtenerNumeroCamisetaJugador, obtenerAnioNacimientoJugador } from './utils/pupiloMapper';
 import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
 import ApiStatusBanner from './components/ApiStatusBanner';
 import ToastContainer from './components/ToastContainer';
@@ -456,27 +457,6 @@ function App() {
       academia_video_id: c.academia_video_id || null,
       activo: c.activo !== false,
     }));
-  };
-
-  const obtenerAnioNacimientoJugador = (jugador = {}) => (
-    jugador.anioNacimiento
-    ?? jugador.anio_nacimiento
-    ?? jugador.ano_nacimiento
-    ?? jugador['año_nacimiento']
-    ?? ''
-  );
-
-  const obtenerNumeroCamisetaJugador = (jugador = {}, fallback = 0) => {
-    const raw = (
-      jugador.numeroCamiseta
-      ?? jugador.numero_camiseta
-      ?? jugador.numero
-      ?? jugador.dorsal
-      ?? fallback
-    );
-
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   };
 
   useEffect(() => {
@@ -1842,6 +1822,34 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Refresca los permisos_override de la PROPIA cuenta — sin esto, un módulo
+  // que el super_admin le activa a otro usuario nunca se reflejaba para ese
+  // usuario: permisosPorUsuario solo se llenaba cuando el admin guardaba una
+  // cuenta en SU PROPIA sesión (recargarUsuariosAdmin), nunca en el login
+  // normal de la cuenta afectada (GET /api/cuentas está gateado a
+  // admin_dashboard, así que un no-admin nunca podía traer su propio
+  // permisos_override por esa vía). GET /api/cuentas/:id sí es self-service
+  // (requireOwnerIdOrModule), así que cada sesión puede pedir la suya propia.
+  // Efecto separado del de citaciones/notificaciones de arriba para no
+  // arriesgar esa lógica ya probada.
+  useEffect(() => {
+    const idPropio = usuarioAutenticado?.id;
+    if (!idPropio || !Number.isFinite(Number(idPropio))) return undefined;
+
+    const refrescarPermisosPropios = async () => {
+      try {
+        const cuentaPropia = await api.cuentasAPI.getById(idPropio);
+        setPermisosPorUsuario((prev) => ({ ...prev, [idPropio]: cuentaPropia?.permisos_override || {} }));
+      } catch (error) {
+        // silencioso — no debe interrumpir la sesión si falla
+      }
+    };
+
+    void refrescarPermisosPropios();
+    const intervalId = window.setInterval(refrescarPermisosPropios, 20000);
+    return () => window.clearInterval(intervalId);
+  }, [usuarioAutenticado?.id]);
+
   useEffect(() => {
     if (!showSettings && !mostrarNotificaciones) return;
 
@@ -2656,45 +2664,6 @@ function App() {
   // poder reconstruir un único "pupilo" transformado tras editar un jugador,
   // sin tener que esperar a un refetch completo de jugadoresAdmin — ver
   // actualizarJugadorEnMemoria más abajo.
-  const mapearJugadorAPupilo = (j, idx = 0) => ({
-    id: idx + 1,
-    rut: j.rut_jugador,
-    nombre: `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''}`.trim(),
-    nombres: j.nombres || '',
-    apellido_paterno: j.apellido_paterno || '',
-    apellido_materno: j.apellido_materno || '',
-    correo_apoderado: j.correo_apoderado || '',
-    rut_apoderado: j.rut_apoderado || '',
-    categoria: j.categoria || 'General',
-    rama: j.rama || j.categoria_rama || 'General',
-    genero: j.genero || j.sexo || '',
-    nivel: Number(j.nivel_actual || 1),
-    xp: Number(j.xp_total || 0),
-    numeroCamiseta: obtenerNumeroCamisetaJugador(j, 0),
-    posicion: j.posicion_de_juego || 'N/A',
-    estatura: j.estatura || 'N/A',
-    peso: j.peso || 'N/A',
-    manoHabil: j.mano_habil || 'N/A',
-    tallaCamiseta: j.talla_camiseta || 'N/A',
-    tallaShort: j.talla_short || 'N/A',
-    poleraEntregada: Boolean(j.polera_entregada),
-    asistencia: j.asistencia || 'N/A',
-    estadoDeportivo: j.estado_deportivo || 'Activo',
-    beca: j.beca || 'Sin beca',
-    // Faltaba en este mapeo — noDebeMensualidad/estaExentoDeMensualidad
-    // (src/utils/beca.js) leen pupilo.exento_mensualidad para decidir si
-    // el mes se pinta en verde sin cobrar, pero como este campo nunca
-    // llegaba hasta acá, quedaba siempre undefined (=false): marcar el
-    // checkbox de "Exento de mensualidad" nunca tuvo efecto real en
-    // Tesorería, aunque el dato sí se guardaba bien en la base.
-    exento_mensualidad: Boolean(j.exento_mensualidad),
-    fecha_ingreso: j.fecha_ingreso || null,
-    mes_inicio_cobro: j.mes_inicio_cobro || '',
-    anio_ingreso: j.anio_ingreso ?? j.año_ingreso ?? null,
-    valor_mensualidad: j.valor_mensualidad ?? null,
-    anioNacimiento: obtenerAnioNacimientoJugador(j),
-    foto_jugador: j.foto_jugador || j.foto_perfil_url || j.club_logo_url || '',
-  });
 
   const pupilosDisponiblesBase = (jugadoresAdmin || []).map((j, idx) => mapearJugadorAPupilo(j, idx));
 
@@ -2800,8 +2769,16 @@ function App() {
   }));
 
   const esPerfilFamiliarNav = ['apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva'].includes(rolUsuario);
+  // admin/super_admin ya no tienen una entrada de nav separada para "Tesorería"
+  // (pantalla 'perfil') — todo el dinero (recaudación, morosos, pago manual,
+  // validación, y la búsqueda de una familia puntual) vive fusionado dentro
+  // de Panel → Tesorería (SuperAdminPanel.jsx, vistaAdmin === 'pagos').
+  // Cualquier otro rol conserva su "Mi Cuenta"/"Tesorería" tal cual.
+  const esRolAdminUnificado = rolUsuario === 'admin' || rolUsuario === 'super_admin';
   const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco'];
-  const modulosNavegacionVisibles = modulosNavegacionOrden.filter((modulo) => puedeVerPantalla(modulo));
+  const modulosNavegacionVisibles = modulosNavegacionOrden
+    .filter((modulo) => !(esRolAdminUnificado && modulo === 'perfil'))
+    .filter((modulo) => puedeVerPantalla(modulo));
   const LOCAL_PREVIEW_LABEL = 'MODO LOCAL · CAMBIOS INMEDIATOS';
   const mostrarApartadoLocal = (() => {
     if (typeof window === 'undefined') return false;
@@ -3331,6 +3308,7 @@ function App() {
                 onPartidosChanged={recargarPartidosResumen}
                 onComunicacionesChanged={recargarComunicacionesResumen}
                 enviarPorWhatsApp={enviarPorWhatsApp}
+                utmVigente={utmVigente}
               />
             )}
           </>

@@ -38,11 +38,13 @@ import { confirmAction } from '../utils/confirmDialog';
 import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
 import PagoForm from './PagoForm';
+import PerfilTesoreriaPanel from './PerfilTesoreriaPanel';
 import QrScanner from './QrScanner';
 import ResultadosCards from './ResultadosCards';
 import { colorTipo } from '../utils/appHelpers';
 import { calcularResumenCitacion } from '../utils/citaciones';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
+import { mapearJugadorAPupilo } from '../utils/pupiloMapper';
 import { CATEGORIAS_POR_RAMA } from '../utils/categoriasDeportivas';
 import ReportesPanel from './ReportesPanel';
 import SaludAlertasPanel from './SaludAlertasPanel';
@@ -125,6 +127,7 @@ function SuperAdminPanel({
   onPartidosChanged,
   onComunicacionesChanged,
   enviarPorWhatsApp,
+  utmVigente,
 }) {
   const enviarAlerta = () => { showToast({ message: 'Notificación enviada por App y Correo a los destinatarios.', type: 'success' }); };
   void enviarAlerta;
@@ -156,6 +159,32 @@ function SuperAdminPanel({
 
   af.sociosAlDia = Math.max(af.totalSocios - af.sociosMorosos, 0);
   af.deportistasAlDia = Math.max(af.totalDeportistas - af.deportistasMorosos, 0);
+
+  // Resumen del Panel = gestión de personas (composición, no dinero — el
+  // estado de pago vive en Tesorería). Desglose por rol reusando
+  // normalizarRol para no repetir el bug de socio_apoderado/socio-apoderado
+  // contados por separado.
+  const personasStats = useMemo(() => {
+    const porRol = new Map();
+    (cuentasAdmin || []).forEach((c) => {
+      const rol = normalizarRol(c.perfil_principal || c.rol || '') || 'sin_rol';
+      porRol.set(rol, (porRol.get(rol) || 0) + 1);
+    });
+    const deportistasSinApoderado = (jugadoresAdmin || []).filter((j) => !String(j.rut_apoderado || '').trim()).length;
+    return {
+      totalCuentas: (cuentasAdmin || []).length,
+      totalDeportistas: (jugadoresAdmin || []).length,
+      cuentasIncompletas: (cuentasIncompletas || []).length,
+      deportistasSinApoderado,
+      porRol,
+    };
+  }, [cuentasAdmin, jugadoresAdmin, cuentasIncompletas]);
+
+  const ETIQUETAS_ROL_RESUMEN = {
+    apoderado: 'Apoderados', socio: 'Socios', socio_apoderado: 'Socio / Apoderado',
+    directiva: 'Directiva', jugador: 'Deportistas con cuenta propia', staff: 'Staff',
+    admin: 'Admins', super_admin: 'Super Admins', mesa: 'Mesa', visita: 'Visitas', sin_rol: 'Sin rol asignado',
+  };
 
   // Desglose mes a mes del año: recaudado (aprobado) y cantidad de morosos
   // por mes, separado en socios/deportistas. Reemplaza el gauge único
@@ -602,6 +631,22 @@ function SuperAdminPanel({
   const [paginaPagosMigrados, setPaginaPagosMigrados] = useState(1);
   const [itemsPorPaginaPagos] = useState(15);
 
+  // Estado propio para el <PerfilTesoreriaPanel> embebido en Tesorería (buscar
+  // una familia puntual y ver/gestionar su cuenta) — independiente del estado
+  // de la pantalla "Mi Cuenta"/'perfil' que usa cada familia para SU PROPIA
+  // cuenta (ese vive en App.jsx). Un admin no tiene pupilos propios, así que
+  // este es un estado de navegación fresco, no algo que deba compartirse.
+  const [pupiloTesoreriaAdmin, setPupiloTesoreriaAdmin] = useState(null);
+  const [mesesSeleccionadosTesoreria, setMesesSeleccionadosTesoreria] = useState({});
+  const [tipoPagoTesoreria, setTipoPagoTesoreria] = useState('completo');
+  const [montoAbonoTesoreria, setMontoAbonoTesoreria] = useState('');
+  const [comprobanteSubidoTesoreria, setComprobanteSubidoTesoreria] = useState(false);
+  const [pagoViewModeTesoreria, setPagoViewModeTesoreria] = useState('grid');
+  const pupilosParaBusquedaTesoreria = useMemo(
+    () => (jugadoresAdmin || []).map((j, idx) => mapearJugadorAPupilo(j, idx)),
+    [jugadoresAdmin]
+  );
+
   const PERFIL_PRINCIPAL_OPTIONS = [
     { value: 'apoderado', label: 'Apoderado' },
     { value: 'socio', label: 'Socio' },
@@ -632,17 +677,26 @@ function SuperAdminPanel({
     return new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
   };
 
-  const calcularMensualidadSocio = (utm = 68000) => {
+  const calcularMensualidadSocio = (utm = 71649) => {
     const base = Number(utm || 0);
     if (!Number.isFinite(base) || base <= 0) return 0;
     return Math.round(base * 0.3);
   };
 
   const esCuentaCatalogadaSocio = (cuenta = {}) => {
-    const perfil = String(cuenta.perfil_principal || cuenta.rol || '').toLowerCase();
+    const perfil = normalizarRol(cuenta.perfil_principal || cuenta.rol || '');
     return ['socio', 'socio_apoderado', 'directiva'].includes(perfil) || Boolean(cuenta.es_socio);
   };
 
+  // OJO: esta función NO debe calcular ni persistir monto_mensual_base — antes
+  // lo hacía con un UTM hardcodeado (68000, desactualizado) en CADA guardado
+  // de la cuenta, así que la cuota de socio quedaba congelada al valor viejo
+  // apenas el admin guardaba cualquier cambio (aunque fuera solo el teléfono),
+  // ganándole al cálculo en vivo de Tesorería (que solo usa el valor
+  // guardado si es > 0). El monto real (0,3 × UTM vigente) se calcula al
+  // vuelo donde se necesita (ver calcularMensualidadSocio más abajo, y el
+  // mismo cálculo en PerfilTesoreriaPanel.jsx/App.jsx) — monto_mensual_base
+  // queda como lo que el admin haya escrito a mano (override real) o vacío.
   const aplicarReglaMensualidad = (cuenta = {}) => {
     const esSocio = esCuentaCatalogadaSocio(cuenta);
     if (!esSocio) {
@@ -653,13 +707,9 @@ function SuperAdminPanel({
       };
     }
 
-    const utm = Number(cuenta.utm_valor_referencia || 68000);
-    const montoBase = calcularMensualidadSocio(utm);
     return {
       ...cuenta,
       es_socio: true,
-      utm_valor_referencia: utm,
-      monto_mensual_base: montoBase,
       fecha_corte_utm: cuenta.fecha_corte_utm || calcularFechaCorteMesAnterior(),
     };
   };
@@ -2325,7 +2375,7 @@ function SuperAdminPanel({
           {puedeAdminCompleto ? (
             <>
               <button type="button" className={`segment-btn ${vistaAdmin === 'activos' ? 'active' : ''}`} onClick={() => setVistaAdmin('activos')}><Image size={14} /> Activos</button>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Validar Pago</button>
+              <button type="button" className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Tesorería</button>
             </>
           ) : null}
           {(puedeAdminCompleto || puedeVerCitaciones) && (
@@ -2344,6 +2394,679 @@ function SuperAdminPanel({
       </div>
 
       {vistaAdmin === 'dashboard' && (
+        <div className="fade-in">
+          <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '14px' }}>
+            Vista general de personas del club — todo lo de dinero (recaudación, morosos, pago manual, validación) vive en <strong>Tesorería</strong>.
+          </p>
+
+          <h3 className="section-title mt-0">Personas del Club</h3>
+          <div className="caja-triple-grid mb-15">
+            <div className="admin-stat-pill azul"><span>Total Cuentas</span><h2>{personasStats.totalCuentas}</h2></div>
+            <div className="admin-stat-pill azul"><span>Total Deportistas</span><h2>{personasStats.totalDeportistas}</h2></div>
+            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Fichas Incompletas</span><h2 style={{ color: '#b36200' }}>{personasStats.cuentasIncompletas}</h2></div>
+          </div>
+          <div className="caja-triple-grid mb-20">
+            <div className="admin-stat-pill rojo"><span>Deportistas sin Apoderado</span><h2>{personasStats.deportistasSinApoderado}</h2></div>
+          </div>
+
+          <h3 className="section-title">Cuentas por tipo</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+            {[...personasStats.porRol.entries()].sort((a, b) => b[1] - a[1]).map(([rol, cantidad]) => (
+              <div key={`personas-rol-${rol}`} className="card" style={{ borderRadius: '16px', padding: '12px', textAlign: 'center' }}>
+                <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--azul-electrico)' }}>{cantidad}</div>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--texto-secundario)' }}>{ETIQUETAS_ROL_RESUMEN[rol] || rol}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="card" style={{ borderRadius: '18px', padding: '16px', textAlign: 'center' }}>
+            <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', margin: 0 }}>
+              Para dar de alta un nuevo socio, apoderado o deportista, o revisar/editar cualquier ficha, ve a <strong>Usuarios y Cuentas</strong>.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {vistaAdmin === 'usuarios' && (
+        <div className="fade-in">
+          <h3 className="section-title">Gestión de Usuarios y Cuentas</h3>
+          <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
+            Deportistas (ficha deportiva) y Cuentas (login de apoderados, socios, staff y admins) viven en tablas distintas — separadas acá para no mezclar sus filtros y datos.
+          </p>
+
+          <div className="segment-control" style={{ gap: '6px', marginBottom: '15px' }}>
+            <button type="button" className={`segment-btn ${vistaUsuarios === 'deportistas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('deportistas')}>
+              <Users size={14} /> Deportistas ({jugadoresAdmin.length})
+            </button>
+            <button type="button" className={`segment-btn ${vistaUsuarios === 'cuentas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('cuentas')}>
+              <User size={14} /> Cuentas ({cuentasAdmin.length})
+            </button>
+          </div>
+
+          {vistaUsuarios === 'deportistas' ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                <div className="admin-stat-pill verde"><span>Completos</span><h2>{jugadoresAdmin.length - jugadoresIncompletos.length}</h2></div>
+                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletos</span><h2 style={{ color: '#b36200' }}>{jugadoresIncompletos.length}</h2></div>
+                <div className="admin-stat-pill rojo"><span>Sin apoderado</span><h2>{jugadoresSinApoderado.length}</h2></div>
+              </div>
+
+              <div className="card">
+                <div className="grid-auto-220">
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Buscar</label>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+                      <input
+                        className="form-input"
+                        style={{ paddingLeft: '32px' }}
+                        placeholder="Nombre, RUT, rama o categoría"
+                        value={filtroUsuariosTexto}
+                        onChange={(e) => setFiltroUsuariosTexto(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Rama</label>
+                    <select className="form-input" value={filtroRamaJugadores} onChange={(e) => setFiltroRamaJugadores(e.target.value)}>
+                      <option value="todas">Todas</option>
+                      <option value="masculina">Masculina</option>
+                      <option value="femenina">Femenina</option>
+                      <option value="mixta">Mixta</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Categoría</label>
+                    <select className="form-input" value={filtroCategoriaJugadores} onChange={(e) => setFiltroCategoriaJugadores(e.target.value)}>
+                      <option value="todas">Todas</option>
+                      {categoriasUnicas.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="filter-chips" style={{ marginTop: '10px' }}>
+                  <button className={`filter-chip ${filtroApoderadoJugadores === 'todos' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('todos')}>Todos ({jugadoresAdmin.length})</button>
+                  <button className={`filter-chip ${filtroApoderadoJugadores === 'sin' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('sin')}>Sin apoderado ({jugadoresSinApoderado.length})</button>
+                  <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdmin.length - jugadoresSinApoderado.length})</button>
+                </div>
+
+                <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
+                  {deportistasFiltrados.length === 0 && (
+                    <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay deportistas con los filtros actuales.</p>
+                  )}
+                  {deportistasFiltrados.map(renderTarjetaUsuario)}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                <div className="admin-stat-pill verde"><span>Completas</span><h2>{cuentasAdmin.length - cuentasIncompletas.length}</h2></div>
+                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#b36200' }}>{cuentasIncompletas.length}</h2></div>
+                <div className="admin-stat-pill azul"><span>Total</span><h2>{cuentasAdmin.length}</h2></div>
+              </div>
+
+              <div className="card">
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Buscar</label>
+                    <div style={{ position: 'relative' }}>
+                      <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+                      <input
+                        className="form-input"
+                        style={{ paddingLeft: '32px' }}
+                        placeholder="Nombre, correo, RUT o rol"
+                        value={filtroCuentasTexto}
+                        onChange={(e) => setFiltroCuentasTexto(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Tipo de perfil</label>
+                    <select className="form-input" value={filtroTipoPerfil} onChange={(e) => setFiltroTipoPerfil(e.target.value)}>
+                      <option value="todos">Todos</option>
+                      <option value="apoderado">Apoderado</option>
+                      <option value="socio">Socio</option>
+                      <option value="socio_apoderado">Socio / Apoderado</option>
+                      <option value="directiva">Directiva</option>
+                      <option value="staff">Staff</option>
+                      <option value="admin">Admin</option>
+                      <option value="super_admin">Super Admin</option>
+                      <option value="jugador">Deportista con login propio</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
+                  {cuentasUsuariosFiltradas.length === 0 && (
+                    <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay cuentas con los filtros actuales.</p>
+                  )}
+                  {cuentasUsuariosFiltradas.map(renderTarjetaUsuario)}
+                </div>
+              </div>
+            </>
+          )}
+
+          {editandoTipo === 'cuenta' && cuentaAdminEdit && (
+            <div ref={edicionCuentaRef} className="card" style={{ borderRadius: '24px' }}>
+              <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
+
+              {(esAdmin || esSuperAdmin) && (
+                <div style={{ marginBottom: '16px', padding: '14px', borderRadius: '16px', background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.18)' }}>
+                  <label style={{ display: 'block', fontWeight: '800', marginBottom: '8px' }}>¿El usuario olvidó su contraseña?</label>
+                  {nuevaClaveCuenta.trim() ? (
+                    <>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <input
+                            type={mostrarNuevaClaveCuenta ? 'text' : 'password'}
+                            className="form-input"
+                            style={{ paddingRight: '40px' }}
+                            value={nuevaClaveCuenta}
+                            onChange={(e) => setNuevaClaveCuenta(e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setMostrarNuevaClaveCuenta((v) => !v)}
+                            aria-label={mostrarNuevaClaveCuenta ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--gris-secundario)' }}
+                          >
+                            {mostrarNuevaClaveCuenta ? <EyeOff size={16} strokeWidth={1.5} /> : <Eye size={16} strokeWidth={1.5} />}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ width: 'auto', whiteSpace: 'nowrap' }}
+                          onClick={() => setNuevaClaveCuenta('')}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                      <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                        Se guardará al hacer clic en "Guardar cambios" (más abajo). Comunícasela al usuario — no queda visible después.
+                      </p>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-electric"
+                      style={{ width: 'auto' }}
+                      onClick={() => {
+                        const clave = generarClaveAleatoria();
+                        setNuevaClaveCuenta(clave);
+                        setMostrarNuevaClaveCuenta(true);
+                        setCuentaAdminEdit((p) => ({ ...p, forzar_clave: true }));
+                      }}
+                    >
+                      <Lock size={15} /> Restablecer contraseña
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="grid-auto-220">
+                <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaAdminEdit.correo || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, correo: e.target.value }))} /></div>
+                <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaAdminEdit.rut || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rut: e.target.value }))} /></div>
+                <div className="form-group"><label>Nombres</label><input className="form-input" value={cuentaAdminEdit.nombres || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={cuentaAdminEdit.apellido_paterno || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={cuentaAdminEdit.apellido_materno || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                <div className="form-group"><label>Prefijo teléfono</label><input className="form-input" value={cuentaAdminEdit.prefijo_tel || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, prefijo_tel: e.target.value }))} placeholder="+56" /></div>
+                <div className="form-group"><label>Teléfono</label><input className="form-input" value={cuentaAdminEdit.telefono || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, telefono: e.target.value }))} /></div>
+                <div className="form-group"><label>Dirección</label><input className="form-input" value={cuentaAdminEdit.direccion || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, direccion: e.target.value }))} /></div>
+                <div className="form-group"><label>Comuna</label><input className="form-input" value={cuentaAdminEdit.comuna || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, comuna: e.target.value }))} /></div>
+                <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(cuentaAdminEdit.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, fecha_nacimiento: e.target.value }))} /></div>
+                <div className="form-group"><label>Estado civil</label><input className="form-input" value={cuentaAdminEdit.estado_civil || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado_civil: e.target.value }))} /></div>
+                <div className="form-group"><label>Profesión / oficio</label><input className="form-input" value={cuentaAdminEdit.profesion_oficio || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, profesion_oficio: e.target.value }))} /></div>
+                <div className="form-group"><label>Nombre segundo contacto</label><input className="form-input" value={cuentaAdminEdit.nombre_segundo_contacto || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, nombre_segundo_contacto: e.target.value }))} /></div>
+                <div className="form-group"><label>Parentesco segundo contacto</label><input className="form-input" value={cuentaAdminEdit.parentesco_segundo_contacto || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, parentesco_segundo_contacto: e.target.value }))} /></div>
+                <div className="form-group"><label>Teléfono segundo contacto</label><input className="form-input" value={cuentaAdminEdit.num_segundo_contacto || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, num_segundo_contacto: e.target.value }))} /></div>
+                <div className="form-group"><label>Fecha ingreso socio</label><input type="date" className="form-input" value={String(cuentaAdminEdit.fecha_ingreso_socio || '').slice(0, 10)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, fecha_ingreso_socio: e.target.value }))} /></div>
+                <div className="form-group"><label>Mes inicio cobro (cuota socio)</label><input className="form-input" placeholder="ej. marzo" value={cuentaAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
+                <div className="form-group"><label>Día de pago acordado</label><input type="number" min="1" max="31" className="form-input" value={cuentaAdminEdit.dia_pago_acordado || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, dia_pago_acordado: e.target.value }))} /></div>
+                <div className="form-group"><label>Foto de perfil (URL)</label><input className="form-input" value={cuentaAdminEdit.foto_perfil_url || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, foto_perfil_url: e.target.value }))} /></div>
+                <div className="form-group"><label>Rol de acceso</label><select className="form-input" value={cuentaAdminEdit.rol || 'apoderado'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rol: e.target.value }))}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`rol-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                <div className="form-group"><label>Perfil principal</label><select className="form-input" value={cuentaAdminEdit.perfil_principal || 'apoderado'} onChange={(e) => actualizarCuentaAdminEdit({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={cuentaAdminEdit.acceso_nivel || 'estandar'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, acceso_nivel: e.target.value }))}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                <div className="form-group"><label>Estado</label><select className="form-input" value={cuentaAdminEdit.estado || 'activo'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="activo">Activo</option><option value="inactivo">Inactivo</option></select></div>
+                <div className="form-group"><label>Valor UTM referencia (override opcional, se completa solo)</label><input type="number" min="1" className="form-input" value={cuentaAdminEdit.utm_valor_referencia || utmVigente?.valor || 68000} onChange={(e) => actualizarCuentaAdminEdit({ utm_valor_referencia: e.target.value })} /></div>
+                <div className="form-group"><label>Mensualidad base automática (0,3 UTM, se recalcula sola cada mes)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(cuentaAdminEdit) ? (Number(cuentaAdminEdit.monto_mensual_base) > 0 ? cuentaAdminEdit.monto_mensual_base : calcularMensualidadSocio(cuentaAdminEdit.utm_valor_referencia || utmVigente?.valor)) : 0} disabled /></div>
+                <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={cuentaAdminEdit.monto_mensual_override || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
+                <div className="form-group"><label>Fecha corte UTM (mes anterior)</label><input type="date" className="form-input" value={cuentaAdminEdit.fecha_corte_utm || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, fecha_corte_utm: e.target.value }))} /></div>
+                <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={cuentaAdminEdit.condiciones_pago || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, condiciones_pago: e.target.value }))}></textarea></div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '10px' }}>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(cuentaAdminEdit))} disabled />
+                  Es socio (automático por perfil)
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.socio_admin)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, socio_admin: e.target.checked }))} />
+                  Admin entre socios
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.aprobado_superadmin)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
+                  Aprobado por SuperAdmin
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.requiere_foto_perfil)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
+                  Solicitar foto de perfil en onboarding
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.forzar_clave)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, forzar_clave: e.target.checked }))} />
+                  Forzar cambio de clave
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.autorizacion_imagen)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, autorizacion_imagen: e.target.checked }))} />
+                  Autoriza derechos de imagen
+                </label>
+              </div>
+
+              {renderPermisosCuenta({
+                cuenta: cuentaAdminEdit,
+                titulo: 'Permisos y accesos de la cuenta',
+              })}
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
+                <button className="btn-secondary" onClick={cancelarEdicion}>Cancelar</button>
+                {esSuperAdmin && (
+                  <button
+                    className="btn-secondary"
+                    style={{ width: 'auto', background: 'rgba(255,59,48,0.12)', borderColor: 'rgba(255,59,48,0.36)', color: '#b00020', fontWeight: '800' }}
+                    onClick={() => eliminarUsuarioDefinitivo({ id: `cuenta-${cuentaAdminEdit.id}`, tipo: 'cuenta', raw: cuentaAdminEdit, nombre: `${cuentaAdminEdit.nombres || ''} ${cuentaAdminEdit.apellido_paterno || ''}`.trim() })}
+                    disabled={eliminandoUsuarioId === `cuenta-${cuentaAdminEdit.id}`}
+                  >
+                    {eliminandoUsuarioId === `cuenta-${cuentaAdminEdit.id}` ? 'Borrando...' : 'Borrar cuenta definitivo'}
+                  </button>
+                )}
+              </div>
+
+              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><Users size={15} /> Pupilos del apoderado</h4>
+                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0 }}>
+                  Asigna o corrige manualmente los hijos/pupilos para esta cuenta usando el correo del apoderado.
+                </p>
+
+                {!String(cuentaPupilosActiva?.correo || '').trim() && (
+                  <div style={{ fontSize: '12px', color: '#b36200', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '10px', padding: '8px 10px', marginBottom: '10px' }}>
+                    Guarda un correo válido en la cuenta antes de asignar pupilos.
+                  </div>
+                )}
+
+                <div style={{ marginBottom: '10px' }}>
+                  <strong style={{ fontSize: '12px' }}>Pupilos actualmente asociados ({pupilosAsignadosCuenta.length})</strong>
+                  <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {pupilosAsignadosCuenta.map((j) => (
+                      <div key={`pupilo-asig-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'rgba(0,122,255,0.07)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: '10px', padding: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.categoria || 'Sin categoría'}</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          <select
+                            className="form-input"
+                            style={{ width: '220px', padding: '7px 9px' }}
+                            value={destinoApoderadoPorRut[j.rut_jugador] || ''}
+                            onChange={(e) => setDestinoApoderadoPorRut((prev) => ({ ...prev, [j.rut_jugador]: e.target.value }))}
+                            disabled={procesandoPupiloRut === String(j.rut_jugador || '')}
+                          >
+                            <option value="">Mover a apoderado...</option>
+                            {cuentasApoderadoDisponibles
+                              .filter((c) => String(c.correo || '').trim().toLowerCase() !== String(cuentaPupilosActiva?.correo || '').trim().toLowerCase())
+                              .map((c) => (
+                                <option key={`dest-${j.rut_jugador}-${c.correo}`} value={c.correo}>{c.nombre} · {c.correo}</option>
+                              ))}
+                          </select>
+                          <button
+                            className="btn-pill"
+                            style={{ width: 'auto', padding: '7px 10px' }}
+                            onClick={() => moverPupiloAOtroApoderado(j, destinoApoderadoPorRut[j.rut_jugador])}
+                            disabled={procesandoPupiloRut === String(j.rut_jugador || '') || !String(destinoApoderadoPorRut[j.rut_jugador] || '').trim()}
+                          >
+                            {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Moviendo...' : 'Mover'}
+                          </button>
+                          <button
+                            className="btn-secondary"
+                            style={{ width: 'auto', padding: '7px 10px' }}
+                            onClick={() => quitarPupiloDeCuenta(j)}
+                            disabled={procesandoPupiloRut === String(j.rut_jugador || '')}
+                          >
+                            {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Quitando...' : 'Quitar'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {pupilosAsignadosCuenta.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin pupilos asociados.</span>}
+                  </div>
+                </div>
+
+                <div>
+                  <strong style={{ fontSize: '12px' }}>Buscar y asignar pupilo</strong>
+                  <input
+                    className="form-input"
+                    placeholder="Buscar por nombre, RUT, rama o categoría"
+                    value={filtroPupiloManual}
+                    onChange={(e) => setFiltroPupiloManual(e.target.value)}
+                    style={{ marginTop: '6px', marginBottom: '8px' }}
+                  />
+
+                  <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {jugadoresDisponiblesAsignacion.map((j) => (
+                      <div key={`pupilo-disp-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed rgba(0,0,0,0.15)', borderRadius: '10px', padding: '8px' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.rama || 'Sin rama'} · {j.categoria || 'Sin categoría'}</div>
+                        </div>
+                        <button
+                          className="btn-secondary"
+                          style={{ width: 'auto', padding: '7px 10px' }}
+                          onClick={() => asignarPupiloACuenta(j)}
+                          disabled={procesandoPupiloRut === String(j.rut_jugador || '') || !String(cuentaPupilosActiva?.correo || '').trim()}
+                        >
+                          {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Asignando...' : 'Asignar'}
+                        </button>
+                      </div>
+                    ))}
+                    {jugadoresDisponiblesAsignacion.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>No hay jugadores disponibles con el filtro actual.</span>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {editandoTipo === 'jugador' && jugadorAdminEdit && (
+            <div ref={edicionJugadorRef} className="card">
+              <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
+
+              <h5 className="sub-caja-title">Identidad y vínculo</h5>
+              <div className="grid-auto-220">
+                <div className="form-group"><label>RUT Jugador</label><input className="form-input" value={jugadorAdminEdit.rut_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
+                <div className="form-group"><label>RUT Apoderado</label><input className="form-input" value={jugadorAdminEdit.rut_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_apoderado: e.target.value }))} /></div>
+                <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={jugadorAdminEdit.correo_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
+                <div className="form-group"><label>Parentesco apoderado</label><input className="form-input" value={jugadorAdminEdit.parentesco_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, parentesco_apoderado: e.target.value }))} /></div>
+                <div className="form-group"><label>Correo Jugador</label><input className="form-input" value={jugadorAdminEdit.correo_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_jugador: e.target.value }))} /></div>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.forzar_clave_jugador)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, forzar_clave_jugador: e.target.checked }))} /> Forzar cambio de clave</label>
+                <div className="form-group"><label>Nombres</label><input className="form-input" value={jugadorAdminEdit.nombres || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={jugadorAdminEdit.apellido_paterno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={jugadorAdminEdit.apellido_materno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_nacimiento: e.target.value }))} /></div>
+                <div className="form-group"><label>Año de nacimiento</label><input type="number" className="form-input" value={jugadorAdminEdit.año_nacimiento || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, año_nacimiento: e.target.value }))} /></div>
+                <div className="form-group"><label>Colegio</label><input className="form-input" value={jugadorAdminEdit.colegio || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, colegio: e.target.value }))} /></div>
+              </div>
+
+              <h5 className="sub-caja-title mt-15">Deportivo</h5>
+              <div className="grid-auto-220">
+                <div className="form-group"><label>Rama</label><select className="form-input" value={jugadorAdminEdit.rama || 'MASCULINA'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
+                <div className="form-group"><label>Categoría</label><input className="form-input" value={jugadorAdminEdit.categoria || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, categoria: e.target.value }))} /></div>
+                <div className="form-group"><label>Posición de juego</label><input className="form-input" value={jugadorAdminEdit.posicion_de_juego || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, posicion_de_juego: e.target.value }))} /></div>
+                <div className="form-group"><label>Número camiseta</label><input type="number" className="form-input" value={jugadorAdminEdit.numero_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, numero_camiseta: e.target.value }))} /></div>
+                <div className="form-group"><label>Estatura</label><input className="form-input" value={jugadorAdminEdit.estatura || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estatura: e.target.value }))} /></div>
+                <div className="form-group"><label>Peso</label><input className="form-input" value={jugadorAdminEdit.peso || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, peso: e.target.value }))} /></div>
+                <div className="form-group"><label>Mano hábil</label><input className="form-input" value={jugadorAdminEdit.mano_habil || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mano_habil: e.target.value }))} /></div>
+                <div className="form-group"><label>Club anterior</label><input className="form-input" value={jugadorAdminEdit.club_anterior || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, club_anterior: e.target.value }))} /></div>
+                <div className="form-group"><label>Talla camiseta</label><input className="form-input" value={jugadorAdminEdit.talla_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, talla_camiseta: e.target.value }))} /></div>
+                <div className="form-group"><label>Talla short</label><input className="form-input" value={jugadorAdminEdit.talla_short || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, talla_short: e.target.value }))} /></div>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.polera_entregada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, polera_entregada: e.target.checked }))} /> Polera entregada</label>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.poleron_entregado)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, poleron_entregado: e.target.checked }))} /> Polerón entregado</label>
+                <div className="form-group"><label>Estado deportivo</label><input className="form-input" value={jugadorAdminEdit.estado_deportivo || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado_deportivo: e.target.value }))} placeholder="Activo" /></div>
+                <div className="form-group"><label>Fecha inicio baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_inicio_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_inicio_baja: e.target.value }))} /></div>
+                <div className="form-group"><label>Fecha fin baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_fin_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_fin_baja: e.target.value }))} /></div>
+                <div className="form-group"><label>XP puntos</label><input type="number" className="form-input" value={jugadorAdminEdit.xp_puntos || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, xp_puntos: e.target.value }))} /></div>
+                <div className="form-group"><label>Foto jugador (URL)</label><input className="form-input" value={jugadorAdminEdit.foto_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, foto_jugador: e.target.value }))} /></div>
+                <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'edit')} /></div>
+                <div className="form-group"><label>Estado</label><select className="form-input" value={jugadorAdminEdit.estado || 'ACTIVO'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option><option value="BAJA">Baja</option></select></div>
+              </div>
+              {subiendoFotoJugadorEdit && <p className="text-caption">Subiendo foto...</p>}
+
+              <h5 className="sub-caja-title mt-15">Administrativo</h5>
+              <div className="grid-auto-220">
+                <div className="form-group"><label>Fecha de ingreso</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
+                <div className="form-group"><label>Mes inicio cobro</label><input className="form-input" value={jugadorAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
+                <div className="form-group"><label>Beca</label><input className="form-input" value={jugadorAdminEdit.beca || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, beca: e.target.value }))} placeholder="Sin beca" /></div>
+                <div className="form-group"><label>Valor mensualidad</label><input type="number" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} /></div>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.exento_mensualidad)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, exento_mensualidad: e.target.checked }))} /> Exento de mensualidad (no paga nada)</label>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.derechos_imagen)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
+              </div>
+
+              <h5 className="sub-caja-title mt-15">Salud y contacto de emergencia</h5>
+              <div className="grid-auto-220">
+                <div className="form-group"><label>Previsión</label><input className="form-input" value={jugadorAdminEdit.prevision || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, prevision: e.target.value }))} /></div>
+                <div className="form-group"><label>Tipo de sangre</label><input className="form-input" value={jugadorAdminEdit.tipo_sangre || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, tipo_sangre: e.target.value }))} /></div>
+                <div className="form-group"><label>Alergias</label><input className="form-input" value={jugadorAdminEdit.alergias || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, alergias: e.target.value }))} /></div>
+                <div className="form-group"><label>Nombre contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.nombre_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombre_emergencia: e.target.value }))} /></div>
+                <div className="form-group"><label>Parentesco contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.parentesco_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, parentesco_emergencia: e.target.value }))} /></div>
+                <div className="form-group"><label>Teléfono contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.num_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, num_emergencia: e.target.value }))} /></div>
+              </div>
+
+              {renderPermisosCuenta({
+                cuenta: cuentaAsociadaJugadorEdit,
+                titulo: 'Permisos y accesos de la cuenta asociada',
+                descripcion: 'Si este jugador depende de una cuenta/apoderado, puedes gestionar aquí los módulos que tendrá disponibles esa cuenta.',
+                emptyMessage: 'Este jugador no tiene una cuenta asociada por correo_apoderado. Guarda o corrige esa relación para poder administrar permisos desde aquí.',
+              })}
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
+                <button className="btn-secondary" onClick={cancelarEdicion}>Cancelar</button>
+                {esSuperAdmin && (
+                  <button
+                    className="btn-secondary"
+                    style={{ width: 'auto', background: 'rgba(255,59,48,0.12)', borderColor: 'rgba(255,59,48,0.36)', color: '#b00020', fontWeight: '800' }}
+                    onClick={() => eliminarUsuarioDefinitivo({ id: `jugador-${jugadorAdminEdit.rut_jugador}`, tipo: 'jugador', raw: jugadorAdminEdit, nombre: `${jugadorAdminEdit.nombres || ''} ${jugadorAdminEdit.apellido_paterno || ''}`.trim() })}
+                    disabled={eliminandoUsuarioId === `jugador-${jugadorAdminEdit.rut_jugador}`}
+                  >
+                    {eliminandoUsuarioId === `jugador-${jugadorAdminEdit.rut_jugador}` ? 'Borrando...' : 'Borrar jugador definitivo'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="card" style={{ borderRadius: '24px' }}>
+            <h4 className="form-subtitle"><Plus size={16} /> Agregar Nuevo Registro</h4>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'cuenta' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'cuenta' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('cuenta')}>Cuenta</button>
+              <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'jugador' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'jugador' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('jugador')}>Jugador</button>
+            </div>
+
+            {tipoNuevoUsuario === 'cuenta' ? (
+              <div className="grid-auto-220">
+                <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
+                <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
+                <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
+                <div className="form-group"><label>Rol de acceso *</label><select className="form-input" value={nuevaCuenta.rol} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rol: e.target.value }))}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`rol-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                <div className="form-group"><label>Perfil principal *</label><select className="form-input" value={nuevaCuenta.perfil_principal || 'apoderado'} onChange={(e) => actualizarNuevaCuenta({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={nuevaCuenta.cargo_directiva || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-new-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={nuevaCuenta.acceso_nivel || 'estandar'} onChange={(e) => setNuevaCuenta((p) => ({ ...p, acceso_nivel: e.target.value }))}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                <div className="form-group"><label>Nombres</label><input className="form-input" value={nuevaCuenta.nombres} onChange={(e) => setNuevaCuenta((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={nuevaCuenta.apellido_paterno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevaCuenta.apellido_materno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                <div className="form-group"><label>Teléfono</label><input className="form-input" value={nuevaCuenta.telefono} onChange={(e) => setNuevaCuenta((p) => ({ ...p, telefono: e.target.value }))} /></div>
+                <div className="form-group"><label>Dirección</label><input className="form-input" value={nuevaCuenta.direccion} onChange={(e) => setNuevaCuenta((p) => ({ ...p, direccion: e.target.value }))} /></div>
+                <div className="form-group"><label>Comuna</label><input className="form-input" value={nuevaCuenta.comuna} onChange={(e) => setNuevaCuenta((p) => ({ ...p, comuna: e.target.value }))} /></div>
+                <div className="form-group"><label>Valor UTM referencia (override opcional, se completa solo)</label><input type="number" min="1" className="form-input" value={nuevaCuenta.utm_valor_referencia || utmVigente?.valor || 68000} onChange={(e) => actualizarNuevaCuenta({ utm_valor_referencia: e.target.value })} /></div>
+                <div className="form-group"><label>Mensualidad base automática (0,3 UTM, se recalcula sola cada mes)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(nuevaCuenta) ? (Number(nuevaCuenta.monto_mensual_base) > 0 ? nuevaCuenta.monto_mensual_base : calcularMensualidadSocio(nuevaCuenta.utm_valor_referencia || utmVigente?.valor)) : 0} disabled /></div>
+                <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={nuevaCuenta.monto_mensual_override || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
+                <div className="form-group"><label>Fecha corte UTM (mes anterior)</label><input type="date" className="form-input" value={nuevaCuenta.fecha_corte_utm || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, fecha_corte_utm: e.target.value }))} /></div>
+                <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={nuevaCuenta.condiciones_pago || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, condiciones_pago: e.target.value }))}></textarea></div>
+              </div>
+            ) : (
+              <div className="grid-auto-220">
+                <div className="form-group"><label>RUT Jugador *</label><input className="form-input" value={nuevoJugador.rut_jugador} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
+                <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={nuevoJugador.correo_apoderado} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
+                <div className="form-group"><label>Nombres *</label><input className="form-input" value={nuevoJugador.nombres} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Paterno *</label><input className="form-input" value={nuevoJugador.apellido_paterno} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevoJugador.apellido_materno} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                <div className="form-group"><label>Rama *</label><select className="form-input" value={nuevoJugador.rama} onChange={(e) => setNuevoJugador((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
+                <div className="form-group"><label>Categoría *</label><input className="form-input" value={nuevoJugador.categoria} onChange={(e) => setNuevoJugador((p) => ({ ...p, categoria: e.target.value }))} /></div>
+                <div className="form-group"><label>Logo / imagen</label><input className="form-input" value={nuevoJugador.foto_jugador} onChange={(e) => setNuevoJugador((p) => ({ ...p, foto_jugador: e.target.value }))} placeholder="URL interna cargada desde galería" /></div>
+                <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'nuevo')} /></div>
+                <div className="form-group"><label>Estado</label><select className="form-input" value={nuevoJugador.estado} onChange={(e) => setNuevoJugador((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option></select></div>
+              </div>
+            )}
+
+            {subiendoFotoJugadorNuevo && <p className="text-caption">Subiendo foto...</p>}
+
+            {tipoNuevoUsuario === 'cuenta' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(nuevaCuenta))} disabled />
+                  Es socio (automático por perfil)
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(nuevaCuenta.socio_admin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, socio_admin: e.target.checked }))} />
+                  Admin entre socios
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(nuevaCuenta.aprobado_superadmin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
+                  Aprobado por SuperAdmin
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(nuevaCuenta.requiere_foto_perfil)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
+                  Solicitar foto de perfil en onboarding
+                </label>
+              </div>
+            )}
+
+            {tipoNuevoUsuario === 'cuenta' && (
+              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> Permisos iniciales</h4>
+                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '10px' }}>
+                  La cuenta nueva tomará los permisos base según el rol de acceso seleccionado. Después de guardar, podrás ajustar módulos específicos en esta misma vista unificada.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {MODULOS_ACCESO.filter((modulo) => modulo.id !== 'mesa_publica' && obtenerPermisosBasePorRol(nuevaCuenta.rol || 'apoderado')[modulo.id]).map((modulo) => (
+                    <span key={`nuevo-perm-${modulo.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 8px', borderRadius: '999px', background: 'rgba(0,122,255,0.08)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800' }}>
+                      <ShieldCheck size={11} /> {modulo.etiqueta}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button className="btn-electric" onClick={guardarNuevoUsuario} disabled={guardandoUsuario}>
+              {guardandoUsuario ? 'Guardando...' : 'Guardar nuevo usuario'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {vistaAdmin === 'activos' && (
+        <div className="fade-in">
+          <h3 className="section-title">Activos Visuales</h3>
+          <div className="card" style={{ borderLeft: '4px solid var(--verde-victoria)', marginBottom: '15px', borderRadius: '24px' }}>
+            <h4 className="form-subtitle"><Image size={16} /> Subida de logos y activos visuales</h4>
+            <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+              Sube logos de clubes, torneos o campeonatos. El archivo se guardará en /public/logos con nombre normalizado para reutilizarlo por nombre o slug.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', alignItems: 'end' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Nombre del activo *</label>
+                <input className="form-input" value={logoAssetForm.nombre} onChange={(e) => setLogoAssetForm((p) => ({ ...p, nombre: e.target.value }))} placeholder="Club, torneo o campeonato" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Tipo</label>
+                <select className="form-input" value={logoAssetForm.tipo} onChange={(e) => setLogoAssetForm((p) => ({ ...p, tipo: e.target.value }))}>
+                  <option value="club">Club</option>
+                  <option value="torneo">Torneo</option>
+                  <option value="campeonato">Campeonato</option>
+                  <option value="competencia">Competencia</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Archivo de imagen *</label>
+                <input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => setLogoAssetForm((p) => ({ ...p, archivo: e.target.files?.[0] || null }))} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
+              <button className="btn-electric" onClick={subirLogoAsset} disabled={subiendoLogoAsset}>{subiendoLogoAsset ? 'Subiendo...' : 'Subir logo'}</button>
+              {logoAssetUrl && <LogoAvatar nombre={logoAssetForm.nombre || 'Logo guardado'} logoUrl={logoAssetUrl} size={44} borderRadius="14px" />}
+              {logoAssetUrl && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{logoAssetUrl}</span>}
+            </div>
+            {(subiendoLogoAsset || progresoLogoAsset > 0) && (
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ height: '10px', borderRadius: '999px', background: 'rgba(15,23,42,0.08)', overflow: 'hidden', border: '1px solid rgba(0,122,255,0.15)' }}>
+                  <div
+                    style={{
+                      width: `${progresoLogoAsset}%`,
+                      height: '100%',
+                      background: 'linear-gradient(90deg, #007AFF, #34C759)',
+                      transition: 'width 0.2s ease',
+                    }}
+                  />
+                </div>
+                <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)' }}>
+                  {subiendoLogoAsset ? `Subiendo logo... ${progresoLogoAsset}%` : 'Logo subido correctamente'}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="card" style={{ borderRadius: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+              <h4 className="form-subtitle" style={{ margin: 0 }}><Image size={16} /> Logos disponibles</h4>
+              <button className="btn-secondary" onClick={cargarLogosDisponiblesActivos} disabled={cargandoLogosDisponibles}>
+                <RefreshCcw size={14} /> {cargandoLogosDisponibles ? 'Actualizando...' : 'Actualizar listado'}
+              </button>
+            </div>
+            <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+              Revisa aquí todos los logos detectados para confirmar si falta alguno por subir.
+            </p>
+
+            {errorLogosDisponibles && (
+              <div style={{ fontSize: '12px', color: '#b91c1c', fontWeight: '700', marginBottom: '10px' }}>
+                No se pudo cargar el listado: {errorLogosDisponibles}
+              </div>
+            )}
+
+            {!errorLogosDisponibles && cargandoLogosDisponibles && (
+              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
+                Cargando logos disponibles...
+              </p>
+            )}
+
+            {!errorLogosDisponibles && !cargandoLogosDisponibles && logosDisponiblesActivos.length === 0 && (
+              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
+                Aún no se detectan logos cargados.
+              </p>
+            )}
+
+            {!errorLogosDisponibles && logosDisponiblesActivos.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
+                {logosDisponiblesActivos.map((logo) => (
+                  <div key={logo.filename || logo.url} style={{ border: '1px solid rgba(15,23,42,0.08)', borderRadius: '14px', padding: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <LogoAvatar nombre={logo.nombre || logo.filename || 'Logo'} logoUrl={logo.url || ''} size={36} borderRadius="10px" />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-principal)', wordBreak: 'break-word' }}>
+                        {logo.nombre || logo.filename || 'Sin nombre'}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', wordBreak: 'break-word' }}>
+                        {logo.filename || logo.url || ''}
+                      </div>
+                    </div>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => eliminarLogoAsset(logo)}
+                      disabled={eliminandoLogoFilename === logo.filename}
+                      style={{ marginLeft: 'auto', borderColor: 'rgba(239,68,68,0.35)', color: '#b91c1c' }}
+                    >
+                      <XSquare size={14} /> {eliminandoLogoFilename === logo.filename ? 'Borrando...' : 'Borrar'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {vistaAdmin === 'pagos' && (
         <div className="fade-in">
           <div className="card mb-15" style={{ borderRadius: '18px', padding: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
@@ -2669,650 +3392,7 @@ function SuperAdminPanel({
               </div>
             );
           })}
-        </div>
-      )}
 
-      {vistaAdmin === 'usuarios' && (
-        <div className="fade-in">
-          <h3 className="section-title">Gestión de Usuarios y Cuentas</h3>
-          <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
-            Deportistas (ficha deportiva) y Cuentas (login de apoderados, socios, staff y admins) viven en tablas distintas — separadas acá para no mezclar sus filtros y datos.
-          </p>
-
-          <div className="segment-control" style={{ gap: '6px', marginBottom: '15px' }}>
-            <button type="button" className={`segment-btn ${vistaUsuarios === 'deportistas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('deportistas')}>
-              <Users size={14} /> Deportistas ({jugadoresAdmin.length})
-            </button>
-            <button type="button" className={`segment-btn ${vistaUsuarios === 'cuentas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('cuentas')}>
-              <User size={14} /> Cuentas ({cuentasAdmin.length})
-            </button>
-          </div>
-
-          {vistaUsuarios === 'deportistas' ? (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <div className="admin-stat-pill verde"><span>Completos</span><h2>{jugadoresAdmin.length - jugadoresIncompletos.length}</h2></div>
-                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletos</span><h2 style={{ color: '#b36200' }}>{jugadoresIncompletos.length}</h2></div>
-                <div className="admin-stat-pill rojo"><span>Sin apoderado</span><h2>{jugadoresSinApoderado.length}</h2></div>
-              </div>
-
-              <div className="card">
-                <div className="grid-auto-220">
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Buscar</label>
-                    <div style={{ position: 'relative' }}>
-                      <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-                      <input
-                        className="form-input"
-                        style={{ paddingLeft: '32px' }}
-                        placeholder="Nombre, RUT, rama o categoría"
-                        value={filtroUsuariosTexto}
-                        onChange={(e) => setFiltroUsuariosTexto(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Rama</label>
-                    <select className="form-input" value={filtroRamaJugadores} onChange={(e) => setFiltroRamaJugadores(e.target.value)}>
-                      <option value="todas">Todas</option>
-                      <option value="masculina">Masculina</option>
-                      <option value="femenina">Femenina</option>
-                      <option value="mixta">Mixta</option>
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Categoría</label>
-                    <select className="form-input" value={filtroCategoriaJugadores} onChange={(e) => setFiltroCategoriaJugadores(e.target.value)}>
-                      <option value="todas">Todas</option>
-                      {categoriasUnicas.map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="filter-chips" style={{ marginTop: '10px' }}>
-                  <button className={`filter-chip ${filtroApoderadoJugadores === 'todos' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('todos')}>Todos ({jugadoresAdmin.length})</button>
-                  <button className={`filter-chip ${filtroApoderadoJugadores === 'sin' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('sin')}>Sin apoderado ({jugadoresSinApoderado.length})</button>
-                  <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdmin.length - jugadoresSinApoderado.length})</button>
-                </div>
-
-                <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
-                  {deportistasFiltrados.length === 0 && (
-                    <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay deportistas con los filtros actuales.</p>
-                  )}
-                  {deportistasFiltrados.map(renderTarjetaUsuario)}
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <div className="admin-stat-pill verde"><span>Completas</span><h2>{cuentasAdmin.length - cuentasIncompletas.length}</h2></div>
-                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#b36200' }}>{cuentasIncompletas.length}</h2></div>
-                <div className="admin-stat-pill azul"><span>Total</span><h2>{cuentasAdmin.length}</h2></div>
-              </div>
-
-              <div className="card">
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Buscar</label>
-                    <div style={{ position: 'relative' }}>
-                      <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-                      <input
-                        className="form-input"
-                        style={{ paddingLeft: '32px' }}
-                        placeholder="Nombre, correo, RUT o rol"
-                        value={filtroCuentasTexto}
-                        onChange={(e) => setFiltroCuentasTexto(e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Tipo de perfil</label>
-                    <select className="form-input" value={filtroTipoPerfil} onChange={(e) => setFiltroTipoPerfil(e.target.value)}>
-                      <option value="todos">Todos</option>
-                      <option value="apoderado">Apoderado</option>
-                      <option value="socio">Socio</option>
-                      <option value="socio_apoderado">Socio / Apoderado</option>
-                      <option value="directiva">Directiva</option>
-                      <option value="staff">Staff</option>
-                      <option value="admin">Admin</option>
-                      <option value="super_admin">Super Admin</option>
-                      <option value="jugador">Deportista con login propio</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
-                  {cuentasUsuariosFiltradas.length === 0 && (
-                    <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay cuentas con los filtros actuales.</p>
-                  )}
-                  {cuentasUsuariosFiltradas.map(renderTarjetaUsuario)}
-                </div>
-              </div>
-            </>
-          )}
-
-          {editandoTipo === 'cuenta' && cuentaAdminEdit && (
-            <div ref={edicionCuentaRef} className="card" style={{ borderRadius: '24px' }}>
-              <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
-
-              {(esAdmin || esSuperAdmin) && (
-                <div style={{ marginBottom: '16px', padding: '14px', borderRadius: '16px', background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.18)' }}>
-                  <label style={{ display: 'block', fontWeight: '800', marginBottom: '8px' }}>¿El usuario olvidó su contraseña?</label>
-                  {nuevaClaveCuenta.trim() ? (
-                    <>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <div style={{ position: 'relative', flex: 1 }}>
-                          <input
-                            type={mostrarNuevaClaveCuenta ? 'text' : 'password'}
-                            className="form-input"
-                            style={{ paddingRight: '40px' }}
-                            value={nuevaClaveCuenta}
-                            onChange={(e) => setNuevaClaveCuenta(e.target.value)}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setMostrarNuevaClaveCuenta((v) => !v)}
-                            aria-label={mostrarNuevaClaveCuenta ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', color: 'var(--gris-secundario)' }}
-                          >
-                            {mostrarNuevaClaveCuenta ? <EyeOff size={16} strokeWidth={1.5} /> : <Eye size={16} strokeWidth={1.5} />}
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          style={{ width: 'auto', whiteSpace: 'nowrap' }}
-                          onClick={() => setNuevaClaveCuenta('')}
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                      <p style={{ margin: '8px 0 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
-                        Se guardará al hacer clic en "Guardar cambios" (más abajo). Comunícasela al usuario — no queda visible después.
-                      </p>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn-electric"
-                      style={{ width: 'auto' }}
-                      onClick={() => {
-                        const clave = generarClaveAleatoria();
-                        setNuevaClaveCuenta(clave);
-                        setMostrarNuevaClaveCuenta(true);
-                        setCuentaAdminEdit((p) => ({ ...p, forzar_clave: true }));
-                      }}
-                    >
-                      <Lock size={15} /> Restablecer contraseña
-                    </button>
-                  )}
-                </div>
-              )}
-
-              <div className="grid-auto-220">
-                <div className="form-group"><label>Correo</label><input className="form-input" value={cuentaAdminEdit.correo || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, correo: e.target.value }))} /></div>
-                <div className="form-group"><label>RUT</label><input className="form-input" value={cuentaAdminEdit.rut || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rut: e.target.value }))} /></div>
-                <div className="form-group"><label>Nombres</label><input className="form-input" value={cuentaAdminEdit.nombres || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={cuentaAdminEdit.apellido_paterno || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={cuentaAdminEdit.apellido_materno || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
-                <div className="form-group"><label>Prefijo teléfono</label><input className="form-input" value={cuentaAdminEdit.prefijo_tel || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, prefijo_tel: e.target.value }))} placeholder="+56" /></div>
-                <div className="form-group"><label>Teléfono</label><input className="form-input" value={cuentaAdminEdit.telefono || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, telefono: e.target.value }))} /></div>
-                <div className="form-group"><label>Dirección</label><input className="form-input" value={cuentaAdminEdit.direccion || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, direccion: e.target.value }))} /></div>
-                <div className="form-group"><label>Comuna</label><input className="form-input" value={cuentaAdminEdit.comuna || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, comuna: e.target.value }))} /></div>
-                <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(cuentaAdminEdit.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, fecha_nacimiento: e.target.value }))} /></div>
-                <div className="form-group"><label>Estado civil</label><input className="form-input" value={cuentaAdminEdit.estado_civil || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado_civil: e.target.value }))} /></div>
-                <div className="form-group"><label>Profesión / oficio</label><input className="form-input" value={cuentaAdminEdit.profesion_oficio || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, profesion_oficio: e.target.value }))} /></div>
-                <div className="form-group"><label>Nombre segundo contacto</label><input className="form-input" value={cuentaAdminEdit.nombre_segundo_contacto || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, nombre_segundo_contacto: e.target.value }))} /></div>
-                <div className="form-group"><label>Parentesco segundo contacto</label><input className="form-input" value={cuentaAdminEdit.parentesco_segundo_contacto || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, parentesco_segundo_contacto: e.target.value }))} /></div>
-                <div className="form-group"><label>Teléfono segundo contacto</label><input className="form-input" value={cuentaAdminEdit.num_segundo_contacto || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, num_segundo_contacto: e.target.value }))} /></div>
-                <div className="form-group"><label>Fecha ingreso socio</label><input type="date" className="form-input" value={String(cuentaAdminEdit.fecha_ingreso_socio || '').slice(0, 10)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, fecha_ingreso_socio: e.target.value }))} /></div>
-                <div className="form-group"><label>Mes inicio cobro (cuota socio)</label><input className="form-input" placeholder="ej. marzo" value={cuentaAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
-                <div className="form-group"><label>Día de pago acordado</label><input type="number" min="1" max="31" className="form-input" value={cuentaAdminEdit.dia_pago_acordado || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, dia_pago_acordado: e.target.value }))} /></div>
-                <div className="form-group"><label>Foto de perfil (URL)</label><input className="form-input" value={cuentaAdminEdit.foto_perfil_url || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, foto_perfil_url: e.target.value }))} /></div>
-                <div className="form-group"><label>Rol de acceso</label><select className="form-input" value={cuentaAdminEdit.rol || 'apoderado'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rol: e.target.value }))}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`rol-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Perfil principal</label><select className="form-input" value={cuentaAdminEdit.perfil_principal || 'apoderado'} onChange={(e) => actualizarCuentaAdminEdit({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={cuentaAdminEdit.acceso_nivel || 'estandar'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, acceso_nivel: e.target.value }))}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Estado</label><select className="form-input" value={cuentaAdminEdit.estado || 'activo'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="activo">Activo</option><option value="inactivo">Inactivo</option></select></div>
-                <div className="form-group"><label>Valor UTM referencia</label><input type="number" min="1" className="form-input" value={cuentaAdminEdit.utm_valor_referencia || 68000} onChange={(e) => actualizarCuentaAdminEdit({ utm_valor_referencia: e.target.value })} /></div>
-                <div className="form-group"><label>Mensualidad base automática (0,3 UTM)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(cuentaAdminEdit) ? (cuentaAdminEdit.monto_mensual_base || 0) : 0} disabled /></div>
-                <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={cuentaAdminEdit.monto_mensual_override || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
-                <div className="form-group"><label>Fecha corte UTM (mes anterior)</label><input type="date" className="form-input" value={cuentaAdminEdit.fecha_corte_utm || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, fecha_corte_utm: e.target.value }))} /></div>
-                <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={cuentaAdminEdit.condiciones_pago || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, condiciones_pago: e.target.value }))}></textarea></div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '10px' }}>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(cuentaAdminEdit))} disabled />
-                  Es socio (automático por perfil)
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.socio_admin)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, socio_admin: e.target.checked }))} />
-                  Admin entre socios
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.aprobado_superadmin)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
-                  Aprobado por SuperAdmin
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.requiere_foto_perfil)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
-                  Solicitar foto de perfil en onboarding
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.forzar_clave)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, forzar_clave: e.target.checked }))} />
-                  Forzar cambio de clave
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(cuentaAdminEdit.autorizacion_imagen)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, autorizacion_imagen: e.target.checked }))} />
-                  Autoriza derechos de imagen
-                </label>
-              </div>
-
-              {renderPermisosCuenta({
-                cuenta: cuentaAdminEdit,
-                titulo: 'Permisos y accesos de la cuenta',
-              })}
-
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
-                <button className="btn-secondary" onClick={cancelarEdicion}>Cancelar</button>
-                {esSuperAdmin && (
-                  <button
-                    className="btn-secondary"
-                    style={{ width: 'auto', background: 'rgba(255,59,48,0.12)', borderColor: 'rgba(255,59,48,0.36)', color: '#b00020', fontWeight: '800' }}
-                    onClick={() => eliminarUsuarioDefinitivo({ id: `cuenta-${cuentaAdminEdit.id}`, tipo: 'cuenta', raw: cuentaAdminEdit, nombre: `${cuentaAdminEdit.nombres || ''} ${cuentaAdminEdit.apellido_paterno || ''}`.trim() })}
-                    disabled={eliminandoUsuarioId === `cuenta-${cuentaAdminEdit.id}`}
-                  >
-                    {eliminandoUsuarioId === `cuenta-${cuentaAdminEdit.id}` ? 'Borrando...' : 'Borrar cuenta definitivo'}
-                  </button>
-                )}
-              </div>
-
-              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
-                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><Users size={15} /> Pupilos del apoderado</h4>
-                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0 }}>
-                  Asigna o corrige manualmente los hijos/pupilos para esta cuenta usando el correo del apoderado.
-                </p>
-
-                {!String(cuentaPupilosActiva?.correo || '').trim() && (
-                  <div style={{ fontSize: '12px', color: '#b36200', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '10px', padding: '8px 10px', marginBottom: '10px' }}>
-                    Guarda un correo válido en la cuenta antes de asignar pupilos.
-                  </div>
-                )}
-
-                <div style={{ marginBottom: '10px' }}>
-                  <strong style={{ fontSize: '12px' }}>Pupilos actualmente asociados ({pupilosAsignadosCuenta.length})</strong>
-                  <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {pupilosAsignadosCuenta.map((j) => (
-                      <div key={`pupilo-asig-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'rgba(0,122,255,0.07)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: '10px', padding: '8px' }}>
-                        <div>
-                          <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.categoria || 'Sin categoría'}</div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                          <select
-                            className="form-input"
-                            style={{ width: '220px', padding: '7px 9px' }}
-                            value={destinoApoderadoPorRut[j.rut_jugador] || ''}
-                            onChange={(e) => setDestinoApoderadoPorRut((prev) => ({ ...prev, [j.rut_jugador]: e.target.value }))}
-                            disabled={procesandoPupiloRut === String(j.rut_jugador || '')}
-                          >
-                            <option value="">Mover a apoderado...</option>
-                            {cuentasApoderadoDisponibles
-                              .filter((c) => String(c.correo || '').trim().toLowerCase() !== String(cuentaPupilosActiva?.correo || '').trim().toLowerCase())
-                              .map((c) => (
-                                <option key={`dest-${j.rut_jugador}-${c.correo}`} value={c.correo}>{c.nombre} · {c.correo}</option>
-                              ))}
-                          </select>
-                          <button
-                            className="btn-pill"
-                            style={{ width: 'auto', padding: '7px 10px' }}
-                            onClick={() => moverPupiloAOtroApoderado(j, destinoApoderadoPorRut[j.rut_jugador])}
-                            disabled={procesandoPupiloRut === String(j.rut_jugador || '') || !String(destinoApoderadoPorRut[j.rut_jugador] || '').trim()}
-                          >
-                            {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Moviendo...' : 'Mover'}
-                          </button>
-                          <button
-                            className="btn-secondary"
-                            style={{ width: 'auto', padding: '7px 10px' }}
-                            onClick={() => quitarPupiloDeCuenta(j)}
-                            disabled={procesandoPupiloRut === String(j.rut_jugador || '')}
-                          >
-                            {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Quitando...' : 'Quitar'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {pupilosAsignadosCuenta.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin pupilos asociados.</span>}
-                  </div>
-                </div>
-
-                <div>
-                  <strong style={{ fontSize: '12px' }}>Buscar y asignar pupilo</strong>
-                  <input
-                    className="form-input"
-                    placeholder="Buscar por nombre, RUT, rama o categoría"
-                    value={filtroPupiloManual}
-                    onChange={(e) => setFiltroPupiloManual(e.target.value)}
-                    style={{ marginTop: '6px', marginBottom: '8px' }}
-                  />
-
-                  <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {jugadoresDisponiblesAsignacion.map((j) => (
-                      <div key={`pupilo-disp-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed rgba(0,0,0,0.15)', borderRadius: '10px', padding: '8px' }}>
-                        <div>
-                          <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.rama || 'Sin rama'} · {j.categoria || 'Sin categoría'}</div>
-                        </div>
-                        <button
-                          className="btn-secondary"
-                          style={{ width: 'auto', padding: '7px 10px' }}
-                          onClick={() => asignarPupiloACuenta(j)}
-                          disabled={procesandoPupiloRut === String(j.rut_jugador || '') || !String(cuentaPupilosActiva?.correo || '').trim()}
-                        >
-                          {procesandoPupiloRut === String(j.rut_jugador || '') ? 'Asignando...' : 'Asignar'}
-                        </button>
-                      </div>
-                    ))}
-                    {jugadoresDisponiblesAsignacion.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>No hay jugadores disponibles con el filtro actual.</span>}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {editandoTipo === 'jugador' && jugadorAdminEdit && (
-            <div ref={edicionJugadorRef} className="card">
-              <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
-
-              <h5 className="sub-caja-title">Identidad y vínculo</h5>
-              <div className="grid-auto-220">
-                <div className="form-group"><label>RUT Jugador</label><input className="form-input" value={jugadorAdminEdit.rut_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
-                <div className="form-group"><label>RUT Apoderado</label><input className="form-input" value={jugadorAdminEdit.rut_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_apoderado: e.target.value }))} /></div>
-                <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={jugadorAdminEdit.correo_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
-                <div className="form-group"><label>Parentesco apoderado</label><input className="form-input" value={jugadorAdminEdit.parentesco_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, parentesco_apoderado: e.target.value }))} /></div>
-                <div className="form-group"><label>Correo Jugador</label><input className="form-input" value={jugadorAdminEdit.correo_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_jugador: e.target.value }))} /></div>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.forzar_clave_jugador)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, forzar_clave_jugador: e.target.checked }))} /> Forzar cambio de clave</label>
-                <div className="form-group"><label>Nombres</label><input className="form-input" value={jugadorAdminEdit.nombres || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={jugadorAdminEdit.apellido_paterno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={jugadorAdminEdit.apellido_materno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
-                <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_nacimiento: e.target.value }))} /></div>
-                <div className="form-group"><label>Año de nacimiento</label><input type="number" className="form-input" value={jugadorAdminEdit.año_nacimiento || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, año_nacimiento: e.target.value }))} /></div>
-                <div className="form-group"><label>Colegio</label><input className="form-input" value={jugadorAdminEdit.colegio || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, colegio: e.target.value }))} /></div>
-              </div>
-
-              <h5 className="sub-caja-title mt-15">Deportivo</h5>
-              <div className="grid-auto-220">
-                <div className="form-group"><label>Rama</label><select className="form-input" value={jugadorAdminEdit.rama || 'MASCULINA'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
-                <div className="form-group"><label>Categoría</label><input className="form-input" value={jugadorAdminEdit.categoria || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, categoria: e.target.value }))} /></div>
-                <div className="form-group"><label>Posición de juego</label><input className="form-input" value={jugadorAdminEdit.posicion_de_juego || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, posicion_de_juego: e.target.value }))} /></div>
-                <div className="form-group"><label>Número camiseta</label><input type="number" className="form-input" value={jugadorAdminEdit.numero_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, numero_camiseta: e.target.value }))} /></div>
-                <div className="form-group"><label>Estatura</label><input className="form-input" value={jugadorAdminEdit.estatura || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estatura: e.target.value }))} /></div>
-                <div className="form-group"><label>Peso</label><input className="form-input" value={jugadorAdminEdit.peso || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, peso: e.target.value }))} /></div>
-                <div className="form-group"><label>Mano hábil</label><input className="form-input" value={jugadorAdminEdit.mano_habil || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mano_habil: e.target.value }))} /></div>
-                <div className="form-group"><label>Club anterior</label><input className="form-input" value={jugadorAdminEdit.club_anterior || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, club_anterior: e.target.value }))} /></div>
-                <div className="form-group"><label>Talla camiseta</label><input className="form-input" value={jugadorAdminEdit.talla_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, talla_camiseta: e.target.value }))} /></div>
-                <div className="form-group"><label>Talla short</label><input className="form-input" value={jugadorAdminEdit.talla_short || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, talla_short: e.target.value }))} /></div>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.polera_entregada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, polera_entregada: e.target.checked }))} /> Polera entregada</label>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.poleron_entregado)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, poleron_entregado: e.target.checked }))} /> Polerón entregado</label>
-                <div className="form-group"><label>Estado deportivo</label><input className="form-input" value={jugadorAdminEdit.estado_deportivo || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado_deportivo: e.target.value }))} placeholder="Activo" /></div>
-                <div className="form-group"><label>Fecha inicio baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_inicio_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_inicio_baja: e.target.value }))} /></div>
-                <div className="form-group"><label>Fecha fin baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_fin_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_fin_baja: e.target.value }))} /></div>
-                <div className="form-group"><label>XP puntos</label><input type="number" className="form-input" value={jugadorAdminEdit.xp_puntos || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, xp_puntos: e.target.value }))} /></div>
-                <div className="form-group"><label>Foto jugador (URL)</label><input className="form-input" value={jugadorAdminEdit.foto_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, foto_jugador: e.target.value }))} /></div>
-                <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'edit')} /></div>
-                <div className="form-group"><label>Estado</label><select className="form-input" value={jugadorAdminEdit.estado || 'ACTIVO'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option><option value="BAJA">Baja</option></select></div>
-              </div>
-              {subiendoFotoJugadorEdit && <p className="text-caption">Subiendo foto...</p>}
-
-              <h5 className="sub-caja-title mt-15">Administrativo</h5>
-              <div className="grid-auto-220">
-                <div className="form-group"><label>Fecha de ingreso</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
-                <div className="form-group"><label>Mes inicio cobro</label><input className="form-input" value={jugadorAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
-                <div className="form-group"><label>Beca</label><input className="form-input" value={jugadorAdminEdit.beca || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, beca: e.target.value }))} placeholder="Sin beca" /></div>
-                <div className="form-group"><label>Valor mensualidad</label><input type="number" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} /></div>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.exento_mensualidad)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, exento_mensualidad: e.target.checked }))} /> Exento de mensualidad (no paga nada)</label>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.derechos_imagen)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
-              </div>
-
-              <h5 className="sub-caja-title mt-15">Salud y contacto de emergencia</h5>
-              <div className="grid-auto-220">
-                <div className="form-group"><label>Previsión</label><input className="form-input" value={jugadorAdminEdit.prevision || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, prevision: e.target.value }))} /></div>
-                <div className="form-group"><label>Tipo de sangre</label><input className="form-input" value={jugadorAdminEdit.tipo_sangre || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, tipo_sangre: e.target.value }))} /></div>
-                <div className="form-group"><label>Alergias</label><input className="form-input" value={jugadorAdminEdit.alergias || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, alergias: e.target.value }))} /></div>
-                <div className="form-group"><label>Nombre contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.nombre_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombre_emergencia: e.target.value }))} /></div>
-                <div className="form-group"><label>Parentesco contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.parentesco_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, parentesco_emergencia: e.target.value }))} /></div>
-                <div className="form-group"><label>Teléfono contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.num_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, num_emergencia: e.target.value }))} /></div>
-              </div>
-
-              {renderPermisosCuenta({
-                cuenta: cuentaAsociadaJugadorEdit,
-                titulo: 'Permisos y accesos de la cuenta asociada',
-                descripcion: 'Si este jugador depende de una cuenta/apoderado, puedes gestionar aquí los módulos que tendrá disponibles esa cuenta.',
-                emptyMessage: 'Este jugador no tiene una cuenta asociada por correo_apoderado. Guarda o corrige esa relación para poder administrar permisos desde aquí.',
-              })}
-
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
-                <button className="btn-secondary" onClick={cancelarEdicion}>Cancelar</button>
-                {esSuperAdmin && (
-                  <button
-                    className="btn-secondary"
-                    style={{ width: 'auto', background: 'rgba(255,59,48,0.12)', borderColor: 'rgba(255,59,48,0.36)', color: '#b00020', fontWeight: '800' }}
-                    onClick={() => eliminarUsuarioDefinitivo({ id: `jugador-${jugadorAdminEdit.rut_jugador}`, tipo: 'jugador', raw: jugadorAdminEdit, nombre: `${jugadorAdminEdit.nombres || ''} ${jugadorAdminEdit.apellido_paterno || ''}`.trim() })}
-                    disabled={eliminandoUsuarioId === `jugador-${jugadorAdminEdit.rut_jugador}`}
-                  >
-                    {eliminandoUsuarioId === `jugador-${jugadorAdminEdit.rut_jugador}` ? 'Borrando...' : 'Borrar jugador definitivo'}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="card" style={{ borderRadius: '24px' }}>
-            <h4 className="form-subtitle"><Plus size={16} /> Agregar Nuevo Registro</h4>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'cuenta' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'cuenta' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('cuenta')}>Cuenta</button>
-              <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'jugador' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'jugador' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('jugador')}>Jugador</button>
-            </div>
-
-            {tipoNuevoUsuario === 'cuenta' ? (
-              <div className="grid-auto-220">
-                <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
-                <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
-                <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
-                <div className="form-group"><label>Rol de acceso *</label><select className="form-input" value={nuevaCuenta.rol} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rol: e.target.value }))}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`rol-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Perfil principal *</label><select className="form-input" value={nuevaCuenta.perfil_principal || 'apoderado'} onChange={(e) => actualizarNuevaCuenta({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={nuevaCuenta.cargo_directiva || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-new-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={nuevaCuenta.acceso_nivel || 'estandar'} onChange={(e) => setNuevaCuenta((p) => ({ ...p, acceso_nivel: e.target.value }))}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Nombres</label><input className="form-input" value={nuevaCuenta.nombres} onChange={(e) => setNuevaCuenta((p) => ({ ...p, nombres: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={nuevaCuenta.apellido_paterno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevaCuenta.apellido_materno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
-                <div className="form-group"><label>Teléfono</label><input className="form-input" value={nuevaCuenta.telefono} onChange={(e) => setNuevaCuenta((p) => ({ ...p, telefono: e.target.value }))} /></div>
-                <div className="form-group"><label>Dirección</label><input className="form-input" value={nuevaCuenta.direccion} onChange={(e) => setNuevaCuenta((p) => ({ ...p, direccion: e.target.value }))} /></div>
-                <div className="form-group"><label>Comuna</label><input className="form-input" value={nuevaCuenta.comuna} onChange={(e) => setNuevaCuenta((p) => ({ ...p, comuna: e.target.value }))} /></div>
-                <div className="form-group"><label>Valor UTM referencia</label><input type="number" min="1" className="form-input" value={nuevaCuenta.utm_valor_referencia || 68000} onChange={(e) => actualizarNuevaCuenta({ utm_valor_referencia: e.target.value })} /></div>
-                <div className="form-group"><label>Mensualidad base automática (0,3 UTM)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(nuevaCuenta) ? (nuevaCuenta.monto_mensual_base || 0) : 0} disabled /></div>
-                <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={nuevaCuenta.monto_mensual_override || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
-                <div className="form-group"><label>Fecha corte UTM (mes anterior)</label><input type="date" className="form-input" value={nuevaCuenta.fecha_corte_utm || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, fecha_corte_utm: e.target.value }))} /></div>
-                <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={nuevaCuenta.condiciones_pago || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, condiciones_pago: e.target.value }))}></textarea></div>
-              </div>
-            ) : (
-              <div className="grid-auto-220">
-                <div className="form-group"><label>RUT Jugador *</label><input className="form-input" value={nuevoJugador.rut_jugador} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
-                <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={nuevoJugador.correo_apoderado} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
-                <div className="form-group"><label>Nombres *</label><input className="form-input" value={nuevoJugador.nombres} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombres: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Paterno *</label><input className="form-input" value={nuevoJugador.apellido_paterno} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevoJugador.apellido_materno} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
-                <div className="form-group"><label>Rama *</label><select className="form-input" value={nuevoJugador.rama} onChange={(e) => setNuevoJugador((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
-                <div className="form-group"><label>Categoría *</label><input className="form-input" value={nuevoJugador.categoria} onChange={(e) => setNuevoJugador((p) => ({ ...p, categoria: e.target.value }))} /></div>
-                <div className="form-group"><label>Logo / imagen</label><input className="form-input" value={nuevoJugador.foto_jugador} onChange={(e) => setNuevoJugador((p) => ({ ...p, foto_jugador: e.target.value }))} placeholder="URL interna cargada desde galería" /></div>
-                <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'nuevo')} /></div>
-                <div className="form-group"><label>Estado</label><select className="form-input" value={nuevoJugador.estado} onChange={(e) => setNuevoJugador((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option></select></div>
-              </div>
-            )}
-
-            {subiendoFotoJugadorNuevo && <p className="text-caption">Subiendo foto...</p>}
-
-            {tipoNuevoUsuario === 'cuenta' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(nuevaCuenta))} disabled />
-                  Es socio (automático por perfil)
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(nuevaCuenta.socio_admin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, socio_admin: e.target.checked }))} />
-                  Admin entre socios
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(nuevaCuenta.aprobado_superadmin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
-                  Aprobado por SuperAdmin
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(nuevaCuenta.requiere_foto_perfil)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
-                  Solicitar foto de perfil en onboarding
-                </label>
-              </div>
-            )}
-
-            {tipoNuevoUsuario === 'cuenta' && (
-              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
-                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> Permisos iniciales</h4>
-                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '10px' }}>
-                  La cuenta nueva tomará los permisos base según el rol de acceso seleccionado. Después de guardar, podrás ajustar módulos específicos en esta misma vista unificada.
-                </p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {MODULOS_ACCESO.filter((modulo) => modulo.id !== 'mesa_publica' && obtenerPermisosBasePorRol(nuevaCuenta.rol || 'apoderado')[modulo.id]).map((modulo) => (
-                    <span key={`nuevo-perm-${modulo.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 8px', borderRadius: '999px', background: 'rgba(0,122,255,0.08)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800' }}>
-                      <ShieldCheck size={11} /> {modulo.etiqueta}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <button className="btn-electric" onClick={guardarNuevoUsuario} disabled={guardandoUsuario}>
-              {guardandoUsuario ? 'Guardando...' : 'Guardar nuevo usuario'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {vistaAdmin === 'activos' && (
-        <div className="fade-in">
-          <h3 className="section-title">Activos Visuales</h3>
-          <div className="card" style={{ borderLeft: '4px solid var(--verde-victoria)', marginBottom: '15px', borderRadius: '24px' }}>
-            <h4 className="form-subtitle"><Image size={16} /> Subida de logos y activos visuales</h4>
-            <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-              Sube logos de clubes, torneos o campeonatos. El archivo se guardará en /public/logos con nombre normalizado para reutilizarlo por nombre o slug.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', alignItems: 'end' }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Nombre del activo *</label>
-                <input className="form-input" value={logoAssetForm.nombre} onChange={(e) => setLogoAssetForm((p) => ({ ...p, nombre: e.target.value }))} placeholder="Club, torneo o campeonato" />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Tipo</label>
-                <select className="form-input" value={logoAssetForm.tipo} onChange={(e) => setLogoAssetForm((p) => ({ ...p, tipo: e.target.value }))}>
-                  <option value="club">Club</option>
-                  <option value="torneo">Torneo</option>
-                  <option value="campeonato">Campeonato</option>
-                  <option value="competencia">Competencia</option>
-                </select>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Archivo de imagen *</label>
-                <input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => setLogoAssetForm((p) => ({ ...p, archivo: e.target.files?.[0] || null }))} />
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
-              <button className="btn-electric" onClick={subirLogoAsset} disabled={subiendoLogoAsset}>{subiendoLogoAsset ? 'Subiendo...' : 'Subir logo'}</button>
-              {logoAssetUrl && <LogoAvatar nombre={logoAssetForm.nombre || 'Logo guardado'} logoUrl={logoAssetUrl} size={44} borderRadius="14px" />}
-              {logoAssetUrl && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{logoAssetUrl}</span>}
-            </div>
-            {(subiendoLogoAsset || progresoLogoAsset > 0) && (
-              <div style={{ marginTop: '12px' }}>
-                <div style={{ height: '10px', borderRadius: '999px', background: 'rgba(15,23,42,0.08)', overflow: 'hidden', border: '1px solid rgba(0,122,255,0.15)' }}>
-                  <div
-                    style={{
-                      width: `${progresoLogoAsset}%`,
-                      height: '100%',
-                      background: 'linear-gradient(90deg, #007AFF, #34C759)',
-                      transition: 'width 0.2s ease',
-                    }}
-                  />
-                </div>
-                <div style={{ marginTop: '6px', fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)' }}>
-                  {subiendoLogoAsset ? `Subiendo logo... ${progresoLogoAsset}%` : 'Logo subido correctamente'}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="card" style={{ borderRadius: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
-              <h4 className="form-subtitle" style={{ margin: 0 }}><Image size={16} /> Logos disponibles</h4>
-              <button className="btn-secondary" onClick={cargarLogosDisponiblesActivos} disabled={cargandoLogosDisponibles}>
-                <RefreshCcw size={14} /> {cargandoLogosDisponibles ? 'Actualizando...' : 'Actualizar listado'}
-              </button>
-            </div>
-            <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-              Revisa aquí todos los logos detectados para confirmar si falta alguno por subir.
-            </p>
-
-            {errorLogosDisponibles && (
-              <div style={{ fontSize: '12px', color: '#b91c1c', fontWeight: '700', marginBottom: '10px' }}>
-                No se pudo cargar el listado: {errorLogosDisponibles}
-              </div>
-            )}
-
-            {!errorLogosDisponibles && cargandoLogosDisponibles && (
-              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
-                Cargando logos disponibles...
-              </p>
-            )}
-
-            {!errorLogosDisponibles && !cargandoLogosDisponibles && logosDisponiblesActivos.length === 0 && (
-              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
-                Aún no se detectan logos cargados.
-              </p>
-            )}
-
-            {!errorLogosDisponibles && logosDisponiblesActivos.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
-                {logosDisponiblesActivos.map((logo) => (
-                  <div key={logo.filename || logo.url} style={{ border: '1px solid rgba(15,23,42,0.08)', borderRadius: '14px', padding: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <LogoAvatar nombre={logo.nombre || logo.filename || 'Logo'} logoUrl={logo.url || ''} size={36} borderRadius="10px" />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-principal)', wordBreak: 'break-word' }}>
-                        {logo.nombre || logo.filename || 'Sin nombre'}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', wordBreak: 'break-word' }}>
-                        {logo.filename || logo.url || ''}
-                      </div>
-                    </div>
-                    <button
-                      className="btn-secondary"
-                      onClick={() => eliminarLogoAsset(logo)}
-                      disabled={eliminandoLogoFilename === logo.filename}
-                      style={{ marginLeft: 'auto', borderColor: 'rgba(239,68,68,0.35)', color: '#b91c1c' }}
-                    >
-                      <XSquare size={14} /> {eliminandoLogoFilename === logo.filename ? 'Borrando...' : 'Borrar'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {vistaAdmin === 'pagos' && (
-        <div className="fade-in">
           <h3 className="section-title">Bandeja de Validación</h3>
 
           {rolUsuario === 'super_admin' && (
@@ -3576,6 +3656,33 @@ function SuperAdminPanel({
               </>
             )}
           </div>
+
+          <h3 className="section-title mt-20">Cuenta de una familia puntual</h3>
+          <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
+            Busca a un deportista, socio o apoderado para ver su calendario de pagos, registrar un abono o descargar su historial — lo mismo que ve la familia en su propia cuenta.
+          </p>
+          <PerfilTesoreriaPanel
+            pupiloActivo={pupiloTesoreriaAdmin}
+            setPupiloActivo={setPupiloTesoreriaAdmin}
+            rolUsuario={rolUsuario}
+            pupilosDisponibles={pupilosParaBusquedaTesoreria}
+            cuentasAdmin={cuentasAdmin}
+            pagosMensualidadesAdmin={pagosMensualidadesAdmin}
+            morososAdmin={morososAdmin}
+            sociosMorosos={sociosMorosos}
+            mesesSeleccionados={mesesSeleccionadosTesoreria}
+            setMesesSeleccionados={setMesesSeleccionadosTesoreria}
+            tipoPago={tipoPagoTesoreria}
+            setTipoPago={setTipoPagoTesoreria}
+            montoAbono={montoAbonoTesoreria}
+            setMontoAbono={setMontoAbonoTesoreria}
+            comprobanteSubido={comprobanteSubidoTesoreria}
+            setComprobanteSubido={setComprobanteSubidoTesoreria}
+            setPagosPendientesAdmin={setPagosPendientesAdmin}
+            pagoViewMode={pagoViewModeTesoreria}
+            setPageViewMode={setPagoViewModeTesoreria}
+            utmVigente={utmVigente}
+          />
         </div>
       )}
 

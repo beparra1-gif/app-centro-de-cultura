@@ -26,15 +26,23 @@ const MODULOS_ACCESO = [
   { id: 'mesa_publica', etiqueta: 'Vista Pública', categoria: 'Público', descripcion: 'Resultados y contenidos públicos.' },
 ];
 
+// Módulos base compartidos por cualquier rol "familia" (apoderado, socio,
+// socio+apoderado combinado, directiva) — mismo set, una sola fuente de
+// verdad. Antes 'socio_apoderado' y 'socio-apoderado' eran dos arrays
+// literales duplicados por separado: fácil que se desincronizaran si algún
+// día alguien tocaba uno y no el otro (ver normalizarRol, que ahora colapsa
+// la forma con guión a la de guión bajo para que el resto del código nunca
+// tenga que comparar las dos formas).
+const MODULOS_BASE_FAMILIA = ['comunicaciones', 'academia', 'perfil', 'jugador'];
+
 const ROLES_BASE = {
   visita: ['comunicaciones', 'jugador', 'mesa_publica'],
   jugador: ['comunicaciones', 'academia', 'jugador'],
   deportista: ['comunicaciones', 'academia', 'jugador'],
-  apoderado: ['comunicaciones', 'academia', 'perfil', 'jugador'],
-  socio: ['comunicaciones', 'academia', 'perfil', 'jugador'],
-  socio_apoderado: ['comunicaciones', 'academia', 'perfil', 'jugador'],
-  'socio-apoderado': ['comunicaciones', 'academia', 'perfil', 'jugador'],
-  directiva: ['comunicaciones', 'academia', 'perfil', 'jugador'],
+  apoderado: MODULOS_BASE_FAMILIA,
+  socio: MODULOS_BASE_FAMILIA,
+  socio_apoderado: MODULOS_BASE_FAMILIA,
+  directiva: MODULOS_BASE_FAMILIA,
   staff: ['comunicaciones', 'academia', 'jugador', 'asistencia_staff', 'evaluacion_staff', 'citaciones', 'resultados'],
   mesa: ['scoreboard_live'],
   admin: ['comunicaciones', 'perfil', 'kiosco', 'admin_dashboard', 'citaciones', 'resultados', 'auditoria', 'reportes', 'validacion_pagos', 'inventario', 'salud', 'invitados', 'cancha_arriendo', 'torneos', 'horarios_entrenamiento'],
@@ -50,6 +58,7 @@ const PERMISOS_POR_DEFECTO = MODULOS_ACCESO.reduce((acumulado, modulo) => {
 const normalizarRol = (rol = '') => {
   const rolNormalizado = String(rol || '').trim().toLowerCase();
   if (rolNormalizado === 'deportista') return 'jugador';
+  if (rolNormalizado === 'socio-apoderado') return 'socio_apoderado';
   return rolNormalizado;
 };
 
