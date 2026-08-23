@@ -164,6 +164,14 @@ function App() {
   const [cuentasIncompletas, setCuentasIncompletas] = useState([]);
   const [cuentasAdmin, setCuentasAdmin] = useState([]);
   const [jugadoresAdmin, setJugadoresAdmin] = useState([]);
+  // Espejo en ref de cuentasAdmin/jugadoresAdmin para leer el valor SIEMPRE
+  // fresco dentro del intervalo de poll de abajo — un useEffect con deps [],
+  // que nunca se vuelve a crear, atraparía estas dos variables en el valor
+  // que tenían en el primer render (closure obsoleta) si se leyeran directo.
+  const cuentasAdminRef = useRef(cuentasAdmin);
+  const jugadoresAdminRef = useRef(jugadoresAdmin);
+  useEffect(() => { cuentasAdminRef.current = cuentasAdmin; }, [cuentasAdmin]);
+  useEffect(() => { jugadoresAdminRef.current = jugadoresAdmin; }, [jugadoresAdmin]);
   // Valor real de UTM (última consultada al backend, que a su vez la trae de
   // mindicador.cl) para calcular la cuota socio (0.3 UTM) — null hasta que
   // cargarDatos() la traiga la primera vez; los cálculos usan un fallback
@@ -1956,15 +1964,31 @@ function App() {
     );
     setMorososAdmin(
       Array.isArray(pagosRes)
-        ? construirMorososDesdePagos(pagosRes, jugadoresAdmin, cuentasAdmin)
+        ? construirMorososDesdePagos(pagosRes, jugadoresAdminRef.current, cuentasAdminRef.current)
         : []
     );
     setSociosMorosos(
       Array.isArray(pagosRes)
-        ? construirSociosMorosos(pagosRes, cuentasAdmin)
+        ? construirSociosMorosos(pagosRes, cuentasAdminRef.current)
         : []
     );
   };
+
+  // Sin este poll, un pago aprobado/rechazado por un admin (o un abono
+  // registrado por una familia) solo se veía reflejado — calendario verde,
+  // conteo de morosos, recaudación — en la sesión que hizo el cambio; todas
+  // las demás sesiones abiertas (otro admin en Tesorería, la propia familia
+  // mirando "Mi Cuenta") se quedaban con el dato viejo hasta recargar la
+  // página a mano. Efecto propio (no el de citaciones/jugadores de arriba)
+  // porque recargarPagosMensualidades se declara después de aquel — juntarlos
+  // ahí violaba el orden de declaración de variables (lint real, no cosmético).
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void recargarPagosMensualidades();
+    }, 20000);
+    return () => window.clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const guardarCuentaAdmin = async (payload, id = null) => {
     const rutPayload = String(payload?.rut || '').trim();
