@@ -3745,6 +3745,43 @@ function SuperAdminPanel({
               </div>
             )}
 
+            {/* buildDataQualitySummary (backend/import-google-sheets.js) ya
+                calculaba estos números en cada sync — antes solo quedaban en
+                el log del servidor, así que un problema de datos podía crecer
+                sin que nadie del club lo notara. El backend ya los devuelve
+                en la respuesta de /admin/sync-sheets (qualitySummary); acá
+                solo faltaba mostrarlos. */}
+            {syncSheetsResult?.qualitySummary && (
+              <div className="card" style={{ marginTop: '12px', borderRadius: '18px', background: 'rgba(0,0,0,0.02)' }}>
+                <h5 className="form-subtitle" style={{ marginBottom: '8px', fontSize: '12px' }}>Calidad de datos (último sync)</h5>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
+                  {[
+                    { label: 'Jugadores con datos clave faltantes', valor: syncSheetsResult.qualitySummary.jugadores?.faltantesClave },
+                    { label: 'Jugadores con RUT mal formateado', valor: syncSheetsResult.qualitySummary.jugadores?.rutFormatoInvalido },
+                    { label: 'Pagos sin RUT asociado', valor: syncSheetsResult.qualitySummary.pagosMensualidades?.sinRutJugador },
+                    { label: 'Pagos sin meses correspondientes', valor: syncSheetsResult.qualitySummary.pagosMensualidades?.sinMeses },
+                  ].map(({ label, valor }) => {
+                    const cantidad = Number(valor || 0);
+                    const conProblema = cantidad > 0;
+                    return (
+                      <div
+                        key={label}
+                        style={{
+                          borderRadius: '12px',
+                          padding: '10px 12px',
+                          background: conProblema ? 'rgba(255,59,48,0.08)' : 'rgba(52,199,89,0.08)',
+                          border: `1px solid ${conProblema ? 'rgba(255,59,48,0.25)' : 'rgba(52,199,89,0.25)'}`,
+                        }}
+                      >
+                        <div style={{ fontSize: '18px', fontWeight: '900', color: conProblema ? 'var(--rojo-alerta)' : 'var(--verde-victoria)' }}>{cantidad}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {syncSheetsResult && (
               <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <span>Estado: {syncSheetsResult.status || 'desconocido'}</span>
