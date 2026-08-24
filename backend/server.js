@@ -556,6 +556,11 @@ const RESOURCE_TABLE_MAP = {
   entrenamientos: 'entrenamientos',
   'arriendos-cancha': 'arriendos_cancha',
   'horarios-entrenamiento': 'horarios_entrenamiento',
+  // POST /api/becas actualiza jugadores Y beca_historial en la misma
+  // transacción — esta entrada cubre jugadores (la más visible/consultada);
+  // beca_historial se encola a mano dentro del propio endpoint porque este
+  // mapa solo soporta una tabla por recurso.
+  becas: 'jugadores',
 };
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -5410,6 +5415,11 @@ const obtenerUTMParaMes = async (anioObjetivo, mesObjetivo) => {
        ON CONFLICT (anio, mes) DO NOTHING`,
       [anio, mes, valor, fechaCorte.toISOString().slice(0, 10)]
     );
+    // Esto pasa dentro de un GET (/api/utm-vigente, /api/utm-historico) — el
+    // middleware genérico de auto-export solo mira métodos mutantes
+    // (POST/PUT/PATCH/DELETE), así que un INSERT real acá nunca se
+    // encolaría solo si no se avisa a mano.
+    sheetsSyncManager.enqueueTable('utm_mensual');
     return { anio, mes, valor, fechaCorte: fechaCorte.toISOString().slice(0, 10), fuente: 'mindicador.cl' };
   } catch (err) {
     console.error(`[obtenerUTMParaMes] Error consultando UTM de corte para ${anio}-${mes}:`, err.message);
@@ -5962,6 +5972,11 @@ app.post('/api/becas', authenticate, requireModule('validacion_pagos'), async (r
       throw new Error(`No existe ningún jugador con rut ${rut_jugador}.`);
     }
     await client.query('COMMIT');
+    // El middleware genérico de auto-export (ver getTableFromApiRequest) ya
+    // encola 'jugadores' para este recurso — beca_historial se encola a mano
+    // porque una sola fila de RESOURCE_TABLE_MAP no puede cubrir las dos
+    // tablas que este endpoint toca en la misma transacción.
+    sheetsSyncManager.enqueueTable('beca_historial');
     res.status(201).json({
       historial: historial.rows[0],
       jugador: { ...jugadorActualizado.rows[0], estado_beca: calcularEstadoBeca(jugadorActualizado.rows[0].beca_fecha_fin) },

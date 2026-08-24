@@ -19,7 +19,7 @@ function NotificationsPanel({
             <div key={notif.id} style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', border: '1px solid rgba(255,255,255,0.72)', borderRadius: '18px', padding: '12px', marginBottom: '8px', boxShadow: '0 10px 24px rgba(15,23,42,0.08)', animation: 'slideIn 0.3s ease-out' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
                 <span style={{ fontWeight: '700', fontSize: '13px', color: 'var(--texto-principal)' }}>
-                  {notif.tipo === 'comentario' ? 'Comentario' : notif.tipo === 'rsvp' ? 'RSVP' : notif.tipo === 'comunicacion' ? 'Comunicacion' : notif.tipo === 'pago' ? 'Pago' : 'Notificacion'} {notif.titulo}
+                  {notif.tipo === 'comentario' ? 'Comentario' : notif.tipo === 'rsvp' ? 'RSVP' : notif.tipo === 'comunicacion' ? 'Comunicacion' : notif.tipo === 'pago' ? 'Pago' : notif.tipo === 'beca' ? 'Beca' : 'Notificacion'} {notif.titulo}
                 </span>
                 <button onClick={() => onBorrar(notif)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '30px', height: '30px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} aria-label="Cerrar"><X size={14} /></button>
               </div>

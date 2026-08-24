@@ -44,6 +44,12 @@ const SHEET_TABLE_MAP = [
   { sheet: 'CLUBES', table: 'clubes' },
   { sheet: 'TORNEO_EQUIPOS', table: 'torneo_equipos' },
   { sheet: 'ARRIENDOS_CANCHA', table: 'arriendos_cancha' },
+  // Solo respaldo/lectura: nadie edita becas ni UTM directo en el Sheet, se
+  // exportan para que quede un registro descargable fuera de Postgres (igual
+  // que el resto de las tablas acá) — noImport las deja fuera del lado de
+  // importación, mismo criterio que AUDITORIA arriba.
+  { sheet: 'BECA_HISTORIAL', table: 'beca_historial', noImport: true },
+  { sheet: 'UTM_MENSUAL', table: 'utm_mensual', noImport: true },
 ];
 
 const HEADER_ALIASES = {

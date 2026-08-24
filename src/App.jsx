@@ -1068,6 +1068,7 @@ function App() {
         api.notificacionesAppAPI.getAll(),
         api.utmAPI.getVigente(),
         api.utmAPI.getHistorico(ANIO_OBJETIVO_TESORERIA),
+        api.becaAPI.getBecas(),
       ]);
 
       const getResult = (index, fallback = []) => (
@@ -1091,6 +1092,7 @@ function App() {
       const notificacionesAppRes = getResult(12, []);
       const utmVigenteRes = getResult(13, null);
       const utmHistoricoRes = getResult(14, null);
+      const becasRes = getResult(15, []);
       const totalErrores = resultados.filter((r) => r.status === 'rejected').length;
 
       if (utmVigenteRes?.valor) {
@@ -1099,6 +1101,40 @@ function App() {
 
       if (utmHistoricoRes?.porMes) {
         setUtmHistorico(utmHistoricoRes.porMes);
+      }
+
+      // Alerta proactiva de becas por vencer/vencidas — GET /api/becas exige
+      // el módulo validacion_pagos, así que para el resto de los roles esta
+      // promesa simplemente rechaza y becasRes queda [] (Promise.allSettled),
+      // sin romper nada. Directamente relacionado con "gestionar el aviso de
+      // pago": una beca que vence sube la cuota real del mes siguiente, así
+      // que el admin necesita enterarse ANTES de que el apoderado reclame.
+      if (Array.isArray(becasRes) && becasRes.length > 0) {
+        const becasUrgentes = becasRes.filter((b) => b.estado_beca === 'por_vencer' || b.estado_beca === 'vencida');
+        if (becasUrgentes.length > 0) {
+          const vencidas = becasUrgentes.filter((b) => b.estado_beca === 'vencida').length;
+          const nombres = becasUrgentes
+            .slice(0, 3)
+            .map((b) => `${b.nombres || 'Sin nombre'} ${b.apellido_paterno || ''}`.trim())
+            .join(', ');
+
+          setNotificaciones((prev) => {
+            // Igual que el aviso de "datos": cargarDatos() se repite en cada
+            // refresco, así que sin este check se duplicaba el aviso cada vez.
+            if (prev.some((n) => n.tipo === 'beca')) return prev;
+            return [
+              {
+                id: nextId(),
+                tipo: 'beca',
+                titulo: vencidas > 0 ? 'vencidas' : 'por vencer',
+                mensaje: `${becasUrgentes.length} beca${becasUrgentes.length === 1 ? '' : 's'} ${vencidas > 0 ? 'ya venció o está por vencer' : 'está por vencer'} (ej: ${nombres}). Revísalas antes de cobrar el próximo mes.`,
+                leida: false,
+                firmada: false,
+              },
+              ...prev,
+            ];
+          });
+        }
       }
 
       if (Array.isArray(comunicacionesRes)) {
@@ -1346,6 +1382,11 @@ function App() {
       return puedeVerPantalla('validacion_pagos')
         ? { pantalla: 'admin_dashboard', vistaAdmin: 'pagos' }
         : { pantalla: 'perfil' };
+    }
+    if (tipo === 'beca') {
+      return puedeVerPantalla('validacion_pagos')
+        ? { pantalla: 'admin_dashboard', vistaAdmin: 'becas' }
+        : null;
     }
     return null;
   };

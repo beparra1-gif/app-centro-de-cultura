@@ -108,6 +108,26 @@ const resolveSheetNameForTable = (tableName) => {
   return tableToSheetMap.get(key) || String(tableName || '').trim().toUpperCase();
 };
 
+// Crea la pestaña en el Sheet si todavía no existe — sin esto, agregar una
+// tabla nueva a SHEET_TABLE_MAP (ej. beca_historial, utm_mensual) fallaba en
+// silencio porque values.clear/update de la API de Sheets no crea pestañas
+// solas, solo escribe en una que ya existe. Así una tabla nueva del backend
+// queda respaldada en el Sheet sin que el usuario tenga que crear la
+// pestaña a mano primero.
+const ensureSheetTabExists = async ({ sheetsClient, spreadsheetId, sheetName }) => {
+  const meta = await sheetsClient.spreadsheets.get({
+    spreadsheetId,
+    fields: 'sheets.properties.title',
+  });
+  const existentes = new Set((meta.data.sheets || []).map((s) => s.properties?.title));
+  if (existentes.has(sheetName)) return;
+
+  await sheetsClient.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] },
+  });
+};
+
 const syncTableToSheet = async ({ pool, sheetsClient, spreadsheetId, tableName, logger = console }) => {
   const table = String(tableName || '').trim();
   if (!table) return { ok: false, table, reason: 'tabla vacia' };
@@ -127,6 +147,8 @@ const syncTableToSheet = async ({ pool, sheetsClient, spreadsheetId, tableName, 
   ];
 
   const sheetName = resolveSheetNameForTable(table);
+
+  await ensureSheetTabExists({ sheetsClient, spreadsheetId, sheetName });
 
   // Limpiar primero para evitar residuos cuando disminuye el numero de filas/columnas.
   await sheetsClient.spreadsheets.values.clear({
