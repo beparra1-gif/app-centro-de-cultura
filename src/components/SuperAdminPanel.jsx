@@ -180,6 +180,14 @@ function SuperAdminPanel({
   af.sociosAlDia = Math.max(af.totalSocios - af.sociosMorosos, 0);
   af.deportistasAlDia = Math.max(af.totalDeportistas - af.deportistasMorosos, 0);
 
+  // Cuentas que administran al menos un pupilo (apoderado puro o
+  // socio+apoderado combinado) — distinto de "socio", que puede no tener
+  // ningún deportista a cargo (socio directo, sin hijos en el club).
+  const apoderadosInscritos = (cuentasAdmin || []).filter((c) => {
+    const perfil = normalizarRol(c.perfil_principal || c.rol || '');
+    return perfil === 'apoderado' || perfil === 'socio_apoderado';
+  }).length;
+
   // Resumen del Panel = gestión de personas (composición, no dinero — el
   // estado de pago vive en Tesorería). Desglose por rol reusando
   // normalizarRol para no repetir el bug de socio_apoderado/socio-apoderado
@@ -298,6 +306,40 @@ function SuperAdminPanel({
   const [mesRecaudacionActivo, setMesRecaudacionActivo] = useState(null);
   const [busquedaSociosMorosos, setBusquedaSociosMorosos] = useState('');
 
+  // La recaudación en $ va oculta por defecto (el club pidió no mostrar
+  // montos a simple vista) — se revela con este toggle, junto a filtros
+  // propios de rama/categoría para no depender de los de "Estatus de pagos".
+  const [mostrarRecaudacion, setMostrarRecaudacion] = useState(false);
+  const [filtroRamaRecaudacion, setFiltroRamaRecaudacion] = useState('todas');
+  const [filtroCategoriaRecaudacion, setFiltroCategoriaRecaudacion] = useState('todas');
+
+  // Deportistas agrupados por rama → categoría, para el panorama de
+  // Tesorería (antes solo se veía un total plano de "Deportistas Inscritos").
+  // Se agrupa por una clave normalizada (mayúsculas) porque el Sheet trae
+  // "MASCULINA" y "masculina" mezclados — sin esto salían como dos grupos
+  // distintos en vez de uno solo.
+  const deportistasPorRamaCategoria = useMemo(() => {
+    const porRama = new Map();
+    (jugadoresAdmin || []).forEach((j) => {
+      const ramaOriginal = String(j.rama || '').trim() || 'Sin rama';
+      const rama = ramaOriginal.toUpperCase();
+      const categoria = String(j.categoria || '').trim() || 'Sin categoría';
+      if (!porRama.has(rama)) porRama.set(rama, new Map());
+      const porCategoria = porRama.get(rama);
+      porCategoria.set(categoria, (porCategoria.get(categoria) || 0) + 1);
+    });
+    return [...porRama.entries()]
+      .map(([rama, porCategoria]) => ({
+        rama,
+        total: [...porCategoria.values()].reduce((acc, n) => acc + n, 0),
+        categorias: [...porCategoria.entries()].map(([categoria, total]) => ({ categoria, total })).sort((a, b) => b.total - a.total),
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [jugadoresAdmin]);
+
+  const ramasClub = [...new Set((jugadoresAdmin || []).map((j) => j.rama).filter(Boolean))].sort();
+  const categoriasClub = [...new Set((jugadoresAdmin || []).map((j) => j.categoria).filter(Boolean))].sort();
+
   // Filtro de mes a nivel de todo Resumen: al elegir un mes, las stats de
   // arriba, la fila de recaudación y AMBAS listas de morosos (socios y
   // deportistas) se acotan a ese mes específico en vez de "debe algo en
@@ -350,6 +392,46 @@ function SuperAdminPanel({
     if (!q) return true;
     if (String(m.nombre || '').toLowerCase().includes(q)) return true;
     return (m.pupilos || []).some((p) => String(p || '').toLowerCase().includes(q));
+  });
+
+  // "Pagados": el complemento de morososAdmin — deportistas cuyo rut no
+  // aparece en la lista de morosos. Reusa el mismo lookup de cuenta que
+  // construirMorososDesdePagos (App.jsx) para poder mostrar el mismo aviso
+  // de "sin apoderado asignado" también acá, no solo en morosos.
+  const [vistaEstatusPagos, setVistaEstatusPagos] = useState('morosos');
+  const normalizarRutLocal = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+  const rutsMorososSet = useMemo(() => new Set((morososAdmin || []).map((m) => normalizarRutLocal(m.rut))), [morososAdmin]);
+  const deportistasAlDiaLista = useMemo(() => {
+    const cuentaPorRut = new Map();
+    const cuentaPorCorreo = new Map();
+    (cuentasAdmin || []).forEach((c) => {
+      if (c.rut) cuentaPorRut.set(normalizarRutLocal(c.rut), c);
+      if (c.correo) cuentaPorCorreo.set(String(c.correo).trim().toLowerCase(), c);
+    });
+    return (jugadoresAdmin || [])
+      .filter((j) => !rutsMorososSet.has(normalizarRutLocal(j.rut_jugador)))
+      .map((j) => {
+        const cuenta = cuentaPorRut.get(normalizarRutLocal(j.rut_apoderado || ''))
+          || cuentaPorCorreo.get(String(j.correo_apoderado || '').trim().toLowerCase());
+        const telefonoCuenta = String(cuenta?.telefono || '').trim();
+        return {
+          id: normalizarRutLocal(j.rut_jugador) || j.rut_jugador,
+          nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim() || `Jugador ${j.rut_jugador || ''}`,
+          rama: j.rama || '',
+          categoria: j.categoria || '',
+          sinApoderado: !cuenta,
+          telefono: telefonoCuenta ? `${String(cuenta?.prefijo_tel || '+56').trim()}${telefonoCuenta}` : '',
+          correo: j.correo_apoderado || '',
+        };
+      });
+  }, [jugadoresAdmin, cuentasAdmin, rutsMorososSet]);
+
+  const pagadosFiltrados = deportistasAlDiaLista.filter((p) => {
+    if (filtroRamaMorosos !== 'todas' && p.rama !== filtroRamaMorosos) return false;
+    if (filtroCategoriaMorosos !== 'todas' && p.categoria !== filtroCategoriaMorosos) return false;
+    const q = busquedaMorosos.trim().toLowerCase();
+    if (!q) return true;
+    return String(p.nombre || '').toLowerCase().includes(q);
   });
 
   const construirMensajeRecordatorioMoroso = (m) => {
@@ -3177,299 +3259,7 @@ function SuperAdminPanel({
             )}
           </div>
 
-          <h3 className="section-title mt-0">Socios del Club</h3>
-          <div className="caja-triple-grid mb-15">
-            <div className="admin-stat-pill verde"><span>Al Día</span><h2>{filaMesResumenActiva ? Math.max(af.totalSocios - filaMesResumenActiva.morososSocios, 0) : af.sociosAlDia}</h2></div>
-            <div className="admin-stat-pill rojo"><span>Morosos</span><h2>{filaMesResumenActiva ? filaMesResumenActiva.morososSocios : af.sociosMorosos}</h2></div>
-            <div className="admin-stat-pill azul"><span>Total</span><h2>{af.totalSocios}</h2></div>
-          </div>
-
-          <h3 className="section-title">Deportistas Inscritos</h3>
-          <div className="caja-triple-grid mb-20">
-            <div className="admin-stat-pill verde"><span>Al Día</span><h2>{filaMesResumenActiva ? Math.max(af.totalDeportistas - filaMesResumenActiva.morososDeportistas, 0) : af.deportistasAlDia}</h2></div>
-            <div className="admin-stat-pill rojo"><span>Morosos</span><h2>{filaMesResumenActiva ? filaMesResumenActiva.morososDeportistas : af.deportistasMorosos}</h2></div>
-            <div className="admin-stat-pill azul"><span>Total</span><h2>{af.totalDeportistas}</h2></div>
-          </div>
-
-          <h3 className="section-title">Recaudación mes a mes — {ANIO_RECAUDACION}</h3>
-          <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
-            {filtroMesResumen === 'todos' ? 'Toca un mes para ver el detalle de quién pagó y quién quedó pendiente.' : `Viendo solo ${filtroMesResumen}. Elige "Todo el año" arriba para ver los 12 meses.`}
-          </p>
-          <div className="card mb-20" style={{ borderRadius: '20px', padding: '8px' }}>
-            {(filtroMesResumen === 'todos' ? recaudacionMensual : recaudacionMensual.filter((f) => f.mes === filtroMesResumen)).map((fila) => {
-              const abierto = filtroMesResumen !== 'todos' || mesRecaudacionActivo === fila.mes;
-              const sociosDelMes = (sociosMorosos || []).filter((s) => (s.mesesMorosos || []).includes(fila.mes));
-              const deportistasDelMes = (morososAdmin || []).filter((m) => (m.mesesMorosos || []).includes(fila.mes));
-              return (
-                <div key={fila.mes} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-                  <button
-                    type="button"
-                    onClick={() => setMesRecaudacionActivo(abierto ? null : fila.mes)}
-                    style={{
-                      width: '100%',
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: '10px 8px',
-                      display: 'grid',
-                      gridTemplateColumns: '46px 1fr 1fr auto',
-                      alignItems: 'center',
-                      gap: '8px',
-                      textAlign: 'left',
-                    }}
-                  >
-                    <strong style={{ fontSize: '13px' }}>{fila.mes}</strong>
-                    <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                      Socios: <strong style={{ color: 'var(--verde-victoria)' }}>${fila.recaudadoSocios.toLocaleString('es-CL')}</strong>
-                      {fila.morososSocios > 0 && <span style={{ color: 'var(--rojo-alerta)' }}> · {fila.morososSocios} moroso{fila.morososSocios === 1 ? '' : 's'}</span>}
-                    </span>
-                    <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                      Deportistas: <strong style={{ color: 'var(--verde-victoria)' }}>${fila.recaudadoDeportistas.toLocaleString('es-CL')}</strong>
-                      {fila.morososDeportistas > 0 && <span style={{ color: 'var(--rojo-alerta)' }}> · {fila.morososDeportistas} moroso{fila.morososDeportistas === 1 ? '' : 's'}</span>}
-                    </span>
-                    <ChevronDown size={16} style={{ transform: abierto ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', color: 'var(--texto-secundario)' }} />
-                  </button>
-                  {abierto && (
-                    <div style={{ padding: '4px 8px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <div>
-                        <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase' }}>Socios morosos en {fila.mes}</span>
-                        {sociosDelMes.length === 0
-                          ? <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: '4px 0 0' }}>Ninguno.</p>
-                          : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                              {sociosDelMes.map((s) => (
-                                <span key={`${fila.mes}-socio-${s.id}`} style={{ fontSize: '12px', fontWeight: '700', display: 'flex', justifyContent: 'space-between' }}>
-                                  <span>{s.nombre}</span>
-                                  <span style={{ color: 'var(--rojo-alerta)' }}>${s.montoDeuda.toLocaleString('es-CL')}</span>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase' }}>Deportistas morosos en {fila.mes}</span>
-                        {deportistasDelMes.length === 0
-                          ? <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: '4px 0 0' }}>Ninguno.</p>
-                          : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                              {deportistasDelMes.map((m) => (
-                                <span key={`${fila.mes}-dep-${m.id}`} style={{ fontSize: '12px', fontWeight: '700', display: 'flex', justifyContent: 'space-between' }}>
-                                  <span>{m.nombre}</span>
-                                  <span style={{ color: 'var(--rojo-alerta)' }}>${m.montoDeuda.toLocaleString('es-CL')}</span>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <h3 className="section-title">Socios Morosos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
-          <div style={{ position: 'relative', marginBottom: '10px' }}>
-            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-            <input
-              type="text"
-              className="form-input"
-              style={{ paddingLeft: '34px', paddingRight: busquedaSociosMorosos ? '34px' : undefined }}
-              placeholder="Buscar socio..."
-              value={busquedaSociosMorosos}
-              onChange={(e) => setBusquedaSociosMorosos(e.target.value)}
-            />
-            {busquedaSociosMorosos && (
-              <button
-                type="button"
-                onClick={() => setBusquedaSociosMorosos('')}
-                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
-                aria-label="Limpiar búsqueda"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          {sociosMorososFiltrados.length === 0 && (
-            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
-              Sin socios morosos que coincidan con la búsqueda.
-            </p>
-          )}
-          {[...sociosMorososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map((s) => {
-            const gravedad = s.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : s.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
-            return (
-              <div key={s.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: '20px', background: 'rgba(255,255,255,0.72)' }}>
-                <div className="moroso-info">
-                  <span className="moroso-nombre">{s.nombre}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
-                    {s.telefono ? <><Phone size={11} /> {s.telefono}</> : <>{s.correo || 'Sin contacto'}</>}
-                  </span>
-                  {(s.mesesMorosos || []).length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                      {s.mesesMorosos.map((mes) => (
-                        <span key={`${s.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: '999px', padding: '2px 7px' }}>
-                          {mes}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="moroso-deuda">
-                  <span className="moroso-monto">${s.montoDeuda.toLocaleString('es-CL')}</span>
-                  <span className="moroso-meses" style={{ color: gravedad }}>{s.mesesDeuda} {s.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <button
-                    className="btn-notificar"
-                    onClick={() => avisarSocioMoroso(s)}
-                    disabled={!s.telefono}
-                    title={s.telefono ? `Enviar recordatorio por WhatsApp a ${s.telefono}` : 'Sin teléfono registrado en la cuenta'}
-                    style={!s.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                  >
-                    <Bell size={13} /> Avisar
-                  </button>
-                  {rolUsuario === 'super_admin' && (
-                    <button
-                      className="btn-notificar"
-                      style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }}
-                      onClick={() => {
-                        setMostrarFormularioPago(true);
-                        setPagoEditandoId(null);
-                        setPagoManualAutoAprobar(true);
-                        setPagoManualObjetivo({ modoPago: 'socio', rut: s.rut });
-                      }}
-                      title={`Registrar pago manual de ${s.nombre}`}
-                    >
-                      <Plus size={13} /> Pago manual
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', marginTop: '20px' }}>
-            <h3 className="section-title" style={{ margin: 0 }}>Estatus de pagos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
-            <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={abrirModalNotificarTodos}>
-              <Bell size={13} /> Notificar Todos
-            </button>
-          </div>
-          <div style={{ position: 'relative', marginBottom: '10px' }}>
-            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-            <input
-              type="text"
-              className="form-input"
-              style={{ paddingLeft: '34px', paddingRight: busquedaMorosos ? '34px' : undefined }}
-              placeholder="Buscar por socio, apoderado o deportista..."
-              value={busquedaMorosos}
-              onChange={(e) => setBusquedaMorosos(e.target.value)}
-            />
-            {busquedaMorosos && (
-              <button
-                type="button"
-                onClick={() => setBusquedaMorosos('')}
-                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
-                aria-label="Limpiar búsqueda"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          <div className="filter-chips mb-15">
-            <button className={`filter-chip ${filtroMorosos === 'todos' ? 'active' : ''}`} onClick={() => setFiltroMorosos('todos')}>Todos ({(morososAdmin || []).length})</button>
-            <button className={`filter-chip ${filtroMorosos === 'socios' ? 'active' : ''}`} onClick={() => setFiltroMorosos('socios')}>Socios ({(morososAdmin || []).filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado').length})</button>
-            <button className={`filter-chip ${filtroMorosos === 'apoderados' ? 'active' : ''}`} onClick={() => setFiltroMorosos('apoderados')}>Apoderados ({(morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado').length})</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '15px' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: '11px' }}>Rama</label>
-              <select className="form-input" value={filtroRamaMorosos} onChange={(e) => setFiltroRamaMorosos(e.target.value)}>
-                <option value="todas">Todas</option>
-                {ramasMorosos.map((rama) => (
-                  <option key={`rama-moroso-${rama}`} value={rama}>{rama}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: '11px' }}>Categoría</label>
-              <select className="form-input" value={filtroCategoriaMorosos} onChange={(e) => setFiltroCategoriaMorosos(e.target.value)}>
-                <option value="todas">Todas</option>
-                {categoriasMorosos.map((categoria) => (
-                  <option key={`categoria-moroso-${categoria}`} value={categoria}>{categoria}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {morososFiltrados.length === 0 && (
-            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
-              Sin morosos que coincidan con la búsqueda.
-            </p>
-          )}
-          {[...morososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map(m => {
-            const gravedad = m.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : m.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
-            const { bg, color } = colorTipo(m.tipo);
-            const labelTipo = m.tipo === 'socio' ? 'Socio' : m.tipo === 'apoderado' ? 'Apoderado' : 'Socio / Apod.';
-            return (
-              <div key={m.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: '20px', background: 'rgba(255,255,255,0.72)' }}>
-                <div className="moroso-info">
-                  <span className="moroso-nombre">{m.nombre}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
-                    <span className="moroso-tipo-badge" style={{ background: bg, color }}>{labelTipo}</span>
-                    {(m.rama || m.categoria) && (
-                      <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: '999px' }}>
-                        {[m.rama, m.categoria].filter(Boolean).join(' · ')}
-                      </span>
-                    )}
-                    {m.pupilos.length > 0 && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><User size={11} /> {m.pupilos.join(' · ')}</span>}
-                  </div>
-                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
-                    {m.telefono ? <><Phone size={11} /> {m.telefono}</> : <>{m.correo || 'Sin contacto'}</>}
-                  </span>
-                  {(m.mesesMorosos || []).length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                      {m.mesesMorosos.map((mes) => (
-                        <span key={`${m.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: '999px', padding: '2px 7px' }}>
-                          {mes}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="moroso-deuda">
-                  <span className="moroso-monto">${m.montoDeuda.toLocaleString('es-CL')}</span>
-                  <span className="moroso-meses" style={{ color: gravedad }}>{m.mesesDeuda} {m.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <button
-                    className="btn-notificar"
-                    onClick={() => avisarMoroso(m)}
-                    disabled={!m.telefono}
-                    title={m.telefono ? `Enviar recordatorio por WhatsApp a ${m.telefono}` : 'Sin teléfono registrado en la cuenta'}
-                    style={!m.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                  >
-                    <Bell size={13} /> Avisar
-                  </button>
-                  {rolUsuario === 'super_admin' && (
-                    <button
-                      className="btn-notificar"
-                      style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }}
-                      onClick={() => {
-                        setMostrarFormularioPago(true);
-                        setPagoEditandoId(null);
-                        setPagoManualAutoAprobar(true);
-                        setPagoManualObjetivo({ modoPago: 'deportista', rut: m.rut });
-                      }}
-                      title={`Registrar pago manual de ${m.nombre}`}
-                    >
-                      <Plus size={13} /> Pago manual
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          <h3 className="section-title">Bandeja de Validación</h3>
+          <h3 className="section-title mt-0">Bandeja de Validación</h3>
 
           {rolUsuario === 'super_admin' && (
             <div className="card mb-15" style={{ borderRadius: '18px', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
@@ -3732,6 +3522,423 @@ function SuperAdminPanel({
               </>
             )}
           </div>
+
+          <h3 className="section-title">Panorama General{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
+          <div className="caja-triple-grid mb-20">
+            <div className="admin-stat-pill azul"><span>Socios Inscritos</span><h2>{af.totalSocios}</h2></div>
+            <div className="admin-stat-pill azul"><span>Apoderados Inscritos</span><h2>{apoderadosInscritos}</h2></div>
+            <div className="admin-stat-pill azul"><span>Deportistas</span><h2>{af.totalDeportistas}</h2></div>
+          </div>
+
+          <h3 className="section-title">Socios del Club</h3>
+          <div className="caja-triple-grid mb-15">
+            <div className="admin-stat-pill verde"><span>Al Día</span><h2>{filaMesResumenActiva ? Math.max(af.totalSocios - filaMesResumenActiva.morososSocios, 0) : af.sociosAlDia}</h2></div>
+            <div className="admin-stat-pill rojo"><span>Morosos</span><h2>{filaMesResumenActiva ? filaMesResumenActiva.morososSocios : af.sociosMorosos}</h2></div>
+            <div className="admin-stat-pill azul"><span>Total</span><h2>{af.totalSocios}</h2></div>
+          </div>
+
+          <h3 className="section-title">Deportistas Inscritos</h3>
+          <div className="caja-triple-grid mb-15">
+            <div className="admin-stat-pill verde"><span>Al Día</span><h2>{filaMesResumenActiva ? Math.max(af.totalDeportistas - filaMesResumenActiva.morososDeportistas, 0) : af.deportistasAlDia}</h2></div>
+            <div className="admin-stat-pill rojo"><span>Morosos</span><h2>{filaMesResumenActiva ? filaMesResumenActiva.morososDeportistas : af.deportistasMorosos}</h2></div>
+            <div className="admin-stat-pill azul"><span>Total</span><h2>{af.totalDeportistas}</h2></div>
+          </div>
+
+          <h3 className="section-title">Deportistas por Rama y Categoría</h3>
+          <div className="card mb-20" style={{ borderRadius: '20px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {deportistasPorRamaCategoria.length === 0 && (
+              <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>Sin deportistas cargados todavía.</p>
+            )}
+            {deportistasPorRamaCategoria.map((grupoRama) => (
+              <div key={grupoRama.rama}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <strong style={{ fontSize: '13px' }}>{grupoRama.rama}</strong>
+                  <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '2px 9px', borderRadius: '999px' }}>{grupoRama.total}</span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {grupoRama.categorias.map((c) => (
+                    <span key={`${grupoRama.rama}-${c.categoria}`} style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(0,0,0,0.05)', padding: '4px 9px', borderRadius: '999px' }}>
+                      {c.categoria}: {c.total}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="card mb-20" style={{ borderRadius: '20px', padding: '14px' }}>
+            <button
+              type="button"
+              onClick={() => setMostrarRecaudacion((v) => !v)}
+              style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 0 }}
+            >
+              <div style={{ textAlign: 'left' }}>
+                <h3 className="section-title" style={{ margin: 0 }}>Recaudación mes a mes — {ANIO_RECAUDACION}</h3>
+                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: '2px 0 0' }}>
+                  {mostrarRecaudacion ? 'Toca para ocultar los montos.' : 'Montos ocultos por defecto — toca para ver el dashboard con filtros.'}
+                </p>
+              </div>
+              <ChevronDown size={18} style={{ transform: mostrarRecaudacion ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', color: 'var(--texto-secundario)', flexShrink: 0 }} />
+            </button>
+          </div>
+
+          {mostrarRecaudacion && (
+          <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ fontSize: '11px' }}>Rama</label>
+              <select className="form-input" value={filtroRamaRecaudacion} onChange={(e) => setFiltroRamaRecaudacion(e.target.value)}>
+                <option value="todas">Todas</option>
+                {ramasClub.map((rama) => (<option key={`rama-recaudacion-${rama}`} value={rama}>{rama}</option>))}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ fontSize: '11px' }}>Categoría</label>
+              <select className="form-input" value={filtroCategoriaRecaudacion} onChange={(e) => setFiltroCategoriaRecaudacion(e.target.value)}>
+                <option value="todas">Todas</option>
+                {categoriasClub.map((categoria) => (<option key={`categoria-recaudacion-${categoria}`} value={categoria}>{categoria}</option>))}
+              </select>
+            </div>
+          </div>
+          <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
+            {filtroMesResumen === 'todos' ? 'Toca un mes para ver el detalle de quién pagó y quién quedó pendiente.' : `Viendo solo ${filtroMesResumen}. Elige "Todo el año" arriba para ver los 12 meses.`}
+          </p>
+          <div className="card mb-20" style={{ borderRadius: '20px', padding: '8px' }}>
+            {(filtroMesResumen === 'todos' ? recaudacionMensual : recaudacionMensual.filter((f) => f.mes === filtroMesResumen)).map((fila) => {
+              const abierto = filtroMesResumen !== 'todos' || mesRecaudacionActivo === fila.mes;
+              const sociosDelMes = filtroRamaRecaudacion !== 'todas' || filtroCategoriaRecaudacion !== 'todas'
+                ? []
+                : (sociosMorosos || []).filter((s) => (s.mesesMorosos || []).includes(fila.mes));
+              const deportistasDelMes = (morososAdmin || []).filter((m) => (m.mesesMorosos || []).includes(fila.mes)
+                && (filtroRamaRecaudacion === 'todas' || m.rama === filtroRamaRecaudacion)
+                && (filtroCategoriaRecaudacion === 'todas' || m.categoria === filtroCategoriaRecaudacion));
+              return (
+                <div key={fila.mes} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setMesRecaudacionActivo(abierto ? null : fila.mes)}
+                    style={{
+                      width: '100%',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '10px 8px',
+                      display: 'grid',
+                      gridTemplateColumns: '46px 1fr 1fr auto',
+                      alignItems: 'center',
+                      gap: '8px',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <strong style={{ fontSize: '13px' }}>{fila.mes}</strong>
+                    <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      Socios: <strong style={{ color: 'var(--verde-victoria)' }}>${fila.recaudadoSocios.toLocaleString('es-CL')}</strong>
+                      {fila.morososSocios > 0 && <span style={{ color: 'var(--rojo-alerta)' }}> · {fila.morososSocios} moroso{fila.morososSocios === 1 ? '' : 's'}</span>}
+                    </span>
+                    <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      Deportistas: <strong style={{ color: 'var(--verde-victoria)' }}>${fila.recaudadoDeportistas.toLocaleString('es-CL')}</strong>
+                      {fila.morososDeportistas > 0 && <span style={{ color: 'var(--rojo-alerta)' }}> · {fila.morososDeportistas} moroso{fila.morososDeportistas === 1 ? '' : 's'}</span>}
+                    </span>
+                    <ChevronDown size={16} style={{ transform: abierto ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', color: 'var(--texto-secundario)' }} />
+                  </button>
+                  {abierto && (
+                    <div style={{ padding: '4px 8px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase' }}>Socios morosos en {fila.mes}</span>
+                        {sociosDelMes.length === 0
+                          ? <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: '4px 0 0' }}>Ninguno.</p>
+                          : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {sociosDelMes.map((s) => (
+                                <span key={`${fila.mes}-socio-${s.id}`} style={{ fontSize: '12px', fontWeight: '700', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span>{s.nombre}</span>
+                                  <span style={{ color: 'var(--rojo-alerta)' }}>${s.montoDeuda.toLocaleString('es-CL')}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase' }}>Deportistas morosos en {fila.mes}</span>
+                        {deportistasDelMes.length === 0
+                          ? <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: '4px 0 0' }}>Ninguno.</p>
+                          : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {deportistasDelMes.map((m) => (
+                                <span key={`${fila.mes}-dep-${m.id}`} style={{ fontSize: '12px', fontWeight: '700', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span>{m.nombre}</span>
+                                  <span style={{ color: 'var(--rojo-alerta)' }}>${m.montoDeuda.toLocaleString('es-CL')}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          </>
+          )}
+
+          <h3 className="section-title">Socios Morosos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
+          <div style={{ position: 'relative', marginBottom: '10px' }}>
+            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+            <input
+              type="text"
+              className="form-input"
+              style={{ paddingLeft: '34px', paddingRight: busquedaSociosMorosos ? '34px' : undefined }}
+              placeholder="Buscar socio..."
+              value={busquedaSociosMorosos}
+              onChange={(e) => setBusquedaSociosMorosos(e.target.value)}
+            />
+            {busquedaSociosMorosos && (
+              <button
+                type="button"
+                onClick={() => setBusquedaSociosMorosos('')}
+                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
+                aria-label="Limpiar búsqueda"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          {sociosMorososFiltrados.length === 0 && (
+            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
+              Sin socios morosos que coincidan con la búsqueda.
+            </p>
+          )}
+          {[...sociosMorososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map((s) => {
+            const gravedad = s.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : s.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
+            return (
+              <div key={s.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: '20px', background: 'rgba(255,255,255,0.72)' }}>
+                <div className="moroso-info">
+                  <span className="moroso-nombre">{s.nombre}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
+                    {s.telefono ? <><Phone size={11} /> {s.telefono}</> : <>{s.correo || 'Sin contacto'}</>}
+                  </span>
+                  {(s.mesesMorosos || []).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                      {s.mesesMorosos.map((mes) => (
+                        <span key={`${s.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: '999px', padding: '2px 7px' }}>
+                          {mes}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="moroso-deuda">
+                  <span className="moroso-monto">${s.montoDeuda.toLocaleString('es-CL')}</span>
+                  <span className="moroso-meses" style={{ color: gravedad }}>{s.mesesDeuda} {s.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    className="btn-notificar"
+                    onClick={() => avisarSocioMoroso(s)}
+                    disabled={!s.telefono}
+                    title={s.telefono ? `Enviar recordatorio por WhatsApp a ${s.telefono}` : 'Sin teléfono registrado en la cuenta'}
+                    style={!s.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                  >
+                    <Bell size={13} /> Avisar
+                  </button>
+                  {rolUsuario === 'super_admin' && (
+                    <button
+                      className="btn-notificar"
+                      style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }}
+                      onClick={() => {
+                        setMostrarFormularioPago(true);
+                        setPagoEditandoId(null);
+                        setPagoManualAutoAprobar(true);
+                        setPagoManualObjetivo({ modoPago: 'socio', rut: s.rut });
+                      }}
+                      title={`Registrar pago manual de ${s.nombre}`}
+                    >
+                      <Plus size={13} /> Pago manual
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', marginTop: '20px', flexWrap: 'wrap', gap: '10px' }}>
+            <h3 className="section-title" style={{ margin: 0 }}>Estatus de pagos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
+            {vistaEstatusPagos === 'morosos' && (
+              <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={abrirModalNotificarTodos}>
+                <Bell size={13} /> Notificar Todos
+              </button>
+            )}
+          </div>
+          <div className="filter-chips mb-15">
+            <button className={`filter-chip ${vistaEstatusPagos === 'morosos' ? 'active' : ''}`} onClick={() => setVistaEstatusPagos('morosos')}>
+              <AlertTriangle size={12} /> Morosos ({(morososAdmin || []).length})
+            </button>
+            <button className={`filter-chip ${vistaEstatusPagos === 'pagados' ? 'active' : ''}`} onClick={() => setVistaEstatusPagos('pagados')}>
+              <CheckSquare size={12} /> Pagados ({deportistasAlDiaLista.length})
+            </button>
+          </div>
+          <div style={{ position: 'relative', marginBottom: '10px' }}>
+            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+            <input
+              type="text"
+              className="form-input"
+              style={{ paddingLeft: '34px', paddingRight: busquedaMorosos ? '34px' : undefined }}
+              placeholder="Buscar por socio, apoderado o deportista..."
+              value={busquedaMorosos}
+              onChange={(e) => setBusquedaMorosos(e.target.value)}
+            />
+            {busquedaMorosos && (
+              <button
+                type="button"
+                onClick={() => setBusquedaMorosos('')}
+                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
+                aria-label="Limpiar búsqueda"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          {vistaEstatusPagos === 'morosos' && (
+          <div className="filter-chips mb-15">
+            <button className={`filter-chip ${filtroMorosos === 'todos' ? 'active' : ''}`} onClick={() => setFiltroMorosos('todos')}>Todos ({(morososAdmin || []).length})</button>
+            <button className={`filter-chip ${filtroMorosos === 'socios' ? 'active' : ''}`} onClick={() => setFiltroMorosos('socios')}>Socios ({(morososAdmin || []).filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado').length})</button>
+            <button className={`filter-chip ${filtroMorosos === 'apoderados' ? 'active' : ''}`} onClick={() => setFiltroMorosos('apoderados')}>Apoderados ({(morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado').length})</button>
+          </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '15px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ fontSize: '11px' }}>Rama</label>
+              <select className="form-input" value={filtroRamaMorosos} onChange={(e) => setFiltroRamaMorosos(e.target.value)}>
+                <option value="todas">Todas</option>
+                {ramasMorosos.map((rama) => (
+                  <option key={`rama-moroso-${rama}`} value={rama}>{rama}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ fontSize: '11px' }}>Categoría</label>
+              <select className="form-input" value={filtroCategoriaMorosos} onChange={(e) => setFiltroCategoriaMorosos(e.target.value)}>
+                <option value="todas">Todas</option>
+                {categoriasMorosos.map((categoria) => (
+                  <option key={`categoria-moroso-${categoria}`} value={categoria}>{categoria}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {vistaEstatusPagos === 'pagados' && (
+            <>
+              {pagadosFiltrados.length === 0 && (
+                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
+                  Sin deportistas al día que coincidan con la búsqueda.
+                </p>
+              )}
+              {[...pagadosFiltrados].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((p) => (
+                <div key={p.id} className="moroso-row" style={{ borderLeft: '4px solid var(--verde-victoria)', borderRadius: '20px', background: 'rgba(255,255,255,0.72)' }}>
+                  <div className="moroso-info">
+                    <span className="moroso-nombre">{p.nombre}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
+                      <span className="moroso-tipo-badge" style={{ background: 'rgba(52,199,89,0.12)', color: 'var(--verde-victoria)' }}>Al día</span>
+                      {p.sinApoderado && (
+                        <span className="moroso-tipo-badge" style={{ background: 'rgba(255,59,48,0.12)', color: 'var(--rojo-alerta)' }} title="El deportista no tiene ninguna cuenta vinculada por RUT ni correo del apoderado">
+                          <AlertTriangle size={10} style={{ marginRight: '3px', verticalAlign: '-1px' }} /> Sin apoderado asignado
+                        </span>
+                      )}
+                      {(p.rama || p.categoria) && (
+                        <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: '999px' }}>
+                          {[p.rama, p.categoria].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
+                      {p.telefono ? <><Phone size={11} /> {p.telefono}</> : <>{p.correo || 'Sin contacto'}</>}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+          {vistaEstatusPagos === 'morosos' && (
+          <>
+          {morososFiltrados.length === 0 && (
+            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
+              Sin morosos que coincidan con la búsqueda.
+            </p>
+          )}
+          {[...morososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map(m => {
+            const gravedad = m.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : m.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
+            // El badge de "tipo" solo suma información cuando la familia SÍ es
+            // socia (afecta el monto de la cuota) — "apoderado" es el caso
+            // normal/mayoritario y no amerita marcarlo. La única alerta real
+            // acá es que falte el vínculo con una cuenta de apoderado.
+            const esFamiliaSocia = m.tipo === 'socio' || m.tipo === 'socio-apoderado';
+            const { bg, color } = colorTipo(m.tipo);
+            return (
+              <div key={m.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: '20px', background: 'rgba(255,255,255,0.72)' }}>
+                <div className="moroso-info">
+                  <span className="moroso-nombre">{m.nombre}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
+                    {esFamiliaSocia && <span className="moroso-tipo-badge" style={{ background: bg, color }}>Socio</span>}
+                    {m.sinApoderado && (
+                      <span className="moroso-tipo-badge" style={{ background: 'rgba(255,59,48,0.12)', color: 'var(--rojo-alerta)' }} title="El deportista no tiene ninguna cuenta vinculada por RUT ni correo del apoderado">
+                        <AlertTriangle size={10} style={{ marginRight: '3px', verticalAlign: '-1px' }} /> Sin apoderado asignado
+                      </span>
+                    )}
+                    {(m.rama || m.categoria) && (
+                      <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: '999px' }}>
+                        {[m.rama, m.categoria].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
+                    {m.pupilos.length > 0 && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><User size={11} /> {m.pupilos.join(' · ')}</span>}
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
+                    {m.telefono ? <><Phone size={11} /> {m.telefono}</> : <>{m.correo || 'Sin contacto'}</>}
+                  </span>
+                  {(m.mesesMorosos || []).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
+                      {m.mesesMorosos.map((mes) => (
+                        <span key={`${m.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: '999px', padding: '2px 7px' }}>
+                          {mes}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="moroso-deuda">
+                  <span className="moroso-monto">${m.montoDeuda.toLocaleString('es-CL')}</span>
+                  <span className="moroso-meses" style={{ color: gravedad }}>{m.mesesDeuda} {m.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    className="btn-notificar"
+                    onClick={() => avisarMoroso(m)}
+                    disabled={!m.telefono}
+                    title={m.telefono ? `Enviar recordatorio por WhatsApp a ${m.telefono}` : 'Sin teléfono registrado en la cuenta'}
+                    style={!m.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                  >
+                    <Bell size={13} /> Avisar
+                  </button>
+                  {rolUsuario === 'super_admin' && (
+                    <button
+                      className="btn-notificar"
+                      style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }}
+                      onClick={() => {
+                        setMostrarFormularioPago(true);
+                        setPagoEditandoId(null);
+                        setPagoManualAutoAprobar(true);
+                        setPagoManualObjetivo({ modoPago: 'deportista', rut: m.rut });
+                      }}
+                      title={`Registrar pago manual de ${m.nombre}`}
+                    >
+                      <Plus size={13} /> Pago manual
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          </>
+          )}
 
           <h3 className="section-title mt-20">Cuenta de una familia puntual</h3>
           <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>

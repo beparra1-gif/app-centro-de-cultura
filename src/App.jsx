@@ -756,11 +756,17 @@ function App() {
       // real con si la cuenta es socia — rompía el filtro "Solo socios".
       // Se deriva del es_socio real de la cuenta del apoderado.
       const tipo = cuentaApoderado?.es_socio ? 'socio-apoderado' : 'apoderado';
+      // sinApoderado: true solo cuando NO se encontró ninguna cuenta vía
+      // rut_apoderado/correo_apoderado (dato faltante real) — no confundir
+      // con "tipo: apoderado", que es el caso normal/mayoritario (apoderado
+      // no socio) y no amerita ninguna alerta visual.
+      const sinApoderado = !cuentaApoderado;
       morosos.push({
         id: rutJugadorNorm,
         rut: jugador.rut_jugador || rutJugadorNorm,
         nombre: `${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim() || `Jugador ${jugador.rut_jugador || ''}`,
         tipo,
+        sinApoderado,
         rama: jugador.rama || '',
         categoria: jugador.categoria || '',
         mesesDeuda,
@@ -1342,6 +1348,16 @@ function App() {
     const usuarioPermisos = getUsuarioActivoPermisos();
     return Boolean(usuarioPermisos?.[pantalla]);
   };
+
+  // El header solo mostraba el título de la pantalla ("Tesorería", "Admin"),
+  // nunca quién está logueado — un admin que atiende a varias familias no
+  // tenía forma de confirmar de un vistazo con qué cuenta está operando.
+  const nombreUsuarioActivo = rolUsuario
+    ? (usuarioAutenticado?.nombre
+        || `${usuarioAutenticado?.nombres || ''} ${usuarioAutenticado?.apellido_paterno || ''}`.trim()
+        || usuarioAutenticado?.correo
+        || '')
+    : '';
 
   const getHeaderTitle = () => {
     if(!rolUsuario) return "Portal Oficial";
@@ -2929,6 +2945,9 @@ function App() {
               <div className="home-header-brand">
                 <img src="/logos/Club-frase.png" alt="Club Centro de Cultura Física" className="home-header-club-mark" />
                 <span className="home-header-subtitle">{getHeaderTitle()}</span>
+                <span className="home-header-usuario" style={{ fontSize: '10px', color: 'var(--gris-secundario)', fontWeight: '700', display: 'block', lineHeight: '1.3' }}>
+                  {nombreUsuarioActivo}
+                </span>
               </div>
             )
           }
