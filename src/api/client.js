@@ -596,6 +596,17 @@ export const jugadoresAPI = {
     return handleResponse(response);
   },
 
+  // Marca/desmarca al deportista como autogestionable (puede pagar su
+  // propia cuota) — crea su cuenta propia si todavía no existía.
+  setAutogestionable: async (rut, activo) => {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}/autogestionable`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activo }),
+    });
+    return handleResponse(response);
+  },
+
   // Eliminar definitivamente (solo super admin)
   delete: async (rut, actor = null) => {
     const response = await apiFetch(`${API_BASE_URL}/jugadores/${rut}`, {

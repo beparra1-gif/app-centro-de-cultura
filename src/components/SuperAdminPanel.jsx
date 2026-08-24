@@ -1076,6 +1076,14 @@ function SuperAdminPanel({
     return mapa;
   }, [cuentasAdmin]);
 
+  // Sin ignorar tildes, "Theza" (cuenta) y "Thezá" (jugador) no matchean
+  // pese a ser el mismo apellido — apellidos con tilde son comunes acá.
+  const normalizarApellido = (texto = '') => String(texto || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+
   const cuentasApoderadoParaAsignar = useMemo(() => {
     return (cuentasAdmin || [])
       .filter((c) => String(c.correo || '').trim())
@@ -1083,9 +1091,23 @@ function SuperAdminPanel({
         correo: c.correo,
         rut: c.rut || '',
         nombre: `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || c.correo,
+        apellidoPaterno: normalizarApellido(c.apellido_paterno || ''),
       }))
       .sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [cuentasAdmin]);
+
+  // Mismas cuentas de arriba, pero con las que comparten apellido con ESTE
+  // jugador puestas primero — acelera vincular a un apoderado sin tener que
+  // buscarlo a mano en 100+ opciones cuando el apellido ya da una pista
+  // fuerte de cuál es. Sigue siendo el admin quien confirma con el clic, no
+  // se vincula nada solo.
+  const ordenarCandidatosApoderado = (jugador) => {
+    const apellidoJugador = normalizarApellido(jugador?.apellido_paterno || '');
+    if (!apellidoJugador) return cuentasApoderadoParaAsignar;
+    const coinciden = cuentasApoderadoParaAsignar.filter((c) => c.apellidoPaterno && c.apellidoPaterno === apellidoJugador);
+    const resto = cuentasApoderadoParaAsignar.filter((c) => !(c.apellidoPaterno && c.apellidoPaterno === apellidoJugador));
+    return [...coinciden.map((c) => ({ ...c, sugerido: true })), ...resto];
+  };
 
   const asignarApoderadoAJugador = async (jugador) => {
     const cuenta = cuentasApoderadoParaAsignar.find((c) => c.correo === correoApoderadoParaAsignar);
@@ -1335,8 +1357,8 @@ function SuperAdminPanel({
               onChange={(e) => setCorreoApoderadoParaAsignar(e.target.value)}
             >
               <option value="">Selecciona un apoderado/socio...</option>
-              {cuentasApoderadoParaAsignar.map((c) => (
-                <option key={c.correo} value={c.correo}>{c.nombre} · {c.correo}</option>
+              {ordenarCandidatosApoderado(u.raw).map((c) => (
+                <option key={c.correo} value={c.correo}>{c.sugerido ? '⭐ ' : ''}{c.nombre} · {c.correo}{c.sugerido ? ' (mismo apellido)' : ''}</option>
               ))}
             </select>
             <button
@@ -1419,6 +1441,39 @@ function SuperAdminPanel({
 
     return (cuentasAdmin || []).find((cuenta) => String(cuenta.correo || '').trim().toLowerCase() === correoApoderado) || null;
   }, [jugadorAdminEdit, cuentasAdmin]);
+
+  // Cuenta PROPIA del deportista (login con su propio RUT, no la del
+  // apoderado) — distinta de cuentaAsociadaJugadorEdit de arriba. Puede no
+  // existir todavía si el deportista nunca inició sesión; en ese caso
+  // "Autogestionable" (ver toggleAutogestionable) la crea sola.
+  const cuentaPropiaJugadorEdit = useMemo(() => {
+    const rutJugador = normalizarRutUsuarios(jugadorAdminEdit?.rut_jugador || '');
+    if (!rutJugador) return null;
+    return (cuentasAdmin || []).find((cuenta) => normalizarRutUsuarios(cuenta.rut || '') === rutJugador) || null;
+  }, [jugadorAdminEdit, cuentasAdmin]);
+
+  const esAutogestionable = Boolean(cuentaPropiaJugadorEdit?.permisos_override?.perfil);
+  const [guardandoAutogestionable, setGuardandoAutogestionable] = useState(false);
+
+  const toggleAutogestionable = async (rutJugador, activo) => {
+    try {
+      setGuardandoAutogestionable(true);
+      await api.jugadoresAPI.setAutogestionable(rutJugador, activo);
+      showToast({
+        message: activo
+          ? 'Ahora este deportista puede pagar su propia cuota (entra con su RUT, clave inicial 12345 si es su primera vez).'
+          : 'Se le quitó el acceso a pagar su propia cuota.',
+        type: 'success',
+      });
+      // No hay una prop dedicada a "refrescar solo cuentas" — reusa el mismo
+      // recargador completo (cargarDatos) que ya usa el botón de Sheets.
+      await onSheetsSyncComplete?.();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo actualizar.', type: 'error' });
+    } finally {
+      setGuardandoAutogestionable(false);
+    }
+  };
 
   const renderPermisosCuenta = ({
     cuenta,
@@ -3135,6 +3190,22 @@ function SuperAdminPanel({
                 descripcion: 'Si este jugador depende de una cuenta/apoderado, puedes gestionar aquí los módulos que tendrá disponibles esa cuenta.',
                 emptyMessage: 'Este jugador no tiene una cuenta asociada por correo_apoderado. Guarda o corrige esa relación para poder administrar permisos desde aquí.',
               })}
+
+              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> Deportista autogestionable</h4>
+                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '10px' }}>
+                  Le da a este deportista acceso a "Mi Cuenta" con SU PROPIO login (entra con su RUT, no con el de su apoderado) para ver y pagar su mensualidad directamente. Si todavía no tiene cuenta propia, se crea sola con clave inicial <strong>12345</strong> (se la pide cambiar al primer ingreso).
+                </p>
+                <label className="checkbox-label-row">
+                  <input
+                    type="checkbox"
+                    checked={esAutogestionable}
+                    disabled={guardandoAutogestionable}
+                    onChange={(e) => toggleAutogestionable(jugadorAdminEdit.rut_jugador, e.target.checked)}
+                  />
+                  {guardandoAutogestionable ? 'Guardando...' : 'Puede pagar su propia cuota'}
+                </label>
+              </div>
 
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>

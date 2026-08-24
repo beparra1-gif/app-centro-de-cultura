@@ -4900,6 +4900,61 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
   }
 });
 
+// POST: marca/desmarca a un deportista como "autogestionable" (puede pagar
+// su propia cuota, ve 'Mi Cuenta' y su Tesorería propia) — pedido explícito
+// del club para deportistas mayores que no dependen de su apoderado para
+// pagar. Técnicamente esto ya funcionaba con solo dar el permiso 'perfil'
+// vía el override de la cuenta (mismo mecanismo que Ajustes > Permisos), acá
+// se expone directo desde la ficha del deportista para no obligar al admin a
+// buscar la cuenta en la matriz completa. Si el deportista todavía no tiene
+// cuenta propia (nunca inició sesión), se crea una mínima con la clave
+// universal '12345' ya hasheada — el mismo bootstrap que login ya soporta.
+app.post('/api/jugadores/:rut/autogestionable', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  const rutNormalizado = normalizarRutParaComparar(req.params.rut);
+  const activo = Boolean(req.body?.activo);
+
+  try {
+    const jugadorRes = await pool.query(
+      `SELECT rut_jugador, nombres, apellido_paterno, estado
+       FROM jugadores
+       WHERE UPPER(REPLACE(REPLACE(COALESCE(rut_jugador, ''), '.', ''), '-', '')) = $1
+       LIMIT 1`,
+      [rutNormalizado]
+    );
+    if (jugadorRes.rows.length === 0) {
+      return res.status(404).json({ error: 'No existe ningún deportista con ese RUT.' });
+    }
+    const jugador = jugadorRes.rows[0];
+
+    let cuenta = await obtenerCuentaPorRutNormalizado(rutNormalizado);
+    if (!cuenta) {
+      const rutFormateado = formatearRut(jugador.rut_jugador || rutNormalizado);
+      const correoPlaceholder = construirCorreoPlaceholderDesdeRut(rutNormalizado);
+      const passwordHashDefault = await hashPassword('12345');
+      await pool.query(
+        `INSERT INTO cuentas (correo, rut, password, nombres, apellido_paterno, rol, perfil_principal, estado, forzar_clave, permisos_override)
+         VALUES ($1, $2, $3, $4, $5, 'jugador', 'jugador', 'activo', true, '{}'::jsonb)`,
+        [correoPlaceholder, rutFormateado, passwordHashDefault, jugador.nombres || null, jugador.apellido_paterno || null]
+      );
+      cuenta = await obtenerCuentaPorRutNormalizado(rutNormalizado);
+    }
+
+    const overrideActual = (cuenta.permisos_override && typeof cuenta.permisos_override === 'object') ? cuenta.permisos_override : {};
+    const nuevoOverride = { ...overrideActual, perfil: activo };
+
+    const actualizada = await pool.query(
+      `UPDATE cuentas SET permisos_override = $1::jsonb, updated_at = NOW() WHERE id = $2
+       RETURNING id, rut, rol, permisos_override`,
+      [JSON.stringify(nuevoOverride), cuenta.id]
+    );
+
+    res.json(actualizada.rows[0]);
+  } catch (err) {
+    console.error('[POST /api/jugadores/:rut/autogestionable]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST: el apoderado dueño del jugador (o admin) sube la foto de PERFIL
 // general del deportista (foto_jugador) — la que se usa en el avatar del
 // header, Tesoreria, Tarjeta Oficial CCF, etc. Reutiliza el almacenamiento
