@@ -8,13 +8,6 @@ import { confirmAction } from '../utils/confirmDialog';
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const MESES_ABREV = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-// Valores de referencia para concepto de pago
-const VALORES_CONCEPTO = {
-  'Mensualidad': 25000,
-  'Mensualidad Socio': 15000,
-  'Matrícula': 50000
-};
-
 const normalizarRutPago = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 
 const DIACRITICOS_REGEX = new RegExp('[̀-ͯ]', 'g');
@@ -55,7 +48,7 @@ const expandirMesesDePago = (textoMeses = '', anioObjetivo) => {
   return [...new Set(candidatos)];
 };
 
-export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pagosExistentes = [], onClose, onSave, autoAprobar = false, objetivoInicial = null }) {
+export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pagosExistentes = [], onClose, onSave, autoAprobar = false, objetivoInicial = null, utmVigente = null, utmHistorico = {} }) {
   const [formData, setFormData] = useState({
     rut_jugador: pago?.rut_jugador || (objetivoInicial?.modoPago === 'deportista' ? objetivoInicial.rut : ''),
     correo_apoderado: pago?.correo_apoderado || '',
@@ -96,6 +89,20 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
   
   // Datos del jugador seleccionado
   const [valorMensualidad, setValorMensualidad] = useState(0);
+
+  // Sugerencia de cuota socio para UN mes específico (1=enero..12=diciembre):
+  // override manual de la cuenta si existe, si no 0,3 UTM del corte de ESE
+  // mes (la UTM varía mes a mes — antes acá se sugería siempre $15.000 fijo,
+  // sin relación con la UTM real). Es solo el valor INICIAL sugerido: el
+  // admin igual puede editarlo a mano por mes vía montosPorMes.
+  const obtenerCuotaSocioSugeridaDelMes = (mesNum, cuentaSocio = null) => {
+    const cuotaBaseOverride = Number(cuentaSocio?.monto_mensual_base || 0);
+    if (cuotaBaseOverride > 0) return cuotaBaseOverride;
+    const utmOverrideCuenta = Number(cuentaSocio?.utm_valor_referencia || 0);
+    if (utmOverrideCuenta > 0) return Math.round(utmOverrideCuenta * 0.3);
+    const utmDelMes = Number(utmHistorico?.[mesNum]) || Number(utmVigente?.valor) || 71649;
+    return Math.round(utmDelMes * 0.3);
+  };
 
   // Filtrar deportistas según búsqueda
   const deportistasFiltrados = searchTerm.trim() ? jugadores.filter(j => {
@@ -188,7 +195,8 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
     const cuentaSocio = cuentas.find(c => c.rut === rutCuentaSocio);
     if (!cuentaSocio) return;
 
-    setValorMensualidad(VALORES_CONCEPTO['Mensualidad Socio']);
+    const mesActual = new Date().getMonth() + 1;
+    setValorMensualidad(obtenerCuotaSocioSugeridaDelMes(mesActual, cuentaSocio));
     setFormData(prev => ({
       ...prev,
       correo_apoderado: cuentaSocio.correo || '',
@@ -196,6 +204,10 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
     }));
     setMesesSeleccionados([]);
     setMontosPorMes({});
+    // obtenerCuotaSocioSugeridaDelMes se redefine cada render (lee utmVigente/
+    // utmHistorico por closure) — agregarla a deps dispararía el efecto en
+    // cada render sin ningún cambio real de entrada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoPago, rutCuentaSocio, cuentas]);
 
   // Actualizar meses_correspondientes cuando cambian meses seleccionados
@@ -743,16 +755,24 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                           if (yaSeleccionado) {
                             delete siguiente[idx];
                           } else {
-                            siguiente[idx] = valorMensualidad;
+                            // En modo socio, cada mes sugiere su propia cuota
+                            // (la UTM varía mes a mes) en vez de repetir el
+                            // mismo valorMensualidad para todos los meses.
+                            siguiente[idx] = modoPago === 'socio'
+                              ? obtenerCuotaSocioSugeridaDelMes(idx + 1, cuentas.find(c => c.rut === rutCuentaSocio))
+                              : valorMensualidad;
                           }
                           return siguiente;
                         });
 
                         if (nuevosMeses.length === 1) {
                           const soloMes = nuevosMeses[0];
+                          const sugeridoMesSolo = modoPago === 'socio'
+                            ? obtenerCuotaSocioSugeridaDelMes(soloMes + 1, cuentas.find(c => c.rut === rutCuentaSocio))
+                            : valorMensualidad;
                           setFormData(prev => ({
                             ...prev,
-                            monto_total_pagado: soloMes === idx && !yaSeleccionado ? valorMensualidad : (montosPorMes[soloMes] ?? valorMensualidad)
+                            monto_total_pagado: soloMes === idx && !yaSeleccionado ? sugeridoMesSolo : (montosPorMes[soloMes] ?? sugeridoMesSolo)
                           }));
                         } else if (nuevosMeses.length === 0) {
                           setFormData(prev => ({ ...prev, monto_total_pagado: '' }));

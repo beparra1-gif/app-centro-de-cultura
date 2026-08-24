@@ -60,6 +60,11 @@ const NotificationsPanel = lazy(() => import('./components/NotificationsPanel'))
 const SearchPanel = lazy(() => import('./components/SearchPanel'));
 const NotificationHistoryPanel = lazy(() => import('./components/NotificationHistoryPanel'));
 
+// Mismo año fijo que ANIO_OBJETIVO en construirMorososDesdePagos/
+// construirSociosMorosos (2026 es el primer año con datos reales en el
+// sistema) — se usa para pedir el histórico de UTM del año correcto.
+const ANIO_OBJETIVO_TESORERIA = 2026;
+
 // ==========================================
 // 2. COMPONENTE PRINCIPAL (APP)
 // ==========================================
@@ -177,6 +182,18 @@ function App() {
   // cargarDatos() la traiga la primera vez; los cálculos usan un fallback
   // fijo mientras tanto para no romperse en el primer render.
   const [utmVigente, setUtmVigente] = useState(null);
+
+  // Valor de UTM de corte POR MES, no solo el vigente hoy — un socio que
+  // debe junio+julio+agosto debe la suma de 3 cuotas distintas (0,3 UTM del
+  // corte de CADA mes), no 3 veces la cuota de hoy. `porMes` = { 1: valor, 2: valor, ... }.
+  const [utmHistorico, setUtmHistorico] = useState({});
+  // Mismo motivo que cuentasAdminRef/jugadoresAdminRef arriba: el poll de
+  // pagos (recargarPagosMensualidades, setInterval con deps: []) necesita el
+  // valor de UTM MÁS RECIENTE, no el que había en el primer render.
+  const utmVigenteRef = useRef(utmVigente);
+  const utmHistoricoRef = useRef(utmHistorico);
+  useEffect(() => { utmVigenteRef.current = utmVigente; }, [utmVigente]);
+  useEffect(() => { utmHistoricoRef.current = utmHistorico; }, [utmHistorico]);
 
   // --- ESTADOS: FASE 6 - REPORTES AVANZADOS, PDF, GRÁFICOS ---
   const [historialNotificaciones, setHistorialNotificaciones] = useState([]);
@@ -788,7 +805,13 @@ function App() {
   // cuenta socia) en vez de rut_jugador, y solo considera concepto_pago
   // "Mensualidad Socio" (mismo texto que PerfilTesoreriaPanel usa al crear
   // el pago de cuota social).
-  const construirSociosMorosos = (pagos = [], cuentas = []) => {
+  // utmVigenteParam/utmHistoricoParam se reciben explícitos (no por closure
+  // sobre el state utmVigente/utmHistorico) a propósito: dentro de
+  // cargarDatos() esta función se llama en el mismo tick en que se acaban de
+  // fetchear esos valores, y setUtmVigente()/setUtmHistorico() no actualizan
+  // la closure hasta el próximo render — leerlos por closure habría usado
+  // siempre el valor de UTM de la carga ANTERIOR, no la recién fetcheada.
+  const construirSociosMorosos = (pagos = [], cuentas = [], utmVigenteParam = utmVigente, utmHistoricoParam = utmHistorico) => {
     const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
     const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
     const NOMBRES_MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -913,10 +936,19 @@ function App() {
       if (mesesDeuda <= 0) return;
 
       // Mismo cálculo de cuota automática de socio que PerfilTesoreriaPanel:
-      // monto_mensual_base de la cuenta si existe, si no 30% de la UTM.
-      const utmCuenta = Number(cuenta?.utm_valor_referencia || utmVigente?.valor || 71649);
-      const cuotaBase = Number(cuenta?.monto_mensual_base || 0);
-      const cuotaRef = Math.round(cuotaBase > 0 ? cuotaBase : (utmCuenta * 0.3));
+      // monto_mensual_base/utm_valor_referencia de la cuenta si existen (override
+      // manual del admin, se aplica parejo a todos los meses); si no, 0,3 UTM
+      // DEL CORTE DE CADA MES — la UTM varía mes a mes (ver utm_mensual en el
+      // backend), así que 3 meses impagos deben la suma de 3 cuotas distintas,
+      // no 3 veces la cuota de hoy multiplicada por la cantidad de meses.
+      const cuotaBaseOverride = Number(cuenta?.monto_mensual_base || 0);
+      const utmOverrideCuenta = Number(cuenta?.utm_valor_referencia || 0);
+      const obtenerCuotaSocioDelMes = (mesNum) => {
+        if (cuotaBaseOverride > 0) return cuotaBaseOverride;
+        if (utmOverrideCuenta > 0) return Math.round(utmOverrideCuenta * 0.3);
+        const utmDelMes = Number(utmHistoricoParam?.[mesNum]) || Number(utmVigenteParam?.valor) || 71649;
+        return Math.round(utmDelMes * 0.3);
+      };
 
       const telefonoCuenta = String(cuenta.telefono || '').trim();
       const telefono = telefonoCuenta
@@ -929,7 +961,7 @@ function App() {
         nombre: `${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim() || `Socio ${cuenta.rut || ''}`,
         mesesDeuda,
         mesesMorosos: mesesMorososNums.map((n) => NOMBRES_MESES[n - 1]),
-        montoDeuda: mesesDeuda * cuotaRef,
+        montoDeuda: mesesMorososNums.reduce((suma, mesNum) => suma + obtenerCuotaSocioDelMes(mesNum), 0),
         contacto: telefono || cuenta.correo || 'Sin contacto',
         telefono,
         correo: cuenta.correo || '',
@@ -1035,6 +1067,7 @@ function App() {
         api.citacionesAPI.getAll(),
         api.notificacionesAppAPI.getAll(),
         api.utmAPI.getVigente(),
+        api.utmAPI.getHistorico(ANIO_OBJETIVO_TESORERIA),
       ]);
 
       const getResult = (index, fallback = []) => (
@@ -1057,10 +1090,15 @@ function App() {
       const citacionesRes = getResult(11, []);
       const notificacionesAppRes = getResult(12, []);
       const utmVigenteRes = getResult(13, null);
+      const utmHistoricoRes = getResult(14, null);
       const totalErrores = resultados.filter((r) => r.status === 'rejected').length;
 
       if (utmVigenteRes?.valor) {
         setUtmVigente(utmVigenteRes);
+      }
+
+      if (utmHistoricoRes?.porMes) {
+        setUtmHistorico(utmHistoricoRes.porMes);
       }
 
       if (Array.isArray(comunicacionesRes)) {
@@ -1182,7 +1220,7 @@ function App() {
         setPagosMensualidadesAdmin(pagosMensualidadesRes);
         setPagosPendientesAdmin(pagosMensualidadesRes.filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente'));
         setMorososAdmin(construirMorososDesdePagos(pagosMensualidadesRes, jugadoresRes, cuentasRes));
-        setSociosMorosos(construirSociosMorosos(pagosMensualidadesRes, cuentasRes));
+        setSociosMorosos(construirSociosMorosos(pagosMensualidadesRes, cuentasRes, utmVigenteRes, utmHistoricoRes?.porMes));
       }
 
       if (Array.isArray(partidosLiveRes)) {
@@ -1985,7 +2023,7 @@ function App() {
     );
     setSociosMorosos(
       Array.isArray(pagosRes)
-        ? construirSociosMorosos(pagosRes, cuentasAdminRef.current)
+        ? construirSociosMorosos(pagosRes, cuentasAdminRef.current, utmVigenteRef.current, utmHistoricoRef.current)
         : []
     );
   };
@@ -3265,6 +3303,7 @@ function App() {
                 setPageViewMode={setPageViewMode}
                 onIrAPagoManual={irARegistrarPagoManual}
                 utmVigente={utmVigente}
+                utmHistorico={utmHistorico}
               />
             )}
             {puedeVerPantalla('jugador') && pantallaActiva === 'jugador' && (
@@ -3379,6 +3418,7 @@ function App() {
                 onComunicacionesChanged={recargarComunicacionesResumen}
                 enviarPorWhatsApp={enviarPorWhatsApp}
                 utmVigente={utmVigente}
+                utmHistorico={utmHistorico}
                 onNavegarPantalla={cambiarPantallaConLoader}
               />
             )}

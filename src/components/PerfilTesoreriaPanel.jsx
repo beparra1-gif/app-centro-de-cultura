@@ -28,6 +28,7 @@ function PerfilTesoreriaPanel({
   setPageViewMode,
   onIrAPagoManual,
   utmVigente,
+  utmHistorico,
 }) {
   const [archivoComprobante, setArchivoComprobante] = useState(null);
   const inputComprobanteRef = useRef(null);
@@ -351,6 +352,17 @@ function PerfilTesoreriaPanel({
   const cuotaSocioBase = Number(cuentaActual?.monto_mensual_base || 0);
   const cuotaSocio = Math.round(cuotaSocioBase > 0 ? cuotaSocioBase : (utmActual * 0.3));
 
+  // La UTM varía mes a mes — pagar junio+julio+agosto junto no es 3 veces la
+  // cuota de HOY, es la suma de la cuota real de cada mes (0,3 UTM del corte
+  // de ESE mes). Mismo criterio que construirSociosMorosos en App.jsx.
+  const utmOverrideCuenta = Number(cuentaActual?.utm_valor_referencia || 0);
+  const obtenerCuotaSocioDelMes = (mesNum) => {
+    if (cuotaSocioBase > 0) return cuotaSocioBase;
+    if (utmOverrideCuenta > 0) return Math.round(utmOverrideCuenta * 0.3);
+    const utmDelMes = Number(utmHistorico?.[mesNum]) || Number(utmVigente?.valor) || 71649;
+    return Math.round(utmDelMes * 0.3);
+  };
+
   // Excepción acordada/beca: aplica solo a la parte deportistas, nunca a la cuota socio.
   const montoAcordadoFamilia = Number(cuentaActual?.monto_mensual_override || 0);
   const { cuotaDeportistas, cuotaReferencial: cuotaDeportistaReferencial } = calcularCuotaDeportistasFamilia({
@@ -369,7 +381,9 @@ function PerfilTesoreriaPanel({
   const obtenerCuotaMensualPupilo = (pupilo = {}) => obtenerCuotaJugador(pupilo, cuotaDeportistaReferencial);
 
   const tarifaRedondeada = Math.round(tarifaMensual);
-  const totalSocioSeleccionado = cuotaSocioAplicada * mesesSocioSeleccionados.length;
+  const totalSocioSeleccionado = esSocio
+    ? mesesSocioSeleccionados.reduce((suma, mesNum) => suma + obtenerCuotaSocioDelMes(mesNum), 0)
+    : 0;
   const totalMesesJugadorSeleccionados = pupilosActivos.reduce((acc, p) => acc + (mesesSeleccionados[p.rut] || []).length, 0);
   const totalJugadorSeleccionado = pupilosActivos.reduce((acc, p) => (
     acc + obtenerCuotaMensualPupilo(p) * (mesesSeleccionados[p.rut] || []).length
@@ -493,22 +507,27 @@ function PerfilTesoreriaPanel({
         : null;
 
       const pagosCreados = [];
+      // montoPorDefecto puede ser un número fijo (deportistas, no depende de
+      // UTM) o una función (mesNum) => monto (cuota socio: cada mes puede
+      // tener su propia UTM de corte, así que cada fila de pago se guarda
+      // con el monto REAL de ese mes específico, no uno único repetido.
       const crearPagosPara = async (meses, concepto, montoPorDefecto, rutJugadorPago) => {
         const mesesOrdenados = [...meses].sort((a, b) => a - b);
         for (const mesNumero of mesesOrdenados) {
           const mesTexto = String(mesesBase[mesNumero - 1] || '').toLowerCase();
+          const montoDelMes = typeof montoPorDefecto === 'function' ? montoPorDefecto(mesNumero) : montoPorDefecto;
           const pagoCreado = await api.pagosMensualidadesAPI.create({
             ...payloadBase,
             rut_jugador: rutJugadorPago,
             concepto_pago: concepto,
             meses_correspondientes: `${mesTexto}-${anioObjetivo}`,
-            monto_total_pagado: montoUnitarioAbono !== null && montoUnitarioAbono > 0 ? montoUnitarioAbono : montoPorDefecto,
+            monto_total_pagado: montoUnitarioAbono !== null && montoUnitarioAbono > 0 ? montoUnitarioAbono : montoDelMes,
           });
           pagosCreados.push(pagoCreado);
         }
       };
 
-      await crearPagosPara(mesesSocioSeleccionados, 'Mensualidad Socio', cuotaSocioAplicada, rutPupiloActivo);
+      await crearPagosPara(mesesSocioSeleccionados, 'Mensualidad Socio', obtenerCuotaSocioDelMes, rutPupiloActivo);
 
       // Cada pupilo genera sus propias filas de pago, con su propia cuota y
       // sus propios meses seleccionados (antes se usaba un único set de meses
@@ -744,12 +763,16 @@ function PerfilTesoreriaPanel({
               <p style={{ margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{mesesAtraso} {mesesAtraso === 1 ? 'mes' : 'meses'} adeudados</p>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Total Estimado</span>
-              <strong style={{ fontSize: '20px', color: 'var(--rojo-alerta)', fontWeight: '900' }}>-${(tarifaRedondeada * mesesAtraso).toLocaleString('es-CL')}</strong>
+              <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Total Adeudado</span>
+              {/* morosoActivo.montoDeuda ya suma la cuota REAL de cada mes (0,3 UTM
+                  del corte de ese mes en el caso socio) — antes acá se aproximaba
+                  con tarifaRedondeada × mesesAtraso (la cuota de HOY repetida),
+                  que no coincidía con el total real cuando la UTM varió entre medio. */}
+              <strong style={{ fontSize: '20px', color: 'var(--rojo-alerta)', fontWeight: '900' }}>-${Number(morosoActivo?.montoDeuda ?? (tarifaRedondeada * mesesAtraso)).toLocaleString('es-CL')}</strong>
             </div>
           </div>
           <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,59,48,0.15)', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-            <span>Cuota mensual: <strong style={{ color: 'var(--texto-principal)' }}>${tarifaRedondeada.toLocaleString('es-CL')}</strong></span>
+            <span>Cuota mensual vigente: <strong style={{ color: 'var(--texto-principal)' }}>${tarifaRedondeada.toLocaleString('es-CL')}</strong></span>
           </div>
         </div>
       )}

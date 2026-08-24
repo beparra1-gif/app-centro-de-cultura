@@ -147,6 +147,7 @@ function SuperAdminPanel({
   onComunicacionesChanged,
   enviarPorWhatsApp,
   utmVigente,
+  utmHistorico,
   onNavegarPantalla,
 }) {
   const enviarAlerta = () => { showToast({ message: 'Notificación enviada por App y Correo a los destinatarios.', type: 'success' }); };
@@ -3965,6 +3966,7 @@ function SuperAdminPanel({
             pagoViewMode={pagoViewModeTesoreria}
             setPageViewMode={setPagoViewModeTesoreria}
             utmVigente={utmVigente}
+            utmHistorico={utmHistorico}
           />
         </div>
       )}
@@ -5168,6 +5170,8 @@ function SuperAdminPanel({
           pagosExistentes={pagosMensualidadesAdmin || []}
           autoAprobar={pagoManualAutoAprobar}
           objetivoInicial={pagoManualObjetivo}
+          utmVigente={utmVigente}
+          utmHistorico={utmHistorico}
           onClose={() => {
             setMostrarFormularioPago(false);
             setPagoEditandoId(null);

@@ -5323,6 +5323,70 @@ const formatearFechaMindicador = (fecha) => {
   return `${dd}-${mm}-${fecha.getFullYear()}`;
 };
 
+// Historial persistente de UTM POR MES DE COBRO — sin esto, "cuánto debía
+// junio" no se podía responder nunca en agosto: obtenerUTMVigente() solo
+// sabe el valor de "el mes pasado relativo a HOY", pisado cada vez que
+// cambia el mes calendario. La cuota socio (0,3 UTM) varía mes a mes (ver
+// obtenerUTMParaMes), así que un socio con 3 meses impagos debe la SUMA de
+// 3 cuotas distintas, no 3 veces la cuota de hoy. Una vez guardado acá, el
+// valor de un mes de cobro ya cerrado nunca se vuelve a tocar (es historia).
+const ensureUtmMensualTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS utm_mensual (
+      id SERIAL PRIMARY KEY,
+      anio INT NOT NULL,
+      mes INT NOT NULL,
+      valor NUMERIC(12,2) NOT NULL,
+      fecha_corte DATE,
+      fuente VARCHAR(30) DEFAULT 'mindicador.cl',
+      creado_en TIMESTAMP DEFAULT NOW(),
+      UNIQUE(anio, mes)
+    )
+  `);
+  console.log('📅 Tabla utm_mensual verificada');
+};
+
+// UTM que corresponde cobrar en (anioObjetivo, mesObjetivo): la vigente al
+// último día del mes ANTERIOR (misma regla de negocio que obtenerUTMVigente,
+// pero aplicada al mes que se está cobrando, no al mes calendario actual).
+// Enero pide el corte de diciembre del año anterior.
+const obtenerUTMParaMes = async (anioObjetivo, mesObjetivo) => {
+  const anio = Number(anioObjetivo);
+  const mes = Number(mesObjetivo);
+  if (!Number.isFinite(anio) || !Number.isFinite(mes) || mes < 1 || mes > 12) {
+    return { anio, mes, valor: null, error: 'Mes/año inválido' };
+  }
+
+  const existente = await pool.query('SELECT * FROM utm_mensual WHERE anio = $1 AND mes = $2', [anio, mes]);
+  if (existente.rows.length > 0) {
+    const fila = existente.rows[0];
+    return { anio, mes, valor: Number(fila.valor), fechaCorte: fila.fecha_corte, fuente: fila.fuente };
+  }
+
+  const fechaCorte = mes === 1
+    ? new Date(anio - 1, 11, 31)
+    : new Date(anio, mes - 1, 0);
+
+  try {
+    const fechaTexto = formatearFechaMindicador(fechaCorte);
+    const respuesta = await fetch(`https://mindicador.cl/api/utm/${fechaTexto}`);
+    if (!respuesta.ok) throw new Error(`mindicador.cl respondió ${respuesta.status}`);
+    const datos = await respuesta.json();
+    const valor = Number(datos?.serie?.[0]?.valor);
+    if (!Number.isFinite(valor) || valor <= 0) throw new Error('Respuesta de mindicador.cl sin un valor de UTM válido.');
+
+    await pool.query(
+      `INSERT INTO utm_mensual (anio, mes, valor, fecha_corte, fuente) VALUES ($1, $2, $3, $4, 'mindicador.cl')
+       ON CONFLICT (anio, mes) DO NOTHING`,
+      [anio, mes, valor, fechaCorte.toISOString().slice(0, 10)]
+    );
+    return { anio, mes, valor, fechaCorte: fechaCorte.toISOString().slice(0, 10), fuente: 'mindicador.cl' };
+  } catch (err) {
+    console.error(`[obtenerUTMParaMes] Error consultando UTM de corte para ${anio}-${mes}:`, err.message);
+    return { anio, mes, valor: null, fechaCorte: fechaCorte.toISOString().slice(0, 10), error: err.message };
+  }
+};
+
 const obtenerUTMVigente = async () => {
   const fechaObjetivo = calcularUltimoDiaMesAnterior();
   const claveMes = `${fechaObjetivo.getFullYear()}-${fechaObjetivo.getMonth() + 1}`;
@@ -5361,6 +5425,29 @@ app.get('/api/utm-vigente', authenticate, async (req, res) => {
     res.json(info);
   } catch (err) {
     console.error('[GET /api/utm-vigente]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: valor de UTM de corte para CADA mes de un año — para que la deuda
+// de un socio con varios meses impagos sume la cuota real de cada mes
+// (0,3 UTM del corte de ese mes) en vez de multiplicar el mes actual por
+// la cantidad de meses. Solo devuelve meses ya iniciados (no futuros: la
+// UTM de un mes que aún no llega no existe todavía).
+app.get('/api/utm-historico', authenticate, async (req, res) => {
+  try {
+    const anio = Number(req.query.anio) || new Date().getFullYear();
+    const hoy = new Date();
+    const mesTope = anio === hoy.getFullYear() ? (hoy.getMonth() + 1) : (anio < hoy.getFullYear() ? 12 : 0);
+
+    const meses = Array.from({ length: mesTope }, (_, i) => i + 1);
+    const resultados = await Promise.all(meses.map((mes) => obtenerUTMParaMes(anio, mes)));
+
+    const porMes = {};
+    resultados.forEach((r) => { porMes[r.mes] = r.valor; });
+    res.json({ anio, porMes });
+  } catch (err) {
+    console.error('[GET /api/utm-historico]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -9836,6 +9923,10 @@ app.listen(PORT, () => {
 
   ensureSuperAdminAccount().catch((error) => {
     console.error('❌ Error asegurando super admin:', error.message);
+  });
+
+  ensureUtmMensualTable().catch((error) => {
+    console.error('❌ Error verificando tabla utm_mensual:', error.message);
   });
 
   scheduleAutomaticBackups();
