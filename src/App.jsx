@@ -252,7 +252,7 @@ function App() {
   // ver src/components/KioscoPanel.jsx — ya no vive acá como estado prop-drilled.
 
   // --- ESTADOS: SUPER ADMIN (MODO DIOS) ---
-  const [vistaAdmin, setVistaAdmin] = useState('dashboard');
+  const [vistaAdmin, setVistaAdmin] = useState('inicio');
   const [filtroMorosos, setFiltroMorosos] = useState('todos');
   const [logAuditoria, setLogAuditoria] = useState([]);
   const [jugadoresVisitaAdmin, setJugadoresVisitaAdmin] = useState([]);
@@ -2816,9 +2816,19 @@ function App() {
   // de Panel → Tesorería (SuperAdminPanel.jsx, vistaAdmin === 'pagos').
   // Cualquier otro rol conserva su "Mi Cuenta"/"Tesorería" tal cual.
   const esRolAdminUnificado = rolUsuario === 'admin' || rolUsuario === 'super_admin';
-  const modulosNavegacionOrden = ['admin_dashboard', 'comunicaciones', 'academia', 'perfil', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco'];
+  // 'perfil' (Mi Cuenta) va segundo -- primero en la práctica para cualquier
+  // rol no-admin, ya que 'admin_dashboard' nunca les aparece -- para que
+  // quien paga la mensualidad (deportista o socio) la encuentre de
+  // inmediato, sin tener que buscarla entre el resto de los botones.
+  const modulosNavegacionOrden = ['admin_dashboard', 'perfil', 'comunicaciones', 'academia', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco'];
+  // admin/super_admin ya no tienen entradas de nav separadas para Mi Cuenta,
+  // Jugador (Pupilos), Lista ni Mesa -- todo eso vive ahora dentro de Panel →
+  // Tesorería / Gestión Deportistas / Sistema (SuperAdminPanel.jsx). Mesa
+  // (scoreboard_live) queda oculta para TODOS los roles admin, no solo por
+  // duplicado -- se pidió sacarla del menú (el código sigue intacto, ver
+  // pantallaActiva === 'scoreboard_live' más abajo, por si se reactiva).
   const modulosNavegacionVisibles = modulosNavegacionOrden
-    .filter((modulo) => !(esRolAdminUnificado && modulo === 'perfil'))
+    .filter((modulo) => !(esRolAdminUnificado && ['perfil', 'jugador', 'asistencia_staff', 'scoreboard_live'].includes(modulo)))
     .filter((modulo) => puedeVerPantalla(modulo));
   const LOCAL_PREVIEW_LABEL = 'MODO LOCAL · CAMBIOS INMEDIATOS';
   const mostrarApartadoLocal = (() => {
@@ -3350,6 +3360,7 @@ function App() {
                 onComunicacionesChanged={recargarComunicacionesResumen}
                 enviarPorWhatsApp={enviarPorWhatsApp}
                 utmVigente={utmVigente}
+                onNavegarPantalla={cambiarPantallaConLoader}
               />
             )}
           </>
@@ -3379,6 +3390,10 @@ function App() {
               const meta = obtenerMetaModuloNav(modulo);
               if (!meta) return null;
               const Icon = meta.Icon;
+              // "Mi Cuenta" (perfil) va destacado en color de acento -- es el
+              // botón principal para quien paga la mensualidad (deportista o
+              // socio), no debe perderse entre el resto en gris.
+              const esBotonCuenta = modulo === 'perfil';
               return (
                 <button
                   type="button"
@@ -3386,8 +3401,8 @@ function App() {
                   className={`nav-item ${pantallaActiva === modulo ? 'active' : ''}`}
                   onClick={() => cambiarPantallaConLoader(modulo)}
                 >
-                  <Icon size={26} color="var(--gris-secundario)" strokeWidth={1.5} />
-                  <span className="mt-5">{meta.label}</span>
+                  <Icon size={26} color={esBotonCuenta ? 'var(--azul-electrico)' : 'var(--gris-secundario)'} strokeWidth={esBotonCuenta ? 2 : 1.5} />
+                  <span className="mt-5" style={esBotonCuenta ? { color: 'var(--azul-electrico)', fontWeight: '800' } : undefined}>{meta.label}</span>
                 </button>
               );
             })}
@@ -3413,8 +3428,10 @@ function App() {
             {/* 'torneos' ya es su propio módulo de MODULOS_ACCESO, pero se
                 mantiene el OR con scoreboard_live/admin_dashboard para no
                 quitarle acceso a Mesa/Admin que ya lo veían antes de que
-                existiera el permiso dedicado. */}
-            {(puedeVerPantalla('torneos') || puedeVerPantalla('scoreboard_live') || puedeVerPantalla('admin_dashboard')) && (
+                existiera el permiso dedicado. Se excluye admin/super_admin
+                acá porque ahora llegan a Torneos desde Panel → Publicaciones
+                y Equipos, no hace falta el atajo duplicado. */}
+            {(puedeVerPantalla('torneos') || puedeVerPantalla('scoreboard_live') || puedeVerPantalla('admin_dashboard')) && !esRolAdminUnificado && (
               <button
                 type="button"
                 className={`nav-item ${pantallaActiva === 'torneos' ? 'active' : ''}`}
@@ -3426,8 +3443,10 @@ function App() {
             )}
             {/* Un solo botón agrupa Arriendo de Cancha y Horarios de
                 Entrenamiento — cada uno sigue siendo su propio permiso, el
-                botón se muestra si el usuario tiene cualquiera de los dos. */}
-            {(puedeVerPantalla('cancha_arriendo') || puedeVerPantalla('horarios_entrenamiento')) && (
+                botón se muestra si el usuario tiene cualquiera de los dos.
+                Se excluye admin/super_admin, que ahora llega acá desde
+                Panel → Publicaciones y Equipos. */}
+            {(puedeVerPantalla('cancha_arriendo') || puedeVerPantalla('horarios_entrenamiento')) && !esRolAdminUnificado && (
               <button
                 type="button"
                 className={`nav-item ${pantallaActiva === 'cancha_entrenamientos' ? 'active' : ''}`}

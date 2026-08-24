@@ -7,6 +7,7 @@ import {
   Check,
   CheckSquare,
   ChevronDown,
+  ChevronLeft,
   Eye,
   EyeOff,
   FileText,
@@ -70,6 +71,23 @@ const ANIO_RECAUDACION = 2026;
 
 const esComprobanteImagen = (url = '') => /^data:image\//i.test(url) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
 
+// Botón "← Volver" reusado por todas las pantallas de contenido de la nueva
+// grilla de Panel — declarado fuera de SuperAdminPanel (no adentro) porque un
+// componente con JSX (mayúscula inicial) creado DENTRO del render de otro
+// pierde su identidad en cada re-render (lint real, no cosmético). Recibe
+// onVolver ya resuelto (setVistaAdmin(destino)) en vez de destino+setter
+// para no depender de nada del componente padre.
+const BotonVolverAdmin = ({ onVolver, label = 'Volver' }) => (
+  <button
+    type="button"
+    onClick={onVolver}
+    className="btn-secondary"
+    style={{ width: 'auto', padding: '8px 14px', marginBottom: '14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+  >
+    <ChevronLeft size={15} /> {label}
+  </button>
+);
+
 function SuperAdminPanel({
   rolUsuario,
   puedeAdminCompleto,
@@ -129,6 +147,7 @@ function SuperAdminPanel({
   onComunicacionesChanged,
   enviarPorWhatsApp,
   utmVigente,
+  onNavegarPantalla,
 }) {
   const enviarAlerta = () => { showToast({ message: 'Notificación enviada por App y Correo a los destinatarios.', type: 'success' }); };
   void enviarAlerta;
@@ -760,13 +779,19 @@ function SuperAdminPanel({
   // admin_dashboard completo (ej. un profesor) solo debe poder ver esas
   // pestañas puntuales, no el resto del panel admin — sin esto, el widening
   // del gate en App.jsx la dejaría entrar a un panel completo que no le
-  // corresponde.
+  // corresponde. 'inicio' y las 2 grillas de grupo que sí les pueden tocar
+  // (Gestión Deportistas por citaciones, Publicaciones y Equipos por
+  // resultados) están siempre permitidas — antes de que existiera la
+  // grilla esto saltaba directo a la pestaña, sin pasar por ningún resumen.
   useEffect(() => {
     if (puedeAdminCompleto) return;
-    const tabsPermitidas = [puedeVerCitaciones && 'citaciones', puedeVerResultados && 'resultados'].filter(Boolean);
-    if (tabsPermitidas.length === 0) return;
+    const tabsPermitidas = [
+      'inicio', 'grupo_deportistas', 'grupo_publicaciones',
+      puedeVerCitaciones && 'citaciones',
+      puedeVerResultados && 'resultados',
+    ].filter(Boolean);
     if (!tabsPermitidas.includes(vistaAdmin)) {
-      setVistaAdmin(tabsPermitidas[0]);
+      setVistaAdmin('inicio');
     }
   }, [puedeAdminCompleto, puedeVerCitaciones, puedeVerResultados, vistaAdmin, setVistaAdmin]);
 
@@ -2368,43 +2393,81 @@ function SuperAdminPanel({
     }
   };
 
+  // Tarjeta-botón reusada por la grilla de inicio y las 3 grillas de grupo —
+  // antes esto era una fila de 12 pestañas horizontales que ya no entraba
+  // cómoda en pantalla. onClick decide a dónde navega (setVistaAdmin para
+  // pestañas internas del panel, onNavegarPantalla para pantallas hermanas
+  // como Jugador/Torneos/Cancha/Lista, que viven fuera de SuperAdminPanel).
+  const renderTarjetaAdmin = (key, Icono, label, onClick) => (
+    <button
+      key={key}
+      type="button"
+      onClick={onClick}
+      className="card"
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+        padding: '20px 12px', borderRadius: '18px', border: '1px solid var(--borde)', cursor: 'pointer',
+        background: 'white', textAlign: 'center', minHeight: '96px',
+      }}
+    >
+      <Icono size={24} color="var(--azul-electrico)" strokeWidth={1.6} />
+      <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)' }}>{label}</span>
+    </button>
+  );
+
   return (
     <div className="admin-container fade-in">
-      <div className="scroll-horizontal-menu mb-15">
-        <div className="segment-control" style={{ gap: '6px' }}>
-          {puedeAdminCompleto ? (
-            <>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'dashboard' ? 'active' : ''}`} onClick={() => setVistaAdmin('dashboard')}><Activity size={14} /> Resumen</button>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'usuarios' ? 'active' : ''}`} onClick={() => setVistaAdmin('usuarios')}><Users size={14} /> Usuarios y Cuentas</button>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'publicar' ? 'active' : ''}`} onClick={() => setVistaAdmin('publicar')}><Megaphone size={14} /> Publicar</button>
-            </>
-          ) : null}
-          {(puedeAdminCompleto || puedeVerResultados) && (
-            <button type="button" className={`segment-btn ${vistaAdmin === 'resultados' ? 'active' : ''}`} onClick={() => { setVistaAdmin('resultados'); cargarPartidosAdmin(); }}><Trophy size={14} /> Resultados</button>
-          )}
-          {puedeAdminCompleto ? (
-            <>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'activos' ? 'active' : ''}`} onClick={() => setVistaAdmin('activos')}><Image size={14} /> Activos</button>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'pagos' ? 'active' : ''}`} onClick={() => setVistaAdmin('pagos')}><CheckSquare size={14} /> Tesorería</button>
-            </>
-          ) : null}
-          {(puedeAdminCompleto || puedeVerCitaciones) && (
-            <button type="button" className={`segment-btn ${vistaAdmin === 'citaciones' ? 'active' : ''}`} onClick={() => setVistaAdmin('citaciones')}><UserPlus size={14} /> Citaciones</button>
-          )}
-          {puedeAdminCompleto ? (
-            <>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'invitados' ? 'active' : ''}`} onClick={() => setVistaAdmin('invitados')}><Users size={14} /> Invitados</button>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'auditoria' ? 'active' : ''}`} onClick={() => setVistaAdmin('auditoria')}><History size={14} /> Auditoría</button>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'reportes' ? 'active' : ''}`} onClick={() => setVistaAdmin('reportes')}><FileText size={14} /> Reportes</button>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'salud' ? 'active' : ''}`} onClick={() => { setVistaAdmin('salud'); generarAlertas(); }}><Stethoscope size={14} /> Salud</button>
-              <button type="button" className={`segment-btn ${vistaAdmin === 'permisos' ? 'active' : ''}`} onClick={() => setVistaAdmin('permisos')}><Filter size={14} /> Ajustes</button>
-            </>
-          ) : null}
+      {vistaAdmin === 'inicio' && (
+        <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px' }}>
+          {puedeAdminCompleto && renderTarjetaAdmin('inicio-resumen', Activity, 'Resumen', () => setVistaAdmin('dashboard'))}
+          {puedeAdminCompleto && renderTarjetaAdmin('inicio-usuarios', Users, 'Usuarios y Cuentas', () => setVistaAdmin('usuarios'))}
+          {puedeAdminCompleto && renderTarjetaAdmin('inicio-publicar', Megaphone, 'Publicar', () => setVistaAdmin('publicar'))}
+          {puedeAdminCompleto && renderTarjetaAdmin('inicio-tesoreria', CheckSquare, 'Tesorería', () => setVistaAdmin('pagos'))}
+          {(puedeAdminCompleto || puedeVerCitaciones) && renderTarjetaAdmin('inicio-deportistas', UserPlus, 'Gestión Deportistas', () => setVistaAdmin('grupo_deportistas'))}
+          {puedeAdminCompleto && renderTarjetaAdmin('inicio-sistema', Filter, 'Sistema', () => setVistaAdmin('grupo_sistema'))}
+          {(puedeAdminCompleto || puedeVerResultados) && renderTarjetaAdmin('inicio-publicaciones', Trophy, 'Publicaciones y Equipos', () => setVistaAdmin('grupo_publicaciones'))}
         </div>
-      </div>
+      )}
+
+      {vistaAdmin === 'grupo_deportistas' && (
+        <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px' }}>
+            {puedeAdminCompleto && renderTarjetaAdmin('gd-lista', Users, 'Lista', () => onNavegarPantalla?.('asistencia_staff'))}
+            {puedeAdminCompleto && renderTarjetaAdmin('gd-jugador', UserPlus, 'Jugador', () => onNavegarPantalla?.('jugador'))}
+            {(puedeAdminCompleto || puedeVerCitaciones) && renderTarjetaAdmin('gd-citaciones', UserPlus, 'Citaciones', () => setVistaAdmin('citaciones'))}
+            {puedeAdminCompleto && renderTarjetaAdmin('gd-invitados', Users, 'Invitados', () => setVistaAdmin('invitados'))}
+          </div>
+        </div>
+      )}
+
+      {vistaAdmin === 'grupo_sistema' && (
+        <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px' }}>
+            {renderTarjetaAdmin('gs-auditoria', History, 'Auditoría', () => setVistaAdmin('auditoria'))}
+            {renderTarjetaAdmin('gs-reportes', FileText, 'Reportes', () => setVistaAdmin('reportes'))}
+            {renderTarjetaAdmin('gs-salud', Stethoscope, 'Salud', () => { setVistaAdmin('salud'); generarAlertas(); })}
+            {renderTarjetaAdmin('gs-ajustes', Filter, 'Ajustes', () => setVistaAdmin('permisos'))}
+            {renderTarjetaAdmin('gs-activos', Image, 'Activos', () => setVistaAdmin('activos'))}
+          </div>
+        </div>
+      )}
+
+      {vistaAdmin === 'grupo_publicaciones' && (
+        <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px' }}>
+            {puedeAdminCompleto && renderTarjetaAdmin('gp-cancha', Image, 'Cancha', () => onNavegarPantalla?.('cancha_entrenamientos'))}
+            {puedeAdminCompleto && renderTarjetaAdmin('gp-torneo', Trophy, 'Torneo', () => onNavegarPantalla?.('torneos'))}
+            {(puedeAdminCompleto || puedeVerResultados) && renderTarjetaAdmin('gp-resultados', Trophy, 'Resultados', () => { setVistaAdmin('resultados'); cargarPartidosAdmin(); })}
+          </div>
+        </div>
+      )}
 
       {vistaAdmin === 'dashboard' && (
         <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
           <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '14px' }}>
             Vista general de personas del club — todo lo de dinero (recaudación, morosos, pago manual, validación) vive en <strong>Tesorería</strong>.
           </p>
@@ -2439,6 +2502,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'usuarios' && (
         <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
           <h3 className="section-title">Gestión de Usuarios y Cuentas</h3>
           <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
             Deportistas (ficha deportiva) y Cuentas (login de apoderados, socios, staff y admins) viven en tablas distintas — separadas acá para no mezclar sus filtros y datos.
@@ -2969,6 +3033,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'activos' && (
         <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
           <h3 className="section-title">Activos Visuales</h3>
           <div className="card" style={{ borderLeft: '4px solid var(--verde-victoria)', marginBottom: '15px', borderRadius: '24px' }}>
             <h4 className="form-subtitle"><Image size={16} /> Subida de logos y activos visuales</h4>
@@ -3078,6 +3143,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'pagos' && (
         <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
           <div className="card mb-15" style={{ borderRadius: '18px', padding: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
               <div className="form-group" style={{ marginBottom: 0, flex: '1 1 180px' }}>
@@ -3698,6 +3764,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'auditoria' && (
         <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
           <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
               <div>
@@ -3836,6 +3903,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'citaciones' && (
         <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_deportistas')} label="Volver a Gestión Deportistas" />
           <h3 className="section-title">Citaciones</h3>
           <div className="segment-control mt-15" style={{ gap: '6px' }}>
             <button type="button" className={`segment-btn ${vistaCitaciones === 'crear' ? 'active' : ''}`} onClick={() => setVistaCitaciones('crear')}><UserPlus size={14} /> Creador de convocatorias</button>
@@ -4318,6 +4386,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'invitados' && (
         <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_deportistas')} label="Volver a Gestión Deportistas" />
           <h3 className="section-title">Jugadores de Equipos Invitados</h3>
           <div className="card" style={{ borderRadius: '24px' }}>
             <h4 className="form-subtitle"><Plus size={16} /> Registrar jugador invitado</h4>
@@ -4397,22 +4466,26 @@ function SuperAdminPanel({
       )}
 
       {vistaAdmin === 'reportes' && (
-        <ReportesPanel
-          calcularReportes={calcularReportes}
-          vistaReportes={vistaReportes}
-          setVistaReportes={setVistaReportes}
-          filtroReporteFecha={filtroReporteFecha}
-          setFiltroReporteFecha={setFiltroReporteFecha}
-          filtroReporteRama={filtroReporteRama}
-          setFiltroReporteRama={setFiltroReporteRama}
-          setMostrarHistorialNotif={setMostrarHistorialNotif}
-          exportarReportePDF={exportarReportePDF}
-          renderGraficoSVG={renderGraficoSVG}
-        />
+        <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
+          <ReportesPanel
+            calcularReportes={calcularReportes}
+            vistaReportes={vistaReportes}
+            setVistaReportes={setVistaReportes}
+            filtroReporteFecha={filtroReporteFecha}
+            setFiltroReporteFecha={setFiltroReporteFecha}
+            filtroReporteRama={filtroReporteRama}
+            setFiltroReporteRama={setFiltroReporteRama}
+            setMostrarHistorialNotif={setMostrarHistorialNotif}
+            exportarReportePDF={exportarReportePDF}
+            renderGraficoSVG={renderGraficoSVG}
+          />
+        </div>
       )}
 
       {vistaAdmin === 'publicar' && (
         <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
           <h3 className="section-title"><Megaphone size={18} style={{ marginRight: '8px', verticalAlign: 'middle' }} />Publicar Anuncio / Noticia</h3>
           <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '16px' }}>
             Crea comunicaciones visibles en el Muro del club. Elige el tipo, urgencia, rama y audiencia antes de publicar.
@@ -4612,6 +4685,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'resultados' && (
         <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_publicaciones')} label="Volver a Publicaciones y Equipos" />
           <h3 className="section-title"><Trophy size={18} style={{ marginRight: '8px', verticalAlign: 'middle' }} />Registrar Resultado de Partido</h3>
           <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '16px' }}>
             Ingresa el marcador final y el partido quedará publicado en el fixture del club.
@@ -4818,6 +4892,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'salud' && (
         <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
           {(() => {
             const reportes = calcularReportes();
             const scoreActual = calcularScoreDeCliente();
@@ -4852,6 +4927,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'permisos' && (
         <div className="fade-in card">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
           <h4 className="form-subtitle">Permisos de Sistema</h4>
           <p style={{ marginTop: 0, marginBottom: '10px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
             Aquí puedes administrar permisos por usuario con la misma lógica del panel de configuración del header.
@@ -4872,7 +4948,7 @@ function SuperAdminPanel({
             setPreferenciasSonido={() => {}}
             reproducirSonido={() => {}}
             onProbarPush={() => {}}
-            onCerrarConfiguracion={() => setVistaAdmin('dashboard')}
+            onCerrarConfiguracion={() => setVistaAdmin('grupo_sistema')}
           />
         </div>
       )}
