@@ -636,6 +636,8 @@ function SuperAdminPanel({
   const [syncSheetsResult, setSyncSheetsResult] = useState(null);
   const [exportSheetsRunning, setExportSheetsRunning] = useState(false);
   const [exportSheetsResult, setExportSheetsResult] = useState(null);
+  const [recalculandoUtm, setRecalculandoUtm] = useState(false);
+  const [recalcularUtmResult, setRecalcularUtmResult] = useState(null);
   const [subiendoFotoJugadorNuevo, setSubiendoFotoJugadorNuevo] = useState(false);
   const [subiendoFotoJugadorEdit, setSubiendoFotoJugadorEdit] = useState(false);
   const edicionCuentaRef = useRef(null);
@@ -2254,6 +2256,28 @@ function SuperAdminPanel({
       showToast({ message: `No se pudo exportar al Google Sheet: ${error.message}`, type: 'error' });
     } finally {
       setExportSheetsRunning(false);
+    }
+  };
+
+  const ejecutarRecalcularUtm = async () => {
+    try {
+      setRecalculandoUtm(true);
+      const resultado = await api.utmAPI.recalcularHistorico(new Date().getFullYear());
+      setRecalcularUtmResult(resultado);
+      if (onSheetsSyncComplete) {
+        await onSheetsSyncComplete();
+      }
+      const conError = (resultado?.resultados || []).filter((r) => r.error).length;
+      showToast({
+        message: conError > 0
+          ? `Recalculado con ${conError} mes(es) con error (revisa el detalle).`
+          : `UTM histórica recalculada: ${resultado?.resultados?.length ?? 0} meses.`,
+        type: conError > 0 ? 'error' : 'success',
+      });
+    } catch (error) {
+      showToast({ message: `No se pudo recalcular la UTM histórica: ${error.message}`, type: 'error' });
+    } finally {
+      setRecalculandoUtm(false);
     }
   };
 
@@ -4449,6 +4473,32 @@ function SuperAdminPanel({
               </div>
             </div>
 
+          </div>
+
+          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
+            <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><RefreshCcw size={16} /> UTM histórica (cuota de socio)</h4>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
+              La cuota de socio (0,3 UTM) se calcula con el valor real de la UTM del mes que se cobra, guardado una sola vez
+              por mes. Si algún mes quedó guardado con un valor viejo o incorrecto, usa este botón para volver a traer los
+              valores reales desde mindicador.cl y pisar lo que había guardado (no afecta meses futuros que aún no llegan).
+            </p>
+            <div style={{ marginTop: '12px' }}>
+              <button className="btn-electric sync-action-btn" onClick={ejecutarRecalcularUtm} disabled={recalculandoUtm}>
+                <RefreshCcw size={15} /> {recalculandoUtm ? 'Recalculando...' : 'Recalcular UTM histórica'}
+              </button>
+            </div>
+            {recalcularUtmResult && (
+              <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {(recalcularUtmResult.resultados || []).map((r) => (
+                  <span key={`utm-recalc-${r.mes}`} style={{ color: r.error ? '#c0392b' : 'inherit' }}>
+                    Mes {r.mes}: {r.error ? `error (${r.error})` : `$${Number(r.valor).toLocaleString('es-CL')}`}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
             {(cuentasIncompletas.length > 0 || jugadoresIncompletos.length > 0 || pagosConCorreccion.length > 0) && (
               <div className="card" style={{ marginTop: '12px', borderLeft: '4px solid #FF9500', borderRadius: '20px', background: 'rgba(255,149,0,0.08)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>

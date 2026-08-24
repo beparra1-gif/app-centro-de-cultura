@@ -5440,17 +5440,20 @@ const ensureUtmMensualTable = async () => {
 // último día del mes ANTERIOR (misma regla de negocio que obtenerUTMVigente,
 // pero aplicada al mes que se está cobrando, no al mes calendario actual).
 // Enero pide el corte de diciembre del año anterior.
-const obtenerUTMParaMes = async (anioObjetivo, mesObjetivo) => {
+const obtenerUTMParaMes = async (anioObjetivo, mesObjetivo, opciones = {}) => {
+  const { forzarRecalculo = false } = opciones;
   const anio = Number(anioObjetivo);
   const mes = Number(mesObjetivo);
   if (!Number.isFinite(anio) || !Number.isFinite(mes) || mes < 1 || mes > 12) {
     return { anio, mes, valor: null, error: 'Mes/año inválido' };
   }
 
-  const existente = await pool.query('SELECT * FROM utm_mensual WHERE anio = $1 AND mes = $2', [anio, mes]);
-  if (existente.rows.length > 0) {
-    const fila = existente.rows[0];
-    return { anio, mes, valor: Number(fila.valor), fechaCorte: fila.fecha_corte, fuente: fila.fuente };
+  if (!forzarRecalculo) {
+    const existente = await pool.query('SELECT * FROM utm_mensual WHERE anio = $1 AND mes = $2', [anio, mes]);
+    if (existente.rows.length > 0) {
+      const fila = existente.rows[0];
+      return { anio, mes, valor: Number(fila.valor), fechaCorte: fila.fecha_corte, fuente: fila.fuente };
+    }
   }
 
   const fechaCorte = mes === 1
@@ -5465,9 +5468,12 @@ const obtenerUTMParaMes = async (anioObjetivo, mesObjetivo) => {
     const valor = Number(datos?.serie?.[0]?.valor);
     if (!Number.isFinite(valor) || valor <= 0) throw new Error('Respuesta de mindicador.cl sin un valor de UTM válido.');
 
+    // ON CONFLICT DO UPDATE (no DO NOTHING): un recálculo forzado tiene que
+    // poder pisar una fila existente con datos viejos/incorrectos (ver
+    // /api/admin/utm-historico/recalcular), no solo insertar cuando falta.
     await pool.query(
       `INSERT INTO utm_mensual (anio, mes, valor, fecha_corte, fuente) VALUES ($1, $2, $3, $4, 'mindicador.cl')
-       ON CONFLICT (anio, mes) DO NOTHING`,
+       ON CONFLICT (anio, mes) DO UPDATE SET valor = EXCLUDED.valor, fecha_corte = EXCLUDED.fecha_corte, fuente = EXCLUDED.fuente`,
       [anio, mes, valor, fechaCorte.toISOString().slice(0, 10)]
     );
     // Esto pasa dentro de un GET (/api/utm-vigente, /api/utm-historico) — el
@@ -5543,6 +5549,34 @@ app.get('/api/utm-historico', authenticate, async (req, res) => {
     res.json({ anio, porMes });
   } catch (err) {
     console.error('[GET /api/utm-historico]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: recalcula y pisa (UPDATE, no solo INSERT) el valor de UTM guardado
+// para cada mes ya iniciado de un año. Uso puntual: corregir filas viejas
+// (ej. sembradas con un valor placeholder antes de que existiera el fetch
+// real a mindicador.cl) que de otro modo quedan congeladas para siempre,
+// porque obtenerUTMParaMes normalmente nunca vuelve a tocar una fila que
+// ya existe (ver comentario en ensureUtmMensualTable).
+app.post('/api/admin/utm-historico/recalcular', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  try {
+    const anio = Number(req.body?.anio) || new Date().getFullYear();
+    const hoy = new Date();
+    const mesTope = anio === hoy.getFullYear() ? (hoy.getMonth() + 1) : (anio < hoy.getFullYear() ? 12 : 0);
+
+    const meses = Array.from({ length: mesTope }, (_, i) => i + 1);
+    const resultados = [];
+    for (const mes of meses) {
+      // Secuencial (no Promise.all) para no golpear mindicador.cl con 12
+      // requests simultáneas de una vez.
+      resultados.push(await obtenerUTMParaMes(anio, mes, { forzarRecalculo: true }));
+    }
+
+    sheetsSyncManager.enqueueTable('utm_mensual');
+    res.json({ anio, resultados });
+  } catch (err) {
+    console.error('[POST /api/admin/utm-historico/recalcular]', err);
     res.status(500).json({ error: err.message });
   }
 });

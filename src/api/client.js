@@ -695,6 +695,14 @@ export const utmAPI = {
     const response = await apiFetch(`${API_BASE_URL}/utm-historico?anio=${encodeURIComponent(anio)}`);
     return handleResponse(response);
   },
+  recalcularHistorico: async (anio) => {
+    const response = await apiFetch(`${API_BASE_URL}/admin/utm-historico/recalcular`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ anio }),
+    });
+    return handleResponse(response);
+  },
 };
 
 // ========== PAGOS MENSUALIDADES (FASE 1) ==========
