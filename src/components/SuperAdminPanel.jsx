@@ -4449,6 +4449,25 @@ function SuperAdminPanel({
               </div>
             </div>
 
+            {(cuentasIncompletas.length > 0 || jugadoresIncompletos.length > 0 || pagosConCorreccion.length > 0) && (
+              <div className="card" style={{ marginTop: '12px', borderLeft: '4px solid #FF9500', borderRadius: '20px', background: 'rgba(255,149,0,0.08)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <AlertTriangle size={16} color="#b36200" />
+                  <strong style={{ color: '#b36200', fontSize: '13px' }}>Alertas de corrección pendientes</strong>
+                </div>
+                <div style={{ fontSize: '12px', color: '#8a4f00', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span>Perfiles de cuentas incompletos: {cuentasIncompletas.length}</span>
+                  <span>Perfiles de jugadores incompletos: {jugadoresIncompletos.length}</span>
+                  <span>Pagos en revisión/corrección: {pagosConCorreccion.length}</span>
+                </div>
+                <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar cuentas</button>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar jugadores</button>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('pagos')}>Revisar pagos</button>
+                </div>
+              </div>
+            )}
+
             {exportSheetsResult && (
               <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <span>Exportación: {exportSheetsResult.ok ? 'completa' : (exportSheetsResult.reason || 'con errores')}</span>
@@ -4510,25 +4529,6 @@ function SuperAdminPanel({
                 <span>Estado: {syncSheetsResult.status || 'desconocido'}</span>
                 {syncSheetsResult.syncedAt && <span>Última sincronización: {new Date(syncSheetsResult.syncedAt).toLocaleString('es-CL')}</span>}
                 {syncSheetsResult.error && <span style={{ color: 'var(--rojo-alerta)' }}>Error: {syncSheetsResult.error}</span>}
-              </div>
-            )}
-
-            {(cuentasIncompletas.length > 0 || jugadoresIncompletos.length > 0 || pagosConCorreccion.length > 0) && (
-              <div className="card" style={{ marginTop: '12px', borderLeft: '4px solid #FF9500', borderRadius: '20px', background: 'rgba(255,149,0,0.08)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <AlertTriangle size={16} color="#b36200" />
-                  <strong style={{ color: '#b36200', fontSize: '13px' }}>Alertas de corrección pendientes</strong>
-                </div>
-                <div style={{ fontSize: '12px', color: '#8a4f00', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span>Perfiles de cuentas incompletos: {cuentasIncompletas.length}</span>
-                  <span>Perfiles de jugadores incompletos: {jugadoresIncompletos.length}</span>
-                  <span>Pagos en revisión/corrección: {pagosConCorreccion.length}</span>
-                </div>
-                <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar cuentas</button>
-                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar jugadores</button>
-                  <button className="btn-secondary" onClick={() => setVistaAdmin('pagos')}>Revisar pagos</button>
-                </div>
               </div>
             )}
           </div>
