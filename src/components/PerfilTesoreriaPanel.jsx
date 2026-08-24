@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Camera, Clock, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from '../utils/beca';
 import { showToast } from '../utils/toast';
@@ -27,6 +27,7 @@ function PerfilTesoreriaPanel({
   pagoViewMode,
   setPageViewMode,
   onIrAPagoManual,
+  onIrABecas,
   utmVigente,
   utmHistorico,
 }) {
@@ -46,48 +47,6 @@ function PerfilTesoreriaPanel({
   const [mesesSocioSeleccionados, setMesesSocioSeleccionados] = useState([]);
 
   const esVistaAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
-
-  // Revisión mensual de becas: el admin/superadmin confirma mes a mes que
-  // cada beca sigue vigente (ver backend/server.js, tabla beca_revisiones).
-  const mesRevisionActual = new Date().toISOString().slice(0, 7);
-  const [becasPorRevisar, setBecasPorRevisar] = useState([]);
-  const [cargandoBecas, setCargandoBecas] = useState(false);
-  const [guardandoBecaRut, setGuardandoBecaRut] = useState(null);
-  const [porcentajeDraftPorRut, setPorcentajeDraftPorRut] = useState({});
-
-  useEffect(() => {
-    if (!esVistaAdmin) return;
-    let cancelado = false;
-    setCargandoBecas(true);
-    api.becaAPI.getRevisiones(mesRevisionActual)
-      .then((datos) => { if (!cancelado) setBecasPorRevisar(Array.isArray(datos) ? datos : []); })
-      .catch((error) => { if (!cancelado) showToast({ message: error.message || 'No se pudieron cargar las becas a revisar.', type: 'error' }); })
-      .finally(() => { if (!cancelado) setCargandoBecas(false); });
-    return () => { cancelado = true; };
-  }, [esVistaAdmin, mesRevisionActual]);
-
-  const becasPendientesDeRevision = becasPorRevisar.filter((j) => !j.revision_mes_actual);
-
-  const confirmarBecaVigente = async (jugadorBeca) => {
-    const rut = jugadorBeca.rut_jugador;
-    const porcentaje = Number(porcentajeDraftPorRut[rut] ?? jugadorBeca.beca);
-    if (!Number.isFinite(porcentaje) || porcentaje < 0 || porcentaje > 100) {
-      showToast({ message: 'El porcentaje de beca debe estar entre 0 y 100.', type: 'error' });
-      return;
-    }
-    try {
-      setGuardandoBecaRut(rut);
-      const revision = await api.becaAPI.confirmar({ rut_jugador: rut, mes: mesRevisionActual, porcentaje });
-      setBecasPorRevisar((prev) => prev.map((j) => (
-        j.rut_jugador === rut ? { ...j, beca: porcentaje, revision_mes_actual: revision } : j
-      )));
-      showToast({ message: `Beca de ${jugadorBeca.nombres || 'el jugador'} confirmada para este mes.`, type: 'success' });
-    } catch (error) {
-      showToast({ message: error.message || 'No se pudo confirmar la beca.', type: 'error' });
-    } finally {
-      setGuardandoBecaRut(null);
-    }
-  };
 
   const normalizarTextoBusqueda = (texto = '') => String(texto || '')
     .trim()
@@ -649,51 +608,21 @@ function PerfilTesoreriaPanel({
         </div>
       )}
 
-      {esVistaAdmin && (
-        <div className="card mt-15" style={{ borderRadius: '22px', padding: '14px' }}>
-          <h4 className="form-subtitle" style={{ marginBottom: '6px' }}>Becas por revisar este mes ({mesRevisionActual})</h4>
-          <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
-            Confirma mes a mes que cada beca sigue vigente. Si cambió, ajusta el porcentaje antes de confirmar.
-          </p>
-
-          {cargandoBecas && <p style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Cargando...</p>}
-
-          {!cargandoBecas && becasPorRevisar.length === 0 && (
-            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontStyle: 'italic' }}>No hay jugadores con beca activa.</p>
-          )}
-
-          {!cargandoBecas && becasPorRevisar.length > 0 && becasPendientesDeRevision.length === 0 && (
-            <p style={{ fontSize: '12px', color: 'var(--verde-victoria)', fontWeight: '700' }}>Todas las becas ({becasPorRevisar.length}) ya fueron revisadas este mes.</p>
-          )}
-
-          {becasPendientesDeRevision.map((j) => (
-            <div key={j.rut_jugador} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', padding: '10px', borderRadius: '14px', border: '1px solid rgba(255,149,0,0.35)', background: 'rgba(255,149,0,0.06)', marginBottom: '8px' }}>
-              <div style={{ flex: 1, minWidth: '160px' }}>
-                <strong style={{ fontSize: '13px' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</strong>
-                <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador} · {j.rama || 'N/A'} · {j.categoria || 'N/A'}</div>
-              </div>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                className="form-input"
-                style={{ margin: 0, width: '80px' }}
-                value={porcentajeDraftPorRut[j.rut_jugador] ?? j.beca ?? 0}
-                onChange={(e) => setPorcentajeDraftPorRut((prev) => ({ ...prev, [j.rut_jugador]: e.target.value }))}
-              />
-              <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>%</span>
-              <button
-                type="button"
-                className="btn-secondary"
-                style={{ width: 'auto', padding: '8px 12px' }}
-                disabled={guardandoBecaRut === j.rut_jugador}
-                onClick={() => confirmarBecaVigente(j)}
-              >
-                {guardandoBecaRut === j.rut_jugador ? 'Guardando...' : 'Confirmar vigente'}
-              </button>
-            </div>
-          ))}
-        </div>
+      {esVistaAdmin && onIrABecas && (
+        <button
+          type="button"
+          onClick={onIrABecas}
+          className="card mt-15"
+          style={{ borderRadius: '22px', padding: '14px', width: '100%', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', border: 'none' }}
+        >
+          <div>
+            <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>Becas de deportistas</h4>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)' }}>
+              Ver la lista completa de becados, otorgar una nueva o ajustar el % y la vigencia de una existente.
+            </p>
+          </div>
+          <span style={{ fontSize: '20px', color: 'var(--azul-electrico)', flexShrink: 0 }}>→</span>
+        </button>
       )}
 
       {(!esVistaAdmin || pupiloActivo || cuentaSocioActiva) ? (

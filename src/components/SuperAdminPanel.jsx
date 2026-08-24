@@ -759,6 +759,134 @@ function SuperAdminPanel({
     [jugadoresAdmin]
   );
 
+  // Estado del apartado "Becas" (vistaAdmin === 'becas'): lista completa de
+  // becados con vigencia real (ver backend GET /api/becas) — reemplaza el
+  // viejo widget "Becas por revisar este mes" que vivía embebido en
+  // PerfilTesoreriaPanel y solo dejaba re-confirmar el % mes a mes, sin
+  // período ni alerta de vencimiento.
+  const [becasAdmin, setBecasAdmin] = useState([]);
+  const [cargandoBecasAdmin, setCargandoBecasAdmin] = useState(false);
+  const [busquedaBecas, setBusquedaBecas] = useState('');
+  const [mostrarModalBeca, setMostrarModalBeca] = useState(false);
+  const [jugadorBecaObjetivo, setJugadorBecaObjetivo] = useState(null);
+  const [busquedaJugadorNuevaBeca, setBusquedaJugadorNuevaBeca] = useState('');
+  const [historialBecaAbierto, setHistorialBecaAbierto] = useState(null);
+  const [historialBecaDatos, setHistorialBecaDatos] = useState([]);
+  const [cargandoHistorialBeca, setCargandoHistorialBeca] = useState(false);
+  const [guardandoBeca, setGuardandoBeca] = useState(false);
+  const [formBeca, setFormBeca] = useState({ porcentaje: '', motivo: '', fechaInicio: '', fechaFin: '', sinFechaFin: false });
+
+  const abrirNuevaBeca = (jugador = null) => {
+    setJugadorBecaObjetivo(jugador);
+    setBusquedaJugadorNuevaBeca('');
+    setFormBeca({
+      porcentaje: jugador?.beca || '',
+      motivo: jugador?.beca_motivo || '',
+      fechaInicio: jugador?.beca_fecha_inicio ? String(jugador.beca_fecha_inicio).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      fechaFin: jugador?.beca_fecha_fin ? String(jugador.beca_fecha_fin).slice(0, 10) : '',
+      sinFechaFin: !jugador?.beca_fecha_fin,
+    });
+    setMostrarModalBeca(true);
+  };
+
+  const guardarBeca = async () => {
+    if (!jugadorBecaObjetivo?.rut_jugador) {
+      showToast({ message: 'Elige un deportista primero.', type: 'error' });
+      return;
+    }
+    const porcentajeNum = Number(formBeca.porcentaje);
+    if (!Number.isFinite(porcentajeNum) || porcentajeNum < 0 || porcentajeNum > 100) {
+      showToast({ message: 'El porcentaje debe estar entre 0 y 100.', type: 'error' });
+      return;
+    }
+    if (!formBeca.fechaInicio) {
+      showToast({ message: 'Indica desde cuándo comienza la beca.', type: 'error' });
+      return;
+    }
+    if (!formBeca.sinFechaFin && !formBeca.fechaFin) {
+      showToast({ message: 'Indica la fecha de término, o marca "Sin fecha de término".', type: 'error' });
+      return;
+    }
+    try {
+      setGuardandoBeca(true);
+      await api.becaAPI.otorgar({
+        rut_jugador: jugadorBecaObjetivo.rut_jugador,
+        porcentaje: porcentajeNum,
+        motivo: formBeca.motivo || null,
+        fecha_inicio: formBeca.fechaInicio,
+        fecha_fin: formBeca.sinFechaFin ? null : formBeca.fechaFin,
+      });
+      showToast({ message: `Beca de ${jugadorBecaObjetivo.nombres || 'el jugador'} guardada.`, type: 'success' });
+      setMostrarModalBeca(false);
+      await cargarBecasAdmin();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo guardar la beca.', type: 'error' });
+    } finally {
+      setGuardandoBeca(false);
+    }
+  };
+
+  const verHistorialBeca = async (rutJugador) => {
+    if (historialBecaAbierto === rutJugador) {
+      setHistorialBecaAbierto(null);
+      return;
+    }
+    setHistorialBecaAbierto(rutJugador);
+    setCargandoHistorialBeca(true);
+    try {
+      const datos = await api.becaAPI.getHistorial(rutJugador);
+      setHistorialBecaDatos(Array.isArray(datos) ? datos : []);
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo cargar el historial.', type: 'error' });
+    } finally {
+      setCargandoHistorialBeca(false);
+    }
+  };
+
+  const ETIQUETA_ESTADO_BECA = {
+    vigente: { texto: 'Vigente', bg: 'rgba(52,199,89,0.12)', color: 'var(--verde-victoria)' },
+    por_vencer: { texto: 'Por vencer', bg: 'rgba(255,149,0,0.12)', color: '#b36200' },
+    vencida: { texto: 'Vencida', bg: 'rgba(255,59,48,0.12)', color: 'var(--rojo-alerta)' },
+  };
+  const ORDEN_ESTADO_BECA = { vencida: 0, por_vencer: 1, vigente: 2 };
+
+  const becasFiltradas = becasAdmin
+    .filter((j) => {
+      const q = busquedaBecas.trim().toLowerCase();
+      if (!q) return true;
+      return `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.rut_jugador || ''}`.toLowerCase().includes(q);
+    })
+    .sort((a, b) => (ORDEN_ESTADO_BECA[a.estado_beca] ?? 3) - (ORDEN_ESTADO_BECA[b.estado_beca] ?? 3));
+
+  const jugadoresParaNuevaBeca = busquedaJugadorNuevaBeca.trim().length >= 2
+    ? (jugadoresAdmin || []).filter((j) => {
+      const q = busquedaJugadorNuevaBeca.trim().toLowerCase();
+      return `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.rut_jugador || ''}`.toLowerCase().includes(q);
+    }).slice(0, 12)
+    : [];
+
+  const cargarBecasAdmin = async () => {
+    setCargandoBecasAdmin(true);
+    try {
+      const datos = await api.becaAPI.getBecas();
+      setBecasAdmin(Array.isArray(datos) ? datos : []);
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudieron cargar las becas.', type: 'error' });
+    } finally {
+      setCargandoBecasAdmin(false);
+    }
+  };
+
+  // Carga perezosa: se pide al entrar a Tesorería (para que la tarjeta-resumen
+  // de becas por vencer ya tenga datos reales) o al apartado de Becas en sí
+  // — no en cada carga del panel completo, que ya trae bastante.
+  useEffect(() => {
+    if (vistaAdmin === 'becas' || vistaAdmin === 'pagos') void cargarBecasAdmin();
+  }, [vistaAdmin]);
+
+  const becasPorVencerCount = becasAdmin.filter((b) => b.estado_beca === 'por_vencer').length;
+  const becasVencidasCount = becasAdmin.filter((b) => b.estado_beca === 'vencida').length;
+
   const PERFIL_PRINCIPAL_OPTIONS = [
     { value: 'apoderado', label: 'Apoderado' },
     { value: 'socio', label: 'Socio' },
@@ -2984,7 +3112,7 @@ function SuperAdminPanel({
               <div className="grid-auto-220">
                 <div className="form-group"><label>Fecha de ingreso</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
                 <div className="form-group"><label>Mes inicio cobro</label><input className="form-input" value={jugadorAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
-                <div className="form-group"><label>Beca</label><input className="form-input" value={jugadorAdminEdit.beca || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, beca: e.target.value }))} placeholder="Sin beca" /></div>
+                <div className="form-group"><label>Beca</label><input className="form-input" value={jugadorAdminEdit.beca ? `${jugadorAdminEdit.beca}% — se edita desde Tesorería > Becas` : 'Sin beca — se asigna desde Tesorería > Becas'} disabled /></div>
                 <div className="form-group"><label>Valor mensualidad</label><input type="number" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} /></div>
                 <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.exento_mensualidad)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, exento_mensualidad: e.target.checked }))} /> Exento de mensualidad (no paga nada)</label>
                 <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
@@ -3524,6 +3652,30 @@ function SuperAdminPanel({
             )}
           </div>
 
+          <button
+            type="button"
+            onClick={() => setVistaAdmin('becas')}
+            className="card mb-20"
+            style={{ borderRadius: '20px', padding: '14px', width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}
+          >
+            <div>
+              <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>🎓 Becas de Deportistas ({becasAdmin.length})</h4>
+              <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)' }}>Lista completa, ajustar % y vigencia, alertas de vencimiento.</p>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {becasVencidasCount > 0 && (
+                <span style={{ fontSize: '11px', fontWeight: '800', color: 'white', background: 'var(--rojo-alerta)', padding: '4px 10px', borderRadius: '999px' }}>
+                  {becasVencidasCount} vencida{becasVencidasCount === 1 ? '' : 's'}
+                </span>
+              )}
+              {becasPorVencerCount > 0 && (
+                <span style={{ fontSize: '11px', fontWeight: '800', color: 'white', background: '#FF9500', padding: '4px 10px', borderRadius: '999px' }}>
+                  {becasPorVencerCount} por vencer
+                </span>
+              )}
+            </div>
+          </button>
+
           <h3 className="section-title">Panorama General{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
           <div className="caja-triple-grid mb-20">
             <div className="admin-stat-pill azul"><span>Socios Inscritos</span><h2>{af.totalSocios}</h2></div>
@@ -3967,8 +4119,222 @@ function SuperAdminPanel({
             setPageViewMode={setPagoViewModeTesoreria}
             utmVigente={utmVigente}
             utmHistorico={utmHistorico}
+            onIrABecas={() => setVistaAdmin('becas')}
           />
         </div>
+      )}
+
+      {vistaAdmin === 'becas' && (
+        <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('pagos')} label="Volver a Tesorería" />
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap', gap: '10px' }}>
+            <h3 className="section-title mt-0" style={{ margin: 0 }}>🎓 Becas de Deportistas</h3>
+            <button type="button" className="btn-notificar" style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }} onClick={() => abrirNuevaBeca(null)}>
+              <Plus size={13} /> Nueva beca
+            </button>
+          </div>
+          <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '2px', marginBottom: '14px' }}>
+            Cualquier ajuste de % queda con período (desde/hasta) y en el historial — nunca se pisa el registro anterior.
+          </p>
+
+          <div className="caja-triple-grid mb-15">
+            <div className="admin-stat-pill azul"><span>Total Becados</span><h2>{becasAdmin.length}</h2></div>
+            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span style={{ color: '#b36200' }}>Por Vencer</span><h2 style={{ color: '#b36200' }}>{becasPorVencerCount}</h2></div>
+            <div className="admin-stat-pill rojo"><span>Vencidas</span><h2>{becasVencidasCount}</h2></div>
+          </div>
+
+          <div style={{ position: 'relative', marginBottom: '15px' }}>
+            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
+            <input
+              type="text"
+              className="form-input"
+              style={{ paddingLeft: '34px' }}
+              placeholder="Buscar becado por nombre o RUT..."
+              value={busquedaBecas}
+              onChange={(e) => setBusquedaBecas(e.target.value)}
+            />
+          </div>
+
+          {cargandoBecasAdmin && <p style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Cargando...</p>}
+          {!cargandoBecasAdmin && becasFiltradas.length === 0 && (
+            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontStyle: 'italic', textAlign: 'center', padding: '16px 0' }}>
+              {busquedaBecas ? 'Sin becados que coincidan con la búsqueda.' : 'Ningún deportista tiene beca activa hoy.'}
+            </p>
+          )}
+
+          {becasFiltradas.map((j) => {
+            const estadoInfo = ETIQUETA_ESTADO_BECA[j.estado_beca] || ETIQUETA_ESTADO_BECA.vigente;
+            const historialAbierto = historialBecaAbierto === j.rut_jugador;
+            return (
+              <div key={j.rut_jugador} className="card mb-10" style={{ borderRadius: '20px', padding: '14px', borderLeft: `4px solid ${estadoInfo.color}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '180px' }}>
+                    <strong style={{ fontSize: '14px' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</strong>
+                    <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '2px' }}>{j.rut_jugador} · {j.rama || 'N/A'} · {j.categoria || 'N/A'}</div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '900', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.1)', padding: '3px 10px', borderRadius: '999px' }}>{Number(j.beca)}%</span>
+                      <span style={{ fontSize: '11px', fontWeight: '800', color: estadoInfo.color, background: estadoInfo.bg, padding: '3px 10px', borderRadius: '999px' }}>{estadoInfo.texto}</span>
+                      {j.beca_motivo && (
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(0,0,0,0.05)', padding: '3px 10px', borderRadius: '999px' }}>{j.beca_motivo}</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '6px', fontWeight: '700' }}>
+                      Desde {j.beca_fecha_inicio ? new Date(j.beca_fecha_inicio).toLocaleDateString('es-CL') : 'sin registrar'}
+                      {' · '}
+                      {j.beca_fecha_fin ? `Hasta ${new Date(j.beca_fecha_fin).toLocaleDateString('es-CL')}` : 'Sin fecha de término'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0 }}>
+                    <button type="button" className="btn-notificar" onClick={() => abrirNuevaBeca(j)}>
+                      <Pencil size={12} /> Ajustar
+                    </button>
+                    <button type="button" className="btn-notificar" style={{ background: 'none' }} onClick={() => verHistorialBeca(j.rut_jugador)}>
+                      <History size={12} /> {historialAbierto ? 'Ocultar historial' : 'Historial'}
+                    </button>
+                  </div>
+                </div>
+                {historialAbierto && (
+                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                    {cargandoHistorialBeca && <p style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>Cargando historial...</p>}
+                    {!cargandoHistorialBeca && historialBecaDatos.length === 0 && (
+                      <p style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontStyle: 'italic' }}>Sin ajustes anteriores registrados.</p>
+                    )}
+                    {!cargandoHistorialBeca && historialBecaDatos.map((h) => (
+                      <div key={h.id} style={{ fontSize: '11px', color: 'var(--texto-secundario)', padding: '4px 0', display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                        <span><strong style={{ color: 'var(--texto-principal)' }}>{Number(h.porcentaje)}%</strong> {h.motivo ? `(${h.motivo})` : ''} — desde {new Date(h.fecha_inicio).toLocaleDateString('es-CL')} {h.fecha_fin ? `hasta ${new Date(h.fecha_fin).toLocaleDateString('es-CL')}` : '(sin término)'}</span>
+                        <span>{new Date(h.creado_en).toLocaleDateString('es-CL')}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {mostrarModalBeca && createPortal(
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+          onClick={() => setMostrarModalBeca(false)}
+        >
+          <div
+            style={{ background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '480px', width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+              <h3 style={{ margin: 0, color: 'var(--texto-heading)' }}>{jugadorBecaObjetivo ? 'Ajustar beca' : 'Nueva beca'}</h3>
+              <button onClick={() => setMostrarModalBeca(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }} aria-label="Cerrar">
+                <X size={22} color="var(--gris-secundario)" strokeWidth={1.5} />
+              </button>
+            </div>
+
+            {!jugadorBecaObjetivo ? (
+              <>
+                <div className="form-group">
+                  <label>Buscar deportista</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Nombre o RUT..."
+                    value={busquedaJugadorNuevaBeca}
+                    onChange={(e) => setBusquedaJugadorNuevaBeca(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto' }}>
+                  {jugadoresParaNuevaBeca.map((j) => (
+                    <button
+                      key={j.rut_jugador}
+                      type="button"
+                      onClick={() => abrirNuevaBeca(j)}
+                      style={{ textAlign: 'left', padding: '10px 12px', borderRadius: '10px', border: '1px solid var(--borde)', background: 'white', cursor: 'pointer' }}
+                    >
+                      <strong style={{ fontSize: '13px' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</strong>
+                      <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador} · {j.rama || 'N/A'} · {j.categoria || 'N/A'}{j.beca > 0 ? ` · ya tiene ${j.beca}%` : ''}</div>
+                    </button>
+                  ))}
+                  {busquedaJugadorNuevaBeca.trim().length >= 2 && jugadoresParaNuevaBeca.length === 0 && (
+                    <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontStyle: 'italic' }}>Sin resultados.</p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ background: 'var(--gris-fondo)', borderRadius: '12px', padding: '10px 12px', marginBottom: '14px' }}>
+                  <strong style={{ fontSize: '13px' }}>{`${jugadorBecaObjetivo.nombres || ''} ${jugadorBecaObjetivo.apellido_paterno || ''}`.trim()}</strong>
+                  <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{jugadorBecaObjetivo.rut_jugador} · {jugadorBecaObjetivo.rama || 'N/A'} · {jugadorBecaObjetivo.categoria || 'N/A'}</div>
+                </div>
+
+                <div className="form-group">
+                  <label>Porcentaje de beca (0-100)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    className="form-input"
+                    value={formBeca.porcentaje}
+                    onChange={(e) => setFormBeca((p) => ({ ...p, porcentaje: e.target.value }))}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Motivo (opcional)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Ej: Beca deportiva, Premio torneo, Ajuste familiar..."
+                    value={formBeca.motivo}
+                    onChange={(e) => setFormBeca((p) => ({ ...p, motivo: e.target.value }))}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Comienza el</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={formBeca.fechaInicio}
+                    onChange={(e) => setFormBeca((p) => ({ ...p, fechaInicio: e.target.value }))}
+                  />
+                </div>
+                <label className="checkbox-label-row" style={{ marginBottom: '8px' }}>
+                  <input
+                    type="checkbox"
+                    checked={formBeca.sinFechaFin}
+                    onChange={(e) => setFormBeca((p) => ({ ...p, sinFechaFin: e.target.checked }))}
+                  />
+                  Sin fecha de término (indefinida)
+                </label>
+                {!formBeca.sinFechaFin && (
+                  <div className="form-group">
+                    <label>Termina el</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={formBeca.fechaFin}
+                      onChange={(e) => setFormBeca((p) => ({ ...p, fechaFin: e.target.value }))}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                  <button type="button" className="btn-secondary" style={{ flex: 1 }} onClick={() => setJugadorBecaObjetivo(null)}>
+                    ← Cambiar deportista
+                  </button>
+                  <button
+                    type="button"
+                    style={{ flex: 1, padding: '12px', background: 'var(--azul-electrico)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                    disabled={guardandoBeca}
+                    onClick={guardarBeca}
+                  >
+                    {guardandoBeca ? 'Guardando...' : 'Guardar beca'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body
       )}
 
       {vistaAdmin === 'auditoria' && (

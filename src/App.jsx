@@ -1397,6 +1397,26 @@ function App() {
         || '')
     : '';
 
+  // Pedido explícito del usuario: todo socio debe ver siempre (en cualquier
+  // pantalla, no solo en Tesorería) cuánto es su cuota vigente y con qué UTM
+  // se calculó. Se usa rolUsuario (ya resuelto por resolverRolPrincipal, que
+  // prioriza rol sobre perfil_principal) en vez de re-derivar desde los
+  // campos crudos — evita el caso real encontrado en QA donde perfil_principal
+  // quedó en 'apoderado' por defecto pero rol decía 'socio': re-derivar con
+  // perfil_principal primero perdía el "socio" silenciosamente.
+  const cuentaActivaEsSocia = Boolean(usuarioAutenticado?.es_socio)
+    || ['socio', 'socio_apoderado', 'directiva'].includes(rolUsuario);
+  const cuotaSocioHeader = cuentaActivaEsSocia
+    ? (() => {
+        const baseOverride = Number(usuarioAutenticado?.monto_mensual_base || 0);
+        const utmCuenta = Number(usuarioAutenticado?.utm_valor_referencia || utmVigente?.valor || 71649);
+        return {
+          monto: Math.round(baseOverride > 0 ? baseOverride : utmCuenta * 0.3),
+          utm: utmCuenta,
+        };
+      })()
+    : null;
+
   const getHeaderTitle = () => {
     if(!rolUsuario) return "Portal Oficial";
     switch(pantallaActiva) {
@@ -3017,6 +3037,22 @@ function App() {
           )}
         </div>
       </header>
+
+      {cuotaSocioHeader && (
+        <div
+          style={{
+            background: 'rgba(0,122,255,0.08)',
+            borderBottom: '1px solid rgba(0,122,255,0.15)',
+            padding: '6px 16px',
+            fontSize: '11px',
+            fontWeight: '700',
+            color: 'var(--azul-electrico)',
+            textAlign: 'center',
+          }}
+        >
+          Cuota socio vigente: ${cuotaSocioHeader.monto.toLocaleString('es-CL')}/mes · UTM referencia: ${cuotaSocioHeader.utm.toLocaleString('es-CL')}
+        </div>
+      )}
 
       <ApiStatusBanner
         visible={apiOffline}

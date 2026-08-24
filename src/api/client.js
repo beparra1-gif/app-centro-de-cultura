@@ -746,6 +746,22 @@ export const becaAPI = {
       body: JSON.stringify(datos)
     });
     return handleResponse(response);
+  },
+  getBecas: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/becas`);
+    return handleResponse(response);
+  },
+  getHistorial: async (rut) => {
+    const response = await apiFetch(`${API_BASE_URL}/becas/historial/${encodeURIComponent(rut)}`);
+    return handleResponse(response);
+  },
+  otorgar: async (datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/becas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    return handleResponse(response);
   }
 };
 

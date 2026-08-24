@@ -1430,6 +1430,36 @@ const ensureJugadoresExtendedColumns = async () => {
   // subir una no cambiara la otra.
   await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS foto_tarjeta_coleccion TEXT`);
   console.log('🃏 Columna foto_tarjeta_coleccion de jugadores verificada');
+
+  // Vigencia de la beca actual (espejo rápido de la última fila de
+  // beca_historial, ver ensureBecaHistorialTable) — sin esto no había forma
+  // de saber desde cuándo corre una beca ni de alertar que está por vencer,
+  // solo existía el % pelado en jugadores.beca.
+  await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS beca_fecha_inicio DATE`);
+  await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS beca_fecha_fin DATE`);
+  await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS beca_motivo VARCHAR(100)`);
+  console.log('🎓 Columnas de vigencia de beca (beca_fecha_inicio/fin/motivo) verificadas');
+};
+
+// Historial completo de cada ajuste de beca (no solo la revisión mensual de
+// beca_revisiones): cada vez que se otorga/cambia una beca queda una fila
+// permanente acá con quién, cuándo, y el período que cubre — "para tener
+// siempre la claridad" de qué pasó con la beca de un jugador en el tiempo.
+const ensureBecaHistorialTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS beca_historial (
+      id SERIAL PRIMARY KEY,
+      rut_jugador VARCHAR(20) NOT NULL,
+      porcentaje NUMERIC(5,2) NOT NULL,
+      motivo VARCHAR(100),
+      fecha_inicio DATE NOT NULL,
+      fecha_fin DATE,
+      creado_por VARCHAR(20),
+      creado_en TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_beca_historial_rut ON beca_historial(rut_jugador)`);
+  console.log('🎓 Tabla beca_historial verificada');
 };
 
 // beca empezó como BOOLEAN (sí/no) pero el club maneja porcentajes de rebaja
@@ -5839,6 +5869,112 @@ app.post('/api/beca-revisiones', authenticate, requireModule('validacion_pagos')
   }
 });
 
+// GET: lista completa de becados (beca > 0 hoy), con vigencia y estado
+// calculado — reemplaza tener que adivinar "¿esto sigue corriendo?" mirando
+// solo el %. DIAS_ALERTA_VENCIMIENTO = ventana en la que una beca con fecha
+// de fin ya pasa a marcarse "por_vencer" en vez de "vigente".
+const DIAS_ALERTA_VENCIMIENTO_BECA = 15;
+const calcularEstadoBeca = (fechaFin) => {
+  if (!fechaFin) return 'vigente';
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const fin = new Date(fechaFin);
+  fin.setHours(0, 0, 0, 0);
+  const diasRestantes = Math.round((fin.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+  if (diasRestantes < 0) return 'vencida';
+  if (diasRestantes <= DIAS_ALERTA_VENCIMIENTO_BECA) return 'por_vencer';
+  return 'vigente';
+};
+
+app.get('/api/becas', authenticate, requireModule('validacion_pagos'), async (req, res) => {
+  try {
+    const becados = await pool.query(
+      `SELECT rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria,
+              beca, beca_fecha_inicio, beca_fecha_fin, beca_motivo, correo_apoderado
+       FROM jugadores
+       WHERE beca IS NOT NULL AND beca > 0 AND (estado IS NULL OR UPPER(estado) <> 'BAJA')
+       ORDER BY nombres ASC`
+    );
+    const resultado = becados.rows.map((j) => ({
+      ...j,
+      estado_beca: calcularEstadoBeca(j.beca_fecha_fin),
+    }));
+    res.json(resultado);
+  } catch (err) {
+    console.error('[GET /api/becas]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: historial completo de ajustes de beca de UN jugador.
+app.get('/api/becas/historial/:rut', authenticate, requireModule('validacion_pagos'), async (req, res) => {
+  try {
+    const historial = await pool.query(
+      `SELECT * FROM beca_historial WHERE rut_jugador = $1 ORDER BY creado_en DESC`,
+      [req.params.rut]
+    );
+    res.json(historial.rows);
+  } catch (err) {
+    console.error('[GET /api/becas/historial/:rut]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: otorga o ajusta la beca de un jugador — deja una fila permanente en
+// beca_historial (auditoría real, no se sobreescribe) Y actualiza el estado
+// "actual" en jugadores para que el resto de la app (calcularCuotaFinal,
+// morosos, etc.) siga leyendo un solo campo simple. fecha_fin es opcional
+// (beca indefinida); fecha_inicio es obligatoria — el club pidió que TODO
+// ajuste de beca quede con período explícito, no solo un % suelto.
+app.post('/api/becas', authenticate, requireModule('validacion_pagos'), async (req, res) => {
+  const { rut_jugador, porcentaje, motivo, fecha_inicio, fecha_fin } = req.body;
+  if (!String(rut_jugador || '').trim()) {
+    return res.status(400).json({ error: 'Falta rut_jugador.' });
+  }
+  const porcentajeNum = Number(porcentaje);
+  if (!Number.isFinite(porcentajeNum) || porcentajeNum < 0 || porcentajeNum > 100) {
+    return res.status(400).json({ error: 'El porcentaje debe estar entre 0 y 100.' });
+  }
+  if (!fecha_inicio) {
+    return res.status(400).json({ error: 'Falta la fecha de inicio de la beca.' });
+  }
+  if (fecha_fin && new Date(fecha_fin) < new Date(fecha_inicio)) {
+    return res.status(400).json({ error: 'La fecha de término no puede ser anterior a la de inicio.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const historial = await client.query(
+      `INSERT INTO beca_historial (rut_jugador, porcentaje, motivo, fecha_inicio, fecha_fin, creado_por)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [rut_jugador, porcentajeNum, motivo || null, fecha_inicio, fecha_fin || null, req.actor?.rut || null]
+    );
+    const jugadorActualizado = await client.query(
+      `UPDATE jugadores
+       SET beca = $1, beca_fecha_inicio = $2, beca_fecha_fin = $3, beca_motivo = $4, updated_at = NOW()
+       WHERE rut_jugador = $5
+       RETURNING rut_jugador, nombres, apellido_paterno, beca, beca_fecha_inicio, beca_fecha_fin, beca_motivo`,
+      [porcentajeNum, fecha_inicio, fecha_fin || null, motivo || null, rut_jugador]
+    );
+    if (jugadorActualizado.rows.length === 0) {
+      throw new Error(`No existe ningún jugador con rut ${rut_jugador}.`);
+    }
+    await client.query('COMMIT');
+    res.status(201).json({
+      historial: historial.rows[0],
+      jugador: { ...jugadorActualizado.rows[0], estado_beca: calcularEstadoBeca(jugadorActualizado.rows[0].beca_fecha_fin) },
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[POST /api/becas]', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // ==========================================
 // 11. ENDPOINTS: CONVOCATORIAS/CITACIONES (FASE 1)
 // ==========================================
@@ -9803,6 +9939,10 @@ app.listen(PORT, () => {
 
   ensureBecaRevisionesTable().catch((error) => {
     console.error('❌ Error verificando tabla beca_revisiones:', error.message);
+  });
+
+  ensureBecaHistorialTable().catch((error) => {
+    console.error('❌ Error verificando tabla beca_historial:', error.message);
   });
 
   ensureComunicacionesExtendedColumns().catch((error) => {
