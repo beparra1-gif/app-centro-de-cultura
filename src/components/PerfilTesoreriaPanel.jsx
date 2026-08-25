@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Camera, Clock, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
+import { AlertTriangle, Camera, ChevronDown, ChevronUp, Clock, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from '../utils/beca';
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
@@ -31,6 +31,7 @@ function PerfilTesoreriaPanel({
   utmVigente,
   utmHistorico,
 }) {
+  const [mostrarDetalleCuotaSocio, setMostrarDetalleCuotaSocio] = useState(false);
   const [archivoComprobante, setArchivoComprobante] = useState(null);
   const inputComprobanteRef = useRef(null);
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
@@ -798,6 +799,44 @@ function PerfilTesoreriaPanel({
         {!comprobanteSubido && (
           <div className="dynamic-checkout-box fade-in mt-15" style={{ padding: '16px', borderRadius: '18px' }}>
             <h4 className="form-subtitle">Resumen de Liquidación</h4>
+
+            {esSocio && cuotaSocioAplicada > 0 && (
+              <div style={{ marginBottom: '12px', border: '1px solid rgba(0,0,0,0.08)', borderRadius: '14px', padding: '12px', background: 'rgba(0,0,0,0.02)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--texto-secundario)' }}>
+                    Cuota socio de este mes ({mesesBase[mesActual - 1]}, 0,3 UTM):
+                  </span>
+                  <strong style={{ fontSize: '14px' }}>${cuotaSocio.toLocaleString('es-CL')}</strong>
+                </div>
+                {limiteMesDeuda > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--texto-secundario)' }}>
+                      Valor al cierre de {mesesBase[limiteMesDeuda - 1]}:
+                    </span>
+                    <strong style={{ fontSize: '14px' }}>${obtenerCuotaSocioDelMes(limiteMesDeuda).toLocaleString('es-CL')}</strong>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMostrarDetalleCuotaSocio((v) => !v)}
+                  style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: 'var(--azul-electrico)' }}
+                >
+                  {mostrarDetalleCuotaSocio ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  {mostrarDetalleCuotaSocio ? 'Ocultar cuota de otros meses' : 'Ver cuota de otros meses'}
+                </button>
+                {mostrarDetalleCuotaSocio && (
+                  <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '6px' }}>
+                    {Array.from({ length: limiteMesDeuda }, (_, i) => i + 1).map((mesNum) => (
+                      <div key={`cuota-mes-${mesNum}`} style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
+                        <span>{mesesBase[mesNum - 1]}:</span>
+                        <span>${obtenerCuotaSocioDelMes(mesNum).toLocaleString('es-CL')}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="checkbox-grid mb-15">
               {esSocio && cuotaSocioAplicada > 0 && (
                 <label className="checkbox-item"><input type="checkbox" checked={mesesSocioSeleccionados.length > 0} readOnly /> Pago Cuota Socio</label>
