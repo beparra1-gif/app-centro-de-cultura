@@ -4617,6 +4617,35 @@ cron.schedule('0 3 * * 0', async () => {
   }
 });
 
+// Recalcula la UTM histórica del año en curso — pisa (UPDATE) cada fila
+// con el valor real de mindicador.cl aunque ya existiera guardada. Nace de
+// un caso real: algunos meses de utm_mensual habían quedado con un valor
+// placeholder (68000, de antes de que existiera el fetch real) y como
+// obtenerUTMParaMes normalmente nunca vuelve a tocar una fila que ya
+// existe (ver su comentario), la cuota de socio de esos meses quedaba mal
+// para siempre sin que nadie lo notara. Se corre una vez al arrancar el
+// servidor (corrige de inmediato en el próximo deploy) y de ahí en
+// adelante el día 1 de cada mes, sin depender de que un admin entre a
+// apretar el botón manual de Auditoría.
+const recalcularUtmHistoricaAnioActual = async () => {
+  const anio = new Date().getFullYear();
+  const mesTope = new Date().getMonth() + 1;
+  for (let mes = 1; mes <= mesTope; mes += 1) {
+    await obtenerUTMParaMes(anio, mes, { forzarRecalculo: true });
+  }
+  sheetsSyncManager.enqueueTable('utm_mensual');
+};
+
+cron.schedule('0 6 1 * *', async () => {
+  console.log('[CRON] Recalculando UTM histórica del año en curso...');
+  try {
+    await recalcularUtmHistoricaAnioActual();
+    console.log('[CRON] UTM histórica recalculada.');
+  } catch (err) {
+    console.error('[CRON] Error recalculando UTM histórica:', err.message);
+  }
+});
+
 // Marca 'no asiste' automáticamente a quien no respondió una citación antes
 // de su hora_maxima_confirmacion (ver barrerCitacionesVencidas).
 cron.schedule('*/5 * * * *', async () => {
@@ -10169,9 +10198,12 @@ app.listen(PORT, () => {
     console.error('❌ Error asegurando super admin:', error.message);
   });
 
-  ensureUtmMensualTable().catch((error) => {
-    console.error('❌ Error verificando tabla utm_mensual:', error.message);
-  });
+  ensureUtmMensualTable()
+    .then(() => recalcularUtmHistoricaAnioActual())
+    .then(() => console.log('📅 UTM histórica recalculada al arrancar.'))
+    .catch((error) => {
+      console.error('❌ Error verificando/recalculando UTM histórica:', error.message);
+    });
 
   scheduleAutomaticBackups();
 });
