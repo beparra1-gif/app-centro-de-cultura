@@ -5610,6 +5610,51 @@ app.post('/api/admin/utm-historico/recalcular', authenticate, requireModule('adm
   }
 });
 
+// GET: cuentas de socio con un monto de cuota "pisado a mano"
+// (monto_mensual_base o utm_valor_referencia), que por diseño gana por
+// sobre el cálculo real de 0,3 UTM del mes — ver obtenerCuotaSocioDelMes
+// en App.jsx. Sirve para auditar antes de limpiar un valor viejo (ver
+// /api/admin/cuentas-socio-override/limpiar).
+app.get('/api/admin/cuentas-socio-override', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  try {
+    const resultado = await pool.query(`
+      SELECT id, rut, nombres, apellido_paterno, monto_mensual_base, utm_valor_referencia
+      FROM cuentas
+      WHERE (es_socio = true OR perfil_principal IN ('socio', 'socio_apoderado', 'directiva') OR rol IN ('socio', 'socio_apoderado', 'directiva'))
+        AND (COALESCE(monto_mensual_base, 0) > 0 OR COALESCE(utm_valor_referencia, 0) > 0)
+      ORDER BY nombres
+    `);
+    res.json({ total: resultado.rows.length, cuentas: resultado.rows });
+  } catch (err) {
+    console.error('[GET /api/admin/cuentas-socio-override]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: limpia (deja en NULL) el override de cuota de socio SOLO en las
+// cuentas donde vale exactamente 68000 — el placeholder que quedaba
+// guardado por el formulario de cuenta antes de existir el cálculo real
+// (ver comentario de aplicarReglaMensualidad en SuperAdminPanel.jsx). No
+// toca cuentas con un valor distinto: ese sí podría ser un acuerdo real
+// escrito a mano por un admin y no se borra sin revisión.
+app.post('/api/admin/cuentas-socio-override/limpiar', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  try {
+    const resultado = await pool.query(`
+      UPDATE cuentas
+      SET monto_mensual_base = NULL, utm_valor_referencia = NULL
+      WHERE (monto_mensual_base = 68000 OR utm_valor_referencia = 68000)
+      RETURNING id, rut, nombres, apellido_paterno
+    `);
+    if (resultado.rows.length > 0) {
+      sheetsSyncManager.enqueueTable('cuentas');
+    }
+    res.json({ total: resultado.rows.length, cuentas: resultado.rows });
+  } catch (err) {
+    console.error('[POST /api/admin/cuentas-socio-override/limpiar]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST: Crear pago de mensualidad
 const ANIO_OBJETIVO_TESORERIA = 2026;
 const MESES_ABREV_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];

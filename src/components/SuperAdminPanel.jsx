@@ -638,6 +638,9 @@ function SuperAdminPanel({
   const [exportSheetsResult, setExportSheetsResult] = useState(null);
   const [recalculandoUtm, setRecalculandoUtm] = useState(false);
   const [recalcularUtmResult, setRecalcularUtmResult] = useState(null);
+  const [revisandoOverrides, setRevisandoOverrides] = useState(false);
+  const [overridesEncontrados, setOverridesEncontrados] = useState(null);
+  const [limpiandoOverrides, setLimpiandoOverrides] = useState(false);
   const [subiendoFotoJugadorNuevo, setSubiendoFotoJugadorNuevo] = useState(false);
   const [subiendoFotoJugadorEdit, setSubiendoFotoJugadorEdit] = useState(false);
   const edicionCuentaRef = useRef(null);
@@ -2278,6 +2281,43 @@ function SuperAdminPanel({
       showToast({ message: `No se pudo recalcular la UTM histórica: ${error.message}`, type: 'error' });
     } finally {
       setRecalculandoUtm(false);
+    }
+  };
+
+  const ejecutarRevisarOverrides = async () => {
+    try {
+      setRevisandoOverrides(true);
+      const resultado = await api.utmAPI.getCuentasConOverride();
+      setOverridesEncontrados(resultado?.cuentas || []);
+      showToast({
+        message: (resultado?.total ?? 0) > 0
+          ? `${resultado.total} cuenta(s) con cuota fijada a mano.`
+          : 'Ninguna cuenta tiene la cuota fijada a mano.',
+        type: (resultado?.total ?? 0) > 0 ? 'error' : 'success',
+      });
+    } catch (error) {
+      showToast({ message: `No se pudo revisar: ${error.message}`, type: 'error' });
+    } finally {
+      setRevisandoOverrides(false);
+    }
+  };
+
+  const ejecutarLimpiarOverrides = async () => {
+    try {
+      setLimpiandoOverrides(true);
+      const resultado = await api.utmAPI.limpiarOverrideViejo();
+      showToast({
+        message: `Limpiadas ${resultado?.total ?? 0} cuenta(s) con el valor viejo (68.000).`,
+        type: 'success',
+      });
+      await ejecutarRevisarOverrides();
+      if (onSheetsSyncComplete) {
+        await onSheetsSyncComplete();
+      }
+    } catch (error) {
+      showToast({ message: `No se pudo limpiar: ${error.message}`, type: 'error' });
+    } finally {
+      setLimpiandoOverrides(false);
     }
   };
 
@@ -4492,6 +4532,35 @@ function SuperAdminPanel({
                 {(recalcularUtmResult.resultados || []).map((r) => (
                   <span key={`utm-recalc-${r.mes}`} style={{ color: r.error ? '#c0392b' : 'inherit' }}>
                     Mes {r.mes}: {r.error ? `error (${r.error})` : `$${Number(r.valor).toLocaleString('es-CL')}`}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
+            <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><AlertTriangle size={16} /> Cuotas de socio fijadas a mano</h4>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
+              Si una cuenta de socio tiene un monto guardado directo (no el cálculo real de 0,3 UTM del mes), ese valor le
+              gana siempre al cálculo automático y la cuota le queda fija todos los meses. Revisa cuáles tienen esto antes
+              de limpiar — "Limpiar valor viejo" solo borra las que quedaron exactamente en 68.000 (el placeholder viejo);
+              si aparece otro valor distinto, puede ser un acuerdo real y hay que revisarlo a mano en Usuarios y Cuentas.
+            </p>
+            <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button className="btn-secondary sync-action-btn" onClick={ejecutarRevisarOverrides} disabled={revisandoOverrides}>
+                <RefreshCcw size={15} /> {revisandoOverrides ? 'Revisando...' : 'Revisar cuotas fijadas a mano'}
+              </button>
+              <button className="btn-electric sync-action-btn" onClick={ejecutarLimpiarOverrides} disabled={limpiandoOverrides}>
+                <RefreshCcw size={15} /> {limpiandoOverrides ? 'Limpiando...' : 'Limpiar valor viejo (68.000)'}
+              </button>
+            </div>
+            {overridesEncontrados && (
+              <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {overridesEncontrados.length === 0 ? (
+                  <span>Ninguna cuenta de socio tiene la cuota fijada a mano.</span>
+                ) : overridesEncontrados.map((c) => (
+                  <span key={`override-${c.id}`}>
+                    {c.nombres} {c.apellido_paterno} ({c.rut}) — monto_mensual_base: {c.monto_mensual_base || '—'}, utm_valor_referencia: {c.utm_valor_referencia || '—'}
                   </span>
                 ))}
               </div>

@@ -703,6 +703,14 @@ export const utmAPI = {
     });
     return handleResponse(response);
   },
+  getCuentasConOverride: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/admin/cuentas-socio-override`);
+    return handleResponse(response);
+  },
+  limpiarOverrideViejo: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/admin/cuentas-socio-override/limpiar`, { method: 'POST' });
+    return handleResponse(response);
+  },
 };
 
 // ========== PAGOS MENSUALIDADES (FASE 1) ==========
