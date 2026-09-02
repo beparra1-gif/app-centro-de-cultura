@@ -3273,6 +3273,54 @@ function App() {
                 partidos={partidosResumen}
               />
             )}
+            {esPerfilFamiliarNav && puedeVerPantalla('comunicaciones') && pantallaActiva === 'comunicaciones' && (
+              <div className="card mt-15" style={{ borderRadius: '22px', padding: '14px' }}>
+                <h4 style={{ margin: '2px 4px 10px 4px', fontSize: '12px', fontWeight: '900', color: 'var(--texto-heading)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  Accesos rápidos
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
+                  {puedeVerPantalla('perfil') && (
+                    <button
+                      type="button"
+                      onClick={() => cambiarPantallaConLoader('perfil')}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: '16px', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
+                    >
+                      <CreditCard size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
+                      <div>
+                        <strong style={{ display: 'block', fontSize: '13px' }}>Mi Cuenta</strong>
+                        <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>Mensualidad y comprobantes</span>
+                      </div>
+                    </button>
+                  )}
+                  {puedeVerPantalla('jugador') && (
+                    <button
+                      type="button"
+                      onClick={() => cambiarPantallaConLoader('jugador')}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: '16px', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
+                    >
+                      <User size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
+                      <div>
+                        <strong style={{ display: 'block', fontSize: '13px' }}>Pupilos</strong>
+                        <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>Perfil y tarjeta de cada deportista</span>
+                      </div>
+                    </button>
+                  )}
+                  {puedeVerPantalla('academia') && (
+                    <button
+                      type="button"
+                      onClick={() => cambiarPantallaConLoader('academia')}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: '16px', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
+                    >
+                      <BookOpen size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
+                      <div>
+                        <strong style={{ display: 'block', fontSize: '13px' }}>Academia</strong>
+                        <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>Material y evaluaciones</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             {puedeVerPantalla('comunicaciones') && pantallaActiva === 'comunicaciones' && (
               <ComunicacionesPanel
                 rolUsuario={rolUsuario}

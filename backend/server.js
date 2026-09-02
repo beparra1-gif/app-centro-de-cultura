@@ -5374,6 +5374,13 @@ const pagoEsDelActor = (pago, actor, rutsPupilos, correoActor) => {
   if (rutActor && normalizarRutParaComparar(pago.rut_pagos) === rutActor) return true;
   if (correoActor && String(pago.correo_apoderado || '').trim().toLowerCase() === correoActor) return true;
   if (pago.rut_jugador && rutsPupilos.has(normalizarRutParaComparar(pago.rut_jugador))) return true;
+  // Pagos legacy sin rut_jugador poblado (solo rut_pagos, ej. de antes del
+  // fix de FK vacía) -- mismo fallback que ya usa construirMorososDesdePagos
+  // en el admin (App.jsx: "rutPagoJugador || rutPagoPagador"). Sin esto, un
+  // pago real de un pupilo con rut_jugador vacío nunca le llegaba al
+  // apoderado (aparecía "pagado" en el admin y "pendiente" en su propia
+  // cuenta, mismo pago).
+  if (!pago.rut_jugador && pago.rut_pagos && rutsPupilos.has(normalizarRutParaComparar(pago.rut_pagos))) return true;
   return false;
 };
 

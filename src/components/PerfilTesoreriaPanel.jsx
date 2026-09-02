@@ -849,6 +849,28 @@ function PerfilTesoreriaPanel({
               <div className="desglose-row"><span>Cuota socio ({mesesSocioSeleccionados.length} {mesesSocioSeleccionados.length === 1 ? 'mes' : 'meses'}):</span><strong>${totalSocioSeleccionado.toLocaleString('es-CL')}</strong></div>
             )}
             <div className="desglose-row"><span>Cuota deportista(s) ({totalMesesJugadorSeleccionados} {totalMesesJugadorSeleccionados === 1 ? 'mes' : 'meses'}):</span><strong>${totalJugadorSeleccionado.toLocaleString('es-CL')}</strong></div>
+            {pupilosActivos.length > 1 && totalMesesJugadorSeleccionados > 0 && (
+              <div style={{ margin: '2px 0 10px 0', padding: '10px 12px', borderRadius: '12px', background: 'rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  Detalle por deportista
+                </span>
+                {pupilosActivos.map((pupilo) => {
+                  const mesesPupilo = (mesesSeleccionados[pupilo.rut] || []).sort((a, b) => a - b);
+                  if (mesesPupilo.length === 0) return null;
+                  const subtotal = obtenerCuotaMensualPupilo(pupilo) * mesesPupilo.length;
+                  return (
+                    <div key={`detalle-${pupilo.rut}`} style={{ fontSize: '12px', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                      <span>
+                        <strong>{construirNombrePupilo(pupilo)}</strong>
+                        {' — '}
+                        {mesesPupilo.map((m) => mesesBase[m - 1]).join(', ')}
+                      </span>
+                      <strong style={{ whiteSpace: 'nowrap' }}>${subtotal.toLocaleString('es-CL')}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <div className="desglose-row total-calc"><span>Total a Pagar:</span><strong>${totalSeleccionado.toLocaleString('es-CL')}</strong></div>
 
             {totalMesesSeleccionados === 0 && (
