@@ -351,7 +351,17 @@ export const cuentasAPI = {
       },
     });
     return handleResponse(response);
-  }
+  },
+
+  getPerfilMismatch: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/admin/cuentas-perfil-mismatch`);
+    return handleResponse(response);
+  },
+
+  reconciliarPerfilMismatch: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/admin/cuentas-perfil-mismatch/reconciliar`, { method: 'POST' });
+    return handleResponse(response);
+  },
 };
 
 // Utilitario de validación RUT chileno para formularios del frontend

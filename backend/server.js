@@ -34,7 +34,7 @@ const {
   setPool,
   resolverPermisosDeActor,
 } = require('./security/auth');
-const { obtenerPermisosEfectivos, normalizarRol } = require('./security/accessControl');
+const { obtenerPermisosEfectivos, normalizarRol, ROLES_BASE } = require('./security/accessControl');
 
 const app = express();
 let isSheetsSyncRunning = false;
@@ -5658,6 +5658,78 @@ app.post('/api/admin/cuentas-socio-override/limpiar', authenticate, requireModul
     res.json({ total: resultado.rows.length, cuentas: resultado.rows });
   } catch (err) {
     console.error('[POST /api/admin/cuentas-socio-override/limpiar]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET: cuentas donde `rol` y `perfil_principal` no coinciden. Solo `rol`
+// determina permisos reales (ver signToken en security/auth.js) --
+// `perfil_principal` históricamente era solo decorativo, así que ambos
+// podían desincronizarse (ej. rol=admin + perfil_principal=apoderado deja
+// a la cuenta sin el módulo de Pupilos aunque la etiqueta diga
+// "apoderado"). El frontend ya escribe ambos campos juntos desde un único
+// selector de ahora en adelante; esto es para reconciliar cuentas viejas.
+app.get('/api/admin/cuentas-perfil-mismatch', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  try {
+    const resultado = await pool.query(`
+      SELECT id, rut, correo, nombres, apellido_paterno, rol, perfil_principal, es_socio
+      FROM cuentas
+      WHERE UPPER(COALESCE(rol, '')) <> UPPER(COALESCE(perfil_principal, ''))
+      ORDER BY nombres
+    `);
+    const cuentas = resultado.rows.map((c) => {
+      const rolNormalizado = normalizarRol(c.rol);
+      if (!c.rol) {
+        return { ...c, accion: 'usar_perfil_principal', automatica: true };
+      }
+      if (Object.prototype.hasOwnProperty.call(ROLES_BASE, rolNormalizado)) {
+        return { ...c, accion: 'sincronizar_a_rol', automatica: true };
+      }
+      return { ...c, accion: 'revisar_a_mano', automatica: false };
+    });
+    res.json({ total: cuentas.length, cuentas });
+  } catch (err) {
+    console.error('[GET /api/admin/cuentas-perfil-mismatch]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: aplica la reconciliación automática (ver GET de arriba) -- deja
+// intactas las que necesitan revisión manual (accion: 'revisar_a_mano').
+app.post('/api/admin/cuentas-perfil-mismatch/reconciliar', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  try {
+    const pendientes = await pool.query(`
+      SELECT id, rol, perfil_principal
+      FROM cuentas
+      WHERE UPPER(COALESCE(rol, '')) <> UPPER(COALESCE(perfil_principal, ''))
+    `);
+
+    const corregidas = [];
+    const saltadas = [];
+    for (const c of pendientes.rows) {
+      let valorFinal = null;
+      if (!c.rol) {
+        valorFinal = c.perfil_principal;
+      } else if (Object.prototype.hasOwnProperty.call(ROLES_BASE, normalizarRol(c.rol))) {
+        valorFinal = normalizarRol(c.rol);
+      }
+      if (!valorFinal) {
+        saltadas.push(c.id);
+        continue;
+      }
+      const actualizada = await pool.query(
+        `UPDATE cuentas SET rol = $1, perfil_principal = $1, updated_at = NOW() WHERE id = $2 RETURNING id, rut, nombres, apellido_paterno, rol, perfil_principal`,
+        [valorFinal, c.id]
+      );
+      corregidas.push(actualizada.rows[0]);
+    }
+
+    if (corregidas.length > 0) {
+      sheetsSyncManager.enqueueTable('cuentas');
+    }
+    res.json({ corregidas: corregidas.length, cuentas: corregidas, saltadasPorRevisar: saltadas.length });
+  } catch (err) {
+    console.error('[POST /api/admin/cuentas-perfil-mismatch/reconciliar]', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -641,6 +641,9 @@ function SuperAdminPanel({
   const [revisandoOverrides, setRevisandoOverrides] = useState(false);
   const [overridesEncontrados, setOverridesEncontrados] = useState(null);
   const [limpiandoOverrides, setLimpiandoOverrides] = useState(false);
+  const [revisandoPerfiles, setRevisandoPerfiles] = useState(false);
+  const [perfilesMismatch, setPerfilesMismatch] = useState(null);
+  const [reconciliandoPerfiles, setReconciliandoPerfiles] = useState(false);
   const [subiendoFotoJugadorNuevo, setSubiendoFotoJugadorNuevo] = useState(false);
   const [subiendoFotoJugadorEdit, setSubiendoFotoJugadorEdit] = useState(false);
   const edicionCuentaRef = useRef(null);
@@ -892,17 +895,6 @@ function SuperAdminPanel({
   const becasPorVencerCount = becasAdmin.filter((b) => b.estado_beca === 'por_vencer').length;
   const becasVencidasCount = becasAdmin.filter((b) => b.estado_beca === 'vencida').length;
 
-  const PERFIL_PRINCIPAL_OPTIONS = [
-    { value: 'apoderado', label: 'Apoderado' },
-    { value: 'socio', label: 'Socio' },
-    { value: 'socio_apoderado', label: 'Socio / Apoderado' },
-    { value: 'directiva', label: 'Directiva' },
-    { value: 'staff', label: 'Staff' },
-    { value: 'jugador', label: 'Deportista / Jugador' },
-    { value: 'admin', label: 'Admin' },
-    { value: 'super_admin', label: 'Super Admin' },
-  ];
-
   const CARGO_DIRECTIVA_OPTIONS = [
     { value: '', label: 'Sin cargo' },
     { value: 'presidente', label: 'Presidente' },
@@ -911,11 +903,43 @@ function SuperAdminPanel({
     { value: 'delegado', label: 'Delegado' },
   ];
 
-  const ACCESO_NIVEL_OPTIONS = [
-    { value: 'estandar', label: 'Estándar' },
-    { value: 'lectura', label: 'Solo lectura' },
-    { value: 'ampliado', label: 'Ampliado' },
+  // Un solo campo de perfil en vez de "Rol de acceso" + "Perfil principal"
+  // por separado (podían quedar desincronizados -- el backend SOLO usa
+  // `rol` para dar permisos, `perfil_principal` era puramente decorativo,
+  // así que una cuenta con rol=admin/perfil_principal=apoderado perdía el
+  // módulo de Pupilos aunque la etiqueta dijera "apoderado"). Ahora ambas
+  // columnas siempre se escriben juntas con el mismo valor. "Socio" con
+  // hijos inscritos sigue guardándose como 'socio_apoderado' internamente
+  // (mismo set de módulos que 'socio', ver ROLES_BASE en el backend) solo
+  // para que el checkbox "también es apoderado" tenga un valor propio que
+  // guardar -- no cambia ningún permiso por sí solo.
+  const PERFIL_UNICO_OPTIONS = [
+    { value: 'apoderado', label: 'Apoderado' },
+    { value: 'socio', label: 'Socio' },
+    { value: 'directiva', label: 'Directiva' },
+    { value: 'jugador', label: 'Deportista' },
+    { value: 'staff', label: 'Staff' },
+    { value: 'mesa', label: 'Mesa' },
+    { value: 'visita', label: 'Invitado / Visita' },
+    { value: 'admin', label: 'Admin' },
+    { value: 'super_admin', label: 'Super Admin' },
   ];
+
+  // Colapsa 'socio_apoderado' a 'socio' para mostrar en el selector único
+  // -- la distinción "también es apoderado" vive en el checkbox aparte.
+  const perfilBaseParaSelector = (valor) => {
+    const normalizado = String(valor || 'apoderado').trim().toLowerCase();
+    return normalizado === 'socio_apoderado' ? 'socio' : normalizado;
+  };
+  const esSocioApoderadoStacked = (valor) => String(valor || '').trim().toLowerCase() === 'socio_apoderado';
+
+  // Escribe SIEMPRE rol y perfil_principal juntos con el mismo valor --
+  // nunca por separado, para que las dos columnas no puedan volver a
+  // desincronizarse.
+  const construirCambioPerfilUnico = (nuevoPerfilBase, mantenerApoderado) => {
+    const valorFinal = (nuevoPerfilBase === 'socio' && mantenerApoderado) ? 'socio_apoderado' : nuevoPerfilBase;
+    return { rol: valorFinal, perfil_principal: valorFinal };
+  };
 
   const calcularFechaCorteMesAnterior = () => {
     const now = new Date();
@@ -2321,6 +2345,45 @@ function SuperAdminPanel({
     }
   };
 
+  const ejecutarRevisarPerfiles = async () => {
+    try {
+      setRevisandoPerfiles(true);
+      const resultado = await api.cuentasAPI.getPerfilMismatch();
+      setPerfilesMismatch(resultado?.cuentas || []);
+      showToast({
+        message: (resultado?.total ?? 0) > 0
+          ? `${resultado.total} cuenta(s) con rol y perfil desincronizados.`
+          : 'Todas las cuentas tienen rol y perfil sincronizados.',
+        type: (resultado?.total ?? 0) > 0 ? 'error' : 'success',
+      });
+    } catch (error) {
+      showToast({ message: `No se pudo revisar: ${error.message}`, type: 'error' });
+    } finally {
+      setRevisandoPerfiles(false);
+    }
+  };
+
+  const ejecutarReconciliarPerfiles = async () => {
+    try {
+      setReconciliandoPerfiles(true);
+      const resultado = await api.cuentasAPI.reconciliarPerfilMismatch();
+      showToast({
+        message: resultado?.saltadasPorRevisar > 0
+          ? `Sincronizadas ${resultado.corregidas} cuenta(s). ${resultado.saltadasPorRevisar} necesitan revisión manual (rol no reconocido).`
+          : `Sincronizadas ${resultado?.corregidas ?? 0} cuenta(s).`,
+        type: 'success',
+      });
+      await ejecutarRevisarPerfiles();
+      if (onSheetsSyncComplete) {
+        await onSheetsSyncComplete();
+      }
+    } catch (error) {
+      showToast({ message: `No se pudo sincronizar: ${error.message}`, type: 'error' });
+    } finally {
+      setReconciliandoPerfiles(false);
+    }
+  };
+
   const subirFotoJugadorDesdeGaleria = async (file, target = 'nuevo') => {
     if (!file) return;
 
@@ -3032,10 +3095,29 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Mes inicio cobro (cuota socio)</label><input className="form-input" placeholder="ej. marzo" value={cuentaAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
                 <div className="form-group"><label>Día de pago acordado</label><input type="number" min="1" max="31" className="form-input" value={cuentaAdminEdit.dia_pago_acordado || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, dia_pago_acordado: e.target.value }))} /></div>
                 <div className="form-group"><label>Foto de perfil (URL)</label><input className="form-input" value={cuentaAdminEdit.foto_perfil_url || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, foto_perfil_url: e.target.value }))} /></div>
-                <div className="form-group"><label>Rol de acceso</label><select className="form-input" value={cuentaAdminEdit.rol || 'apoderado'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, rol: e.target.value }))}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`rol-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Perfil principal</label><select className="form-input" value={cuentaAdminEdit.perfil_principal || 'apoderado'} onChange={(e) => actualizarCuentaAdminEdit({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                <div className="form-group">
+                  <label>Perfil</label>
+                  <select
+                    className="form-input"
+                    value={perfilBaseParaSelector(cuentaAdminEdit.rol || cuentaAdminEdit.perfil_principal)}
+                    onChange={(e) => actualizarCuentaAdminEdit(construirCambioPerfilUnico(e.target.value, esSocioApoderadoStacked(cuentaAdminEdit.rol)))}
+                  >
+                    {PERFIL_UNICO_OPTIONS.map((opt) => <option key={`perfil-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+                {perfilBaseParaSelector(cuentaAdminEdit.rol || cuentaAdminEdit.perfil_principal) === 'socio' && (
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                    <label className="checkbox-label-row">
+                      <input
+                        type="checkbox"
+                        checked={esSocioApoderadoStacked(cuentaAdminEdit.rol)}
+                        onChange={(e) => actualizarCuentaAdminEdit(construirCambioPerfilUnico('socio', e.target.checked))}
+                      />
+                      También es apoderado (tiene hijos inscritos)
+                    </label>
+                  </div>
+                )}
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={cuentaAdminEdit.acceso_nivel || 'estandar'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, acceso_nivel: e.target.value }))}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-edit-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Estado</label><select className="form-input" value={cuentaAdminEdit.estado || 'activo'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="activo">Activo</option><option value="inactivo">Inactivo</option></select></div>
                 <div className="form-group"><label>Valor UTM referencia (override opcional, se completa solo)</label><input type="number" min="1" className="form-input" value={cuentaAdminEdit.utm_valor_referencia || utmVigente?.valor || 68000} onChange={(e) => actualizarCuentaAdminEdit({ utm_valor_referencia: e.target.value })} /></div>
                 <div className="form-group"><label>Mensualidad base automática (0,3 UTM, se recalcula sola cada mes)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(cuentaAdminEdit) ? (Number(cuentaAdminEdit.monto_mensual_base) > 0 ? cuentaAdminEdit.monto_mensual_base : calcularMensualidadSocio(cuentaAdminEdit.utm_valor_referencia || utmVigente?.valor)) : 0} disabled /></div>
@@ -3300,10 +3382,29 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
                 <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
                 <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
-                <div className="form-group"><label>Rol de acceso *</label><select className="form-input" value={nuevaCuenta.rol} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rol: e.target.value }))}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`rol-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Perfil principal *</label><select className="form-input" value={nuevaCuenta.perfil_principal || 'apoderado'} onChange={(e) => actualizarNuevaCuenta({ perfil_principal: e.target.value })}>{PERFIL_PRINCIPAL_OPTIONS.map((opt) => <option key={`perfil-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                <div className="form-group">
+                  <label>Perfil *</label>
+                  <select
+                    className="form-input"
+                    value={perfilBaseParaSelector(nuevaCuenta.rol || nuevaCuenta.perfil_principal)}
+                    onChange={(e) => actualizarNuevaCuenta(construirCambioPerfilUnico(e.target.value, esSocioApoderadoStacked(nuevaCuenta.rol)))}
+                  >
+                    {PERFIL_UNICO_OPTIONS.map((opt) => <option key={`perfil-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                </div>
+                {perfilBaseParaSelector(nuevaCuenta.rol || nuevaCuenta.perfil_principal) === 'socio' && (
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                    <label className="checkbox-label-row">
+                      <input
+                        type="checkbox"
+                        checked={esSocioApoderadoStacked(nuevaCuenta.rol)}
+                        onChange={(e) => actualizarNuevaCuenta(construirCambioPerfilUnico('socio', e.target.checked))}
+                      />
+                      También es apoderado (tiene hijos inscritos)
+                    </label>
+                  </div>
+                )}
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={nuevaCuenta.cargo_directiva || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-new-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Nivel de acceso</label><select className="form-input" value={nuevaCuenta.acceso_nivel || 'estandar'} onChange={(e) => setNuevaCuenta((p) => ({ ...p, acceso_nivel: e.target.value }))}>{ACCESO_NIVEL_OPTIONS.map((opt) => <option key={`acceso-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Nombres</label><input className="form-input" value={nuevaCuenta.nombres} onChange={(e) => setNuevaCuenta((p) => ({ ...p, nombres: e.target.value }))} /></div>
                 <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={nuevaCuenta.apellido_paterno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
                 <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevaCuenta.apellido_materno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
@@ -4561,6 +4662,37 @@ function SuperAdminPanel({
                 ) : overridesEncontrados.map((c) => (
                   <span key={`override-${c.id}`}>
                     {c.nombres} {c.apellido_paterno} ({c.rut}) — monto_mensual_base: {c.monto_mensual_base || '—'}, utm_valor_referencia: {c.utm_valor_referencia || '—'}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
+            <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><AlertTriangle size={16} /> Rol y perfil desincronizados</h4>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
+              Solo el campo "Rol" determina qué puede ver cada cuenta — el formulario de edición ya escribe rol y perfil
+              siempre iguales, pero una cuenta editada antes de este cambio puede tener ambos campos distintos (ej. rol=admin
+              con perfil=apoderado le quitaba el acceso a Pupilos aunque la etiqueta dijera "apoderado"). "Sincronizar" iguala
+              ambos campos en las cuentas donde el rol es reconocido; las que tengan un rol inválido quedan marcadas para
+              revisar a mano en Usuarios y Cuentas.
+            </p>
+            <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button className="btn-secondary sync-action-btn" onClick={ejecutarRevisarPerfiles} disabled={revisandoPerfiles}>
+                <RefreshCcw size={15} /> {revisandoPerfiles ? 'Revisando...' : 'Revisar rol/perfil desincronizados'}
+              </button>
+              <button className="btn-electric sync-action-btn" onClick={ejecutarReconciliarPerfiles} disabled={reconciliandoPerfiles}>
+                <RefreshCcw size={15} /> {reconciliandoPerfiles ? 'Sincronizando...' : 'Sincronizar automáticamente'}
+              </button>
+            </div>
+            {perfilesMismatch && (
+              <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {perfilesMismatch.length === 0 ? (
+                  <span>Todas las cuentas tienen rol y perfil sincronizados.</span>
+                ) : perfilesMismatch.map((c) => (
+                  <span key={`perfil-mismatch-${c.id}`} style={{ color: c.automatica ? 'inherit' : '#c0392b' }}>
+                    {c.nombres} {c.apellido_paterno} ({c.rut}) — rol: {c.rol || '—'}, perfil: {c.perfil_principal || '—'}
+                    {c.automatica ? '' : ' — rol no reconocido, revisar a mano'}
                   </span>
                 ))}
               </div>

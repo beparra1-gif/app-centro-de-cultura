@@ -41,7 +41,10 @@ const ROLES_BASE = {
   directiva: MODULOS_BASE_FAMILIA,
   staff: ['comunicaciones', 'academia', 'jugador', 'asistencia_staff', 'evaluacion_staff', 'citaciones', 'resultados'],
   mesa: ['scoreboard_live'],
-  admin: ['comunicaciones', 'perfil', 'kiosco', 'admin_dashboard', 'citaciones', 'resultados', 'auditoria', 'reportes', 'validacion_pagos', 'inventario', 'salud', 'invitados', 'cancha_arriendo', 'torneos', 'horarios_entrenamiento'],
+  // admin incluye MODULOS_BASE_FAMILIA completo (antes le faltaban 'academia'
+  // y 'jugador') -- una cuenta admin que también es apoderado de sus propios
+  // hijos no debe perder el acceso a Pupilos/Mi Cuenta por ser admin.
+  admin: [...MODULOS_BASE_FAMILIA, 'kiosco', 'admin_dashboard', 'citaciones', 'resultados', 'auditoria', 'reportes', 'validacion_pagos', 'inventario', 'salud', 'invitados', 'cancha_arriendo', 'torneos', 'horarios_entrenamiento'],
   super_admin: MODULOS_ACCESO.map((modulo) => modulo.id),
   superadmin: MODULOS_ACCESO.map((modulo) => modulo.id),
 };
