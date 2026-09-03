@@ -857,41 +857,51 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 <option value="Matrícula">Matrícula</option>
               </select>
 
-              {/* Valor editable */}
-              <div>
-                <label style={{ fontWeight: '600', fontSize: '12px', display: 'block', marginBottom: '6px' }}>
-                  Valor unitario ($) *
-                </label>
-                <input
-                  type="number"
-                  value={valorMensualidad}
-                  onChange={handleValorMensualidadChange}
-                  min="0"
-                  step="1000"
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--borde)',
-                    fontSize: '13px',
-                    boxSizing: 'border-box',
-                    fontWeight: '600',
-                    color: 'var(--verde-victoria)'
-                  }}
-                />
-                {mesesSeleccionados.length > 0 && (
-                  <div style={{
-                    marginTop: '6px',
-                    fontSize: '12px',
-                    color: 'var(--gris-secundario)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}>
-                    <Pin size={12} /> {mesesSeleccionados.length} mes{mesesSeleccionados.length > 1 ? 'es' : ''} × ${valorMensualidad.toLocaleString()} = <strong style={{ color: 'var(--verde-victoria)' }}>${(valorMensualidad * mesesSeleccionados.length).toLocaleString()}</strong>
-                  </div>
-                )}
-              </div>
+              {/* Valor editable — solo tiene sentido con UN mes seleccionado.
+                  Con varios meses cada uno puede valer distinto (ej. cuota
+                  socio real por mes, ver obtenerCuotaSocioSugeridaDelMes) y
+                  el monto real de cada uno se edita más abajo en "Monto
+                  pagado por mes"; mostrar acá un "valor unitario" único
+                  invitaba a asumir que todos los meses valen lo mismo y a
+                  pisarlos sin querer (handleValorMensualidadChange
+                  sobrescribía TODOS los meses seleccionados al mismo valor
+                  apenas se tocaba este campo). */}
+              {mesesSeleccionados.length <= 1 ? (
+                <div>
+                  <label style={{ fontWeight: '600', fontSize: '12px', display: 'block', marginBottom: '6px' }}>
+                    Valor unitario ($) *
+                  </label>
+                  <input
+                    type="number"
+                    value={valorMensualidad}
+                    onChange={handleValorMensualidadChange}
+                    min="0"
+                    step="1000"
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--borde)',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                      fontWeight: '600',
+                      color: 'var(--verde-victoria)'
+                    }}
+                  />
+                </div>
+              ) : (
+                <div style={{
+                  fontSize: '12px',
+                  color: 'var(--gris-secundario)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  <Pin size={12} />
+                  Cada uno de los {mesesSeleccionados.length} meses puede valer distinto — ajusta el monto de cada uno en
+                  "Monto pagado por mes" más abajo. Suma real: <strong style={{ color: 'var(--verde-victoria)' }}>${montoTotalMeses.toLocaleString()}</strong>
+                </div>
+              )}
             </div>
           )}
 
