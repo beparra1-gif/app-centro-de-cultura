@@ -1,10 +1,12 @@
 import { X, CalendarDays } from 'lucide-react';
+import useModalAccesible from '../utils/useModalAccesible';
 
 // Overlay con todo lo agendado un día del calendario (arriendos +
 // entrenamientos), ordenado por hora. onClickItem reusa el mismo manejador
 // que ya abre la tarjeta de detalle/acciones existente — este modal no
 // reimplementa esas acciones, solo lista y delega.
 function CanchaEntrenamientosDiaModal({ fecha, eventos, onCerrar, onClickItem }) {
+  useModalAccesible(true, onCerrar);
   const eventosDelDia = eventos
     .filter((ev) => ev.fecha === fecha)
     .sort((a, b) => a.horaInicio.localeCompare(b.horaInicio));
@@ -14,7 +16,7 @@ function CanchaEntrenamientosDiaModal({ fecha, eventos, onCerrar, onClickItem })
     : '';
 
   return (
-    <div className="modal-overlay-alert" onClick={onCerrar}>
+    <div className="modal-overlay-alert" role="dialog" aria-modal="true" aria-label="Agenda del día" onClick={onCerrar}>
       <div className="modal-alert-card" style={{ maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '14px' }}>
           <h3 style={{ margin: 0, fontSize: '16px', textTransform: 'capitalize' }}>
@@ -37,7 +39,7 @@ function CanchaEntrenamientosDiaModal({ fecha, eventos, onCerrar, onClickItem })
                 onClick={() => onClickItem(ev)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left',
-                  border: '1px solid var(--borde-suave)', borderRadius: '14px', padding: '10px 12px',
+                  border: '1px solid var(--borde-suave)', borderRadius: 'var(--radius-md)', padding: '10px 12px',
                   background: 'none', cursor: 'pointer', width: '100%',
                 }}
               >

@@ -1,4 +1,3 @@
-import html2canvas from 'html2canvas';
 import * as api from '../api/client';
 
 // Compartido entre TarjetaJugadorPanel (la tarjeta propia, editable) y
@@ -124,6 +123,9 @@ export const descargarBlob = (blob, nombreArchivo) => {
 };
 
 export const capturarRefExport = async (targetRef) => {
+  // Carga diferida: la Tarjeta debe abrir sin red (QR en entrenamiento) y
+  // html2canvas no se precachea en la PWA; solo se necesita al exportar.
+  const { default: html2canvas } = await import('html2canvas');
   if (!targetRef.current) throw new Error('No se pudo preparar la tarjeta para exportar.');
   return html2canvas(targetRef.current, {
     backgroundColor: null,

@@ -6,7 +6,7 @@ export default function PupiloSelector({ pupilos, pupiloActivo, rolUsuario, onCh
   }
 
   return (
-    <div className="card mb-15 fade-in player-pill-card" style={{ padding: '15px', background: 'var(--azul-marino)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: '16px' }}>
+    <div className="card mb-15 fade-in player-pill-card" style={{ padding: '15px', background: 'var(--azul-marino)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: 'var(--radius-md)' }}>
       <span style={{ fontSize: '13px', fontWeight: '800', color: 'white' }}><Users size={16} style={{ marginRight: '5px' }} /> Perfil Activo:</span>
       <select
         className="form-input dark-select"

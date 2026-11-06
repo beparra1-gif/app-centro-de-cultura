@@ -385,9 +385,64 @@ async function upsertRow(client, tableName, mappedPairs, pkColumns, uniqueColumn
   return { skipped: false };
 }
 
+// Lectura autenticada con la misma cuenta de servicio que ya usa el export
+// (google-sheets-sync.js). Con esto el Sheet puede quedar PRIVADO (compartido
+// solo con la cuenta de servicio): la lectura por CSV público obligaba a
+// tenerlo como "cualquiera con el enlace", lo que exponía jugadores (RUT,
+// datos médicos de menores), cuentas y auditoría a quien tuviera el link.
+// Si no hay credenciales configuradas, se mantiene el CSV público como antes.
+const normalizarClavePrivada = (rawValue) => {
+  let key = String(rawValue || '').trim();
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1).trim();
+  }
+  return key.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+};
+
+let sheetsLecturaClient;
+const obtenerClienteLecturaSheets = () => {
+  if (sheetsLecturaClient !== undefined) return sheetsLecturaClient;
+  const email = String(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').trim();
+  const privateKey = normalizarClavePrivada(process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
+  if (!email || !privateKey.includes('BEGIN PRIVATE KEY')) {
+    sheetsLecturaClient = null;
+    return null;
+  }
+  const { google } = require('googleapis');
+  const auth = new google.auth.JWT(email, null, privateKey, ['https://www.googleapis.com/auth/spreadsheets.readonly']);
+  sheetsLecturaClient = google.sheets({ version: 'v4', auth });
+  return sheetsLecturaClient;
+};
+
+async function fetchSheetRowsConServiceAccount(sheetsClient, sheetId, sheetName) {
+  const response = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: `${sheetName}!A:ZZ`,
+    valueRenderOption: 'FORMATTED_VALUE',
+  });
+  const values = Array.isArray(response.data.values) ? response.data.values : [];
+  if (values.length === 0) return [];
+  const headers = values[0].map((h) => String(h ?? '').trim());
+  return values.slice(1)
+    .filter((fila) => fila.some((celda) => String(celda ?? '').trim() !== ''))
+    .map((fila) => Object.fromEntries(
+      headers
+        .map((header, i) => [header, String(fila[i] ?? '').trim()])
+        .filter(([header]) => header)
+    ));
+}
+
+async function fetchSheetRows(sheetId, sheetName) {
+  const sheetsClient = obtenerClienteLecturaSheets();
+  if (sheetsClient) {
+    return fetchSheetRowsConServiceAccount(sheetsClient, sheetId, sheetName);
+  }
+  return fetchPublicSheetRows(sheetId, sheetName);
+}
+
 async function importSheetToTable(client, sheetId, mapping, options = {}) {
   const { sheet, table } = mapping;
-  const rows = await fetchPublicSheetRows(sheetId, sheet);
+  const rows = await fetchSheetRows(sheetId, sheet);
   const { columns, pkColumns, uniqueColumns, requiredColumns } = await getTableMeta(client, table);
 
   if (columns.length === 0) {
@@ -570,6 +625,7 @@ if (require.main === module) {
 
 module.exports = {
   runImportFromSheets,
+  fetchSheetRows,
   SHEET_TABLE_MAP,
   HEADER_ALIASES,
 };

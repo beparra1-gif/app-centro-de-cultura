@@ -4,6 +4,7 @@ import { test, expect } from '@playwright/test';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
+import { VERSION_AVISO } from '../../src/legal/avisoPrivacidad.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../../backend/.env') });
@@ -19,10 +20,11 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 test.beforeAll(async () => {
   const hash = await bcrypt.hash(PASSWORD, 10);
   await pool.query(
-    `INSERT INTO cuentas (correo, rut, password, nombres, rol, estado)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (correo) DO UPDATE SET password = EXCLUDED.password, rol = EXCLUDED.rol, estado = EXCLUDED.estado`,
-    ['e2e.login@test.local', RUT, hash, 'E2E Login Test', 'super_admin', 'activo']
+    `INSERT INTO cuentas (correo, rut, password, nombres, rol, estado, consentimiento_version)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (correo) DO UPDATE SET password = EXCLUDED.password, rol = EXCLUDED.rol, estado = EXCLUDED.estado,
+       consentimiento_version = EXCLUDED.consentimiento_version`,
+    ['e2e.login@test.local', RUT, hash, 'E2E Login Test', 'super_admin', 'activo', VERSION_AVISO]
   );
 });
 

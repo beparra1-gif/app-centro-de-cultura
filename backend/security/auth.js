@@ -40,7 +40,40 @@ const signToken = ({ id, rut, rol }) => jwt.sign(
   { expiresIn: TOKEN_EXPIRES_IN }
 );
 
-const authenticate = (req, res, next) => {
+// Lee de la BD el estado vigente de la cuenta del token. El JWT dura 8h y
+// antes se confiaba en el rol que traía: una cuenta desactivada, borrada o
+// degradada de perfil seguía con su acceso anterior hasta que el token
+// vencía. Ahora rol/estado/forzar_clave/permisos_override salen de la BD en
+// cada request (una consulta por PK; reemplaza la que ya hacía
+// requireModule para el override, así que no suma carga).
+const cargarCuentaVigente = async (payload) => {
+  const idNumerico = Number.parseInt(String(payload?.id ?? ''), 10);
+  if (!poolRef || !Number.isFinite(idNumerico)) return { sinVerificar: true };
+  const result = await poolRef.query(
+    'SELECT rol, estado, forzar_clave, permisos_override FROM cuentas WHERE id = $1',
+    [idNumerico]
+  );
+  return { cuenta: result.rows[0] || null };
+};
+
+const normalizarRolDeCuenta = (rolDb) => {
+  const raw = String(rolDb || '').trim().toLowerCase();
+  if (raw === 'superadmin') return 'super_admin';
+  return normalizarRol(raw || 'jugador');
+};
+
+const construirActor = (payload, cuenta = null) => ({
+  id: payload.id ?? null,
+  rut: payload.rut || '',
+  rol: cuenta ? normalizarRolDeCuenta(cuenta.rol) : normalizarRol(payload.rol),
+  ...(cuenta ? { permisosOverride: cuenta.permisos_override || {} } : {}),
+});
+
+const cuentaEstaActiva = (cuenta) => !cuenta.estado || String(cuenta.estado).toLowerCase() === 'activo';
+
+const CODIGO_CAMBIO_CLAVE_REQUERIDO = 'CAMBIO_CLAVE_REQUERIDO';
+
+const authenticate = async (req, res, next) => {
   const header = String(req.headers.authorization || '');
   const [scheme, token] = header.split(' ');
 
@@ -48,17 +81,36 @@ const authenticate = (req, res, next) => {
     return res.status(401).json({ error: 'Falta token de autenticación.' });
   }
 
+  let payload;
   try {
-    const payload = jwt.verify(token, getJwtSecret());
-    req.actor = {
-      id: payload.id ?? null,
-      rut: payload.rut || '',
-      rol: normalizarRol(payload.rol),
-    };
-    return next();
+    payload = jwt.verify(token, getJwtSecret());
   } catch (err) {
     const expirado = err.name === 'TokenExpiredError';
     return res.status(401).json({ error: expirado ? 'Sesión expirada.' : 'Token inválido.' });
+  }
+
+  try {
+    const { cuenta, sinVerificar } = await cargarCuentaVigente(payload);
+    if (!sinVerificar) {
+      if (!cuenta) return res.status(401).json({ error: 'La cuenta ya no existe.' });
+      if (!cuentaEstaActiva(cuenta)) return res.status(401).json({ error: 'Cuenta inactiva.' });
+      // forzar_clave antes solo lo hacía cumplir el frontend: con la clave
+      // inicial el token servía para todo aunque nunca se cambiara. El cambio
+      // se hace por /api/auth/change-password, que no pasa por aquí. 403 (no
+      // 401) para no disparar el logout automático durante el onboarding.
+      if (cuenta.forzar_clave) {
+        res.setHeader('X-Requiere-Cambio-Clave', '1');
+        return res.status(403).json({
+          error: 'Debes cambiar tu contraseña antes de continuar. Vuelve a iniciar sesión.',
+          code: CODIGO_CAMBIO_CLAVE_REQUERIDO,
+        });
+      }
+    }
+    req.actor = construirActor(payload, cuenta);
+    return next();
+  } catch (err) {
+    console.error('❌ Error verificando cuenta del token:', err.message);
+    return res.status(503).json({ error: 'No se pudo verificar la sesión. Intenta de nuevo.' });
   }
 };
 
@@ -67,7 +119,7 @@ const authenticate = (req, res, next) => {
 // contenido público a la vez que dan más visibilidad a quien sí tiene sesión
 // — ej. GET /api/comunicaciones, que alimenta el feed público de noticias
 // pero también las publicaciones de Academia, que no deben ser públicas).
-const authenticateOpcional = (req, res, next) => {
+const authenticateOpcional = async (req, res, next) => {
   const header = String(req.headers.authorization || '');
   const [scheme, token] = header.split(' ');
 
@@ -78,11 +130,14 @@ const authenticateOpcional = (req, res, next) => {
 
   try {
     const payload = jwt.verify(token, getJwtSecret());
-    req.actor = {
-      id: payload.id ?? null,
-      rut: payload.rut || '',
-      rol: normalizarRol(payload.rol),
-    };
+    const { cuenta, sinVerificar } = await cargarCuentaVigente(payload);
+    if (sinVerificar) {
+      req.actor = construirActor(payload);
+    } else if (cuenta && cuentaEstaActiva(cuenta) && !cuenta.forzar_clave) {
+      req.actor = construirActor(payload, cuenta);
+    } else {
+      req.actor = null;
+    }
   } catch {
     req.actor = null;
   }
@@ -126,7 +181,11 @@ const obtenerOverrideDeCuenta = async (rut) => {
 // necesite respetar el override configurado por un admin.
 const resolverPermisosDeActor = async (actor) => obtenerPermisosEfectivos({
   rol: actor?.rol,
-  override: await obtenerOverrideDeCuenta(actor?.rut),
+  // authenticate ya trae el override desde la BD; solo se consulta de nuevo
+  // si el actor no pasó por ahí (sin pool, tests).
+  override: actor?.permisosOverride !== undefined
+    ? actor.permisosOverride
+    : await obtenerOverrideDeCuenta(actor?.rut),
 });
 
 const requireModule = (moduloId) => async (req, res, next) => {
@@ -304,6 +363,7 @@ const requireApoderadoDeJugador = (pool) => (req, res, next) => {
 };
 
 module.exports = {
+  CODIGO_CAMBIO_CLAVE_REQUERIDO,
   hashPassword,
   verifyPassword,
   signToken,

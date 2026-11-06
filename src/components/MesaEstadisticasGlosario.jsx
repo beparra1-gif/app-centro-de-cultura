@@ -43,7 +43,7 @@ function MesaEstadisticasGlosario() {
           zIndex: 1000, padding: '20px',
         }}>
           <div style={{
-            background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '480px', width: '100%',
+            background: 'white', borderRadius: 'var(--radius-md)', padding: '24px', maxWidth: '480px', width: '100%',
             maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>

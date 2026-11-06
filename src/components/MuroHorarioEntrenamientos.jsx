@@ -89,9 +89,9 @@ function MuroHorarioEntrenamientos() {
     const { bg, color } = colorBadgePorRama(s.rama);
     const categorias = Array.isArray(s.categorias) ? s.categorias.join(', ') : '';
     return (
-      <div key={`${s.id_horario}-${s.fecha}`} style={{ border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '8px 12px' }}>
+      <div key={`${s.id_horario}-${s.fecha}`} style={{ border: '1px solid var(--borde-suave)', borderRadius: 'var(--radius-sm)', padding: '8px 12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '10px', fontWeight: '800', padding: '2px 8px', borderRadius: '999px', color, background: bg }}>{s.rama}</span>
+          <span style={{ fontSize: '10px', fontWeight: '800', padding: '2px 8px', borderRadius: 'var(--radius-pill)', color, background: bg }}>{s.rama}</span>
           <strong style={{ fontSize: '13px' }}>{categorias}</strong>
           {s.es_reprogramado && <span style={{ fontSize: '10px', fontWeight: '800', color: '#b36200' }}>Reprogramado</span>}
         </div>
@@ -105,7 +105,7 @@ function MuroHorarioEntrenamientos() {
   };
 
   return (
-    <div className="card mb-15" style={{ borderRadius: '18px' }}>
+    <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)' }}>
       <button
         type="button"
         onClick={() => setColapsado((v) => !v)}

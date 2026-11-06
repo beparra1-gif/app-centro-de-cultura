@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, HelpCircle } from 'lucide-react';
 import { subscribeConfirmDialog } from '../utils/confirmDialog';
+import useModalAccesible from '../utils/useModalAccesible';
 
 function ConfirmDialog() {
   const [pedido, setPedido] = useState(null);
 
   useEffect(() => subscribeConfirmDialog(setPedido), []);
+  // Escape = Cancelar.
+  useModalAccesible(Boolean(pedido), () => {
+    if (!pedido) return;
+    pedido.resolve(false);
+    setPedido(null);
+  });
 
   if (!pedido) return null;
 
@@ -24,6 +31,7 @@ function ConfirmDialog() {
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      className="modal-animado-fondo"
       style={{
         position: 'fixed',
         inset: 0,
@@ -39,6 +47,7 @@ function ConfirmDialog() {
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-animado"
         style={{
           background: 'var(--blanco-tarjeta)',
           borderRadius: 'var(--radius-lg)',

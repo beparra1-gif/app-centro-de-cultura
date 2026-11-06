@@ -22,6 +22,10 @@ export default defineConfig([
       // Keep lint signal useful without blocking release on known legacy debt.
       'no-unused-vars': 'warn',
       'react-hooks/purity': 'warn',
+      // Regla de rendimiento del React Compiler (renders en cascada), no de
+      // correctitud: hay ~23 casos heredados que funcionan bien. Como error
+      // dejaba el lint siempre en rojo y ocultaba problemas reales.
+      'react-hooks/set-state-in-effect': 'warn',
     },
   },
   {
@@ -48,7 +52,18 @@ export default defineConfig([
       sourceType: 'script',
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      // `const crypto = require('crypto')` es lo correcto en CommonJS aunque
+      // Node 20+ también exponga un global crypto.
+      'no-redeclare': ['error', { builtinGlobals: false }],
+    },
+  },
+  {
+    // Los tests de backend usan import de vitest (ESM) + require.
+    files: ['backend/**/*.test.js'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.vitest },
+      sourceType: 'module',
     },
   },
   {

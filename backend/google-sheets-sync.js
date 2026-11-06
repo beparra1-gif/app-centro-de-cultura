@@ -14,17 +14,39 @@ const tableToSheetMap = new Map(
   SHEET_TABLE_MAP.map((entry) => [String(entry.table || '').trim().toLowerCase(), String(entry.sheet || '').trim()])
 );
 
+// Columnas que nunca deben salir al Sheet (hashes de contraseña, claves en
+// texto plano legadas). La importación desde el Sheet es incremental (INSERT
+// ... ON CONFLICT DO NOTHING), así que omitirlas no borra nada en la BD.
+const COLUMNAS_EXCLUIDAS_POR_TABLA = {
+  cuentas: new Set(['password']),
+  jugadores: new Set(['password_jugador']),
+};
+
+// Google Sheets rechaza celdas de más de 50.000 caracteres y, si una sola
+// celda lo excede, falla el values.update de la tabla COMPLETA (ej. un
+// comprobante en base64 dentro de pagos_mensualidades.comprobante_url).
+const LARGO_MAXIMO_CELDA = 45000;
+
+const recortarCelda = (texto) => {
+  if (texto.startsWith('data:')) return `[archivo omitido: ${texto.length} caracteres]`;
+  if (texto.length > LARGO_MAXIMO_CELDA) {
+    return `${texto.slice(0, LARGO_MAXIMO_CELDA)}… [recortado: ${texto.length} caracteres]`;
+  }
+  return texto;
+};
+
 const coerceCellValue = (value) => {
   if (value == null) return '';
   if (value instanceof Date) return value.toISOString();
+  if (Buffer.isBuffer(value)) return `[binario omitido: ${value.length} bytes]`;
   if (typeof value === 'object') {
     try {
-      return JSON.stringify(value);
+      return recortarCelda(JSON.stringify(value));
     } catch {
-      return String(value);
+      return recortarCelda(String(value));
     }
   }
-  return String(value);
+  return recortarCelda(String(value));
 };
 
 const getOrderedColumns = async (pool, tableName) => {
@@ -132,7 +154,8 @@ const syncTableToSheet = async ({ pool, sheetsClient, spreadsheetId, tableName, 
   const table = String(tableName || '').trim();
   if (!table) return { ok: false, table, reason: 'tabla vacia' };
 
-  const columns = await getOrderedColumns(pool, table);
+  const excluidas = COLUMNAS_EXCLUIDAS_POR_TABLA[table.toLowerCase()] || new Set();
+  const columns = (await getOrderedColumns(pool, table)).filter((column) => !excluidas.has(column));
   if (!columns.length) {
     return { ok: false, table, reason: 'tabla no existe o sin columnas' };
   }

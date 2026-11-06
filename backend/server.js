@@ -4,15 +4,14 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const compression = require('compression');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { S3Client, PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
-const axios = require('axios');
-const { parse } = require('csv-parse/sync');
 const multer = require('multer');
 require('dotenv').config();
 const cron = require('node-cron');
-const { runImportFromSheets } = require('./import-google-sheets');
+const { runImportFromSheets, fetchSheetRows } = require('./import-google-sheets');
 const { createSheetsSyncManager } = require('./google-sheets-sync');
 const { createSheetsWebhookSyncManager } = require('./google-sheets-webhook-sync');
 const { calcularEmparejamientos } = require('./torneoBracket');
@@ -31,10 +30,12 @@ const {
   requireApoderadoDeJugador,
   stripFieldsUnlessModule,
   normalizarRutParaComparar,
+  calcularEdad,
   setPool,
   resolverPermisosDeActor,
 } = require('./security/auth');
-const { obtenerPermisosEfectivos, normalizarRol, ROLES_BASE } = require('./security/accessControl');
+const { normalizarRol, ROLES_BASE } = require('./security/accessControl');
+const { enviarCorreo, correoDisponible, enmascararCorreo, esCorreoReal } = require('./lib/correo');
 
 const app = express();
 let isSheetsSyncRunning = false;
@@ -620,6 +621,43 @@ const getTableFromApiRequest = (req) => {
   return RESOURCE_TABLE_MAP[resource] || '';
 };
 
+// El body de cada request mutante se copia a auditoria.valores_nuevos (que a
+// su vez se sincroniza al Google Sheet) y al webhook de Apps Script. Antes se
+// copiaba tal cual: un reseteo de clave desde el panel admin dejaba la
+// contraseña en texto plano en la auditoría y en el Sheet, y un comprobante
+// en base64 (varios MB) se duplicaba en cada fila. Se omiten claves
+// sensibles y se recortan strings enormes / data URLs.
+const CLAVES_SENSIBLES_REGEX = /(password|contrasena|contraseña|clave|token|secret|codigo)/i;
+const LARGO_MAXIMO_VALOR_REGISTRO = 2000;
+
+const sanitizarValorParaRegistro = (valor, profundidad = 0) => {
+  if (valor == null) return valor;
+  if (typeof valor === 'string') {
+    if (valor.startsWith('data:')) return `[archivo omitido: ${valor.length} caracteres]`;
+    if (valor.length > LARGO_MAXIMO_VALOR_REGISTRO) {
+      return `${valor.slice(0, LARGO_MAXIMO_VALOR_REGISTRO)}… [recortado: ${valor.length} caracteres]`;
+    }
+    return valor;
+  }
+  if (typeof valor !== 'object') return valor;
+  if (profundidad >= 4) return '[objeto anidado omitido]';
+  if (Array.isArray(valor)) {
+    return valor.slice(0, 200).map((item) => sanitizarValorParaRegistro(item, profundidad + 1));
+  }
+  return Object.fromEntries(
+    Object.entries(valor)
+      .slice(0, 60)
+      .map(([clave, v]) => [
+        clave,
+        CLAVES_SENSIBLES_REGEX.test(clave) ? '[omitido]' : sanitizarValorParaRegistro(v, profundidad + 1),
+      ])
+  );
+};
+
+const sanitizarBodyParaRegistro = (body) => (
+  body && typeof body === 'object' && !Array.isArray(body) ? sanitizarValorParaRegistro(body) : {}
+);
+
 const registrarAuditoriaCambio = async (poolRef, req, tableName) => {
   if (!tableName) return;
 
@@ -627,8 +665,7 @@ const registrarAuditoriaCambio = async (poolRef, req, tableName) => {
     const actor = obtenerActorRequest(req);
     const registroRaw = req.params?.id || req.params?.rut || req.params?.id_partido || null;
     const registroNumerico = Number.parseInt(String(registroRaw || ''), 10);
-    const payload = req.body && typeof req.body === 'object' ? req.body : {};
-    const cambios = Object.fromEntries(Object.entries(payload).slice(0, 40));
+    const cambios = Object.fromEntries(Object.entries(sanitizarBodyParaRegistro(req.body)).slice(0, 40));
 
     await poolRef.query(
       `INSERT INTO auditoria (
@@ -675,6 +712,14 @@ const normalizarEstadoPagoMensualidad = (estado) => {
 };
 
 // ========== MIDDLEWARE ==========
+// DigitalOcean App Platform pone un proxy delante: sin esto req.ip es la IP
+// del proxy para TODOS los usuarios y el rate limit de login (por IP) se
+// volvía global para el club entero. 1 = confiar solo en el salto inmediato
+// (el balanceador), no en cadenas X-Forwarded-For arbitrarias del cliente.
+// Configurable con TRUST_PROXY (ej. 0 para desactivarlo en local).
+const trustProxyEnv = String(process.env.TRUST_PROXY ?? '').trim();
+app.set('trust proxy', trustProxyEnv === '' ? 1 : (Number.isFinite(Number(trustProxyEnv)) ? Number(trustProxyEnv) : trustProxyEnv));
+
 const DEV_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 const configuredFrontendUrl = normalizeEnvValue(process.env.FRONTEND_URL || '');
 const allowedOrigins = new Set([...DEV_ORIGINS, ...(configuredFrontendUrl ? [configuredFrontendUrl] : [])]);
@@ -687,8 +732,16 @@ app.use(cors({
     }
     return callback(new Error('Origen no permitido por CORS.'));
   },
-  credentials: false
+  credentials: false,
+  // Lo lee src/api/client.js para cerrar sesión cuando la cuenta debe
+  // cambiar su clave (ver authenticate en security/auth.js).
+  exposedHeaders: ['X-Requiere-Cambio-Clave'],
 }));
+// gzip de todas las respuestas (JSON sobre todo): el arranque de un admin
+// bajaba ~765 KB sin comprimir (pagos 412 KB, jugadores 143 KB) y se repetía
+// en el poll de 20 s. Con gzip el JSON queda en ~10-15% del tamaño.
+app.use(compression());
+
 // 15mb: /api/pagos* acepta comprobantes de pago como base64 en el body JSON
 // (PagoForm.jsx no comprime ni limita el archivo antes de enviarlo).
 app.use(express.json({ limit: '15mb' }));
@@ -720,7 +773,7 @@ app.use((req, res, next) => {
         action: String(req.method || '').toUpperCase(),
         path: req.path,
         params: req.params || {},
-        body: req.body && typeof req.body === 'object' ? req.body : {},
+        body: sanitizarBodyParaRegistro(req.body),
         actor: {
           id: actor.id || null,
           rut: actor.rut || null,
@@ -751,9 +804,10 @@ fs.mkdirSync(logosPublicDir, { recursive: true });
 app.use('/logos', express.static(logosPublicDir, {
   fallthrough: true,
   maxAge: '7d',
-  setHeaders: (res) => {
+  setHeaders: (res, filePath) => {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Access-Control-Allow-Origin', '*');
+    aplicarCabecerasArchivoSubido(res, path.extname(filePath).toLowerCase() === '.svg' ? 'image/svg+xml' : '');
   },
 }));
 
@@ -779,12 +833,37 @@ const uploadLogo = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
+// Archivos subidos por usuarios se sirven desde el mismo origen que la app:
+// un SVG puede traer <script>, y abrirlo directo ejecutaba ese JS con acceso
+// al localStorage (donde vive el token de sesión). nosniff evita que el
+// navegador reinterprete el tipo, y el CSP sandbox desactiva scripts en SVG.
+// (No se aplica sandbox a PDFs: rompe el visor de PDF de Chrome.)
+const aplicarCabecerasArchivoSubido = (res, mimeType = '') => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (String(mimeType).toLowerCase().includes('svg')) {
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  }
+};
+
+// SVG solo para logos que sube un admin por /api/logo-assets (esa ruta exige
+// admin_dashboard después de multer para cualquier tipo que no sea de
+// autoservicio). Foto de perfil, comprobante y fotos de jugador las sube
+// cualquier familia: ahí solo imágenes rasterizadas, y PDF para comprobantes.
+const MIMES_RASTER = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 const uploadLogoMemoria = multer({
   storage: multer.memoryStorage(),
-  fileFilter: (_req, file, cb) => {
-    const permitido = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'];
+  fileFilter: (req, file, cb) => {
+    const tipo = String(req.body?.tipo || 'logo').trim() || 'logo';
+    const esRutaLogosAdmin = req.path === '/api/logo-assets' && !TIPOS_LOGO_ASSET_AUTOSERVICIO.includes(tipo);
+    const permitido = [
+      ...MIMES_RASTER,
+      ...(esRutaLogosAdmin ? ['image/svg+xml'] : []),
+      ...(req.path === '/api/logo-assets' && tipo === 'comprobante' ? ['application/pdf'] : []),
+    ];
     if (!permitido.includes(file.mimetype)) {
-      cb(new Error('Formato de logo no permitido. Usa PNG, JPG, WEBP o SVG.'));
+      cb(new Error(tipo === 'comprobante'
+        ? 'Formato no permitido. Usa una imagen (PNG, JPG, WEBP) o un PDF.'
+        : `Formato no permitido. Usa PNG, JPG o WEBP${esRutaLogosAdmin ? ' o SVG' : ''}.`));
       return;
     }
     cb(null, true);
@@ -962,7 +1041,8 @@ const obtenerCuentaPorRutNormalizado = async (rutNormalizado) => {
       ${col('estado')},
       ${col('forzar_clave', 'boolean')},
       ${col('foto_perfil_url')},
-      ${col('requiere_foto_perfil', 'boolean')}
+      ${col('requiere_foto_perfil', 'boolean')},
+      ${col('consentimiento_version')}
      FROM cuentas
      WHERE UPPER(REPLACE(REPLACE(COALESCE(rut, ''), '.', ''), '-', '')) = $1
      LIMIT 1`,
@@ -1110,15 +1190,9 @@ const obtenerConflictosRutJugadoresSheet = async () => {
     throw new Error('Falta GOOGLE_SHEET_ID para auditar conflictos de RUT en jugadores.');
   }
 
-  const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('JUGADORES')}`;
-  const response = await axios.get(url, { timeout: 30000 });
-  const rows = parse(response.data, {
-    columns: true,
-    skip_empty_lines: true,
-    bom: true,
-    trim: true,
-    relax_column_count: true,
-  });
+  // Misma lectura que la importación: cuenta de servicio si está configurada
+  // (Sheet privado), CSV público solo como respaldo.
+  const rows = await fetchSheetRows(sheetId, 'JUGADORES');
 
   const grupos = new Map();
   rows.forEach((row, index) => {
@@ -1492,6 +1566,68 @@ const ensureJugadoresBecaNumerica = async () => {
 // Trazabilidad mensual de revisión de becas: una fila por jugador becado por
 // mes confirma que el admin/superadmin designado validó que la beca sigue
 // vigente ese mes. Ausencia de fila para el mes actual = pendiente de revisar.
+// Limpieza idempotente de filas de auditoría escritas antes de
+// sanitizarBodyParaRegistro: quita contraseñas en texto plano y comprobantes
+// en base64 de valores_nuevos.changes. Corre en cada arranque pero solo toca
+// filas que todavía tienen esos datos (el WHERE las filtra), así que tras la
+// primera vez no modifica nada. El Sheet se reescribe completo en el
+// siguiente sync, así que también queda limpio.
+const limpiarAuditoriaSensible = async () => {
+  const clavesSensibles = ['password', 'password_jugador', 'currentPassword', 'newPassword'];
+  const conClaves = await pool.query(
+    `UPDATE auditoria
+     SET valores_nuevos = jsonb_set(
+       valores_nuevos::jsonb,
+       '{changes}',
+       (valores_nuevos::jsonb -> 'changes') - $1::text[]
+     )::json
+     WHERE jsonb_typeof(valores_nuevos::jsonb -> 'changes') = 'object'
+       AND (valores_nuevos::jsonb -> 'changes') ?| $1::text[]`,
+    [clavesSensibles]
+  );
+  const conArchivos = await pool.query(
+    `UPDATE auditoria
+     SET valores_nuevos = jsonb_set(
+       valores_nuevos::jsonb,
+       '{changes,comprobante_url}',
+       '"[archivo omitido]"'::jsonb
+     )::json
+     WHERE jsonb_typeof(valores_nuevos::jsonb -> 'changes') = 'object'
+       AND (valores_nuevos::jsonb -> 'changes' ->> 'comprobante_url') LIKE 'data:%'`
+  );
+  const total = (conClaves.rowCount || 0) + (conArchivos.rowCount || 0);
+  if (total > 0) {
+    console.log(`🧹 Auditoría: ${conClaves.rowCount} filas sin contraseñas, ${conArchivos.rowCount} sin comprobantes base64.`);
+    sheetsSyncManager.enqueueTable('auditoria');
+  }
+};
+
+// Cuentas legadas guardaban la contraseña en texto plano; verifyPassword solo
+// la re-hasheaba cuando la persona volvía a iniciar sesión, así que las que no
+// entraban hace tiempo seguían en claro en la BD (y en la pestaña CUENTAS del
+// Sheet, que llegó a estar compartido públicamente). Se hashean todas al
+// arrancar y se activa forzar_clave: esa clave ya estuvo expuesta, así que en
+// el próximo ingreso deben elegir una nueva. Idempotente: tras la primera
+// vez ninguna fila cumple el WHERE.
+const hashearClavesEnTextoPlano = async () => {
+  const pendientes = await pool.query(
+    `SELECT id, password FROM cuentas
+     WHERE COALESCE(password, '') <> '' AND password !~ '^\\$2[aby]\\$'`
+  );
+  for (const fila of pendientes.rows) {
+    const hash = await hashPassword(fila.password);
+    await pool.query(
+      `UPDATE cuentas SET password = $1, forzar_clave = true, updated_at = NOW()
+       WHERE id = $2 AND password = $3`,
+      [hash, fila.id, fila.password]
+    );
+  }
+  if (pendientes.rows.length > 0) {
+    console.log(`🔐 ${pendientes.rows.length} contraseñas en texto plano convertidas a hash (forzar_clave activado).`);
+    sheetsSyncManager.enqueueTable('cuentas');
+  }
+};
+
 const ensureBecaRevisionesTable = async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS beca_revisiones (
@@ -2307,8 +2443,10 @@ app.post('/api/logo-assets', authenticate, uploadLogoMemoria.single('archivo'), 
     // filename). El comprobante además lleva timestamp: cada envío es un
     // archivo nuevo, para no pisar el comprobante de un pago anterior
     // todavía en revisión.
+    // El sufijo aleatorio (antes Date.now()) hace la URL del comprobante
+    // imposible de adivinar: el archivo se sirve sin sesión (se usa en <img>).
     const rutActor = String(req.actor?.rut || 'sin-rut').trim();
-    req.body.nombre = tipo === 'comprobante' ? `${rutActor}-${Date.now()}` : rutActor;
+    req.body.nombre = tipo === 'comprobante' ? `${rutActor}-${crypto.randomUUID()}` : rutActor;
     return next();
   }
   return requireModule('admin_dashboard')(req, res, next);
@@ -2337,10 +2475,14 @@ app.post('/api/logo-assets', authenticate, uploadLogoMemoria.single('archivo'), 
       [nombre, tipo, filename, req.file.mimetype || 'application/octet-stream', req.file.buffer]
     );
 
-    try {
-      fs.writeFileSync(path.join(logosPublicDir, filename), req.file.buffer);
-    } catch {
-      // El espejo en disco es opcional; la fuente principal queda en DB.
+    // El espejo en disco (/logos, estático y listable por nombre) no aplica
+    // a comprobantes: quedan solo en la BD, detrás de su nombre aleatorio.
+    if (tipo !== 'comprobante') {
+      try {
+        fs.writeFileSync(path.join(logosPublicDir, filename), req.file.buffer);
+      } catch {
+        // El espejo en disco es opcional; la fuente principal queda en DB.
+      }
     }
 
     return res.json({
@@ -2408,9 +2550,11 @@ app.get('/api/logo-assets/file/:filename', async (req, res) => {
       return res.status(404).json({ error: 'Logo no encontrado.' });
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=604800');
+    const esComprobante = safeFilename.startsWith('comprobante-');
+    res.setHeader('Cache-Control', esComprobante ? 'private, max-age=86400' : 'public, max-age=604800');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Access-Control-Allow-Origin', '*');
+    aplicarCabecerasArchivoSubido(res, row.mime_type);
     res.contentType(row.mime_type || 'application/octet-stream');
     return res.send(row.file_data);
   } catch (error) {
@@ -3358,9 +3502,12 @@ app.post('/api/admin/sync-sheets/webhook-flush', async (req, res) => {
 // ==========================================
 // AUTH: LOGIN BÁSICO POR RUT/PASSWORD
 // ==========================================
+// skipSuccessfulRequests: solo cuentan los intentos fallidos — antes 10
+// logins CORRECTOS seguidos también agotaban el cupo.
 const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
+  skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' },
@@ -3389,6 +3536,10 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
   try {
     const rutNormalizado = normalizarRut(rut);
     let cuentaFinal = await obtenerCuentaPorRutNormalizado(rutNormalizado);
+
+    if (!cuentaFinal && String(password) === CLAVE_INICIAL_LEGADA && !claveInicialPermitida()) {
+      return res.status(403).json({ error: MENSAJE_CLAVE_INICIAL_CERRADA, code: 'CLAVE_INICIAL_CERRADA' });
+    }
 
     if (!cuentaFinal) {
       const cuentaProvisionada = await provisionarCuentaJugadorSiCorresponde({ rutNormalizado, password });
@@ -3424,6 +3575,29 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
+    // Con correo real cargado, la clave inicial "12345" o una clave marcada
+    // para cambio (forzar_clave: reseteada por un admin o expuesta en la
+    // planilla) ya no dan acceso: se envía un código al correo y la persona
+    // crea su contraseña con él. Sin correo, sigue el flujo anterior.
+    const debeUsarCodigo = esCorreoReal(cuentaFinal.correo)
+      && correoDisponible()
+      && (String(password) === CLAVE_INICIAL_LEGADA || Boolean(cuentaFinal.forzar_clave));
+    if (debeUsarCodigo) {
+      const envio = await generarYEnviarCodigoAcceso(cuentaFinal);
+      return res.status(403).json({
+        error: `Por seguridad, crea tu contraseña con el código que enviamos a ${envio.destino}.`,
+        code: 'USAR_CODIGO_CORREO',
+        destino: envio.destino,
+      });
+    }
+
+    // Sin correo: la clave inicial y las claves marcadas para cambio (forzar_clave,
+    // incluidas las que quedaron expuestas) ya no dan acceso pasada la fecha de
+    // transición; la persona pide un código de activación al club (WhatsApp).
+    if (!claveInicialPermitida() && (String(password) === CLAVE_INICIAL_LEGADA || Boolean(cuentaFinal.forzar_clave))) {
+      return res.status(403).json({ error: MENSAJE_CLAVE_INICIAL_CERRADA, code: 'CLAVE_INICIAL_CERRADA' });
+    }
+
     if (needsRehash) {
       const passwordHash = await hashPassword(password);
       await pool.query(
@@ -3448,6 +3622,10 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
         forzar_clave: Boolean(cuentaFinal.forzar_clave),
         foto_perfil_url: cuentaFinal.foto_perfil_url || null,
         requiere_foto_perfil: Boolean(cuentaFinal.requiere_foto_perfil),
+        // Pasos obligatorios del primer ingreso (aviso de datos y correo).
+        consentimiento_version: cuentaFinal.consentimiento_version || null,
+        correo_registrado: esCorreoReal(cuentaFinal.correo),
+        correo_disponible: correoDisponible(),
         access_profiles: rolSistema === 'super_admin'
           ? ['super_admin', 'admin', 'staff', 'mesa', 'jugador', 'visita']
           : [rolSistema]
@@ -3456,6 +3634,417 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
   } catch (err) {
     console.error('[POST /api/auth/login]', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// AUTH: CÓDIGO DE ACCESO POR CORREO
+// ==========================================
+// Primer ingreso y "Olvidé mi contraseña": se envía un código de 6 dígitos al
+// correo registrado de la cuenta. Reemplaza la clave inicial "12345" (que
+// cualquiera con el RUT podía usar) y las claves que quedaron expuestas en la
+// planilla pública, para toda cuenta que tenga un correo real cargado.
+const CODIGO_MINUTOS_VIGENCIA = 15;
+const CODIGO_MAX_INTENTOS = 5;
+const CODIGO_SEGUNDOS_ENTRE_ENVIOS = 60;
+const CLAVE_INICIAL_LEGADA = '12345';
+
+// Cierre de la clave inicial "12345" (y de claves forzar_clave) para cuentas
+// SIN correo. CLAVE_INICIAL_HASTA=AAAA-MM-DD mantiene el acceso anterior
+// hasta ese día inclusive (transición anunciada); sin la variable queda
+// cerrada. Las cuentas con correo ya usan el código por correo.
+const claveInicialPermitida = () => {
+  const hasta = String(process.env.CLAVE_INICIAL_HASTA || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(hasta)) return false;
+  const hoyChile = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
+  return hoyChile <= hasta;
+};
+const MENSAJE_CLAVE_INICIAL_CERRADA = 'La clave inicial ya no está habilitada. Pide al club tu código de activación (te llega por WhatsApp) e ingrésalo en "¿Primera vez u olvidaste tu contraseña?" → "Tengo un código del club".';
+
+const ensureCodigosAccesoTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS codigos_acceso (
+      id SERIAL PRIMARY KEY,
+      cuenta_id INTEGER NOT NULL,
+      codigo_hash TEXT NOT NULL,
+      expira_en TIMESTAMPTZ NOT NULL,
+      intentos INTEGER NOT NULL DEFAULT 0,
+      usado_en TIMESTAMPTZ,
+      creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  // proposito: 'acceso' (crear/restablecer clave) o 'verificar_correo'
+  // (correo_destino = dirección que se está verificando). creado_por: id
+  // del admin que generó un código de activación entregado por WhatsApp.
+  await pool.query("ALTER TABLE codigos_acceso ADD COLUMN IF NOT EXISTS proposito VARCHAR(30) NOT NULL DEFAULT 'acceso'");
+  await pool.query('ALTER TABLE codigos_acceso ADD COLUMN IF NOT EXISTS correo_destino TEXT');
+  await pool.query('ALTER TABLE codigos_acceso ADD COLUMN IF NOT EXISTS creado_por INTEGER');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_codigos_acceso_cuenta ON codigos_acceso (cuenta_id, creado_en DESC)');
+  // Limpieza: códigos vencidos hace más de un día ya no sirven para nada.
+  await pool.query("DELETE FROM codigos_acceso WHERE expira_en < NOW() - INTERVAL '1 day'");
+};
+
+const codigoRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes de código. Espera unos minutos e inténtalo de nuevo.' },
+});
+
+// Crea un código de 6 dígitos (guardado con hash) e invalida los anteriores
+// pendientes del mismo propósito. Devuelve el código en claro SOLO a quien
+// lo va a entregar (correo o admin); nunca se vuelve a poder leer.
+const crearCodigo = async ({ cuentaId, proposito, minutos, correoDestino = null, creadoPor = null }) => {
+  const codigo = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  const codigoHash = await hashPassword(codigo);
+  await pool.query(
+    'UPDATE codigos_acceso SET usado_en = NOW() WHERE cuenta_id = $1 AND proposito = $2 AND usado_en IS NULL',
+    [cuentaId, proposito]
+  );
+  const insertado = await pool.query(
+    `INSERT INTO codigos_acceso (cuenta_id, codigo_hash, expira_en, proposito, correo_destino, creado_por)
+     VALUES ($1, $2, NOW() + ($3 || ' minutes')::interval, $4, $5, $6)
+     RETURNING expira_en`,
+    [cuentaId, codigoHash, String(minutos), proposito, correoDestino, creadoPor]
+  );
+  return { codigo, expiraEn: insertado.rows[0].expira_en };
+};
+
+// Devuelve { enviado, destino } — no lanza si la cuenta no tiene correo.
+const generarYEnviarCodigoAcceso = async (cuenta) => {
+  if (!cuenta?.id || !esCorreoReal(cuenta.correo)) return { enviado: false, destino: null };
+  const destino = enmascararCorreo(cuenta.correo);
+
+  const reciente = await pool.query(
+    `SELECT 1 FROM codigos_acceso
+     WHERE cuenta_id = $1 AND proposito = 'acceso' AND creado_por IS NULL AND usado_en IS NULL
+       AND creado_en > NOW() - ($2 || ' seconds')::interval
+     LIMIT 1`,
+    [cuenta.id, String(CODIGO_SEGUNDOS_ENTRE_ENVIOS)]
+  );
+  if (reciente.rows.length > 0) return { enviado: true, destino, reenvioReciente: true };
+
+  const { codigo } = await crearCodigo({ cuentaId: cuenta.id, proposito: 'acceso', minutos: CODIGO_MINUTOS_VIGENCIA });
+
+  const nombre = String(cuenta.nombres || '').trim().split(' ')[0] || '';
+  const saludo = nombre ? `Hola ${nombre}:` : 'Hola:';
+  await enviarCorreo({
+    para: cuenta.correo,
+    asunto: `Tu código de acceso: ${codigo}`,
+    texto: `${saludo}\n\nTu código para crear tu contraseña en la app del Club Centro de Cultura Física es: ${codigo}\n\nVence en ${CODIGO_MINUTOS_VIGENCIA} minutos. Si no lo pediste, ignora este correo: tu cuenta sigue segura.\n`,
+    html: `<p>${saludo}</p><p>Tu código para crear tu contraseña en la app del Club Centro de Cultura Física es:</p><p style="font-size:28px;font-weight:800;letter-spacing:6px">${codigo}</p><p>Vence en ${CODIGO_MINUTOS_VIGENCIA} minutos. Si no lo pediste, ignora este correo: tu cuenta sigue segura.</p>`,
+  });
+  return { enviado: true, destino };
+};
+
+app.post('/api/auth/solicitar-codigo', codigoRateLimiter, async (req, res) => {
+  const rut = String(req.body?.rut || '').trim();
+  if (!rut) return res.status(400).json({ error: 'Ingresa tu RUT.' });
+  if (!correoDisponible()) {
+    return res.status(503).json({ error: 'El envío de correos no está disponible. Contacta al club para restablecer tu clave.', code: 'CORREO_NO_CONFIGURADO' });
+  }
+  try {
+    const cuenta = await obtenerCuentaPorRutNormalizado(normalizarRut(rut));
+    const activa = cuenta && (!cuenta.estado || String(cuenta.estado).toLowerCase() === 'activo');
+    const resultado = activa ? await generarYEnviarCodigoAcceso(cuenta) : { enviado: false, destino: null };
+    if (!resultado.enviado) {
+      return res.json({
+        ok: true,
+        enviado: false,
+        mensaje: 'No encontramos un correo registrado para ese RUT. Contacta al club para que lo agregue a tu cuenta.',
+      });
+    }
+    return res.json({
+      ok: true,
+      enviado: true,
+      destino: resultado.destino,
+      mensaje: `Te enviamos un código de 6 dígitos a ${resultado.destino}. Revisa también la carpeta de spam.`,
+    });
+  } catch (err) {
+    console.error('[POST /api/auth/solicitar-codigo]', err);
+    return res.status(500).json({ error: 'No se pudo enviar el código. Inténtalo de nuevo en unos minutos.' });
+  }
+});
+
+app.post('/api/auth/canjear-codigo', authRateLimiter, async (req, res) => {
+  const rut = String(req.body?.rut || '').trim();
+  const codigo = String(req.body?.codigo || '').replace(/\D/g, '');
+  const nuevaClave = String(req.body?.nuevaClave || '').trim();
+  if (!rut || codigo.length !== 6) return res.status(400).json({ error: 'Ingresa el código de 6 dígitos que llegó a tu correo.' });
+  if (nuevaClave.length < 5) return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 5 caracteres.' });
+  if (nuevaClave === CLAVE_INICIAL_LEGADA) return res.status(400).json({ error: 'Elige una contraseña distinta a la clave inicial.' });
+
+  try {
+    const cuenta = await obtenerCuentaPorRutNormalizado(normalizarRut(rut));
+    const pendiente = cuenta?.id ? (await pool.query(
+      `SELECT id, codigo_hash, intentos FROM codigos_acceso
+       WHERE cuenta_id = $1 AND proposito = 'acceso' AND usado_en IS NULL AND expira_en > NOW()
+       ORDER BY id DESC LIMIT 1`,
+      [cuenta.id]
+    )).rows[0] : null;
+    if (!pendiente) {
+      return res.status(400).json({ error: 'El código venció o ya se usó. Pide uno nuevo.' });
+    }
+    if (pendiente.intentos >= CODIGO_MAX_INTENTOS) {
+      await pool.query('UPDATE codigos_acceso SET usado_en = NOW() WHERE id = $1', [pendiente.id]);
+      return res.status(429).json({ error: 'Demasiados intentos con ese código. Pide uno nuevo.' });
+    }
+    const { valid } = await verifyPassword(codigo, pendiente.codigo_hash);
+    if (!valid) {
+      await pool.query('UPDATE codigos_acceso SET intentos = intentos + 1 WHERE id = $1', [pendiente.id]);
+      const restantes = CODIGO_MAX_INTENTOS - pendiente.intentos - 1;
+      return res.status(400).json({ error: `Código incorrecto. Te quedan ${Math.max(0, restantes)} intento${restantes === 1 ? '' : 's'}.` });
+    }
+
+    await pool.query(
+      'UPDATE cuentas SET password = $1, forzar_clave = false, updated_at = NOW() WHERE id = $2',
+      [await hashPassword(nuevaClave), cuenta.id]
+    );
+    await pool.query("UPDATE codigos_acceso SET usado_en = NOW() WHERE cuenta_id = $1 AND proposito = 'acceso' AND usado_en IS NULL", [cuenta.id]);
+    return res.json({ ok: true, mensaje: 'Listo: tu nueva contraseña quedó guardada. Ya puedes ingresar.' });
+  } catch (err) {
+    console.error('[POST /api/auth/canjear-codigo]', err);
+    return res.status(500).json({ error: 'No se pudo guardar la nueva contraseña. Inténtalo de nuevo.' });
+  }
+});
+
+// ==========================================
+// CONSENTIMIENTO DE DATOS PERSONALES (Ley 19.628 / Ley 21.719)
+// ==========================================
+// Cada cuenta debe aceptar el aviso de privacidad vigente (versión en
+// src/legal/avisoPrivacidad.js). Se guarda la versión aceptada en cuentas
+// y cada aceptación queda registrada con fecha, IP y navegador como
+// respaldo (consentimientos_datos), sin borrarse.
+const ensureConsentimientoDatos = async () => {
+  await pool.query('ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS consentimiento_version VARCHAR(40)');
+  await pool.query('ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS consentimiento_aceptado_en TIMESTAMPTZ');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS consentimientos_datos (
+      id SERIAL PRIMARY KEY,
+      cuenta_id INTEGER NOT NULL,
+      version VARCHAR(40) NOT NULL,
+      acepta_tratamiento BOOLEAN NOT NULL,
+      acepta_datos_salud BOOLEAN NOT NULL,
+      autoriza_imagen BOOLEAN NOT NULL DEFAULT false,
+      ip VARCHAR(64),
+      user_agent TEXT,
+      aceptado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  // tipo_registro: 'consentimiento' | 'consentimiento_14_15' | 'lectura_menor_14'
+  // (art. 16 quáter); edad_titular al momento de aceptar.
+  await pool.query("ALTER TABLE consentimientos_datos ADD COLUMN IF NOT EXISTS tipo_registro VARCHAR(30) NOT NULL DEFAULT 'consentimiento'");
+  await pool.query('ALTER TABLE consentimientos_datos ADD COLUMN IF NOT EXISTS edad_titular INTEGER');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_consentimientos_cuenta ON consentimientos_datos (cuenta_id, aceptado_en DESC)');
+  columnasTablaCache.delete('cuentas');
+};
+
+// Tramo de edad del titular (art. 16 quáter Ley 19.628 mod. por Ley 21.719):
+// menores de 14 → consiente su madre/padre/apoderado; 14–15 → consiente sus
+// datos pero no los sensibles (salud); 16–17 y adultos → todo. Solo aplica a
+// la persona cuya ficha de deportista tiene el mismo RUT que la cuenta; un
+// deportista sin fecha de nacimiento se trata con la regla más protectora.
+const tramoConsentimientoDeActor = async (actor) => {
+  const rut = normalizarRutParaComparar(actor?.rut || '');
+  if (!rut) return { tramo: 'adulto', edad: null };
+  const ficha = (await pool.query(
+    "SELECT fecha_nacimiento FROM jugadores WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = $1 LIMIT 1",
+    [rut]
+  )).rows[0];
+  if (!ficha) return { tramo: 'adulto', edad: null };
+  const edad = calcularEdad(ficha.fecha_nacimiento);
+  if (edad === null || edad < 14) return { tramo: 'nino', edad };
+  if (edad < 16) return { tramo: 'adolescente14', edad };
+  if (edad < 18) return { tramo: 'adolescente16', edad };
+  return { tramo: 'adulto', edad };
+};
+
+app.get('/api/consentimiento/estado', authenticate, async (req, res) => {
+  try {
+    const idCuenta = Number.parseInt(String(req.actor?.id ?? ''), 10);
+    const cuenta = Number.isFinite(idCuenta)
+      ? (await pool.query('SELECT consentimiento_version, consentimiento_aceptado_en FROM cuentas WHERE id = $1', [idCuenta])).rows[0]
+      : null;
+    const { tramo, edad } = await tramoConsentimientoDeActor(req.actor);
+    return res.json({
+      tramo,
+      edad,
+      version_aceptada: cuenta?.consentimiento_version || null,
+      aceptado_en: cuenta?.consentimiento_aceptado_en || null,
+    });
+  } catch (err) {
+    console.error('[GET /api/consentimiento/estado]', err);
+    return res.status(500).json({ error: 'No se pudo consultar el estado del aviso.' });
+  }
+});
+
+app.post('/api/consentimiento', authenticate, async (req, res) => {
+  const idCuenta = Number.parseInt(String(req.actor?.id ?? ''), 10);
+  const version = String(req.body?.version || '').trim().slice(0, 40);
+  if (!Number.isFinite(idCuenta)) return res.status(400).json({ error: 'Cuenta no válida.' });
+  if (!version) return res.status(400).json({ error: 'Falta la versión del aviso.' });
+
+  try {
+    const { tramo, edad } = await tramoConsentimientoDeActor(req.actor);
+    let aceptaTratamiento = req.body?.acepta_tratamiento === true;
+    let aceptaSalud = req.body?.acepta_datos_salud === true;
+    let autorizaImagen = req.body?.autoriza_imagen === true;
+    let tipoRegistro = 'consentimiento';
+
+    if (tramo === 'nino') {
+      // Menor de 14: no consiente por sí mismo; solo deja constancia de que
+      // fue informado. El consentimiento lo otorga su madre/padre/apoderado.
+      if (req.body?.declara_lectura !== true) {
+        return res.status(400).json({ error: 'Marca que leíste el aviso para continuar.' });
+      }
+      aceptaTratamiento = false;
+      aceptaSalud = false;
+      autorizaImagen = false;
+      tipoRegistro = 'lectura_menor_14';
+    } else if (tramo === 'adolescente14') {
+      if (!aceptaTratamiento) return res.status(400).json({ error: 'Para usar la aplicación debes aceptar el tratamiento de tus datos.' });
+      // Datos de salud de menores de 16: los autoriza su apoderado, no él.
+      aceptaSalud = false;
+      tipoRegistro = 'consentimiento_14_15';
+    } else if (!aceptaTratamiento || !aceptaSalud) {
+      return res.status(400).json({ error: 'Para usar la aplicación debes aceptar el tratamiento de datos y de datos de salud.' });
+    }
+
+    await pool.query(
+      `INSERT INTO consentimientos_datos (cuenta_id, version, acepta_tratamiento, acepta_datos_salud, autoriza_imagen, ip, user_agent, tipo_registro, edad_titular)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [idCuenta, version, aceptaTratamiento, aceptaSalud, autorizaImagen, req.ip || null,
+        String(req.headers['user-agent'] || '').slice(0, 400), tipoRegistro, edad]
+    );
+    await pool.query(
+      `UPDATE cuentas SET consentimiento_version = $1, consentimiento_aceptado_en = NOW(),
+         autorizacion_imagen = CASE WHEN $4 THEN autorizacion_imagen ELSE $2 END, updated_at = NOW()
+       WHERE id = $3`,
+      [version, autorizaImagen, idCuenta, tramo === 'nino']
+    );
+    return res.json({ ok: true, version, tramo });
+  } catch (err) {
+    console.error('[POST /api/consentimiento]', err);
+    return res.status(500).json({ error: 'No se pudo registrar la aceptación. Inténtalo de nuevo.' });
+  }
+});
+
+// ==========================================
+// CORREO PROPIO: registrar y verificar (primer ingreso)
+// ==========================================
+// El dueño de la cuenta no puede cambiar su correo con PUT /api/cuentas/:id
+// (sería "adoptar" pupilos ajenos vía correo_apoderado). Aquí sí puede, pero
+// solo después de demostrar que recibe correo en esa dirección (código).
+app.post('/api/cuentas/propia/correo/solicitar', codigoRateLimiter, authenticate, async (req, res) => {
+  const idCuenta = Number.parseInt(String(req.actor?.id ?? ''), 10);
+  const correo = String(req.body?.correo || '').trim().toLowerCase();
+  if (!Number.isFinite(idCuenta)) return res.status(400).json({ error: 'Cuenta no válida.' });
+  if (!esCorreoReal(correo)) return res.status(400).json({ error: 'Ingresa un correo válido.' });
+  if (!correoDisponible()) return res.status(503).json({ error: 'El envío de correos no está disponible por ahora.', code: 'CORREO_NO_CONFIGURADO' });
+  try {
+    const ocupado = await pool.query('SELECT 1 FROM cuentas WHERE LOWER(correo) = $1 AND id <> $2 LIMIT 1', [correo, idCuenta]);
+    if (ocupado.rows.length > 0) {
+      return res.status(409).json({ error: 'Ese correo ya está registrado en otra cuenta. Si es tuyo, contacta al club.' });
+    }
+    const { codigo } = await crearCodigo({ cuentaId: idCuenta, proposito: 'verificar_correo', minutos: CODIGO_MINUTOS_VIGENCIA, correoDestino: correo });
+    await enviarCorreo({
+      para: correo,
+      asunto: `Confirma tu correo: ${codigo}`,
+      texto: `Tu código para confirmar este correo en la app del Club Centro de Cultura Física es: ${codigo}\n\nVence en ${CODIGO_MINUTOS_VIGENCIA} minutos. Si no lo pediste, ignora este mensaje.\n`,
+      html: `<p>Tu código para confirmar este correo en la app del Club Centro de Cultura Física es:</p><p style="font-size:28px;font-weight:800;letter-spacing:6px">${codigo}</p><p>Vence en ${CODIGO_MINUTOS_VIGENCIA} minutos. Si no lo pediste, ignora este mensaje.</p>`,
+    });
+    return res.json({ ok: true, destino: enmascararCorreo(correo) });
+  } catch (err) {
+    console.error('[POST /api/cuentas/propia/correo/solicitar]', err);
+    return res.status(500).json({ error: 'No se pudo enviar el código. Inténtalo de nuevo.' });
+  }
+});
+
+app.post('/api/cuentas/propia/correo/confirmar', authRateLimiter, authenticate, async (req, res) => {
+  const idCuenta = Number.parseInt(String(req.actor?.id ?? ''), 10);
+  const codigo = String(req.body?.codigo || '').replace(/\D/g, '');
+  if (!Number.isFinite(idCuenta) || codigo.length !== 6) return res.status(400).json({ error: 'Ingresa el código de 6 dígitos.' });
+  try {
+    const pendiente = (await pool.query(
+      `SELECT id, codigo_hash, intentos, correo_destino FROM codigos_acceso
+       WHERE cuenta_id = $1 AND proposito = 'verificar_correo' AND usado_en IS NULL AND expira_en > NOW()
+       ORDER BY id DESC LIMIT 1`,
+      [idCuenta]
+    )).rows[0];
+    if (!pendiente) return res.status(400).json({ error: 'El código venció. Pide uno nuevo.' });
+    if (pendiente.intentos >= CODIGO_MAX_INTENTOS) {
+      await pool.query('UPDATE codigos_acceso SET usado_en = NOW() WHERE id = $1', [pendiente.id]);
+      return res.status(429).json({ error: 'Demasiados intentos con ese código. Pide uno nuevo.' });
+    }
+    const { valid } = await verifyPassword(codigo, pendiente.codigo_hash);
+    if (!valid) {
+      await pool.query('UPDATE codigos_acceso SET intentos = intentos + 1 WHERE id = $1', [pendiente.id]);
+      return res.status(400).json({ error: 'Código incorrecto.' });
+    }
+    await pool.query('UPDATE cuentas SET correo = $1, updated_at = NOW() WHERE id = $2', [pendiente.correo_destino, idCuenta]);
+    await pool.query('UPDATE codigos_acceso SET usado_en = NOW() WHERE id = $1', [pendiente.id]);
+    sheetsSyncManager.enqueueTable('cuentas');
+    return res.json({ ok: true, correo: pendiente.correo_destino });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Ese correo ya está registrado en otra cuenta.' });
+    console.error('[POST /api/cuentas/propia/correo/confirmar]', err);
+    return res.status(500).json({ error: 'No se pudo confirmar el correo.' });
+  }
+});
+
+// ==========================================
+// CÓDIGO DE ACTIVACIÓN ENTREGADO POR EL CLUB (WhatsApp / en persona)
+// ==========================================
+// Para cuentas sin correo: un admin genera un código (48 h, un solo uso) y
+// lo entrega por WhatsApp o en persona. Se canjea igual que el del correo
+// (POST /api/auth/canjear-codigo). El código en claro se devuelve solo en
+// esta respuesta; en la BD queda con hash.
+const CODIGO_ACTIVACION_HORAS = 48;
+
+app.post('/api/admin/cuentas/:id/codigo-activacion', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  const idCuenta = Number.parseInt(String(req.params.id || ''), 10);
+  if (!Number.isFinite(idCuenta)) return res.status(400).json({ error: 'Cuenta no válida.' });
+  try {
+    const cuenta = (await pool.query(
+      'SELECT id, rut, nombres, apellido_paterno, correo, prefijo_tel, telefono, estado FROM cuentas WHERE id = $1',
+      [idCuenta]
+    )).rows[0];
+    if (!cuenta) return res.status(404).json({ error: 'Cuenta no encontrada.' });
+    const { codigo, expiraEn } = await crearCodigo({
+      cuentaId: idCuenta,
+      proposito: 'acceso',
+      minutos: CODIGO_ACTIVACION_HORAS * 60,
+      creadoPor: Number.parseInt(String(req.actor?.id ?? ''), 10) || null,
+    });
+    // Trazabilidad (sin el código): quién generó un acceso para quién.
+    await pool.query(
+      `INSERT INTO auditoria (usuario_id, tabla_afectada, tipo_accion, registro_id, valores_nuevos, descripcion, ip_usuario)
+       VALUES ($1, 'cuentas', 'POST', $2, $3::jsonb, $4, $5)`,
+      [
+        Number.parseInt(String(req.actor?.id ?? ''), 10) || null,
+        idCuenta,
+        JSON.stringify({ accion: 'codigo_activacion', vigencia_horas: CODIGO_ACTIVACION_HORAS }),
+        'Código de activación generado para entregar por WhatsApp/en persona',
+        req.ip || null,
+      ]
+    ).catch((error) => console.error('[AUDITORIA] codigo_activacion:', error.message));
+
+    const digitos = `${String(cuenta.prefijo_tel || '').replace(/\D/g, '')}${String(cuenta.telefono || '').replace(/\D/g, '')}`;
+    return res.json({
+      ok: true,
+      codigo,
+      expira_en: expiraEn,
+      vigencia_horas: CODIGO_ACTIVACION_HORAS,
+      rut: cuenta.rut,
+      nombre: `${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim(),
+      telefono: digitos,
+      correo_registrado: esCorreoReal(cuenta.correo),
+      cuenta_activa: !cuenta.estado || String(cuenta.estado).toLowerCase() === 'activo',
+    });
+  } catch (err) {
+    console.error('[POST /api/admin/cuentas/:id/codigo-activacion]', err);
+    return res.status(500).json({ error: 'No se pudo generar el código.' });
   }
 });
 
@@ -4134,6 +4723,14 @@ const CAMPOS_CUENTA_SOLO_ADMIN = [
   'acceso_nivel', 'utm_valor_referencia', 'monto_mensual_base', 'monto_mensual_override',
   'condiciones_pago', 'fecha_corte_utm', 'permisos_override', 'forzar_clave', 'estado',
   'autorizacion_imagen', 'dia_pago_acordado', 'es_socio', 'fecha_ingreso_socio', 'mes_inicio_cobro',
+  // rut y correo son la identidad con la que obtenerPupilosDeActor vincula
+  // a un apoderado con sus deportistas (rut_apoderado / correo_apoderado):
+  // si el dueño pudiera cambiarlos, bastaba ponerse el correo o RUT de otro
+  // apoderado para "adoptar" a sus hijos (ver pagos, ficha médica, citaciones).
+  // Ningún flujo de autoservicio los edita (el onboarding solo manda nombre,
+  // teléfono, dirección y foto). password tampoco: el dueño cambia su clave
+  // por /api/auth/change-password, que exige la clave actual.
+  'rut', 'correo', 'password',
 ];
 
 app.put(
@@ -4682,7 +5279,9 @@ app.get('/api/jugadores', authenticate, async (req, res) => {
        GROUP BY j.rut_jugador
        ORDER BY j.apellido_paterno ASC`
     );
-    const filas = result.rows.map((j) => ({ ...j, xp_total: Number(j.xp_total), nivel_actual: calcularNivelDesdeXPTotal(j.xp_total) }));
+    // password_jugador es una columna legada (clave en texto plano, sin uso en
+    // el frontend): nunca se devuelve.
+    const filas = result.rows.map(({ password_jugador: _omitida, ...j }) => ({ ...j, xp_total: Number(j.xp_total), nivel_actual: calcularNivelDesdeXPTotal(j.xp_total) }));
     if (!ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
       return res.json(filas);
     }
@@ -4708,6 +5307,7 @@ app.get('/api/jugadores/:rut', authenticate, async (req, res) => {
     );
     const jugador = result.rows[0];
     if (!jugador) return res.json({});
+    delete jugador.password_jugador;
     jugador.xp_total = Number(jugador.xp_total);
     jugador.nivel_actual = calcularNivelDesdeXPTotal(jugador.xp_total);
 
@@ -5578,10 +6178,17 @@ app.get('/api/utm-historico', authenticate, async (req, res) => {
     const mesTope = anio === hoy.getFullYear() ? (hoy.getMonth() + 1) : (anio < hoy.getFullYear() ? 12 : 0);
 
     const meses = Array.from({ length: mesTope }, (_, i) => i + 1);
-    const resultados = await Promise.all(meses.map((mes) => obtenerUTMParaMes(anio, mes)));
-
+    // Una sola consulta para los meses ya guardados; solo los que faltan
+    // pasan por obtenerUTMParaMes (que consulta mindicador.cl y los guarda).
+    // Antes eran hasta 12 consultas en paralelo por request, compitiendo por
+    // el pool con el resto de las llamadas de arranque (~1 s en local).
+    const guardados = await pool.query('SELECT mes, valor FROM utm_mensual WHERE anio = $1', [anio]);
     const porMes = {};
+    guardados.rows.forEach((fila) => { porMes[Number(fila.mes)] = Number(fila.valor); });
+    const faltantes = meses.filter((mes) => !Number.isFinite(porMes[mes]));
+    const resultados = await Promise.all(faltantes.map((mes) => obtenerUTMParaMes(anio, mes)));
     resultados.forEach((r) => { porMes[r.mes] = r.valor; });
+    Object.keys(porMes).forEach((mes) => { if (Number(mes) > mesTope) delete porMes[mes]; });
     res.json({ anio, porMes });
   } catch (err) {
     console.error('[GET /api/utm-historico]', err);
@@ -5766,8 +6373,10 @@ const parsearPrimerMesDePago = (mesesCorrespondientes = '') => {
 
 // Primer mes cobrable de un jugador. Si el admin fijó mes_inicio_cobro a mano,
 // ese valor es su criterio final y se respeta tal cual (mismo criterio que ya
-// usa el cálculo de morosos). Si no, se deriva de fecha_ingreso cobrando desde
-// el mes SIGUIENTE al de ingreso (regla de negocio: sin prorrateo del mes de ingreso).
+// usa el cálculo de morosos). Si no, se deriva de fecha_ingreso cobrando DESDE
+// el mes de ingreso (regla confirmada por el club 2026-11-05; antes era el mes
+// siguiente y no coincidía con el resumen de deuda del frontend). Debe
+// coincidir con obtenerInicioCobro (PerfilTesoreriaPanel) y getMesIngreso (App).
 const obtenerPrimerMesCobrableJugador = (jugador = {}) => {
   const anioCandidatos = [jugador?.anio_ingreso, jugador?.año_ingreso]
     .map((v) => Number(v))
@@ -5788,7 +6397,7 @@ const obtenerPrimerMesCobrableJugador = (jugador = {}) => {
   if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
     const anioFecha = anio || fecha.getFullYear();
     const mesFecha = fecha.getMonth() + 1;
-    return mesFecha >= 12 ? { anio: anioFecha + 1, mes: 1 } : { anio: anioFecha, mes: mesFecha + 1 };
+    return { anio: anioFecha, mes: mesFecha };
   }
 
   return null;
@@ -5808,6 +6417,16 @@ app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'v
   try {
     const rolNormalizadoPago = normalizarRol(req.actor.rol);
     const esStaffOAdminPago = !ROLES_JUGADORES_ACOTADOS.includes(rolNormalizadoPago);
+    // Una familia solo puede informar pagos de sus propios pupilos (antes
+    // podía crear pagos pendientes a nombre de cualquier deportista).
+    // Tesorería/admin (por permiso, no solo por rol: ej. directiva con
+    // override de validacion_pagos) sí registran pagos de cualquiera.
+    const permisosPago = esStaffOAdminPago ? null : await resolverPermisosDeActor(req.actor);
+    const puedeRegistrarPagosAjenos = esStaffOAdminPago || permisosPago.validacion_pagos || permisosPago.admin_dashboard;
+    if (!puedeRegistrarPagosAjenos && String(rut_jugador || '').trim()
+      && !(await actorPuedeVerJugador(req.actor, rut_jugador))) {
+      return res.status(403).json({ error: 'Solo puedes informar pagos de tus propios deportistas.' });
+    }
     if (!esStaffOAdminPago && String(rut_jugador || '').trim()) {
       const jugadorPago = (await pool.query(
         'SELECT fecha_ingreso, mes_inicio_cobro FROM jugadores WHERE rut_jugador = $1',
@@ -6437,6 +7056,16 @@ const obtenerPupilosDeActor = async (actor) => {
 // esta lista para su función real (scoreboard/marcador en vivo, o su propia
 // ficha), así que quedan acotados igual que jugador/apoderado/socio.
 const ROLES_JUGADORES_ACOTADOS = ['jugador', 'apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva', 'mesa', 'visita'];
+
+// true si el actor puede ver/actuar sobre ese deportista: cualquier rol no
+// acotado (staff/admin/...), o un rol acotado cuyo pupilo (o él mismo) es ese RUT.
+const actorPuedeVerJugador = async (actor, rutJugador) => {
+  if (!ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(actor?.rol))) return true;
+  const objetivo = normalizarRutParaComparar(rutJugador);
+  if (!objetivo) return false;
+  const pupilos = await obtenerPupilosDeActor(actor);
+  return pupilos.some((p) => normalizarRutParaComparar(p.rut_jugador) === objetivo);
+};
 
 // Antes también hacía visible una citación a CUALQUIER apoderado/jugador de
 // la misma rama/categoría, aunque su pupilo no estuviera convocado — y como
@@ -7754,6 +8383,9 @@ app.post('/api/evaluaciones', authenticate, requireModule('evaluacion_staff'), a
 // GET: Puntos de un jugador
 app.get('/api/gamificacion/:rut', authenticate, requireModule('jugador'), async (req, res) => {
   try {
+    if (!(await actorPuedeVerJugador(req.actor, req.params.rut))) {
+      return res.status(403).json({ error: 'No tienes acceso a este deportista.' });
+    }
     const result = await pool.query(
       `SELECT * FROM gamificacion_puntos WHERE rut_jugador = $1 ORDER BY fecha_logro DESC`,
       [req.params.rut]
@@ -7789,6 +8421,9 @@ app.post('/api/gamificacion', authenticate, requireAnyModule('evaluacion_staff',
 // GET: Marcas de un jugador
 app.get('/api/marcas/:rut', authenticate, requireModule('jugador'), async (req, res) => {
   try {
+    if (!(await actorPuedeVerJugador(req.actor, req.params.rut))) {
+      return res.status(403).json({ error: 'No tienes acceso a este deportista.' });
+    }
     const result = await pool.query(
       `SELECT * FROM marcas_tiempo WHERE rut_jugador = $1 ORDER BY fecha_marca DESC`,
       [req.params.rut]
@@ -10196,6 +10831,22 @@ app.listen(PORT, () => {
 
   ensureBecaRevisionesTable().catch((error) => {
     console.error('❌ Error verificando tabla beca_revisiones:', error.message);
+  });
+
+  hashearClavesEnTextoPlano().catch((error) => {
+    console.error('❌ Error hasheando contraseñas en texto plano:', error.message);
+  });
+
+  ensureConsentimientoDatos().catch((error) => {
+    console.error('❌ Error verificando tablas de consentimiento:', error.message);
+  });
+
+  ensureCodigosAccesoTable().catch((error) => {
+    console.error('❌ Error verificando tabla codigos_acceso:', error.message);
+  });
+
+  limpiarAuditoriaSensible().catch((error) => {
+    console.error('❌ Error limpiando datos sensibles de auditoría:', error.message);
   });
 
   ensureBecaHistorialTable().catch((error) => {

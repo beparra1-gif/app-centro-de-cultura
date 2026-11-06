@@ -12,6 +12,9 @@ import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
 import TarjetaColeccionable from './TarjetaColeccionable';
 import { calcularProgresoNivel } from '../utils/gamificacion';
+import { hoyLocalISO } from '../utils/fechas';
+import useModalAccesible from '../utils/useModalAccesible';
+import SkeletonLoaderPanel from './SkeletonLoaderPanel';
 import {
   EXPORT_WIDTH,
   EXPORT_HEIGHT,
@@ -74,6 +77,22 @@ function TarjetaJugadorPanel({
   const [formAusencia, setFormAusencia] = useState({ motivo: '', fecha_inicio: '', fecha_fin: '' });
   const [guardandoAusencia, setGuardandoAusencia] = useState(false);
   const [mostrarMiQRColeccion, setMostrarMiQRColeccion] = useState(false);
+  useModalAccesible(mostrarCredencialAsistencia, () => setMostrarCredencialAsistencia(false));
+  useModalAccesible(mostrarMiQRColeccion, () => setMostrarMiQRColeccion(false));
+  // Misma limpieza que cerrarModalFoto (declarada más abajo, después de un
+  // return anticipado, por eso no se puede referenciar desde aquí).
+  useModalAccesible(mostrarSubirFoto, () => {
+    setMostrarSubirFoto(false);
+    setArchivoFoto(null);
+    setPreviewFoto((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+    setFotoNatural({ w: 0, h: 0 });
+    setCropZoom(1);
+    setCropOffset({ x: 0, y: 0 });
+    setModoFotoObjetivo('coleccion');
+  });
   const [mostrarEscanerColeccion, setMostrarEscanerColeccion] = useState(false);
   const [mostrarAlbum, setMostrarAlbum] = useState(false);
   const [album, setAlbum] = useState({ items: [], total_club: 0 });
@@ -234,7 +253,7 @@ function TarjetaJugadorPanel({
   }, [pupiloActivo?.rut, rolUsuario]);
 
   if (!pupiloActivo) {
-    return <div className="player-screen-shell">Cargando tarjeta del jugador...</div>;
+    return <div className="player-screen-shell"><SkeletonLoaderPanel etiqueta="Cargando tarjeta del jugador" /></div>;
   }
 
   const xpActual = Number(pupiloActivo.xp ?? pupiloActivo.xp_total ?? 0);
@@ -277,7 +296,7 @@ function TarjetaJugadorPanel({
   // incluye hoy. Puede haber más de un registro histórico; ninguna otra
   // cuenta como bloqueante aunque esté en el futuro (recién empieza a
   // bloquear el día de fecha_inicio, no antes).
-  const hoyISO = new Date().toISOString().slice(0, 10);
+  const hoyISO = hoyLocalISO();
   const ausenciaActiva = historialAusencias.find((a) => {
     const inicio = String(a.fecha_inicio || '').slice(0, 10);
     const fin = String(a.fecha_fin || '').slice(0, 10);

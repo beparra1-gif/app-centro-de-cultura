@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileDown, ShieldAlert, Wallet, TrendingUp, TrendingDown, Lock, User, Ticket, Trash2, Banknote, Smartphone, NotebookPen, BookOpen, XCircle, Search, PlusCircle, History, AlertTriangle, BarChart3, Pencil, Check, ChevronDown, ChevronUp, LayoutGrid, List } from 'lucide-react';
-import { jsPDF } from 'jspdf';
 import { getColorPorCategoria } from '../utils/appHelpers';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
 import { kioscoAPI } from '../api/client';
 import SignaturePad from './SignaturePad';
+import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
+import useModalAccesible from '../utils/useModalAccesible';
+import SkeletonLoaderPanel from './SkeletonLoaderPanel';
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+const hoyISO = () => hoyLocalISO();
 
 let logoClubDataUrlCache = null;
 const LOGO_PDF_TAMANO_PX = 160; // suficiente para nitidez a 46pt de ancho en el PDF, sin inflar el archivo
@@ -49,12 +51,12 @@ const inicioSemanaISO = () => {
   const dia = d.getDay();
   const diff = dia === 0 ? 6 : dia - 1;
   d.setDate(d.getDate() - diff);
-  return d.toISOString().slice(0, 10);
+  return fechaLocalISO(d);
 };
 
 const inicioMesISO = () => {
   const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  return fechaLocalISO(new Date(d.getFullYear(), d.getMonth(), 1));
 };
 
 function KioscoPanel({ nombreResponsable = '' }) {
@@ -100,6 +102,11 @@ function KioscoPanel({ nombreResponsable = '' }) {
   const [cargandoAnalitica, setCargandoAnalitica] = useState(false);
 
   const [modalCierre, setModalCierre] = useState(false);
+  // Escape / bloqueo de fondo en los modales del kiosco (no cierra mientras
+  // se está procesando un cierre de turno o un egreso).
+  useModalAccesible(Boolean(modalPago), () => setModalPago(null));
+  useModalAccesible(modalCierre, () => { if (!cerrandoTurno) setModalCierre(false); });
+  useModalAccesible(modalEgreso, () => { if (!registrandoEgreso) setModalEgreso(false); });
   const [firmaCierre, setFirmaCierre] = useState(null);
   const [nombreCierre, setNombreCierre] = useState('');
   const [cerrandoTurno, setCerrandoTurno] = useState(false);
@@ -560,6 +567,9 @@ function KioscoPanel({ nombreResponsable = '' }) {
   // Recibe todos los datos explicitos (no lee estado en vivo) para poder generar
   // tanto el PDF del cierre recien hecho como el de un turno pasado del historial.
   const exportarCajaPdf = async (datos) => {
+    // jsPDF se carga recién al exportar (antes iba en el bundle del Kiosco:
+    // ~300 KB que se descargaban aunque nunca se exportara un PDF).
+    const { jsPDF } = await import('jspdf');
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     const marginX = 40;
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -795,28 +805,28 @@ function KioscoPanel({ nombreResponsable = '' }) {
     : fiados;
 
   if (cargando) {
-    return <div className="fade-in text-center" style={{ padding: '60px 20px' }}><p className="text-muted">Cargando kiosco...</p></div>;
+    return <SkeletonLoaderPanel etiqueta="Cargando kiosco" />;
   }
 
   return (
     <div className="kiosco-container fade-in kiosco-shell">
       {turno ? (
-        <div className="staff-header-info mb-15 kiosco-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', padding: '16px 18px', borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
+        <div className="staff-header-info mb-15 kiosco-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', padding: '16px 18px', borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
           <div><h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)', fontSize: '15px' }}>Caja Activa: {String(turno.dia).slice(0, 10)}</h4><span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}><User size={12} /> {turno.responsable} | <Ticket size={12} /> Ticket: #{ticketActual.toString().padStart(3, '0')}</span></div>
           <button className="btn-pill btn-danger" onClick={abrirModalCierre}>Cerrar Turno</button>
         </div>
       ) : (
-        <div className="staff-header-info mb-15 kiosco-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', padding: '16px 18px', borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
+        <div className="staff-header-info mb-15 kiosco-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', padding: '16px 18px', borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
           <div><h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)', fontSize: '15px' }}>Kiosco POS</h4><span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Lock size={12} /> Caja sin abrir</span></div>
           <button className="btn-pill" style={{ background: '#FF9500', color: 'white' }} onClick={() => setVista('caja')}>Abrir Caja</button>
         </div>
       )}
 
       {modalPago === 'efectivo' && (
-        <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: '24px' }}><h3 style={{ fontWeight: '900' }}>Cobro Efectivo</h3><p>Total: <strong style={{ fontSize: '22px' }}>${totalCarrito.toLocaleString('es-CL')}</strong></p><div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }} className="mb-15"><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibido(totalCarrito)}>Exacto</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibido(5000)}>$5.000</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibido(10000)}>$10.000</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: '14px' }} onClick={() => setMontoRecibido(20000)}>$20.000</button></div><input type="number" className="form-input" placeholder="¿Con cuánto paga?" value={montoRecibido} onChange={(e) => setMontoRecibido(e.target.value)} />{Number(montoRecibido) >= totalCarrito && (<div className="vuelto-display">VUELTO: ${(Number(montoRecibido) - totalCarrito).toLocaleString('es-CL')}</div>)}<div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPago(null)}>Atrás</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #34C759 0%, #28A745 100%)' }} onClick={() => { if (Number(montoRecibido) < totalCarrito) { showToast({ message: 'Falta dinero.', type: 'error' }); return; } finalizarDespachoPOS('efectivo'); }}>Cobrar</button></div></div></div>
+        <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: 'var(--radius-lg)' }}><h3 style={{ fontWeight: '900' }}>Cobro Efectivo</h3><p>Total: <strong style={{ fontSize: '22px' }}>${totalCarrito.toLocaleString('es-CL')}</strong></p><div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }} className="mb-15"><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: 'var(--radius-md)' }} onClick={() => setMontoRecibido(totalCarrito)}>Exacto</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: 'var(--radius-md)' }} onClick={() => setMontoRecibido(5000)}>$5.000</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: 'var(--radius-md)' }} onClick={() => setMontoRecibido(10000)}>$10.000</button><button className="btn-secondary" style={{ padding: '10px', fontSize: '13px', borderRadius: 'var(--radius-md)' }} onClick={() => setMontoRecibido(20000)}>$20.000</button></div><input type="number" className="form-input" placeholder="¿Con cuánto paga?" value={montoRecibido} onChange={(e) => setMontoRecibido(e.target.value)} />{Number(montoRecibido) >= totalCarrito && (<div className="vuelto-display">VUELTO: ${(Number(montoRecibido) - totalCarrito).toLocaleString('es-CL')}</div>)}<div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPago(null)}>Atrás</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #34C759 0%, #28A745 100%)' }} onClick={() => { if (Number(montoRecibido) < totalCarrito) { showToast({ message: 'Falta dinero.', type: 'error' }); return; } finalizarDespachoPOS('efectivo'); }}>Cobrar</button></div></div></div>
       )}
       {modalPago === 'transferencia' && (
-        <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: '24px' }}><ShieldAlert size={40} color="var(--gris-secundario)" strokeWidth={1.5} style={{ margin: '0 auto 10px auto' }} /><h3 style={{ fontWeight: '900' }}>Validar Transferencia</h3><div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPago(null)}>Cancelar</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' }} onClick={() => finalizarDespachoPOS('transferencia')}>Verificado</button></div></div></div>
+        <div className="modal-overlay-alert"><div className="modal-alert-card text-center" style={{ borderRadius: 'var(--radius-lg)' }}><ShieldAlert size={40} color="var(--gris-secundario)" strokeWidth={1.5} style={{ margin: '0 auto 10px auto' }} /><h3 style={{ fontWeight: '900' }}>Validar Transferencia</h3><div className="modal-alert-buttons mt-20"><button className="btn-modal-cancelar" onClick={() => setModalPago(null)}>Cancelar</button><button className="btn-modal-confirmar" style={{ background: 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' }} onClick={() => finalizarDespachoPOS('transferencia')}>Verificado</button></div></div></div>
       )}
       {modalPago === 'fiado' && (
         <div className="modal-overlay-alert">
@@ -832,7 +842,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
               ) : (
                 <div className="mb-10">
                   <input type="text" className="form-input mb-10" placeholder="Buscar por nombre..." value={fiadoBusqueda} onChange={(e) => setFiadoBusqueda(e.target.value)} />
-                  <div style={{ maxHeight: '160px', overflowY: 'auto', border: '1px solid var(--borde-suave)', borderRadius: '14px' }}>
+                  <div style={{ maxHeight: '160px', overflowY: 'auto', border: '1px solid var(--borde-suave)', borderRadius: 'var(--radius-md)' }}>
                     {fiadosFiltrados.length === 0 && <p className="text-muted text-center" style={{ padding: '14px', margin: 0, fontSize: '13px' }}>Sin cuentas pendientes que coincidan.</p>}
                     {fiadosFiltrados.map((f) => (
                       <button
@@ -868,7 +878,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
             <div className="desglose-row total-calc"><span>Caja neta final</span><strong>${cajaNetaFinal.toLocaleString('es-CL')}</strong></div>
 
             {totalPendientes > 0 && (
-              <div className="card mt-10" style={{ background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.3)', padding: '10px 14px', borderRadius: '14px' }}>
+              <div className="card mt-10" style={{ background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-md)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '800', color: '#b36200', fontSize: '13px' }}><AlertTriangle size={14} /> Quedan ${totalPendientes.toLocaleString('es-CL')} en cuentas pendientes sin cobrar.</span>
               </div>
             )}
@@ -1005,7 +1015,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
                     <span className="kiosco-precio" style={{ color: colorCat.text }}>${Number(prod.precio).toLocaleString('es-CL')}</span>
                   </div>
                   {sinStock && <span className="badge-agotado-tag">SIN STOCK</span>}
-                  {isCritico && !sinStock && <span className="badge-critico-tag" style={{ position: 'absolute', top: 5, left: 5, background: '#FF9500', color: 'white', fontSize: '8px', padding: '2px 4px', borderRadius: '999px' }}>CRÍTICO</span>}
+                  {isCritico && !sinStock && <span className="badge-critico-tag" style={{ position: 'absolute', top: 5, left: 5, background: '#FF9500', color: 'white', fontSize: '8px', padding: '2px 4px', borderRadius: 'var(--radius-pill)' }}>CRÍTICO</span>}
                 </button>
               );
             })}
@@ -1062,10 +1072,10 @@ function KioscoPanel({ nombreResponsable = '' }) {
 
       {vista === 'caja' && !turno && (
         <div className="fade-in">
-          <div className="card mb-15" style={{ background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.3)', borderRadius: '18px' }}>
+          <div className="card mb-15" style={{ background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.3)', borderRadius: 'var(--radius-md)' }}>
             <span style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontWeight: '800', color: '#b36200', fontSize: '13px' }}><AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '1px' }} /> Para ocupar la caja debes abrirla primero con nombre de responsable, fecha y monto inicial.</span>
           </div>
-          <div className="card" style={{ textAlign: 'left', borderRadius: '24px' }}>
+          <div className="card" style={{ textAlign: 'left', borderRadius: 'var(--radius-lg)' }}>
             <div className="input-group mb-10"><label style={{ fontSize: '12px', fontWeight: '800' }}>Responsable de Turno</label><input type="text" className="form-input" value={formApertura.responsable} onChange={(e) => setFormApertura({ ...formApertura, responsable: e.target.value })} placeholder="Ej: María Tesorera" /></div>
             <div className="input-group mb-10"><label style={{ fontSize: '12px', fontWeight: '800' }}>Fecha de Caja</label><input type="date" className="form-input" value={formApertura.dia} onChange={(e) => setFormApertura({ ...formApertura, dia: e.target.value })} /></div>
             <div className="input-group mb-15"><label style={{ fontSize: '12px', fontWeight: '800' }}>Sencillo Inicial (CLP)</label><input type="number" className="form-input" value={formApertura.montoInicial} onChange={(e) => setFormApertura({ ...formApertura, montoInicial: e.target.value })} placeholder="Ej: 20000" /></div>
@@ -1164,10 +1174,10 @@ function KioscoPanel({ nombreResponsable = '' }) {
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <button className="btn-circle btn-danger" onClick={() => actualizarStock(prod, Number(prod.stock) - 1)}>-</button>
-                        <input type="number" style={{ width: '50px', textAlign: 'center', padding: '4px 4px', border: '1.5px solid var(--borde-suave)', borderRadius: '999px', background: 'var(--fondo-input)', color: Number(prod.stock) <= 5 ? 'var(--rojo-alerta)' : 'var(--texto-principal)', fontWeight: '900', fontSize: '14px' }} value={prod.stock} onChange={(e) => actualizarStock(prod, parseInt(e.target.value, 10) || 0)} />
+                        <input type="number" style={{ width: '50px', textAlign: 'center', padding: '4px 4px', border: '1.5px solid var(--borde-suave)', borderRadius: 'var(--radius-pill)', background: 'var(--fondo-input)', color: Number(prod.stock) <= 5 ? 'var(--rojo-alerta)' : 'var(--texto-principal)', fontWeight: '900', fontSize: '14px' }} value={prod.stock} onChange={(e) => actualizarStock(prod, parseInt(e.target.value, 10) || 0)} />
                         <button className="btn-circle btn-success" onClick={() => actualizarStock(prod, Number(prod.stock) + 1)}>+</button>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--fondo-input)', padding: '4px 8px', borderRadius: '999px', border: '1.5px solid var(--borde-suave)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--fondo-input)', padding: '4px 8px', borderRadius: 'var(--radius-pill)', border: '1.5px solid var(--borde-suave)' }}>
                         <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '800' }}>$</span>
                         <input type="number" style={{ width: '64px', border: 'none', background: 'transparent', color: 'var(--texto-principal)', fontWeight: '900', fontSize: '13px', textAlign: 'center', outline: 'none' }} value={prod.precio} onChange={(e) => actualizarPrecio(prod, parseInt(e.target.value, 10) || 0)} />
                       </div>

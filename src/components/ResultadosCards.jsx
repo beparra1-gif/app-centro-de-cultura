@@ -43,7 +43,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
           borderLeft: `6px solid ${colorBorde(partido)}`,
           background: colorFondo(partido),
           marginBottom: '16px',
-          borderRadius: '18px',
+          borderRadius: 'var(--radius-md)',
           padding: isMobile ? '12px' : '16px',
           transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
           cursor: 'pointer',
@@ -86,7 +86,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
               fontSize: '11px',
               fontWeight: '900',
               padding: '5px 12px',
-              borderRadius: '10px',
+              borderRadius: 'var(--radius-sm)',
               background: colorBadge(partido),
               color: 'white',
               textTransform: 'uppercase',
@@ -182,7 +182,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
             textAlign: 'center', 
             padding: '12px 14px', 
             background: `linear-gradient(135deg, ${colorResultado}20, ${colorResultado}10)`,
-            borderRadius: '14px',
+            borderRadius: 'var(--radius-md)',
             marginBottom: '14px',
             border: `1.5px solid ${colorResultado}40`
           }}>
@@ -239,7 +239,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                   background: reaccionActual === 'love' ? `${colorBadge(partido)}15` : 'transparent',
                   border: `1.5px solid ${reaccionActual === 'love' ? colorBadge(partido) : '#E5E7EB'}`,
                   padding: '7px 11px',
-                  borderRadius: '10px',
+                  borderRadius: 'var(--radius-sm)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -262,7 +262,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                   background: reaccionActual === 'great' ? '#10b98115' : 'transparent',
                   border: `1.5px solid ${reaccionActual === 'great' ? '#10b981' : '#E5E7EB'}`,
                   padding: '7px 11px',
-                  borderRadius: '10px',
+                  borderRadius: 'var(--radius-sm)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -285,7 +285,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                   background: reaccionActual === 'sad' ? '#f5931515' : 'transparent',
                   border: `1.5px solid ${reaccionActual === 'sad' ? '#f59315' : '#E5E7EB'}`,
                   padding: '7px 11px',
-                  borderRadius: '10px',
+                  borderRadius: 'var(--radius-sm)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -311,7 +311,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                     background: 'transparent',
                     border: `1.5px solid #3b82f6`,
                     padding: '7px 11px',
-                    borderRadius: '8px',
+                    borderRadius: 'var(--radius-sm)',
                     cursor: 'pointer',
                     color: '#3b82f6',
                     fontWeight: '700',
@@ -334,7 +334,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                     background: 'transparent',
                     border: `1.5px solid #ef4444`,
                     padding: '7px 11px',
-                    borderRadius: '8px',
+                    borderRadius: 'var(--radius-sm)',
                     cursor: 'pointer',
                     color: '#ef4444',
                     fontWeight: '700',
@@ -363,7 +363,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
       return (
         <div key={partido.id} className="card" style={{
           borderLeft: `6px solid ${colorBorde(partido)}`,
-          borderRadius: '16px',
+          borderRadius: 'var(--radius-md)',
           marginBottom: '12px',
           background: 'var(--blanco-tarjeta)'
         }}>
@@ -407,7 +407,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
       <div key={partido.id} className="card" style={{
         background: colorFondo(partido),
         borderLeft: `4px solid ${colorBorde(partido)}`,
-        borderRadius: '18px',
+        borderRadius: 'var(--radius-md)',
         marginBottom: '14px',
         overflow: 'hidden'
       }}>
@@ -418,7 +418,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
             <span style={{ fontWeight: '800', color: 'var(--texto-principal)' }}>{partido.torneo}</span>
             <span style={{ fontWeight: '600', color: 'var(--texto-secundario)' }}>• {partido.categoria}</span>
           </div>
-          <span style={{ fontSize: '11px', fontWeight: '900', background: colorBadge(partido), color: 'white', padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase', display: 'inline-flex', alignItems: 'center' }}>
+          <span style={{ fontSize: '11px', fontWeight: '900', background: colorBadge(partido), color: 'white', padding: '3px 8px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', display: 'inline-flex', alignItems: 'center' }}>
             {esFemelina(partido) ? <Venus size={12} /> : <Mars size={12} />}
           </span>
         </div>

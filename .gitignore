@@ -38,3 +38,13 @@ backend/.env.*
 
 .vercel
 .env*
+
+# Respaldos de QA con datos reales (RUTs): no versionar
+qa_*_backup.json
+
+# Correos de desarrollo (backend/lib/correo.js sin SMTP): contienen códigos de acceso
+backend/.correos-dev/
+
+# Resultados de Playwright (capturas con datos locales)
+test-results/
+playwright-report/

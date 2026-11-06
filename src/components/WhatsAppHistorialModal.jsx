@@ -35,7 +35,7 @@ function WhatsAppHistorialModal({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
           <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--texto-principal)', display: 'flex', alignItems: 'center', gap: '6px' }}><MessageCircle size={17} /> Historial WhatsApp</h4>
-          <button onClick={() => setMostrarHistorialWA(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
+          <button onClick={() => setMostrarHistorialWA(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: 'var(--radius-pill)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -45,7 +45,7 @@ function WhatsAppHistorialModal({
               style={{
                 background: msg.tipo === 'salida' ? 'rgba(52,199,89,0.08)' : 'rgba(0,122,255,0.08)',
                 padding: '12px',
-                borderRadius: '18px',
+                borderRadius: 'var(--radius-md)',
                 borderLeft: msg.tipo === 'salida' ? '4px solid #34C759' : '4px solid var(--azul-electrico)',
                 display: 'flex',
                 gap: '10px',

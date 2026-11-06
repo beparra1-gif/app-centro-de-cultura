@@ -215,7 +215,7 @@ function TorneosPanel({ puedeGestionar = false }) {
       </div>
 
       {mostrarFormCrear && puedeGestionar && (
-        <div className="card mb-15" style={{ borderRadius: '20px' }}>
+        <div className="card mb-15" style={{ borderRadius: 'var(--radius-lg)' }}>
           <h4 className="form-subtitle">{torneoEditandoId ? 'Editar torneo' : 'Nuevo torneo'}</h4>
           <div className="segment-control mb-15" style={{ gap: '6px' }}>
             <button type="button" className={`segment-btn ${formTorneo.tipo === 'interno' ? 'active' : ''}`} onClick={() => setFormTorneo((p) => ({ ...p, tipo: 'interno' }))}>
@@ -293,7 +293,7 @@ function TorneosPanel({ puedeGestionar = false }) {
         {torneos.map((t) => {
           const abierto = torneoSeleccionadoId === t.id_torneo;
           return (
-            <div key={t.id_torneo} className="card" style={{ borderRadius: '20px', padding: 0, overflow: 'hidden' }}>
+            <div key={t.id_torneo} className="card" style={{ borderRadius: 'var(--radius-lg)', padding: 0, overflow: 'hidden' }}>
               <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', padding: '14px 16px', background: abierto ? 'rgba(0,122,255,0.06)' : 'transparent' }}>
                 <button
                   type="button"
@@ -314,7 +314,7 @@ function TorneosPanel({ puedeGestionar = false }) {
                       type="button"
                       onClick={() => abrirEditarTorneo(t)}
                       title="Editar torneo"
-                      style={{ padding: '7px 10px', background: 'var(--azul-electrico)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      style={{ padding: '7px 10px', background: 'var(--azul-electrico)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >
                       <Pencil size={13} />
                     </button>
@@ -323,7 +323,7 @@ function TorneosPanel({ puedeGestionar = false }) {
                       onClick={() => borrarTorneo(t)}
                       disabled={borrandoTorneoId === t.id_torneo}
                       title="Borrar torneo"
-                      style={{ padding: '7px 10px', background: 'rgba(239,68,68,0.1)', color: '#b91c1c', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      style={{ padding: '7px 10px', background: 'rgba(239,68,68,0.1)', color: '#b91c1c', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >
                       <Trash2 size={13} />
                     </button>
@@ -336,7 +336,7 @@ function TorneosPanel({ puedeGestionar = false }) {
                   {cargandoTabla && <p className="text-muted">Cargando tabla de posiciones...</p>}
 
                   {!cargandoTabla && puedeGestionar && (
-                    <div className="card mb-15" style={{ borderRadius: '16px', background: 'rgba(0,122,255,0.04)' }}>
+                    <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', background: 'rgba(0,122,255,0.04)' }}>
                       <TorneoEquiposManager
                         idTorneo={t.id_torneo}
                         equipos={equiposTorneo}
@@ -448,7 +448,7 @@ function TorneosPanel({ puedeGestionar = false }) {
                           <h5 style={{ margin: '16px 0 8px 0', fontSize: '13px' }}>Partidos jugados</h5>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             {tabla.partidos.map((p) => (
-                              <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '8px 10px', fontSize: '12px' }}>
+                              <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px solid var(--borde-suave)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', fontSize: '12px' }}>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                   <LogoAvatar nombre={p.equipo_local} logoUrl={p.logo_local_url} tipo="club" size={18} borderRadius="6px" />
                                   {p.equipo_local} <strong>{p.pts_local}</strong> — <strong>{p.pts_visitante}</strong> {p.equipo_visitante}
@@ -468,7 +468,7 @@ function TorneosPanel({ puedeGestionar = false }) {
                           <h5 style={{ margin: '16px 0 8px 0', fontSize: '13px' }}>Próximos partidos</h5>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             {tabla.partidosPendientes.map((p) => (
-                              <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed var(--borde-suave)', borderRadius: '12px', padding: '8px 10px', fontSize: '12px' }}>
+                              <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed var(--borde-suave)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', fontSize: '12px' }}>
                                 <span>{p.equipo_local} vs {p.equipo_visitante}</span>
                                 <span style={{ color: 'var(--texto-secundario)', fontWeight: '700' }}>
                                   {p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha'} · {p.estado_juego === 'en_curso' ? 'En curso' : 'Programado'}

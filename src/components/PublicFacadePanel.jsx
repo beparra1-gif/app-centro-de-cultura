@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Bell, ChevronLeft, Eye, EyeOff, Lock, QrCode, Trophy, User } from 'lucide-react';
 import * as api from '../api/client';
+import { showToast } from '../utils/toast';
 import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
 import ResultadosCards from './ResultadosCards';
@@ -14,14 +15,14 @@ function ContenidoComunicacion({ texto }) {
   if (!valor) return null;
 
   if (esUrlImagen(valor)) {
-    return <img src={valor} alt="" style={{ width: '100%', borderRadius: '16px', marginTop: '4px', marginBottom: '8px' }} />;
+    return <img src={valor} alt="" style={{ width: '100%', borderRadius: 'var(--radius-md)', marginTop: '4px', marginBottom: '8px' }} />;
   }
 
   if (esUrlYoutube(valor)) {
     const id = obtenerIdYoutube(valor);
     if (id) {
       return (
-        <div style={{ borderRadius: '16px', overflow: 'hidden', aspectRatio: '16/9', marginTop: '4px', marginBottom: '8px' }}>
+        <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', aspectRatio: '16/9', marginTop: '4px', marginBottom: '8px' }}>
           <iframe src={`https://www.youtube.com/embed/${id}`} title="Video" style={{ width: '100%', height: '100%', border: 'none' }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
         </div>
       );
@@ -32,7 +33,7 @@ function ContenidoComunicacion({ texto }) {
     const id = obtenerIdVimeo(valor);
     if (id) {
       return (
-        <div style={{ borderRadius: '16px', overflow: 'hidden', aspectRatio: '16/9', marginTop: '4px', marginBottom: '8px' }}>
+        <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', aspectRatio: '16/9', marginTop: '4px', marginBottom: '8px' }}>
           <iframe src={`https://player.vimeo.com/video/${id}`} title="Video" style={{ width: '100%', height: '100%', border: 'none' }} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
         </div>
       );
@@ -41,7 +42,7 @@ function ContenidoComunicacion({ texto }) {
 
   if (esUrlVideoInterno(valor)) {
     return (
-      <video controls preload="metadata" style={{ width: '100%', borderRadius: '16px', marginTop: '4px', marginBottom: '8px', background: '#000' }}>
+      <video controls preload="metadata" style={{ width: '100%', borderRadius: 'var(--radius-md)', marginTop: '4px', marginBottom: '8px', background: '#000' }}>
         <source src={`${api.API_BASE_URL_CONFIG}/${valor}`} />
         Tu navegador no soporta reproducción de video.
       </video>
@@ -96,7 +97,7 @@ function TablaPosicionesPublica() {
 
   if (torneos.length === 0) {
     return (
-      <div className="card" style={{ borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
+      <div className="card" style={{ borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
         <p style={{ margin: 0, fontSize: '13px', color: 'var(--texto-secundario)' }}>Todavía no hay torneos publicados.</p>
       </div>
     );
@@ -107,7 +108,7 @@ function TablaPosicionesPublica() {
       {torneos.map((t) => {
         const abierto = torneoSeleccionadoId === t.id_torneo;
         return (
-          <div key={t.id_torneo} className="card" style={{ borderRadius: '20px', padding: 0, overflow: 'hidden', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
+          <div key={t.id_torneo} className="card" style={{ borderRadius: 'var(--radius-lg)', padding: 0, overflow: 'hidden', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
             <button
               type="button"
               onClick={() => seleccionarTorneo(t.id_torneo)}
@@ -165,7 +166,7 @@ function TablaPosicionesPublica() {
                     <h5 style={{ margin: '16px 0 8px 0', fontSize: '13px' }}>Próximos partidos</h5>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {tabla.partidosPendientes.map((p) => (
-                        <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed var(--borde-suave)', borderRadius: '12px', padding: '8px 10px', fontSize: '12px' }}>
+                        <div key={p.id_partido} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed var(--borde-suave)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', fontSize: '12px' }}>
                           <span>{p.equipo_local} vs {p.equipo_visitante}</span>
                           <span style={{ color: 'var(--texto-secundario)', fontWeight: '700' }}>
                             {p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha'}
@@ -184,7 +185,144 @@ function TablaPosicionesPublica() {
   );
 }
 
+// Primer ingreso / "Olvidé mi contraseña": código de 6 dígitos al correo
+// registrado (POST /api/auth/solicitar-codigo y /api/auth/canjear-codigo).
+// Si la cuenta no tiene correo o el envío no está configurado, ofrece
+// escribir al club por WhatsApp (el mecanismo anterior).
+function AccesoConCodigo({ rut, setRut, pasoInicial, destinoInicial, onVolver, onListo, onWhatsApp }) {
+  const [paso, setPaso] = useState(pasoInicial || 'pedir');
+  const [destino, setDestino] = useState(destinoInicial || '');
+  const [codigo, setCodigo] = useState('');
+  const [nuevaClave, setNuevaClave] = useState('');
+  const [confirmacion, setConfirmacion] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [sinCorreo, setSinCorreo] = useState('');
+  // true = el código lo entregó el club (WhatsApp/en persona), no llegó al correo.
+  const [codigoDelClub, setCodigoDelClub] = useState(false);
+
+  const pedirCodigo = async (event) => {
+    event?.preventDefault();
+    if (!String(rut || '').trim()) {
+      showToast({ message: 'Ingresa tu RUT.', type: 'error' });
+      return;
+    }
+    setEnviando(true);
+    setSinCorreo('');
+    try {
+      const respuesta = await api.authAPI.solicitarCodigo(rut);
+      if (!respuesta?.enviado) {
+        setSinCorreo(respuesta?.mensaje || 'No encontramos un correo registrado para ese RUT.');
+        return;
+      }
+      setDestino(respuesta.destino || '');
+      setPaso('canjear');
+      showToast({ message: respuesta.mensaje, type: 'success' });
+    } catch (error) {
+      if (error?.code === 'CORREO_NO_CONFIGURADO') setSinCorreo(error.message);
+      else showToast({ message: error.message || 'No se pudo enviar el código.', type: 'error' });
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const crearClave = async (event) => {
+    event.preventDefault();
+    if (nuevaClave.trim().length < 5) {
+      showToast({ message: 'La nueva contraseña debe tener al menos 5 caracteres.', type: 'error' });
+      return;
+    }
+    if (nuevaClave !== confirmacion) {
+      showToast({ message: 'La confirmación no coincide con la nueva contraseña.', type: 'error' });
+      return;
+    }
+    setEnviando(true);
+    try {
+      const respuesta = await api.authAPI.canjearCodigo({ rut, codigo, nuevaClave: nuevaClave.trim() });
+      showToast({ message: respuesta?.mensaje || 'Contraseña creada. Ya puedes ingresar.', type: 'success' });
+      onListo?.();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo crear la contraseña.', type: 'error' });
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  if (paso === 'canjear') {
+    return (
+      <form className="login-form-real fade-in" onSubmit={crearClave} style={{ borderRadius: 'var(--radius-lg)' }}>
+        <h4 className="login-form-title">Crea tu contraseña</h4>
+        <p className="acceso-codigo-ayuda">
+          {codigoDelClub
+            ? 'Ingresa tu RUT y el código de 6 dígitos que te entregó el club.'
+            : <>{destino ? <>Enviamos un código de 6 dígitos a <strong>{destino}</strong>.</> : 'Revisa tu correo: enviamos un código de 6 dígitos.'} Vence en 15 minutos; revisa también spam.</>}
+        </p>
+        {codigoDelClub && (
+          <div className="input-group-login mb-10">
+            <User size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
+            <input type="text" placeholder="RUT" value={rut} onChange={(e) => setRut(e.target.value)} required />
+          </div>
+        )}
+        <div className="input-group-login">
+          <Lock size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            placeholder="Código de 6 dígitos"
+            aria-label="Código de 6 dígitos"
+            value={codigo}
+            onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ''))}
+            required
+          />
+        </div>
+        <div className="input-group-login mt-10">
+          <Lock size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
+          <input type="password" autoComplete="new-password" placeholder="Nueva contraseña (mín. 5)" value={nuevaClave} onChange={(e) => setNuevaClave(e.target.value)} required />
+        </div>
+        <div className="input-group-login mt-10">
+          <Lock size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
+          <input type="password" autoComplete="new-password" placeholder="Repite la nueva contraseña" value={confirmacion} onChange={(e) => setConfirmacion(e.target.value)} required />
+        </div>
+        <button type="submit" className="btn-electric mt-20" disabled={enviando}>{enviando ? 'Guardando…' : 'Crear contraseña'}</button>
+        {!codigoDelClub && (
+          <button type="button" className="btn-volver-texto mt-15" onClick={pedirCodigo} disabled={enviando}>¿No llegó? Reenviar código</button>
+        )}
+        <button type="button" className="btn-volver-texto" onClick={onVolver}>
+          <ChevronLeft size={16} /> Volver al ingreso
+        </button>
+      </form>
+    );
+  }
+
+  return (
+    <form className="login-form-real fade-in" onSubmit={pedirCodigo} style={{ borderRadius: 'var(--radius-lg)' }}>
+      <h4 className="login-form-title">Primer ingreso o clave olvidada</h4>
+      <p className="acceso-codigo-ayuda">Te enviaremos un código de 6 dígitos al correo registrado en el club para que crees tu contraseña.</p>
+      <div className="input-group-login">
+        <User size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
+        <input type="text" placeholder="RUT" value={rut} onChange={(e) => setRut(e.target.value)} required />
+      </div>
+      {sinCorreo && (
+        <div className="acceso-codigo-aviso" role="status">
+          <p>{sinCorreo}</p>
+          <button type="button" className="btn-secondary" onClick={onWhatsApp}>Escribir al club por WhatsApp</button>
+        </div>
+      )}
+      <button type="submit" className="btn-electric mt-20" disabled={enviando}>{enviando ? 'Enviando…' : 'Enviar código a mi correo'}</button>
+      <button type="button" className="btn-secondary mt-10" onClick={() => { setCodigoDelClub(true); setPaso('canjear'); }}>
+        Tengo un código del club
+      </button>
+      <button type="button" className="btn-volver-texto mt-15" onClick={onVolver}>
+        <ChevronLeft size={16} /> Volver al ingreso
+      </button>
+    </form>
+  );
+}
+
 function PublicFacadePanel({
+  codigoCorreoPendiente,
+  limpiarCodigoCorreoPendiente,
   vistaPublica,
   mostrarFormularioLogin,
   abrirFormularioLogin,
@@ -206,16 +344,32 @@ function PublicFacadePanel({
   partidos,
 }) {
   const [mostrarClave, setMostrarClave] = useState(false);
+  // null = formulario de ingreso normal; 'pedir' | 'canjear' = acceso con
+  // código por correo (AccesoConCodigo).
+  const [modoCodigo, setModoCodigo] = useState(null);
+  const [destinoCodigo, setDestinoCodigo] = useState('');
+
+  // El login respondió USAR_CODIGO_CORREO (App.jsx): abrir directo el paso
+  // de ingresar el código, que el backend ya envió.
+  useEffect(() => {
+    if (!codigoCorreoPendiente) return;
+    setDestinoCodigo(codigoCorreoPendiente.destino || '');
+    setModoCodigo('canjear');
+  }, [codigoCorreoPendiente]);
+
+  const salirModoCodigo = () => {
+    setModoCodigo(null);
+    limpiarCodigoCorreoPendiente?.();
+  };
 
   const abrirContactoWhatsApp = () => {
     const mensaje = encodeURIComponent('Hola! Quiero ser parte de la familia deportiva del Club Centro de Cultura Física.');
     window.open(`https://wa.me/56953297869?text=${mensaje}`, '_blank');
   };
 
-  // No hay envío de correo/SMS para recuperación automática — reutiliza el
-  // mismo canal de WhatsApp que ya usa "Contáctanos" para que el club pueda
-  // restablecerla desde el panel de Administración (el superadmin ya tiene
-  // esa opción en Usuarios y Cuentas).
+  // Respaldo cuando la cuenta no tiene correo registrado (o el envío de
+  // correos no está configurado): escribir al club por WhatsApp para que
+  // restablezca la clave desde Usuarios y Cuentas.
   const abrirRecuperarClave = () => {
     const rut = String(rutInput || '').trim();
     const mensaje = encodeURIComponent(
@@ -227,9 +381,9 @@ function PublicFacadePanel({
   return (
     <>
       {vistaPublica === 'inicio' && (
-        <div className="text-center login-card-main hero-panel" style={{ borderRadius: '28px', boxShadow: '0 18px 44px rgba(15,23,42,0.08)' }}>
+        <div className="text-center login-card-main hero-panel" style={{ borderRadius: 'var(--radius-lg)', boxShadow: '0 18px 44px rgba(15,23,42,0.08)' }}>
           <div className="hero-official-stack">
-            <span className="hero-badge" style={{ borderRadius: '999px', padding: '7px 16px', fontWeight: '800', display: 'inline-flex', alignItems: 'center' }}>
+            <span className="hero-badge" style={{ borderRadius: 'var(--radius-pill)', padding: '7px 16px', fontWeight: '800', display: 'inline-flex', alignItems: 'center' }}>
               Portal Oficial
             </span>
             <LogoAvatar nombre="Centro de Cultura Física" logoUrl="/logos/club-logo.png" tipo="club" size={96} borderRadius="999px" className="home-brand-logo-only" style={{ display: 'flex', margin: '0 auto' }} />
@@ -243,7 +397,7 @@ function PublicFacadePanel({
               <button className="btn-secondary access-visits-btn mt-15" onClick={() => abrirFormularioLogin('invitado')}>
                 <QrCode size={18} /> Acceso Visitas
               </button>
-              <div className="cta-contacto-card" style={{ borderRadius: '26px', boxShadow: '0 14px 34px rgba(15,23,42,0.14)', marginTop: '22px' }}>
+              <div className="cta-contacto-card" style={{ borderRadius: 'var(--radius-lg)', boxShadow: '0 14px 34px rgba(15,23,42,0.14)', marginTop: '22px' }}>
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: '900' }}>Club Centro de Cultura Física</h3>
                 <p style={{ margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.5' }}>
                   ¿Quieres ser parte de nuestra familia deportiva?
@@ -253,8 +407,19 @@ function PublicFacadePanel({
                 </button>
               </div>
             </div>
+          ) : modoCodigo ? (
+            <AccesoConCodigo
+              key={`${modoCodigo}-${codigoCorreoPendiente?.solicitadoEn || 0}`}
+              rut={rutInput}
+              setRut={setRutInput}
+              pasoInicial={modoCodigo}
+              destinoInicial={destinoCodigo}
+              onVolver={salirModoCodigo}
+              onListo={() => { setPassInput(''); salirModoCodigo(); }}
+              onWhatsApp={abrirRecuperarClave}
+            />
           ) : (
-            <form className="login-form-real fade-in" onSubmit={handleLoginSubmit} style={{ borderRadius: '24px' }}>
+            <form className="login-form-real fade-in" onSubmit={handleLoginSubmit} style={{ borderRadius: 'var(--radius-lg)' }}>
               <h4 className="login-form-title">
                 {tipoLoginSeleccionado === 'invitado' ? 'Portal Invitados' : 'Acceso Oficial'}
               </h4>
@@ -293,9 +458,11 @@ function PublicFacadePanel({
                   {mostrarClave ? <EyeOff size={18} strokeWidth={1.5} /> : <Eye size={18} strokeWidth={1.5} />}
                 </button>
               </div>
-              <button type="button" className="btn-volver-texto" style={{ padding: '8px 0', fontSize: '13px' }} onClick={abrirRecuperarClave}>
-                ¿Olvidaste tu contraseña?
-              </button>
+              {tipoLoginSeleccionado !== 'invitado' && (
+                <button type="button" className="btn-volver-texto" style={{ padding: '8px 0', fontSize: '13px' }} onClick={() => setModoCodigo('pedir')}>
+                  ¿Primera vez u olvidaste tu contraseña?
+                </button>
+              )}
               <button type="submit" className="btn-electric mt-20">Ingresar al Sistema</button>
               <button type="button" className="btn-volver-texto mt-15" onClick={volverInicioLogin}>
                 <ChevronLeft size={16} /> Volver a opciones
@@ -309,7 +476,7 @@ function PublicFacadePanel({
         <div className="fade-in">
           <h3 className="section-title mt-20">Anuncios del Club</h3>
           {comunicacionesPublicas.length === 0 && (
-            <div className="card mb-15" style={{ borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
+            <div className="card mb-15" style={{ borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
               <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '900' }}>Sin noticias disponibles</h4>
               <p style={{ margin: 0, fontSize: '13px', color: 'var(--texto-secundario)' }}>
                 Aún no hay publicaciones públicas.
@@ -317,7 +484,7 @@ function PublicFacadePanel({
             </div>
           )}
           {comunicacionesPublicas.map(c => (
-            <div key={c.id} className="ios-rrss-card fade-in" style={{ borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
+            <div key={c.id} className="ios-rrss-card fade-in" style={{ borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
               <div className="ios-rrss-header">
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                   <LogoAvatar nombre={c.TITULO} logoUrl={c.logo_url || c.logoUrl} size={26} borderRadius="999px" />
@@ -335,7 +502,7 @@ function PublicFacadePanel({
 
           <h3 className="section-title mt-20">Galeria</h3>
           {galeriaPublica.length === 0 ? (
-            <div className="card mb-20" style={{ borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
+            <div className="card mb-20" style={{ borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
               <p style={{ margin: 0, fontSize: '13px', color: 'var(--texto-secundario)' }}>No hay elementos en galería por ahora.</p>
             </div>
           ) : (
@@ -356,7 +523,7 @@ function PublicFacadePanel({
         <div className="fade-in">
           <h3 className="section-title mt-20">Ultimos Resultados</h3>
           {partidos.length === 0 ? (
-            <div className="card" style={{ borderRadius: '24px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
+            <div className="card" style={{ borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
               <p style={{ margin: 0, fontSize: '13px', color: 'var(--texto-secundario)' }}>No hay resultados publicados aún.</p>
             </div>
           ) : (

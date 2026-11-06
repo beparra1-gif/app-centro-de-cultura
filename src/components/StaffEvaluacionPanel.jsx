@@ -222,7 +222,7 @@ function StaffEvaluacionPanel({
           {!cargandoHistorial && historialEvaluaciones.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
               {historialEvaluaciones.map((ev) => (
-                <div key={ev.id_evaluacion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
+                <div key={ev.id_evaluacion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: 'var(--radius-md)', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <strong style={{ fontSize: '12px' }}>{ev.fecha_evaluacion ? new Date(ev.fecha_evaluacion).toLocaleDateString('es-CL') : 'Sin fecha'}</strong>
                     <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{ev.tipo_evaluacion || 'Evaluación'}</span>
@@ -256,7 +256,7 @@ function StaffEvaluacionPanel({
         </div>
       )}
 
-      <div className="card grafico-card-dark" style={{ background: '#1a2a42', borderRadius: '20px', overflow: 'hidden' }}>
+      <div className="card grafico-card-dark" style={{ background: '#1a2a42', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
         <h4 style={{ color: 'white', textAlign: 'center', margin: '20px 0 0 0' }}>
           {tipoEvaluacionActivo === 'psicomotriz' ? 'Radar Psicomotriz' : 'Radar Biomecánico'}
         </h4>

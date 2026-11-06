@@ -2495,11 +2495,11 @@ function MesaControlPanel({
   if (modoChromaKey) {
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: '#00FF00', zIndex: 99999, display: 'flex', alignItems: 'flex-end', padding: '50px' }}>
-        <div style={{ background: '#1C1C1E', border: '3px solid #333', borderRadius: '15px', padding: '20px 40px', display: 'flex', gap: '40px', alignItems: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
+        <div style={{ background: '#1C1C1E', border: '3px solid #333', borderRadius: 'var(--radius-md)', padding: '20px 40px', display: 'flex', gap: '40px', alignItems: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
           <div className="text-center"><span style={{ color: '#aaa', fontSize: '14px', fontWeight: 'bold' }}>LOCAL {liveScore.flecha === 'LOCAL' && '◀'}</span><h1 style={{ color: 'white', margin: 0, fontSize: '60px', fontFamily: 'Orbitron' }}>{liveScore.ptsLocal}</h1><span style={{ color: 'var(--rojo-alerta)', fontSize: '12px', fontWeight: 'bold' }}>FALTAS: {liveScore.faltasLocal}</span></div>
-          <div className="text-center"><span style={{ background: '#333', color: '#00FF00', padding: '10px 20px', borderRadius: '10px', fontSize: '24px', fontWeight: '900', fontFamily: 'Orbitron' }}>{liveScore.reloj}</span><h3 style={{ color: 'white', margin: '10px 0 0 0' }}>{etiquetaPeriodo(liveScore.periodo)}</h3></div>
+          <div className="text-center"><span style={{ background: '#333', color: '#00FF00', padding: '10px 20px', borderRadius: 'var(--radius-sm)', fontSize: '24px', fontWeight: '900', fontFamily: 'Orbitron' }}>{liveScore.reloj}</span><h3 style={{ color: 'white', margin: '10px 0 0 0' }}>{etiquetaPeriodo(liveScore.periodo)}</h3></div>
           <div className="text-center"><span style={{ color: '#aaa', fontSize: '14px', fontWeight: 'bold' }}>{liveScore.flecha === 'VISITA' && '▶'} VISITA</span><h1 style={{ color: 'white', margin: 0, fontSize: '60px', fontFamily: 'Orbitron' }}>{liveScore.ptsVisita}</h1><span style={{ color: 'var(--rojo-alerta)', fontSize: '12px', fontWeight: 'bold' }}>FALTAS: {liveScore.faltasVisita}</span></div>
-          <button style={{ position: 'absolute', top: '10px', right: '10px', background: 'black', color: 'white', border: 'none', padding: '10px', borderRadius: '999px', cursor: 'pointer', opacity: 0.2 }} onClick={() => setModoChromaKey(false)}>Cerrar Modo TV</button>
+          <button style={{ position: 'absolute', top: '10px', right: '10px', background: 'black', color: 'white', border: 'none', padding: '10px', borderRadius: 'var(--radius-pill)', cursor: 'pointer', opacity: 0.2 }} onClick={() => setModoChromaKey(false)}>Cerrar Modo TV</button>
         </div>
       </div>
     );
@@ -2530,7 +2530,7 @@ function MesaControlPanel({
       {moduloMesa === 'prepartido' && (
         <>
 
-      <div className="card mb-15" style={{ borderRadius: '18px' }}>
+      <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)' }}>
         <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Operadores de Mesa (Trazabilidad)</h4>
         <div className="mesa-filtros-grid" style={{ marginBottom: '10px' }}>
           <label className="mesa-filter-item">
@@ -2571,7 +2571,7 @@ function MesaControlPanel({
         <div className="mesa-prepartido-actions" style={{ marginTop: '10px' }}>
           <button
             className={`btn-secondary ${partidoIniciado ? 'mesa-btn-live' : ''}`}
-            style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
+            style={{ width: 'auto', padding: '8px 14px', borderRadius: 'var(--radius-pill)' }}
             onClick={confirmarInicioPartido}
             disabled={partidoIniciado || !prepartidoValido}
           >
@@ -2579,7 +2579,7 @@ function MesaControlPanel({
           </button>
           <button
             className="btn-secondary"
-            style={{ width: 'auto', padding: '8px 14px', borderRadius: '999px' }}
+            style={{ width: 'auto', padding: '8px 14px', borderRadius: 'var(--radius-pill)' }}
             onClick={confirmarFinalizacionPartido}
             disabled={!partidoIniciado}
           >
@@ -2588,7 +2588,7 @@ function MesaControlPanel({
         </div>
       </div>
 
-      <div className="card mb-15" style={{ borderRadius: '18px' }}>
+      <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)' }}>
         <h4 className="form-subtitle" style={{ marginTop: 0 }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Configuración de Equipos y Staff</h4>
         <div className={`mesa-team-config-grid ${modoAnalisis === 'dos' ? 'dos-equipos' : 'uno-equipo'}`}>
           <div className="mesa-team-config-card" style={{ borderColor: colorConAlpha(colorLocal, '99'), background: `linear-gradient(180deg, ${colorConAlpha(colorLocal, '22')} 0%, rgba(255,255,255,0.02) 65%)` }}>
@@ -2757,7 +2757,7 @@ function MesaControlPanel({
       </div>
 
       {incluirCategoriasMenores && filtroCategoria !== 'Todas' && (
-        <div className="card mb-15" style={{ borderRadius: '18px' }}>
+        <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)' }}>
           <h4 className="form-subtitle" style={{ marginTop: 0 }}><Users size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Incluir jugadoras/es desde categorías inferiores</h4>
           <input className="form-input mb-15" placeholder="Buscar por nombre o dorsal" value={busquedaInclusionLocal} onChange={(e) => setBusquedaInclusionLocal(e.target.value)} />
           <div className="mesa-historial-list">
@@ -2877,13 +2877,13 @@ function MesaControlPanel({
       {moduloMesa === 'live' && (
         <LiveWrapPortal activo={partidoIniciado && forzarPantallaCompletaLive} innerRef={liveFullScreenRef}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px', gap: '8px' }}>
-            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={activarPantallaCompletaForzada}><Expand size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Forzar Pantalla Completa</button>
-            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={salirPantallaCompletaManual}>Salir Pantalla Completa</button>
-            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: '999px' }} onClick={() => setModoChromaKey(true)}><Tv size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Modo Transmisión (OBS)</button>
+            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: 'var(--radius-pill)' }} onClick={activarPantallaCompletaForzada}><Expand size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Forzar Pantalla Completa</button>
+            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: 'var(--radius-pill)' }} onClick={salirPantallaCompletaManual}>Salir Pantalla Completa</button>
+            <button className="btn-secondary" style={{ width: 'auto', padding: '10px 15px', fontSize: '11px', gap: '5px', borderRadius: 'var(--radius-pill)' }} onClick={() => setModoChromaKey(true)}><Tv size={14} color="var(--gris-secundario)" strokeWidth={1.5} /> Modo Transmisión (OBS)</button>
           </div>
 
       {!partidoIniciado && (
-        <div className="card mb-15" style={{ borderRadius: '16px', border: '1px solid rgba(255, 159, 10, 0.45)', background: 'rgba(255, 159, 10, 0.08)' }}>
+        <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', border: '1px solid rgba(255, 159, 10, 0.45)', background: 'rgba(255, 159, 10, 0.08)' }}>
           <strong>Juego en vivo bloqueado.</strong>
           <p style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>Debes iniciar partido desde Operadores de Mesa en el módulo de Datos partido.</p>
         </div>
@@ -2893,8 +2893,8 @@ function MesaControlPanel({
           NBN23): nombre+logo+puntaje+faltas+tiempos de cada equipo a los
           costados, periodo/reloj al centro. Antes cada lado apilaba 4 filas
           (nombre, logo+puntaje, faltas, tiempos) y ocupaba mucho alto util. */}
-      <div className="checkout-total-box mb-15" style={{ background: 'linear-gradient(180deg, #1C1C1E 0%, #101114 100%)', border: '2px solid rgba(0,122,255,0.2)', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '16px', boxShadow: '0 16px 34px rgba(15,23,42,0.12)', opacity: partidoIniciado ? 1 : 0.65 }}>
-        <div style={{ flex: 1, minWidth: 0, border: `1px solid ${colorConAlpha(colorLocal, '88')}`, borderRadius: '10px', padding: '5px 8px', background: colorConAlpha(colorLocal, '14') }}>
+      <div className="checkout-total-box mb-15" style={{ background: 'linear-gradient(180deg, #1C1C1E 0%, #101114 100%)', border: '2px solid rgba(0,122,255,0.2)', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: 'var(--radius-md)', boxShadow: '0 16px 34px rgba(15,23,42,0.12)', opacity: partidoIniciado ? 1 : 0.65 }}>
+        <div style={{ flex: 1, minWidth: 0, border: `1px solid ${colorConAlpha(colorLocal, '88')}`, borderRadius: 'var(--radius-sm)', padding: '5px 8px', background: colorConAlpha(colorLocal, '14') }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             {!!normalizarTexto(liveScore.equipoLocalLogoUrl) && <img src={liveScore.equipoLocalLogoUrl} alt={liveScore.equipoLocalNombre || 'Local'} style={{ width: '36px', height: '36px', objectFit: 'contain', flexShrink: 0 }} />}
             <div style={{ textAlign: 'left', flex: 1, minWidth: 0 }}>
@@ -2922,7 +2922,7 @@ function MesaControlPanel({
                 borderRadius="999px"
               />
             )}
-            <span style={{ fontSize: '13px', color: 'var(--verde-victoria)', fontWeight: '900', background: 'rgba(52,199,89,0.1)', padding: '4px 10px', borderRadius: '10px', border: '1px solid var(--verde-victoria)' }}>{liveScore.reloj}</span>
+            <span style={{ fontSize: '13px', color: 'var(--verde-victoria)', fontWeight: '900', background: 'rgba(52,199,89,0.1)', padding: '4px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--verde-victoria)' }}>{liveScore.reloj}</span>
           </div>
           <h4 style={{ margin: '4px 0 0 0', color: 'white', fontSize: '13px' }}>{etiquetaPeriodo(liveScore.periodo)}</h4>
           {normalizarTexto(canchaSede) && (
@@ -2932,7 +2932,7 @@ function MesaControlPanel({
           )}
         </div>
 
-        <div style={{ flex: 1, minWidth: 0, border: `1px solid ${colorConAlpha(colorVisita, '88')}`, borderRadius: '10px', padding: '5px 8px', background: colorConAlpha(colorVisita, '14') }}>
+        <div style={{ flex: 1, minWidth: 0, border: `1px solid ${colorConAlpha(colorVisita, '88')}`, borderRadius: 'var(--radius-sm)', padding: '5px 8px', background: colorConAlpha(colorVisita, '14') }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <h1 style={{ fontSize: '28px', margin: 0, color: 'white', fontFamily: 'Orbitron', flexShrink: 0 }}>{modoAnalisis === 'dos' ? liveScore.ptsVisita : '-'}</h1>
             <div style={{ textAlign: 'right', flex: 1, minWidth: 0 }}>
@@ -2957,7 +2957,7 @@ function MesaControlPanel({
       </div>
 
       {cambioObligatorioJugadorId && (
-        <div className="card mb-15" style={{ borderRadius: '14px', border: '1px solid rgba(255,59,48,0.5)', background: 'rgba(255,59,48,0.09)' }}>
+        <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,59,48,0.5)', background: 'rgba(255,59,48,0.09)' }}>
           <strong>⚠ Cambio obligatorio pendiente por 5 faltas.</strong>
           <p style={{ margin: '6px 0 0 0', color: 'var(--texto-secundario)' }}>Selecciona la jugadora/o de salida (5 faltas) y una de banca, luego presiona Cambiar.</p>
         </div>
@@ -2997,7 +2997,7 @@ function MesaControlPanel({
       )}
 
       <div className="caja-doble-grid landscape-mode mesa-live-layout-grid">
-        <div className="card mesa-team-card mesa-live-zone-local" style={{ padding: '15px', borderRadius: '24px' }}>
+        <div className="card mesa-team-card mesa-live-zone-local" style={{ padding: '15px', borderRadius: 'var(--radius-lg)' }}>
           <h5 className="sub-caja-title">Roster Local ({rosterLocal.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
           <div className="mesa-team-split-grid mesa-team-split-grid-local">
             <div className="mesa-team-col mesa-team-col-exterior">
@@ -3058,7 +3058,7 @@ function MesaControlPanel({
         </div>
 
         {modoAnalisis === 'dos' && (
-          <div className="card mesa-team-card mesa-live-zone-visit" style={{ padding: '15px', borderRadius: '24px' }}>
+          <div className="card mesa-team-card mesa-live-zone-visit" style={{ padding: '15px', borderRadius: 'var(--radius-lg)' }}>
             <h5 className="sub-caja-title">Roster Visita ({rosterVisita.length}/{LIMITE_JUGADORES_POR_EQUIPO})</h5>
             <div className="mesa-team-split-grid">
               <div className="mesa-team-col mesa-team-col-interior">
@@ -3119,7 +3119,7 @@ function MesaControlPanel({
           </div>
         )}
 
-        <div className="card mesa-live-zone-center" style={{ padding: '20px', borderRadius: '24px' }}>
+        <div className="card mesa-live-zone-center" style={{ padding: '20px', borderRadius: 'var(--radius-lg)' }}>
           <div className="mesa-control-tiempo-card">
             <h6>Control de Partido</h6>
             <div className="mesa-control-tiempo-meta">{etiquetaPeriodo(liveScore.periodo)} · {liveScore.reloj}</div>
@@ -3323,7 +3323,7 @@ function MesaControlPanel({
 
       {moduloMesa === 'analitica' && (
       <>
-      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+      <div className="card mt-20" style={{ borderRadius: 'var(--radius-lg)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <h4 className="form-subtitle" style={{ fontWeight: '900', margin: 0 }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Seguimiento Estadístico (Eficiencia)</h4>
           <MesaEstadisticasGlosario />
@@ -3439,7 +3439,7 @@ function MesaControlPanel({
         </div>
       </div>
 
-      <div className="card mt-20 mesa-historial-card" style={{ borderRadius: '24px' }}>
+      <div className="card mt-20 mesa-historial-card" style={{ borderRadius: 'var(--radius-lg)' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Historial de Partidos Guardados</h4>
         {historialCombinado.length === 0 ? (
           <p className="text-muted" style={{ marginBottom: 0 }}>Aun no hay partidos guardados en historial local o backend.</p>
@@ -3472,7 +3472,7 @@ function MesaControlPanel({
         )}
       </div>
 
-      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+      <div className="card mt-20" style={{ borderRadius: 'var(--radius-lg)' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Analítica Histórica Comparativa</h4>
         <div className="mesa-stats-grid">
           <div className="mesa-stats-box">
@@ -3542,7 +3542,7 @@ function MesaControlPanel({
 
       {moduloMesa === 'historia' && (
       <>
-      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+      <div className="card mt-20" style={{ borderRadius: 'var(--radius-lg)' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><History size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Historia de Partidos</h4>
         <div className="mesa-filtros-grid">
           <label className="mesa-filter-item">
@@ -3580,7 +3580,7 @@ function MesaControlPanel({
         </div>
       </div>
 
-      <div className="card mt-20 mesa-historial-card" style={{ borderRadius: '24px' }}>
+      <div className="card mt-20 mesa-historial-card" style={{ borderRadius: 'var(--radius-lg)' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Partidos Realizados</h4>
         {historialFiltrado.length === 0 ? (
           <p className="text-muted" style={{ marginBottom: 0 }}>No hay partidos para los filtros actuales.</p>
@@ -3613,7 +3613,7 @@ function MesaControlPanel({
         )}
       </div>
 
-      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+      <div className="card mt-20" style={{ borderRadius: 'var(--radius-lg)' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Shield size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Acumulado por Equipo</h4>
         <div className="mesa-stats-grid">
           <div className="mesa-stats-box">
@@ -3626,7 +3626,7 @@ function MesaControlPanel({
         </div>
       </div>
 
-      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+      <div className="card mt-20" style={{ borderRadius: 'var(--radius-lg)' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Users size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Acumulado por Jugador/a</h4>
         <div className="mesa-stats-table">
           {acumuladoJugadores.length === 0 ? (
@@ -3645,7 +3645,7 @@ function MesaControlPanel({
       )}
 
       {moduloMesa === 'live' && (
-      <div className="card mt-20" style={{ borderRadius: '24px' }}>
+      <div className="card mt-20" style={{ borderRadius: 'var(--radius-lg)' }}>
         <h4 className="form-subtitle" style={{ fontWeight: '900' }}><FileText size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Línea de Tiempo (Play-by-Play)</h4>
         <div style={{ display: 'flex', gap: '10px' }} className="mb-15"><input type="text" className="form-input" placeholder="Nota táctica o scouting..." value={notaScouting} onChange={(e) => setNotaScouting(e.target.value)} /><button className="btn-electric" style={{ width: 'auto', padding: '0 20px' }} onClick={() => { if (!notaScouting) return; setPlayByPlay((prev) => [{ id: nextId(), tiempo: 'DT', texto: `📝 ${notaScouting}` }, ...prev]); setNotaScouting(''); }}>Log</button></div>
         <div className="play-by-play-box">{playByPlay.length === 0 ? <p className="text-center text-muted" style={{ fontSize: '13px', fontStyle: 'italic', margin: '20px 0' }}>Inicio de transmisión.</p> : playByPlay.map(play => (<div key={play.id} className={`play-row ${claseSeveridadPlay(play)}`}><span className="play-tiempo">{play.tiempo}</span><span className="play-texto">{play.texto}</span></div>))}</div>

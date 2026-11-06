@@ -1,5 +1,3 @@
-const axios = require('axios');
-const { parse } = require('csv-parse/sync');
 const { Pool } = require('pg');
 require('dotenv').config();
 
@@ -36,15 +34,9 @@ function createPool(databaseUrl, nodeEnv) {
   return new Pool({ connectionString: safe, ssl: shouldUseSsl ? { rejectUnauthorized: false } : false });
 }
 
-async function fetchSheetRows(sheetId, sheetName) {
-  const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-  const response = await axios.get(url);
-  const csv = response.data;
-  if (!csv || typeof csv !== 'string' || csv.trim().startsWith('<!DOCTYPE html')) {
-    throw new Error(`No se pudo leer la hoja ${sheetName}.`);
-  }
-  return parse(csv, { columns: true, skip_empty_lines: true, bom: true, relax_column_count: true, trim: true });
-}
+// Reutiliza la lectura de import-google-sheets.js (cuenta de servicio si está
+// configurada, así el Sheet puede ser privado; CSV público como respaldo).
+const { fetchSheetRows } = require('./import-google-sheets');
 
 async function getTableColumns(client, tableName) {
   const res = await client.query(

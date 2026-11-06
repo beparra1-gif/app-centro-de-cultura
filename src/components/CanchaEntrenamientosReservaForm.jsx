@@ -4,8 +4,9 @@ import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import { useHorasOcupadasEnFecha } from '../utils/useHorasOcupadasEnFecha';
 import CanchaEntrenamientosOcupacion from './CanchaEntrenamientosOcupacion';
+import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+const hoyISO = () => hoyLocalISO();
 
 const FORM_VACIO = {
   nombre_arrendatario: '',
@@ -56,7 +57,7 @@ const generarFechasPorPatron = ({ tipo, desde, hasta }) => {
       if (candidato.getMonth() === d.getMonth() && candidato <= fin) fechas.push(candidato);
     }
   }
-  return fechas.map((d) => d.toISOString().slice(0, 10));
+  return fechas.map((d) => fechaLocalISO(d));
 };
 
 function CanchaEntrenamientosReservaForm({ onGuardado, arriendoParaEditar = null }) {
@@ -180,7 +181,7 @@ function CanchaEntrenamientosReservaForm({ onGuardado, arriendoParaEditar = null
   };
 
   return (
-    <div className="card fade-in" style={{ borderRadius: '20px' }}>
+    <div className="card fade-in" style={{ borderRadius: 'var(--radius-lg)' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Nombre arrendatario *</label>
@@ -238,13 +239,13 @@ function CanchaEntrenamientosReservaForm({ onGuardado, arriendoParaEditar = null
             {fechasSeleccionadas.map((f) => (
               <span
                 key={f}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: '700', background: 'rgba(0,122,255,0.08)', color: 'var(--azul-electrico)', borderRadius: '999px', padding: '5px 6px 5px 12px' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: '700', background: 'rgba(0,122,255,0.08)', color: 'var(--azul-electrico)', borderRadius: 'var(--radius-pill)', padding: '5px 6px 5px 12px' }}
               >
                 {new Date(`${f}T00:00:00`).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })}
                 <button
                   type="button"
                   onClick={() => quitarFecha(f)}
-                  style={{ background: 'rgba(0,122,255,0.16)', border: 'none', borderRadius: '999px', width: '18px', height: '18px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'inherit' }}
+                  style={{ background: 'rgba(0,122,255,0.16)', border: 'none', borderRadius: 'var(--radius-pill)', width: '18px', height: '18px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'inherit' }}
                   aria-label={`Quitar ${f}`}
                 >
                   <X size={11} />
@@ -275,7 +276,7 @@ function CanchaEntrenamientosReservaForm({ onGuardado, arriendoParaEditar = null
         <CanchaEntrenamientosOcupacion ocupaciones={ocupaciones} cargando={cargandoOcupacion} />
 
         {mostrarRangoAutomatico && (
-          <div style={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', background: 'rgba(0,122,255,0.04)', borderRadius: '14px', padding: '10px' }}>
+          <div style={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap', background: 'rgba(0,122,255,0.04)', borderRadius: 'var(--radius-md)', padding: '10px' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label style={{ fontSize: '11px' }}>Repetir</label>
               <select className="form-input" value={rango.tipo} onChange={(e) => setRango((p) => ({ ...p, tipo: e.target.value }))}>
@@ -301,7 +302,7 @@ function CanchaEntrenamientosReservaForm({ onGuardado, arriendoParaEditar = null
       )}
 
       {ultimoResultadoLote?.omitidos?.length > 0 && (
-        <div className="card mt-15" style={{ borderLeft: '4px solid var(--rojo-alerta)', borderRadius: '16px', background: 'rgba(255,59,48,0.06)' }}>
+        <div className="card mt-15" style={{ borderLeft: '4px solid var(--rojo-alerta)', borderRadius: 'var(--radius-md)', background: 'rgba(255,59,48,0.06)' }}>
           <strong style={{ fontSize: '12px', color: '#b91c1c' }}>Fechas que no se pudieron reservar (choque de horario):</strong>
           <ul style={{ margin: '8px 0 0', paddingLeft: '18px', fontSize: '12px' }}>
             {ultimoResultadoLote.omitidos.map((o) => (

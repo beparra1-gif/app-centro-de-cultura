@@ -7,6 +7,7 @@ import { RAMAS_DISPONIBLES, categoriasDeRama } from '../utils/categoriasDeportiv
 import { useHorasOcupadasEnFecha } from '../utils/useHorasOcupadasEnFecha';
 import { describirRecurrencia, describirVigencia } from '../utils/horariosEntrenamientoTexto';
 import CanchaEntrenamientosOcupacion from './CanchaEntrenamientosOcupacion';
+import { hoyLocalISO } from '../utils/fechas';
 
 const DIAS_SEMANA_CORTO = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const DIAS_MES = Array.from({ length: 31 }, (_, i) => i + 1);
@@ -40,7 +41,7 @@ function CanchaEntrenamientosHorarioForm({ onCambio }) {
   const [guardando, setGuardando] = useState(false);
   const [ultimaAdvertencia, setUltimaAdvertencia] = useState(null);
 
-  const { ocupaciones, cargando: cargandoOcupacion } = useHorasOcupadasEnFecha(horarioForm.fecha_inicio || new Date().toISOString().slice(0, 10));
+  const { ocupaciones, cargando: cargandoOcupacion } = useHorasOcupadasEnFecha(horarioForm.fecha_inicio || hoyLocalISO());
 
   const cargarHorarios = async () => {
     setCargando(true);
@@ -209,7 +210,7 @@ function CanchaEntrenamientosHorarioForm({ onCambio }) {
       </button>
 
       {mostrarForm && (
-        <div className="card mb-15" style={{ borderRadius: '18px' }}>
+        <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Rama</label>
@@ -333,7 +334,7 @@ function CanchaEntrenamientosHorarioForm({ onCambio }) {
           </div>
 
           {ultimaAdvertencia?.length > 0 && (
-            <div className="card mt-10" style={{ borderLeft: '4px solid #FF9500', borderRadius: '16px', background: 'rgba(255,149,0,0.08)' }}>
+            <div className="card mt-10" style={{ borderLeft: '4px solid #FF9500', borderRadius: 'var(--radius-md)', background: 'rgba(255,149,0,0.08)' }}>
               <strong style={{ fontSize: '12px', color: '#b36200' }}>Este horario quedó guardado, pero choca con arriendos ya reservados:</strong>
               <ul style={{ margin: '8px 0 0', paddingLeft: '18px', fontSize: '12px' }}>
                 {ultimaAdvertencia.map((a) => (
@@ -356,7 +357,7 @@ function CanchaEntrenamientosHorarioForm({ onCambio }) {
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {horarios.map((h) => (
-          <div key={h.id_horario} className="card" style={{ borderRadius: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div key={h.id_horario} className="card" style={{ borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <div>
               <strong style={{ fontSize: '13px' }}>{h.rama} {(h.categorias || []).join(', ')}</strong>
               <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', marginTop: '3px' }}>

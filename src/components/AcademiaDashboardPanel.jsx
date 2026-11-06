@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Brain, Trophy } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
+import SkeletonLoaderPanel from './SkeletonLoaderPanel';
 
 const normalizarNombreCompleto = (item = {}) => (
   `${item.nombres || ''} ${item.apellido_paterno || ''} ${item.apellido_materno || ''}`.trim() || 'Deportista'
@@ -66,12 +67,12 @@ function TabRanking({ jugadoresAdmin }) {
   return (
     <div>
       <FiltroRamaCategoria jugadoresAdmin={jugadoresAdmin} filtroRama={filtroRama} setFiltroRama={setFiltroRama} filtroCategoria={filtroCategoria} setFiltroCategoria={setFiltroCategoria} />
-      {cargando && <p className="text-muted">Cargando ranking...</p>}
+      {cargando && <SkeletonLoaderPanel variante="lista" etiqueta="Cargando ranking" />}
       {!cargando && ranking.length === 0 && <p className="text-muted text-center italic">Sin datos para este filtro.</p>}
       {!cargando && ranking.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {ranking.map((fila) => (
-            <div key={fila.rut_jugador} style={{ display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
+            <div key={fila.rut_jugador} style={{ display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid rgba(120,120,128,0.14)', borderRadius: 'var(--radius-md)', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
               <span style={{ fontSize: '13px', fontWeight: '900', color: 'var(--azul-electrico)', minWidth: '22px' }}>#{fila.posicion}</span>
               <div style={{ flex: 1 }}>
                 <strong style={{ fontSize: '13px', display: 'block' }}>{normalizarNombreCompleto(fila)}</strong>
@@ -126,7 +127,7 @@ function TabQuizzes({ quizList, jugadoresAdmin }) {
       {quizFiltrado.map((quiz) => {
         const abierto = expandidoId === quiz.id;
         return (
-          <div key={quiz.id} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
+          <div key={quiz.id} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: 'var(--radius-md)', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
             <button
               type="button"
               onClick={() => expandir(quiz)}
@@ -137,7 +138,7 @@ function TabQuizzes({ quizList, jugadoresAdmin }) {
                 <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{quiz.rama || 'General'} · {(Array.isArray(quiz.categorias_objetivo) && quiz.categorias_objetivo.length > 0) ? quiz.categorias_objetivo.join(', ') : 'Todas las categorías'}</span>
               </div>
               {abierto && detalle?.resumen && (
-                <span style={{ fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '999px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: 'var(--radius-pill)', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', whiteSpace: 'nowrap' }}>
                   {detalle.resumen.totalRespondieron}/{detalle.resumen.totalAudiencia} respondieron
                 </span>
               )}
@@ -222,7 +223,7 @@ function TabMateriales({ materialesAcademia, jugadoresAdmin }) {
       {materialesFiltrados.map((mat) => {
         const abierto = expandidoId === mat.id;
         return (
-          <div key={mat.id} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
+          <div key={mat.id} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: 'var(--radius-md)', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
             <button
               type="button"
               onClick={() => expandir(mat)}
@@ -233,7 +234,7 @@ function TabMateriales({ materialesAcademia, jugadoresAdmin }) {
                 <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{mat.rama || 'General'} · {(Array.isArray(mat.categorias_objetivo) && mat.categorias_objetivo.length > 0) ? mat.categorias_objetivo.join(', ') : 'Todas las categorías'}</span>
               </div>
               {abierto && detalle?.resumen && (
-                <span style={{ fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '999px', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: 'var(--radius-pill)', background: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)', whiteSpace: 'nowrap' }}>
                   {detalle.resumen.totalInteractuaron}/{detalle.resumen.totalAudiencia} interactuaron
                 </span>
               )}

@@ -58,6 +58,11 @@ const normalizarRol = (rol = '') => {
   const rolNormalizado = String(rol || '').trim().toLowerCase();
   if (rolNormalizado === 'deportista') return 'jugador';
   if (rolNormalizado === 'socio-apoderado') return 'socio_apoderado';
+  // Alias que llegan desde planillas/importaciones: "ENTRENADOR" no existía
+  // en ROLES_BASE y esa cuenta quedaba sin ningún módulo. "superadmin" se
+  // usaba en algunos lugares y "super_admin" en otros.
+  if (rolNormalizado === 'entrenador' || rolNormalizado === 'profesor') return 'staff';
+  if (rolNormalizado === 'superadmin') return 'super_admin';
   return rolNormalizado;
 };
 

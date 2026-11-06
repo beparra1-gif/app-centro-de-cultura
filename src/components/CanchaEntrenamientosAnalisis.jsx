@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
+import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+const hoyISO = () => hoyLocalISO();
 
 const inicioSemanaISO = () => {
   const d = new Date();
   const dia = d.getDay();
   const diff = dia === 0 ? 6 : dia - 1;
   d.setDate(d.getDate() - diff);
-  return d.toISOString().slice(0, 10);
+  return fechaLocalISO(d);
 };
 
-const inicioMesISO = (fecha = new Date()) => new Date(fecha.getFullYear(), fecha.getMonth(), 1).toISOString().slice(0, 10);
+const inicioMesISO = (fecha = new Date()) => fechaLocalISO(new Date(fecha.getFullYear(), fecha.getMonth(), 1));
 
 function CanchaEntrenamientosAnalisis() {
   const [analiticaDesde, setAnaliticaDesde] = useState(inicioMesISO());
@@ -58,7 +59,7 @@ function CanchaEntrenamientosAnalisis() {
 
   return (
     <div className="fade-in">
-      <div className="card mb-15" style={{ borderRadius: '18px' }}>
+      <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)' }}>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
           <button className="btn-secondary" style={{ width: 'auto', padding: '8px 14px', fontSize: '12px' }} onClick={() => { setAnaliticaDesde(hoyISO()); setAnaliticaHasta(hoyISO()); }}>Hoy</button>
           <button className="btn-secondary" style={{ width: 'auto', padding: '8px 14px', fontSize: '12px' }} onClick={() => { setAnaliticaDesde(inicioSemanaISO()); setAnaliticaHasta(hoyISO()); }}>Esta semana</button>
@@ -88,7 +89,7 @@ function CanchaEntrenamientosAnalisis() {
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {rankingArrendatarios.map(([nombre, cantidad]) => (
-              <div key={nombre} style={{ display: 'flex', justifyContent: 'space-between', border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '8px 12px', fontSize: '13px' }}>
+              <div key={nombre} style={{ display: 'flex', justifyContent: 'space-between', border: '1px solid var(--borde-suave)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: '13px' }}>
                 <span>{nombre}</span>
                 <strong>{cantidad} {cantidad === 1 ? 'reserva' : 'reservas'}</strong>
               </div>

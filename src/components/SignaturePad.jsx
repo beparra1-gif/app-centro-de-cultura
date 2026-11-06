@@ -66,7 +66,7 @@ function SignaturePad({ onChange }) {
     <div>
       <canvas
         ref={canvasRef}
-        style={{ width: '100%', height: '160px', border: '2px dashed var(--borde-suave)', borderRadius: '16px', touchAction: 'none', background: 'white', cursor: 'crosshair' }}
+        style={{ width: '100%', height: '160px', border: '2px dashed var(--borde-suave)', borderRadius: 'var(--radius-md)', touchAction: 'none', background: 'white', cursor: 'crosshair' }}
         onMouseDown={startDraw}
         onMouseMove={draw}
         onMouseUp={endDraw}

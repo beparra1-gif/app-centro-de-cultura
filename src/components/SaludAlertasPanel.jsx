@@ -2,7 +2,7 @@ import { AlertCircle } from 'lucide-react';
 
 function SaludAlertasPanel({ alertas }) {
   return (
-    <div style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', borderRadius: '24px', padding: '18px', marginTop: '15px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
+    <div style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', borderRadius: 'var(--radius-lg)', padding: '18px', marginTop: '15px', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
       <h6 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '900', color: 'var(--texto-principal)' }}>Alertas Inteligentes ({alertas.length})</h6>
 
       {alertas.length === 0 ? (
@@ -26,7 +26,7 @@ function SaludAlertasPanel({ alertas }) {
                     ? '4px solid #FF9500'
                     : '4px solid #34C759',
                 padding: '12px',
-                borderRadius: '18px',
+                borderRadius: 'var(--radius-md)',
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: '10px',

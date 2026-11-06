@@ -864,6 +864,42 @@ const createSchema = async () => {
     `);
     console.log('✅ Tabla entrenamientos creada');
 
+    // Consentimiento de datos personales (Ley 19.628 / 21.719) y códigos de
+    // acceso (correo / activación por WhatsApp). server.js también los asegura
+    // al arrancar (ensureConsentimientoDatos / ensureCodigosAccesoTable).
+    await pool.query('ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS consentimiento_version VARCHAR(40)');
+    await pool.query('ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS consentimiento_aceptado_en TIMESTAMPTZ');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS consentimientos_datos (
+        id SERIAL PRIMARY KEY,
+        cuenta_id INTEGER NOT NULL,
+        version VARCHAR(40) NOT NULL,
+        acepta_tratamiento BOOLEAN NOT NULL,
+        acepta_datos_salud BOOLEAN NOT NULL,
+        autoriza_imagen BOOLEAN NOT NULL DEFAULT false,
+        ip VARCHAR(64),
+        user_agent TEXT,
+        aceptado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query("ALTER TABLE consentimientos_datos ADD COLUMN IF NOT EXISTS tipo_registro VARCHAR(30) NOT NULL DEFAULT 'consentimiento'");
+    await pool.query('ALTER TABLE consentimientos_datos ADD COLUMN IF NOT EXISTS edad_titular INTEGER');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS codigos_acceso (
+        id SERIAL PRIMARY KEY,
+        cuenta_id INTEGER NOT NULL,
+        codigo_hash TEXT NOT NULL,
+        expira_en TIMESTAMPTZ NOT NULL,
+        intentos INTEGER NOT NULL DEFAULT 0,
+        usado_en TIMESTAMPTZ,
+        creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query("ALTER TABLE codigos_acceso ADD COLUMN IF NOT EXISTS proposito VARCHAR(30) NOT NULL DEFAULT 'acceso'");
+    await pool.query('ALTER TABLE codigos_acceso ADD COLUMN IF NOT EXISTS correo_destino TEXT');
+    await pool.query('ALTER TABLE codigos_acceso ADD COLUMN IF NOT EXISTS creado_por INTEGER');
+    console.log('✅ Tablas de consentimiento y códigos de acceso verificadas');
+
     console.log('\n✅ ¡Esquema completo creado exitosamente!');
     process.exit(0);
   } catch (err) {

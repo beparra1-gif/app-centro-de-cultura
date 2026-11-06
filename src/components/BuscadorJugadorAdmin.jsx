@@ -46,7 +46,7 @@ function BuscadorJugadorAdmin({ jugadores, pupiloActivo, onSeleccionar }) {
   const mostrarResultados = busqueda.trim().length >= 2 || filtroRama || filtroCategoria;
 
   return (
-    <div className="card mb-15" style={{ borderRadius: '18px', padding: '14px' }}>
+    <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', padding: '14px' }}>
       <label style={{ fontSize: '12px', fontWeight: '900', display: 'block', marginBottom: '8px' }}>
         Buscar jugador
       </label>
@@ -94,7 +94,7 @@ function BuscadorJugadorAdmin({ jugadores, pupiloActivo, onSeleccionar }) {
               key={j.id}
               onClick={() => onSeleccionar(j)}
               style={{
-                display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '14px',
+                display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: 'var(--radius-md)',
                 border: pupiloActivo?.id === j.id ? '1px solid var(--azul-electrico)' : '1px solid var(--borde-suave)',
                 background: pupiloActivo?.id === j.id ? 'rgba(0,122,255,0.08)' : 'rgba(0,122,255,0.03)',
                 cursor: 'pointer', textAlign: 'left',

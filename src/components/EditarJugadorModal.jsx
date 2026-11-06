@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Save, X } from 'lucide-react';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
+import useModalAccesible from '../utils/useModalAccesible';
 
 const CAMPOS_APODERADO = [
   { campo: 'nombres', etiqueta: 'Nombres' },
@@ -71,6 +72,7 @@ const construirValoresIniciales = (jugador) => {
 function EditarJugadorModal({ jugador, esAdmin, onClose, onSaved }) {
   const [valores, setValores] = useState(() => construirValoresIniciales(jugador));
   const [guardando, setGuardando] = useState(false);
+  useModalAccesible(Boolean(jugador), () => { if (!guardando) onClose?.(); });
 
   if (!jugador) return null;
 

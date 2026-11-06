@@ -123,7 +123,7 @@ function QrScanner({ titulo = 'Escanear QR', tipoEsperado = 'asistencia_ccf', on
         </button>
       </div>
 
-      <div style={{ position: 'relative', width: '100%', maxWidth: '420px', aspectRatio: '3 / 4', borderRadius: '16px', overflow: 'hidden', background: '#000' }}>
+      <div style={{ position: 'relative', width: '100%', maxWidth: '420px', aspectRatio: '3 / 4', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: '#000' }}>
         {error ? (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center', color: 'white', fontSize: '13px', fontWeight: '600' }}>
             {error}
@@ -131,7 +131,7 @@ function QrScanner({ titulo = 'Escanear QR', tipoEsperado = 'asistencia_ccf', on
         ) : (
           <>
             <video ref={videoRef} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            <div style={{ position: 'absolute', inset: '12%', border: '3px solid rgba(255,255,255,0.7)', borderRadius: '18px', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', inset: '12%', border: '3px solid rgba(255,255,255,0.7)', borderRadius: 'var(--radius-md)', pointerEvents: 'none' }} />
             {ultimoOk && (
               <div style={{ position: 'absolute', inset: 0, background: 'rgba(52,199,89,0.35)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                 <Check size={48} color="white" strokeWidth={3} />

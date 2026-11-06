@@ -248,7 +248,7 @@ function LogoPicker({
           zIndex: 999,
           background: 'rgba(255,255,255,0.98)',
           border: '1px solid rgba(0,122,255,0.18)',
-          borderRadius: '14px',
+          borderRadius: 'var(--radius-md)',
           boxShadow: '0 8px 24px rgba(15,23,42,0.14)',
           maxHeight: '230px',
           overflowY: 'auto',

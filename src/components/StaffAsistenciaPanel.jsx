@@ -9,6 +9,7 @@ import { confirmAction } from '../utils/confirmDialog';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import QrScanner from './QrScanner';
+import { hoyLocalISO } from '../utils/fechas';
 
 const ESTADO_COLOR = {
   presente: { bg: 'var(--verde-victoria)', bgSoft: 'rgba(52,199,89,0.10)' },
@@ -25,7 +26,7 @@ const COLOR_AUSENCIA_PROLONGADA = '#8b5cf6';
 // (misma fórmula que usa TarjetaJugadorPanel para el jugador/apoderado).
 const diasAusencia = (ausencia) => {
   if (!ausencia) return null;
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyLocalISO();
   const inicio = String(ausencia.fecha_inicio || '').slice(0, 10);
   const fin = String(ausencia.fecha_fin || '').slice(0, 10);
   if (!inicio || !fin) return null;
@@ -51,7 +52,7 @@ function FilaJugadorSwipe({ jugador, onPresente, onAusente }) {
   const dias = diasAusencia(jugador.ausenciaProlongada);
 
   return (
-    <div style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', marginBottom: '10px' }}>
+    <div style={{ position: 'relative', borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: '10px' }}>
       <div style={{
         position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
         justifyContent: dragX > 0 ? 'flex-start' : 'flex-end', padding: '0 18px',
@@ -65,7 +66,7 @@ function FilaJugadorSwipe({ jugador, onPresente, onAusente }) {
         {...(bloqueada ? {} : handlers)}
         style={{
           position: 'relative', display: 'flex', flexDirection: 'column', gap: '8px',
-          padding: '14px', borderRadius: '16px', background: bloqueada ? 'rgba(139,92,246,0.06)' : 'var(--blanco-tarjeta)',
+          padding: '14px', borderRadius: 'var(--radius-md)', background: bloqueada ? 'rgba(139,92,246,0.06)' : 'var(--blanco-tarjeta)',
           borderLeft: `4px solid ${bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg}`,
           transform: `translateX(${dragX}px)`, transition: dragX === 0 ? 'transform 0.25s ease' : 'none',
           touchAction: 'pan-y', cursor: bloqueada ? 'default' : 'grab', boxShadow: '0 2px 8px rgba(15,23,42,0.05)',
@@ -76,7 +77,7 @@ function FilaJugadorSwipe({ jugador, onPresente, onAusente }) {
             <strong style={{ fontSize: '14px', color: 'var(--texto-principal)' }}>{jugador.nombre}</strong>
             <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{jugador.rama || 'Sin rama'} · {jugador.categoria || 'Sin categoría'}</div>
           </div>
-          <span style={{ fontSize: '10px', fontWeight: '900', padding: '4px 9px', borderRadius: '999px', background: bloqueada ? 'rgba(139,92,246,0.14)' : colores.bgSoft, color: bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg, textTransform: 'uppercase' }}>
+          <span style={{ fontSize: '10px', fontWeight: '900', padding: '4px 9px', borderRadius: 'var(--radius-pill)', background: bloqueada ? 'rgba(139,92,246,0.14)' : colores.bgSoft, color: bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg, textTransform: 'uppercase' }}>
             {bloqueada ? 'Ausencia prolongada' : etiquetaEstado(estado)}
           </span>
         </div>
@@ -88,8 +89,8 @@ function FilaJugadorSwipe({ jugador, onPresente, onAusente }) {
         ) : (
           <>
             <div style={{ display: 'flex', gap: '6px' }}>
-              <button onClick={() => onPresente(jugador)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '10px', background: estado === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: estado === 'presente' ? 'white' : 'var(--texto-secundario)' }}>PRESENTE</button>
-              <button onClick={() => onAusente(jugador)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '10px', fontWeight: '800', fontSize: '10px', background: (estado === 'ausente' || estado === 'justificado') ? colores.bg : 'rgba(255,59,48,0.08)', color: (estado === 'ausente' || estado === 'justificado') ? 'white' : 'var(--texto-secundario)' }}>AUSENTE</button>
+              <button onClick={() => onPresente(jugador)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: '800', fontSize: '10px', background: estado === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: estado === 'presente' ? 'white' : 'var(--texto-secundario)' }}>PRESENTE</button>
+              <button onClick={() => onAusente(jugador)} style={{ flex: 1, padding: '8px', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: '800', fontSize: '10px', background: (estado === 'ausente' || estado === 'justificado') ? colores.bg : 'rgba(255,59,48,0.08)', color: (estado === 'ausente' || estado === 'justificado') ? 'white' : 'var(--texto-secundario)' }}>AUSENTE</button>
             </div>
             <span style={{ fontSize: '9px', color: 'var(--texto-secundario)', textAlign: 'center', fontWeight: '700' }}>Desliza la tarjeta → presente · ← ausente</span>
           </>
@@ -104,12 +105,12 @@ function TarjetaJugadorGrid({ jugador, onPresente, onAusente }) {
   const colores = ESTADO_COLOR[estado] || ESTADO_COLOR.pendiente;
   const bloqueada = Boolean(jugador.ausenciaProlongada);
   return (
-    <div style={{ borderRadius: '16px', padding: '12px', background: bloqueada ? 'rgba(139,92,246,0.06)' : 'var(--blanco-tarjeta)', borderTop: `4px solid ${bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg}`, boxShadow: '0 2px 8px rgba(15,23,42,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <div style={{ borderRadius: 'var(--radius-md)', padding: '12px', background: bloqueada ? 'rgba(139,92,246,0.06)' : 'var(--blanco-tarjeta)', borderTop: `4px solid ${bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg}`, boxShadow: '0 2px 8px rgba(15,23,42,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <div style={{ textAlign: 'center' }}>
         <strong style={{ fontSize: '12px', display: 'block', color: 'var(--texto-principal)' }}>{jugador.nombre}</strong>
         <span style={{ fontSize: '10px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{jugador.categoria || 'Sin categoría'}</span>
       </div>
-      <span style={{ fontSize: '9px', fontWeight: '900', padding: '3px 8px', borderRadius: '999px', background: bloqueada ? 'rgba(139,92,246,0.14)' : colores.bgSoft, color: bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg, textTransform: 'uppercase', textAlign: 'center' }}>
+      <span style={{ fontSize: '9px', fontWeight: '900', padding: '3px 8px', borderRadius: 'var(--radius-pill)', background: bloqueada ? 'rgba(139,92,246,0.14)' : colores.bgSoft, color: bloqueada ? COLOR_AUSENCIA_PROLONGADA : colores.bg, textTransform: 'uppercase', textAlign: 'center' }}>
         {bloqueada ? 'Ausente (prolongada)' : etiquetaEstado(estado)}
       </span>
       {bloqueada ? (
@@ -118,8 +119,8 @@ function TarjetaJugadorGrid({ jugador, onPresente, onAusente }) {
         </div>
       ) : (
         <div style={{ display: 'flex', gap: '5px' }}>
-          <button onClick={() => onPresente(jugador)} style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '9px', fontWeight: '800', fontSize: '9px', background: estado === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: estado === 'presente' ? 'white' : 'var(--texto-secundario)' }}><Check size={11} /></button>
-          <button onClick={() => onAusente(jugador)} style={{ flex: 1, padding: '7px', border: 'none', borderRadius: '9px', fontWeight: '800', fontSize: '9px', background: (estado === 'ausente' || estado === 'justificado') ? colores.bg : 'rgba(255,59,48,0.08)', color: (estado === 'ausente' || estado === 'justificado') ? 'white' : 'var(--texto-secundario)' }}><X size={11} /></button>
+          <button onClick={() => onPresente(jugador)} style={{ flex: 1, padding: '7px', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: '800', fontSize: '9px', background: estado === 'presente' ? 'var(--verde-victoria)' : 'rgba(52,199,89,0.10)', color: estado === 'presente' ? 'white' : 'var(--texto-secundario)' }}><Check size={11} /></button>
+          <button onClick={() => onAusente(jugador)} style={{ flex: 1, padding: '7px', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: '800', fontSize: '9px', background: (estado === 'ausente' || estado === 'justificado') ? colores.bg : 'rgba(255,59,48,0.08)', color: (estado === 'ausente' || estado === 'justificado') ? 'white' : 'var(--texto-secundario)' }}><X size={11} /></button>
         </div>
       )}
     </div>
@@ -134,7 +135,7 @@ function StaffAsistenciaPanel({
   setFiltroRamaStaff,
   todosJugadores,
 }) {
-  const [fechaLista, setFechaLista] = useState(() => new Date().toISOString().slice(0, 10));
+  const [fechaLista, setFechaLista] = useState(() => hoyLocalISO());
   const [horaInicio, setHoraInicio] = useState('18:00');
   const [horaFin, setHoraFin] = useState('19:30');
   const [categoriasSeleccionadas, setCategoriasSeleccionadas] = useState([]);
@@ -333,7 +334,7 @@ function StaffAsistenciaPanel({
       });
       showToast({ message: `Asistencia guardada: ${presentes} presentes, ${ausentes} ausentes, ${justificados} justificados.`, type: 'success' });
       setEstadosAsistencia({});
-      setFechaLista(new Date().toISOString().slice(0, 10));
+      setFechaLista(hoyLocalISO());
       setHoraInicio('18:00');
       setHoraFin('19:30');
       setCategoriasSeleccionadas([]);
@@ -459,7 +460,7 @@ function StaffAsistenciaPanel({
       </div>
 
       {vistaStaff === 'asistencia' && (
-        <div className="card" style={{ borderRadius: '24px' }}>
+        <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
           <h4 className="form-subtitle" style={{ fontWeight: '900' }}>Configurar Entrenamiento</h4>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }} className="mb-15">
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -532,9 +533,9 @@ function StaffAsistenciaPanel({
             >
               <QrCode size={15} /> Escanear QR
             </button>
-            <div style={{ display: 'flex', gap: '4px', background: 'var(--fondo-input)', borderRadius: '12px', padding: '4px' }}>
-              <button type="button" onClick={() => setModoVista('lista')} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 11px', borderRadius: '9px', border: 'none', fontSize: '11px', fontWeight: '800', background: modoVista === 'lista' ? 'var(--blanco-tarjeta)' : 'transparent', color: modoVista === 'lista' ? 'var(--texto-principal)' : 'var(--texto-secundario)', boxShadow: modoVista === 'lista' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none' }}><List size={13} /> Lista</button>
-              <button type="button" onClick={() => setModoVista('cuadricula')} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 11px', borderRadius: '9px', border: 'none', fontSize: '11px', fontWeight: '800', background: modoVista === 'cuadricula' ? 'var(--blanco-tarjeta)' : 'transparent', color: modoVista === 'cuadricula' ? 'var(--texto-principal)' : 'var(--texto-secundario)', boxShadow: modoVista === 'cuadricula' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none' }}><LayoutGrid size={13} /> Cuadrícula</button>
+            <div style={{ display: 'flex', gap: '4px', background: 'var(--fondo-input)', borderRadius: 'var(--radius-sm)', padding: '4px' }}>
+              <button type="button" onClick={() => setModoVista('lista')} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 11px', borderRadius: 'var(--radius-sm)', border: 'none', fontSize: '11px', fontWeight: '800', background: modoVista === 'lista' ? 'var(--blanco-tarjeta)' : 'transparent', color: modoVista === 'lista' ? 'var(--texto-principal)' : 'var(--texto-secundario)', boxShadow: modoVista === 'lista' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none' }}><List size={13} /> Lista</button>
+              <button type="button" onClick={() => setModoVista('cuadricula')} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 11px', borderRadius: 'var(--radius-sm)', border: 'none', fontSize: '11px', fontWeight: '800', background: modoVista === 'cuadricula' ? 'var(--blanco-tarjeta)' : 'transparent', color: modoVista === 'cuadricula' ? 'var(--texto-principal)' : 'var(--texto-secundario)', boxShadow: modoVista === 'cuadricula' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none' }}><LayoutGrid size={13} /> Cuadrícula</button>
             </div>
           </div>
 
@@ -557,7 +558,7 @@ function StaffAsistenciaPanel({
             </p>
           )}
 
-          <div className="mt-20" style={{ background: 'rgba(0,122,255,0.05)', borderRadius: '22px', padding: '20px' }}>
+          <div className="mt-20" style={{ background: 'rgba(0,122,255,0.05)', borderRadius: 'var(--radius-lg)', padding: '20px' }}>
             <h5 style={{ margin: '0 0 15px 0', fontSize: '15px', color: 'var(--texto-heading)' }}>Resumen a Guardar:</h5>
             <div className="desglose-row"><span>Asistencia Efectiva:</span><strong style={{ color: porcentaje > 70 ? 'var(--verde-victoria)' : 'var(--rojo-alerta)', fontSize: '16px' }}>{porcentaje}%</strong></div>
             <div className="desglose-row"><span>Presentes en Cancha:</span><strong>{presentes}</strong></div>
@@ -575,7 +576,7 @@ function StaffAsistenciaPanel({
       )}
 
       {vistaStaff === 'historial' && (
-        <div className="card fade-in" style={{ borderRadius: '24px' }}>
+        <div className="card fade-in" style={{ borderRadius: 'var(--radius-lg)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h4 className="form-subtitle" style={{ fontWeight: '900', margin: 0 }}><Calendar size={16} /> Registros Anteriores</h4>
             {cargandoSesiones && <Loader2 size={16} className="spin" />}
@@ -589,7 +590,7 @@ function StaffAsistenciaPanel({
             const abierta = sesionExpandidaId === sesion.sesion_id;
             const pct = Number(sesion.total) > 0 ? Math.round((Number(sesion.presentes) / Number(sesion.total)) * 100) : 0;
             return (
-              <div key={sesion.sesion_id} style={{ border: '1px solid rgba(0,0,0,0.06)', borderRadius: '16px', padding: '12px', marginBottom: '10px' }}>
+              <div key={sesion.sesion_id} style={{ border: '1px solid rgba(0,0,0,0.06)', borderRadius: 'var(--radius-md)', padding: '12px', marginBottom: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <div>
                     <strong style={{ fontSize: '13px' }}>{sesion.fecha ? String(sesion.fecha).slice(0, 10) : 'Sin fecha'} · {sesion.rama || 'Sin rama'}</strong>
@@ -618,7 +619,7 @@ function StaffAsistenciaPanel({
                       const colores = ESTADO_COLOR[registro.estado_asistencia] || ESTADO_COLOR.pendiente;
                       const editando = editandoRegistroId === registro.id_asistencia;
                       return (
-                        <div key={registro.id_asistencia} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'var(--fondo-app)', borderRadius: '10px', padding: '8px', flexWrap: 'wrap' }}>
+                        <div key={registro.id_asistencia} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'var(--fondo-app)', borderRadius: 'var(--radius-sm)', padding: '8px', flexWrap: 'wrap' }}>
                           <div>
                             <div style={{ fontSize: '12px', fontWeight: '800' }}>{registro.nombre_jugador}</div>
                             <div style={{ fontSize: '10px', color: 'var(--texto-secundario)' }}>{registro.categoria}</div>
@@ -626,14 +627,14 @@ function StaffAsistenciaPanel({
                           {editando ? (
                             <div style={{ display: 'flex', gap: '5px' }}>
                               {['presente', 'ausente', 'justificado'].map((opcion) => (
-                                <button key={opcion} onClick={() => guardarEdicionRegistro(registro, opcion)} style={{ padding: '5px 8px', borderRadius: '8px', border: 'none', fontSize: '9px', fontWeight: '800', background: (ESTADO_COLOR[opcion] || {}).bgSoft, color: (ESTADO_COLOR[opcion] || {}).bg }}>
+                                <button key={opcion} onClick={() => guardarEdicionRegistro(registro, opcion)} style={{ padding: '5px 8px', borderRadius: 'var(--radius-sm)', border: 'none', fontSize: '9px', fontWeight: '800', background: (ESTADO_COLOR[opcion] || {}).bgSoft, color: (ESTADO_COLOR[opcion] || {}).bg }}>
                                   {etiquetaEstado(opcion)}
                                 </button>
                               ))}
                             </div>
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '9px', fontWeight: '900', padding: '3px 8px', borderRadius: '999px', background: colores.bgSoft, color: colores.bg }}>{etiquetaEstado(registro.estado_asistencia)}</span>
+                              <span style={{ fontSize: '9px', fontWeight: '900', padding: '3px 8px', borderRadius: 'var(--radius-pill)', background: colores.bgSoft, color: colores.bg }}>{etiquetaEstado(registro.estado_asistencia)}</span>
                               <button onClick={() => setEditandoRegistroId(registro.id_asistencia)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: 'var(--texto-secundario)' }}><Pencil size={13} /></button>
                               <button onClick={() => borrarRegistro(registro)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#b91c1c' }}><Trash2 size={13} /></button>
                             </div>
@@ -650,7 +651,7 @@ function StaffAsistenciaPanel({
       )}
 
       {vistaStaff === 'resumen' && (
-        <div className="card fade-in" style={{ borderRadius: '24px' }}>
+        <div className="card fade-in" style={{ borderRadius: 'var(--radius-lg)' }}>
           <h4 className="form-subtitle" style={{ fontWeight: '900' }}><Search size={16} /> Resumen de Asistencia</h4>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }} className="mb-15">
             <div className="form-group" style={{ marginBottom: 0 }}>

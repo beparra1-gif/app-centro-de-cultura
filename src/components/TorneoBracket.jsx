@@ -45,7 +45,7 @@ function TorneoBracket({ partidos = [] }) {
               const ganaLocal = jugado && Number(p.pts_local) > Number(p.pts_visitante);
               const ganaVisita = jugado && Number(p.pts_visitante) > Number(p.pts_local);
               return (
-                <div key={p.id_partido} style={{ border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '8px 10px', fontSize: '12px' }}>
+                <div key={p.id_partido} style={{ border: '1px solid var(--borde-suave)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', fontSize: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '3px 0', fontWeight: ganaLocal ? '900' : '600', color: ganaLocal ? 'var(--verde-victoria)' : 'inherit' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
                       <LogoAvatar nombre={p.equipo_local || '?'} logoUrl={p.logo_local_url} tipo="club" size={18} borderRadius="6px" />

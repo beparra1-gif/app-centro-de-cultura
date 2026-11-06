@@ -7,6 +7,9 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
+  // Un solo worker: los specs comparten las cuentas de prueba de
+  // tests/e2e/fixtures/cuentasPrueba.js (se crean/borran en beforeAll/afterAll).
+  workers: 1,
   retries: 0,
   reporter: 'list',
   use: {

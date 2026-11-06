@@ -306,17 +306,19 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
       // ningún cálculo de morosidad puede atribuírselo a nadie.
       const rutPagosResuelto = modoPago === 'socio' ? rutCuentaSocio : (apoderadoAsignado?.rut || '');
 
-      // Si hay archivo, convertir a base64 una sola vez — el mismo comprobante
-      // respalda cada mes creado a continuación (un solo depósito puede cubrir
-      // varios meses).
+      // Si hay archivo, subirlo una sola vez — el mismo comprobante respalda
+      // cada mes creado a continuación (un solo depósito puede cubrir varios
+      // meses). Antes se guardaba como base64 dentro de CADA pago: inflaba la
+      // BD/auditoría y una celda >50.000 caracteres rompía el sync al Sheet.
       let comprobanteUrlFinal = formData.comprobante_url;
       if (archivo) {
-        const reader = new FileReader();
-        comprobanteUrlFinal = await new Promise((resolve, reject) => {
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(archivo);
-        });
+        const archivoForm = new FormData();
+        archivoForm.append('nombre', 'comprobante-manual');
+        archivoForm.append('tipo', 'comprobante');
+        archivoForm.append('archivo', archivo);
+        const uploadRes = await api.assetsAPI.uploadLogo(archivoForm);
+        comprobanteUrlFinal = uploadRes?.url || '';
+        if (!comprobanteUrlFinal) throw new Error('No se pudo subir el comprobante. Intenta de nuevo.');
       }
 
       if (pago?.id) {
@@ -405,7 +407,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
     }}>
       <div style={{
         background: 'white',
-        borderRadius: '16px',
+        borderRadius: 'var(--radius-md)',
         padding: '24px',
         maxWidth: '500px',
         width: '100%',
@@ -435,7 +437,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
             background: 'rgba(0,122,255,0.08)',
             color: 'var(--azul-electrico)',
             padding: '12px',
-            borderRadius: '8px',
+            borderRadius: 'var(--radius-sm)',
             marginBottom: '16px',
             fontSize: '12px',
             fontWeight: '600'
@@ -449,7 +451,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
             background: '#FFE5E5',
             color: '#CC0000',
             padding: '12px',
-            borderRadius: '8px',
+            borderRadius: 'var(--radius-sm)',
             marginBottom: '16px',
             fontSize: '13px'
           }}>
@@ -462,7 +464,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
             background: '#E5FFE5',
             color: '#00CC00',
             padding: '12px',
-            borderRadius: '8px',
+            borderRadius: 'var(--radius-sm)',
             marginBottom: '16px',
             fontSize: '13px'
           }}>
@@ -480,7 +482,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 type="button"
                 onClick={() => { setModoPago('deportista'); setRutCuentaSocio(''); setSearchTermSocio(''); }}
                 style={{
-                  flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600',
+                  flex: 1, padding: '10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '13px', fontWeight: '600',
                   border: modoPago === 'deportista' ? '2px solid var(--azul-electrico)' : '1px solid var(--borde)',
                   background: modoPago === 'deportista' ? 'rgba(0,122,255,0.08)' : 'white',
                   color: modoPago === 'deportista' ? 'var(--azul-electrico)' : 'var(--texto-primario)',
@@ -492,7 +494,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 type="button"
                 onClick={() => { setModoPago('socio'); setFormData(prev => ({ ...prev, rut_jugador: '' })); setSearchTerm(''); }}
                 style={{
-                  flex: 1, padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600',
+                  flex: 1, padding: '10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '13px', fontWeight: '600',
                   border: modoPago === 'socio' ? '2px solid var(--azul-electrico)' : '1px solid var(--borde)',
                   background: modoPago === 'socio' ? 'rgba(0,122,255,0.08)' : 'white',
                   color: modoPago === 'socio' ? 'var(--azul-electrico)' : 'var(--texto-primario)',
@@ -520,7 +522,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                     width: '100%',
                     padding: '10px',
                     paddingLeft: '32px',
-                    borderRadius: '8px',
+                    borderRadius: 'var(--radius-sm)',
                     border: '1px solid var(--borde)',
                     fontSize: '13px',
                     boxSizing: 'border-box'
@@ -585,7 +587,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 marginTop: '8px',
                 padding: '10px',
                 background: 'var(--gris-fondo)',
-                borderRadius: '8px',
+                borderRadius: 'var(--radius-sm)',
                 fontSize: '12px'
               }}>
                 <div style={{ color: 'var(--gris-secundario)', marginBottom: '4px' }}>Deportista seleccionado:</div>
@@ -619,7 +621,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                     width: '100%',
                     padding: '10px',
                     paddingLeft: '32px',
-                    borderRadius: '8px',
+                    borderRadius: 'var(--radius-sm)',
                     border: '1px solid var(--borde)',
                     fontSize: '13px',
                     boxSizing: 'border-box'
@@ -681,7 +683,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 marginTop: '8px',
                 padding: '10px',
                 background: 'var(--gris-fondo)',
-                borderRadius: '8px',
+                borderRadius: 'var(--radius-sm)',
                 fontSize: '12px'
               }}>
                 <div style={{ color: 'var(--gris-secundario)', marginBottom: '4px' }}>Socio seleccionado:</div>
@@ -710,7 +712,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                   style={{
                     width: '100%',
                     padding: '8px',
-                    borderRadius: '6px',
+                    borderRadius: 'var(--radius-sm)',
                     border: '1px solid var(--borde)',
                     fontSize: '13px',
                     marginTop: '4px'
@@ -780,7 +782,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                       }}
                       style={{
                         padding: '8px',
-                        borderRadius: '6px',
+                        borderRadius: 'var(--radius-sm)',
                         border: pagado
                           ? '2px solid var(--verde-victoria)'
                           : seleccionado
@@ -820,7 +822,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                   marginTop: '8px',
                   padding: '8px',
                   background: 'var(--verde-victoria)',
-                  borderRadius: '6px',
+                  borderRadius: 'var(--radius-sm)',
                   fontSize: '12px',
                   fontWeight: '600',
                   color: 'white',
@@ -845,7 +847,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 style={{
                   width: '100%',
                   padding: '10px',
-                  borderRadius: '8px',
+                  borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--borde)',
                   fontSize: '13px',
                   fontFamily: 'inherit',
@@ -876,11 +878,11 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                     value={valorMensualidad}
                     onChange={handleValorMensualidadChange}
                     min="0"
-                    step="1000"
+                    step="1"
                     style={{
                       width: '100%',
                       padding: '10px',
-                      borderRadius: '8px',
+                      borderRadius: 'var(--radius-sm)',
                       border: '1px solid var(--borde)',
                       fontSize: '13px',
                       boxSizing: 'border-box',
@@ -919,11 +921,11 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 placeholder="0"
                 required
                 min="0"
-                step="1000"
+                step="1"
                 style={{
                   width: '100%',
                   padding: '10px',
-                  borderRadius: '8px',
+                  borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--borde)',
                   fontSize: '13px',
                   boxSizing: 'border-box',
@@ -960,7 +962,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
               <div style={{
                 padding: '10px',
                 background: 'var(--gris-fondo)',
-                borderRadius: '8px',
+                borderRadius: 'var(--radius-sm)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '8px'
@@ -977,11 +979,11 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                       placeholder="0"
                       required
                       min="0"
-                      step="1000"
+                      step="1"
                       style={{
                         flex: 1,
                         padding: '8px 10px',
-                        borderRadius: '8px',
+                        borderRadius: 'var(--radius-sm)',
                         border: '1px solid var(--borde)',
                         fontSize: '13px',
                         boxSizing: 'border-box',
@@ -1019,11 +1021,11 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 placeholder="0"
                 required
                 min="0"
-                step="1000"
+                step="1"
                 style={{
                   width: '100%',
                   padding: '10px',
-                  borderRadius: '8px',
+                  borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--borde)',
                   fontSize: '13px',
                   boxSizing: 'border-box'
@@ -1037,7 +1039,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
             <label style={{ fontWeight: '600', fontSize: '13px' }}>Comprobante (imagen o PDF)</label>
             <div style={{
               border: '2px dashed var(--borde)',
-              borderRadius: '8px',
+              borderRadius: 'var(--radius-sm)',
               padding: '16px',
               textAlign: 'center',
               cursor: 'pointer',
@@ -1046,7 +1048,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
             }}>
               <input
                 type="file"
-                accept="image/*,.pdf"
+                accept="image/png,image/jpeg,image/webp,application/pdf"
                 onChange={handleArchivoChange}
                 style={{ display: 'none' }}
                 id="archivo-input"
@@ -1077,7 +1079,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
               style={{
                 width: '100%',
                 padding: '10px',
-                borderRadius: '8px',
+                borderRadius: 'var(--radius-sm)',
                 border: '1px solid var(--borde)',
                 fontSize: '13px',
                 boxSizing: 'border-box',
@@ -1096,7 +1098,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 padding: '12px',
                 background: 'var(--gris-fondo)',
                 border: '1px solid var(--borde)',
-                borderRadius: '8px',
+                borderRadius: 'var(--radius-sm)',
                 cursor: 'pointer',
                 fontWeight: '600',
                 fontSize: '13px'
@@ -1113,7 +1115,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 background: cargando ? 'var(--gris-deshabilitado)' : 'var(--azul-electrico)',
                 color: 'white',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: 'var(--radius-sm)',
                 cursor: cargando ? 'not-allowed' : 'pointer',
                 fontWeight: '600',
                 fontSize: '13px',

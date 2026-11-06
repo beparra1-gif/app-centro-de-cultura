@@ -1,10 +1,62 @@
-import { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Camera, ChevronDown, ChevronUp, Clock, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { AlertTriangle, Camera, Check, ChevronDown, ChevronUp, Clock, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from '../utils/beca';
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import { normalizarRol } from '../security/accessControl';
+import { partesFechaCalendario } from '../utils/fechas';
+
+// Pago de cuota de socio (concepto "Mensualidad Socio"); todo lo demás es
+// mensualidad de deportista. Mismo criterio que App.jsx y SuperAdminPanel.
+const esPagoCuotaSocio = (pago = {}) => String(pago.concepto_pago || '').trim().toLowerCase().startsWith('mensualidad socio');
+
+// Estado visual de un mes en la grilla de pagos. 'en-revision' = hay un
+// comprobante enviado que Tesorería aún no valida: antes se pintaba igual
+// que un mes impago ('pendiente'), así la familia no veía que ya lo había
+// informado y podía pagarlo dos veces. Un comprobante rechazado vuelve a
+// 'pendiente' (hay que pagarlo de nuevo).
+const resolverEstadoMes = ({ estadosMes, sinCargo, mesNumero, inicioCobro, limiteMesDeuda }) => {
+  if (estadosMes.includes('aprobado') || estadosMes.includes('validado')) return 'pagado';
+  if (sinCargo && mesNumero <= limiteMesDeuda) return 'pagado';
+  if (mesNumero < inicioCobro) return 'futuro-preingreso';
+  if (estadosMes.includes('pendiente')) return 'en-revision';
+  if (mesNumero > limiteMesDeuda) return 'futuro-calendario';
+  return 'pendiente';
+};
+
+const NOMBRES_MESES_COMPLETOS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const TEXTO_ESTADO_MES = {
+  pagado: 'pagado',
+  'en-revision': 'comprobante en revisión',
+  pendiente: 'por pagar',
+  'futuro-calendario': 'próximo',
+  'futuro-preingreso': 'anterior a la fecha de ingreso',
+};
+
+// Casilla de un mes. Además del color: ícono (✓ pagado, reloj en revisión)
+// para quien no distingue colores o ve la pantalla al sol, marca del mes
+// actual y etiqueta accesible ("Marzo: por pagar").
+function MesBox({ mesNumero, nombre, estado, seleccionado, esActual, onClick }) {
+  const Icono = estado === 'pagado' ? Check : (estado === 'en-revision' ? Clock : null);
+  const textoEstado = TEXTO_ESTADO_MES[estado] || estado;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={seleccionado}
+      aria-label={`${NOMBRES_MESES_COMPLETOS[mesNumero - 1]}: ${textoEstado}${esActual ? ' (mes actual)' : ''}${seleccionado ? ', seleccionado' : ''}`}
+      className={`mes-box mes-${estado} ${seleccionado ? 'seleccionado' : ''} ${esActual ? 'mes-actual' : ''}`}
+      style={{ cursor: (estado === 'pagado' || estado === 'futuro-preingreso' || estado === 'en-revision') ? 'not-allowed' : 'pointer' }}
+    >
+      {esActual && <span className="mes-actual-marca" aria-hidden="true">Hoy</span>}
+      <span className="mes-box-nombre">{nombre}</span>
+      {Icono && <Icono size={14} strokeWidth={3} className="mes-box-icono" aria-hidden="true" />}
+      {seleccionado && !Icono && <Check size={14} strokeWidth={3} className="mes-box-icono" aria-hidden="true" />}
+    </button>
+  );
+}
 
 function PerfilTesoreriaPanel({
   pupiloActivo,
@@ -12,6 +64,7 @@ function PerfilTesoreriaPanel({
   rolUsuario,
   pupilosDisponibles,
   cuentasAdmin,
+  cuentaPropia = null,
   pagosMensualidadesAdmin,
   morososAdmin,
   sociosMorosos,
@@ -34,6 +87,7 @@ function PerfilTesoreriaPanel({
   const [mostrarDetalleCuotaSocio, setMostrarDetalleCuotaSocio] = useState(false);
   const [archivoComprobante, setArchivoComprobante] = useState(null);
   const inputComprobanteRef = useRef(null);
+  const checkoutRef = useRef(null);
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
   const [errorComprobante, setErrorComprobante] = useState('');
   const [busquedaCuenta, setBusquedaCuenta] = useState('');
@@ -119,7 +173,11 @@ function PerfilTesoreriaPanel({
   // cuentaSocioActiva gana siempre que exista: es una selección explícita de
   // un socio sin deportistas (ver seleccionarResultadoBusqueda). Si no, se
   // deriva del pupilo activo como antes.
-  const cuentaActual = cuentaSocioActiva || (Array.isArray(cuentasAdmin)
+  // Para una familia (no admin), cuentasAdmin viene vacío (GET /api/cuentas
+  // es solo admin): antes cuentaActual quedaba null, la app no sabía que la
+  // persona era socia y NO mostraba su grilla de cuota de socio ni su deuda.
+  // Ahora usa su propia cuenta (GET /api/cuentas/:id, autoservicio).
+  const cuentaActual = cuentaSocioActiva || (!esVistaAdmin && cuentaPropia) || (Array.isArray(cuentasAdmin)
     ? cuentasAdmin.find((cuenta) => {
       const rutCuenta = normalizarRutCuenta(cuenta.rut || '');
       const rutApoderado = normalizarRutCuenta(pupiloActivo?.rut_apoderado || '');
@@ -160,9 +218,21 @@ function PerfilTesoreriaPanel({
   // Sin pupilo (socio revisado directo, sin deportistas) la deuda no vive en
   // morososAdmin (deuda de jugadores) sino en sociosMorosos (deuda de cuota
   // de socio), buscada por el rut de la cuenta en vez del rut del pupilo.
-  const morosoActivo = rutPupiloActivoNormalizado
+  // Deuda de deportista y deuda de cuota de socio son controles
+  // INDEPENDIENTES (un socio+apoderado debe ambas por separado). Antes se
+  // mostraba solo una: la del pupilo si había pupilo, o la de socio si no.
+  const morosoDeportista = rutPupiloActivoNormalizado
     ? (morososAdmin || []).find((m) => normalizarRutComparacion(m?.rut || '') === rutPupiloActivoNormalizado) || null
-    : (sociosMorosos || []).find((s) => normalizarRutComparacion(s?.rut || '') === rutCuentaNormalizado) || null;
+    : null;
+  const morosoSocio = esSocio && rutCuentaNormalizado
+    ? (sociosMorosos || []).find((s) => normalizarRutComparacion(s?.rut || '') === rutCuentaNormalizado) || null
+    : null;
+  const morosoActivo = (morosoDeportista || morosoSocio)
+    ? {
+      mesesDeuda: Number(morosoDeportista?.mesesDeuda || 0) + Number(morosoSocio?.mesesDeuda || 0),
+      montoDeuda: Number(morosoDeportista?.montoDeuda || 0) + Number(morosoSocio?.montoDeuda || 0),
+    }
+    : null;
   const mesesAtraso = Number(morosoActivo?.mesesDeuda || 0);
   const estadoCuenta = mesesAtraso > 0 ? 'Moroso' : 'Al Día';
 
@@ -196,10 +266,13 @@ function PerfilTesoreriaPanel({
   };
 
   // Si el admin fijó mes_inicio_cobro a mano, es su criterio final y se
-  // respeta tal cual. Si no, se deriva de fecha_ingreso cobrando desde el mes
-  // SIGUIENTE al de ingreso (regla de negocio: sin prorrateo del mes de
-  // ingreso — ej. ingresó en marzo, el cobro parte en abril). Debe coincidir
-  // exactamente con obtenerPrimerMesCobrableJugador en backend/server.js.
+  // respeta tal cual. Si no, se deriva de fecha_ingreso cobrando DESDE el mes
+  // de ingreso (regla confirmada por el club 2026-11-05 — ej. ingresó en
+  // marzo, se cobra marzo). Antes aquí y en el backend se cobraba desde el
+  // mes siguiente, mientras el resumen de deuda/morosos (App.jsx) cobraba el
+  // mes de ingreso: la familia quedaba morosa de un mes que la grilla no le
+  // dejaba pagar. Debe coincidir con getMesIngreso (App.jsx) y
+  // obtenerPrimerMesCobrableJugador (backend/server.js).
   const obtenerInicioCobro = (pupilo = {}) => {
     const anioIngreso = getAnioIngreso(pupilo);
     const mesDesdeCampo = getMesNumero(pupilo.mes_inicio_cobro || '');
@@ -210,16 +283,11 @@ function PerfilTesoreriaPanel({
       return mesDesdeCampo;
     }
 
-    const fechaIngreso = String(pupilo?.fecha_ingreso || '').trim();
-    const fecha = fechaIngreso ? new Date(fechaIngreso) : null;
-    if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
-      const anioFecha = fecha.getFullYear();
-      const mesFecha = fecha.getMonth() + 1;
-      const anioSiguiente = mesFecha >= 12 ? anioFecha + 1 : anioFecha;
-      const mesSiguiente = mesFecha >= 12 ? 1 : mesFecha + 1;
-      if (anioSiguiente > anioObjetivo) return 13;
-      if (anioSiguiente < anioObjetivo) return 1;
-      return mesSiguiente;
+    const partes = partesFechaCalendario(pupilo?.fecha_ingreso);
+    if (partes) {
+      if (partes.anio > anioObjetivo) return 13;
+      if (partes.anio < anioObjetivo) return 1;
+      return partes.mes;
     }
 
     if (anioIngreso > anioObjetivo) return 13;
@@ -249,28 +317,19 @@ function PerfilTesoreriaPanel({
     return null;
   };
 
-  const pagosJugador = (pagosMensualidadesAdmin || []).filter((p) => {
-    if (esPagoInvalidoLegacy(p)) return false;
-    const rutJugadorPago = normalizarRutComparacion(p.rut_jugador);
-    const rutPagadorPago = normalizarRutComparacion(p.rut_pagos);
+  // Cuota de socio: SOLO pagos con concepto "Mensualidad Socio" hechos por
+  // esta cuenta (rut_pagos). Antes esta grilla mezclaba los pagos del pupilo:
+  // pagar la mensualidad del hijo de marzo marcaba también la cuota de socio
+  // de marzo como pagada (y viceversa). Mismo criterio que
+  // construirSociosMorosos en App.jsx.
+  const pagosSocioCuenta = (pagosMensualidadesAdmin || []).filter((p) => (
+    !esPagoInvalidoLegacy(p)
+    && esPagoCuotaSocio(p)
+    && Boolean(rutCuentaNormalizado)
+    && normalizarRutComparacion(p.rut_pagos) === rutCuentaNormalizado
+  ));
 
-    if (rutPupiloActivo) {
-      if (rutJugadorPago && rutJugadorPago === rutPupiloActivoNormalizado) return true;
-      if (rutPagadorPago && rutPagadorPago === rutPupiloActivoNormalizado) return true;
-    }
-
-    // Pagos de "solo cuota de socio" (sin deportista, rut_jugador vacío) se
-    // ligan por rut_pagos a la propia cuenta — no dependen de que haya un
-    // pupilo seleccionado (antes el "if (!rutPupiloActivo) return false" de
-    // arriba cortaba esto en seco para un socio sin ningún hijo).
-    if (!rutJugadorPago && pupilosActivos.length <= 1 && rutCuentaNormalizado && rutPagadorPago === rutCuentaNormalizado) {
-      return true;
-    }
-
-    return false;
-  });
-
-  const pagosPorMes = pagosJugador.reduce((acc, pago) => {
+  const pagosPorMes = pagosSocioCuenta.reduce((acc, pago) => {
     const mes = monthFromPago(pago);
     if (!mes) return acc;
     const estado = (pago.estado_pago || '').toLowerCase();
@@ -281,25 +340,27 @@ function PerfilTesoreriaPanel({
 
   const mesActual = new Date().getMonth() + 1;
   const limiteMesDeuda = Math.max(0, mesActual - 1);
-  const inicioCobroActivo = obtenerInicioCobro(pupiloActivo || pupilosActivos[0] || {});
+  // Inicio de cobro de la cuota de socio: el de la CUENTA (mes_inicio_cobro o
+  // fecha_ingreso_socio), no la fecha de ingreso del hijo como antes. Misma
+  // regla que getMesIngresoSocio en App.jsx.
+  const inicioCobroSocio = (() => {
+    const mesDesdeCampo = getMesNumero(cuentaActual?.mes_inicio_cobro || '');
+    if (mesDesdeCampo) return mesDesdeCampo;
+    const partes = partesFechaCalendario(cuentaActual?.fecha_ingreso_socio);
+    if (partes) {
+      if (partes.anio > anioObjetivo) return 13;
+      if (partes.anio < anioObjetivo) return 1;
+      return partes.mes;
+    }
+    return 1;
+  })();
   const mesesVisuales = mesesBase.map((mes, idx) => {
     const mesNumero = idx + 1;
     const estadosMes = pagosPorMes[mesNumero] || [];
-    // Solo la beca del 100% o la exención explícita auto-marcan el mes como
-    // pagado (no hay nada que cobrar); una beca parcial sigue el flujo normal
-    // de pago a la cuota ya descontada (ver obtenerCuotaMensualPupilo).
-    const sinCargoMensual = noDebeMensualidad(pupiloActivo || pupilosActivos[0] || {});
-    const estado = (estadosMes.includes('aprobado') || estadosMes.includes('validado'))
-      ? 'pagado'
-      : (sinCargoMensual && mesNumero <= limiteMesDeuda)
-        ? 'pagado'
-      : (mesNumero < inicioCobroActivo)
-        ? 'futuro-preingreso'
-        : (mesNumero > limiteMesDeuda)
-          ? 'futuro-calendario'
-      : (estadosMes.includes('pendiente') || estadosMes.includes('rechazado'))
-        ? 'pendiente'
-        : (mesNumero <= limiteMesDeuda ? 'pendiente' : 'futuro-calendario');
+    // La beca/exención es del deportista: no exime la cuota de socio.
+    const estado = resolverEstadoMes({
+      estadosMes, sinCargo: false, mesNumero, inicioCobro: inicioCobroSocio, limiteMesDeuda,
+    });
 
     return { id: mesNumero, mes, estado };
   });
@@ -351,12 +412,23 @@ function PerfilTesoreriaPanel({
   const totalSeleccionado = totalSocioSeleccionado + totalJugadorSeleccionado;
   const totalMesesSeleccionados = mesesSocioSeleccionados.length + totalMesesJugadorSeleccionados;
   const totalFinalPagar = tipoPago === 'completo' ? totalSeleccionado : (Number(montoAbono) || 0);
+  // Con la barra fija de pago visible se agrega espacio al final de
+  // .ios-main para que no tape el resumen ni el botón de abajo.
+  const barraPagoVisible = !comprobanteSubido && totalMesesSeleccionados > 0;
+  useEffect(() => {
+    document.body.classList.toggle('con-barra-pago', barraPagoVisible);
+    return () => document.body.classList.remove('con-barra-pago');
+  }, [barraPagoVisible]);
 
   // Reutilizable para ambas grillas (socio/deportista): solo 'pendiente' y
   // 'futuro-calendario' son seleccionables. 'pagado' y 'futuro-preingreso'
   // quedan bloqueados (mes ya pagado o anterior a la fecha de ingreso).
   const toggleMesEnLista = (idMes, estado, lista, setLista) => {
     if (estado === 'pagado') return;
+    if (estado === 'en-revision') {
+      showToast({ message: 'Ya enviaste un comprobante para este mes: Tesorería lo está revisando.', type: 'info' });
+      return;
+    }
     if (estado === 'futuro-preingreso') {
       showToast({ message: 'Ese mes es anterior a la fecha de ingreso: no corresponde cobrarlo.', type: 'error' });
       return;
@@ -376,6 +448,10 @@ function PerfilTesoreriaPanel({
   // ya no afecta la selección de los demás.
   const toggleMesPupilo = (rutPupilo, idMes, estado) => {
     if (estado === 'pagado') return;
+    if (estado === 'en-revision') {
+      showToast({ message: 'Ya enviaste un comprobante para este mes: Tesorería lo está revisando.', type: 'info' });
+      return;
+    }
     if (estado === 'futuro-preingreso') {
       showToast({ message: 'Ese mes es anterior a la fecha de ingreso: no corresponde cobrarlo.', type: 'error' });
       return;
@@ -407,13 +483,6 @@ function PerfilTesoreriaPanel({
     );
   };
 
-  const convertirArchivoABase64 = (archivo) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
-    reader.readAsDataURL(archivo);
-  });
-
   const enviarComprobantePago = async (archivoDirecto) => {
     // archivoDirecto: el <input type="file"> llama esto en su propio onChange
     // pasando el File recién elegido, para que se envíe de inmediato en un
@@ -440,17 +509,16 @@ function PerfilTesoreriaPanel({
       setSubiendoComprobante(true);
       setErrorComprobante('');
 
-      let comprobanteUrl = '';
-      if (String(archivo.type || '').startsWith('image/')) {
-        const formData = new FormData();
-        formData.append('nombre', `comprobante-${rutPupiloActivo || Date.now()}`);
-        formData.append('tipo', 'comprobante');
-        formData.append('archivo', archivo);
-        const uploadRes = await api.assetsAPI.uploadLogo(formData);
-        comprobanteUrl = uploadRes?.url || '';
-      } else {
-        comprobanteUrl = await convertirArchivoABase64(archivo);
-      }
+      // Imagen o PDF se suben como archivo (antes el PDF iba como base64
+      // dentro del pago: inflaba la BD, la auditoría y el Sheet). El backend
+      // fija el nombre (RUT + sufijo aleatorio), el 'nombre' es solo referencia.
+      const formData = new FormData();
+      formData.append('nombre', `comprobante-${rutPupiloActivo || Date.now()}`);
+      formData.append('tipo', 'comprobante');
+      formData.append('archivo', archivo);
+      const uploadRes = await api.assetsAPI.uploadLogo(formData);
+      const comprobanteUrl = uploadRes?.url || '';
+      if (!comprobanteUrl) throw new Error('No se pudo subir el comprobante. Intenta de nuevo.');
 
       const payloadBase = {
         rut_pagos: cuentaActual?.rut || '',
@@ -462,9 +530,18 @@ function PerfilTesoreriaPanel({
       // Reparto parejo del abono entre TODOS los meses seleccionados de ambas
       // grillas y de todos los pupilos (misma regla de reparto que ya existía
       // para un solo set de meses).
+      // Base entera por mes y el resto (por redondeo) va a la ÚLTIMA fila,
+      // para que la suma de los pagos sea exactamente el monto transferido
+      // (antes $100.000 en 3 meses quedaba en 3 × $33.333 = $99.999).
       const montoUnitarioAbono = tipoPago === 'abono' && totalMesesSeleccionados > 0
-        ? Number((monto / totalMesesSeleccionados).toFixed(0))
+        ? Math.floor(monto / totalMesesSeleccionados)
         : null;
+      const restoAbono = montoUnitarioAbono !== null ? monto - (montoUnitarioAbono * totalMesesSeleccionados) : 0;
+      let filasAbonoCreadas = 0;
+      const montoAbonoDeFila = () => {
+        filasAbonoCreadas += 1;
+        return montoUnitarioAbono + (filasAbonoCreadas === totalMesesSeleccionados ? restoAbono : 0);
+      };
 
       const pagosCreados = [];
       // montoPorDefecto puede ser un número fijo (deportistas, no depende de
@@ -481,13 +558,15 @@ function PerfilTesoreriaPanel({
             rut_jugador: rutJugadorPago,
             concepto_pago: concepto,
             meses_correspondientes: `${mesTexto}-${anioObjetivo}`,
-            monto_total_pagado: montoUnitarioAbono !== null && montoUnitarioAbono > 0 ? montoUnitarioAbono : montoDelMes,
+            monto_total_pagado: montoUnitarioAbono !== null && monto > 0 ? montoAbonoDeFila() : montoDelMes,
           });
           pagosCreados.push(pagoCreado);
         }
       };
 
-      await crearPagosPara(mesesSocioSeleccionados, 'Mensualidad Socio', obtenerCuotaSocioDelMes, rutPupiloActivo);
+      // La cuota de socio es de la CUENTA, no del hijo: sin rut_jugador (antes se
+      // guardaba con el RUT del pupilo y contaba como mensualidad del hijo).
+      await crearPagosPara(mesesSocioSeleccionados, 'Mensualidad Socio', obtenerCuotaSocioDelMes, null);
 
       // Cada pupilo genera sus propias filas de pago, con su propia cuota y
       // sus propios meses seleccionados (antes se usaba un único set de meses
@@ -513,7 +592,7 @@ function PerfilTesoreriaPanel({
   return (
     <div className="fade-in">
       {esVistaAdmin && rolUsuario === 'super_admin' && onIrAPagoManual && (
-        <div className="card mb-15" style={{ borderRadius: '18px', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
+        <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <div>
               <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>Pago manual</h4>
@@ -526,7 +605,7 @@ function PerfilTesoreriaPanel({
               onClick={onIrAPagoManual}
               style={{
                 padding: '10px 16px', background: 'var(--azul-electrico)', color: 'white', border: 'none',
-                borderRadius: '8px', fontWeight: '600', fontSize: '12px', cursor: 'pointer',
+                borderRadius: 'var(--radius-sm)', fontWeight: '600', fontSize: '12px', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
               }}
             >
@@ -536,7 +615,7 @@ function PerfilTesoreriaPanel({
         </div>
       )}
       {esVistaAdmin && (
-        <div className="card" style={{ borderRadius: '22px', padding: '14px', position: 'relative' }}>
+        <div className="card" style={{ borderRadius: 'var(--radius-lg)', padding: '14px', position: 'relative' }}>
           <label style={{ fontSize: '12px', fontWeight: '900', color: 'var(--texto-heading)', display: 'block', marginBottom: '8px' }}>
             Buscar jugador, socio o apoderado
           </label>
@@ -576,12 +655,12 @@ function PerfilTesoreriaPanel({
                     type="button"
                     key={esCuenta ? r.cuenta.rut : (r.jugador.rut || r.jugador.id)}
                     onClick={() => seleccionarResultadoBusqueda(r)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '14px', border: '1px solid var(--borde-suave)', background: 'rgba(0,122,255,0.04)', cursor: 'pointer', textAlign: 'left' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--borde-suave)', background: 'rgba(0,122,255,0.04)', cursor: 'pointer', textAlign: 'left' }}
                   >
                     <User size={18} color="var(--azul-electrico)" />
                     <div style={{ minWidth: 0 }}>
                       <strong style={{ display: 'block', fontSize: '13px', color: 'var(--texto-principal)' }}>{nombrePrincipal}</strong>
-                      <span style={{ display: 'block', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                      <span style={{ display: 'block', fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700' }}>
                         {rutPrincipal}{detalle ? ` · ${detalle}` : ''}
                       </span>
                     </div>
@@ -614,7 +693,7 @@ function PerfilTesoreriaPanel({
           type="button"
           onClick={onIrABecas}
           className="card mt-15"
-          style={{ borderRadius: '22px', padding: '14px', width: '100%', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', border: 'none' }}
+          style={{ borderRadius: 'var(--radius-lg)', padding: '14px', width: '100%', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', border: 'none' }}
         >
           <div>
             <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>Becas de deportistas</h4>
@@ -628,14 +707,14 @@ function PerfilTesoreriaPanel({
 
       {(!esVistaAdmin || pupiloActivo || cuentaSocioActiva) ? (
         <>
-      <div className="status-account-card payment-overview-card mt-15" style={{ borderRadius: '28px', boxShadow: '0 16px 34px rgba(15,23,42,0.10)' }}>
+      <div className="status-account-card payment-overview-card mt-15" style={{ borderRadius: 'var(--radius-lg)', boxShadow: '0 16px 34px rgba(15,23,42,0.10)' }}>
         <div className="status-header">
           <div>
-            <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mensualidad / Perfil</span>
+            <span style={{ fontSize: 'var(--texto-min)', color: 'rgba(255,255,255,0.6)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mensualidad / Perfil</span>
             <h3 className="status-titular" style={{ color: 'white' }}>{titular}</h3>
             <span className="status-rol">{esSocio ? 'Socio Activo Club Cultura Física' : 'Apoderado Base'}</span>
             {esSocio && (
-              <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'block', marginTop: '5px' }}>
+              <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700', display: 'block', marginTop: '5px' }}>
                 UTM referencia ({fechaCorteTexto}): ${utmActual.toLocaleString('es-CL')} · Cuota socio (0,3 UTM): ${cuotaSocio.toLocaleString('es-CL')}
                 {cuotaDeportistas > 0 && (
                   <> + ${cuotaDeportistas.toLocaleString('es-CL')} por deportistas a cargo = <strong style={{ color: 'white' }}>${tarifaRedondeada.toLocaleString('es-CL')}/mes</strong></>
@@ -647,13 +726,12 @@ function PerfilTesoreriaPanel({
             {estadoCuenta}
           </div>
         </div>
-        {estadoCuenta === 'Moroso' && (
-          <div className="status-alert"><AlertTriangle size={16} color="var(--gris-secundario)" strokeWidth={1.5} /> Presenta {mesesAtraso} meses de atraso en cuotas.</div>
-        )}
+        {/* El detalle de la deuda vive en una sola tarjeta ("Deuda Pendiente",
+            con desglose socio/deportista); antes se repetía aquí. */}
       </div>
 
       {pupilosActivos.length > 0 && (
-        <div className="card mt-15 fade-in" style={{ borderRadius: '22px', padding: '12px' }}>
+        <div className="card mt-15 fade-in" style={{ borderRadius: 'var(--radius-lg)', padding: '12px' }}>
           <h4 style={{ margin: '2px 4px 10px 4px', fontSize: '13px', fontWeight: '900', color: 'var(--texto-heading)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
             {pupilosActivos.length > 1 ? 'Deportistas a cargo' : 'Deportista a cargo'}
           </h4>
@@ -664,7 +742,7 @@ function PerfilTesoreriaPanel({
               const categoria = String(pupilo.categoria || 'General');
 
               return (
-                <div key={`pupilo-card-${pupilo.rut || pupilo.id}`} style={{ border: '1px solid var(--borde-suave)', borderRadius: '16px', padding: '10px', background: 'linear-gradient(180deg, #fff 0%, #f8fbff 100%)' }}>
+                <div key={`pupilo-card-${pupilo.rut || pupilo.id}`} style={{ border: '1px solid var(--borde-suave)', borderRadius: 'var(--radius-md)', padding: '10px', background: 'var(--fondo-card-sutil)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <LogoAvatar
                       nombre={nombreCompleto}
@@ -674,8 +752,8 @@ function PerfilTesoreriaPanel({
                     />
                     <div style={{ minWidth: 0 }}>
                       <strong style={{ display: 'block', fontSize: '13px', color: 'var(--texto-principal)', lineHeight: '1.2' }}>{nombreCompleto}</strong>
-                      <span style={{ display: 'block', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', marginTop: '3px' }}>{categoria}{anio ? ` · ${anio}` : ''}</span>
-                      <span style={{ display: 'block', marginTop: '4px', fontSize: '11px', color: 'var(--azul-marino)', fontWeight: '800' }}>Cuota vigente: ${obtenerCuotaMensualPupilo(pupilo).toLocaleString('es-CL')} / mes</span>
+                      <span style={{ display: 'block', fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700', marginTop: '3px' }}>{categoria}{anio ? ` · ${anio}` : ''}</span>
+                      <span style={{ display: 'block', marginTop: '4px', fontSize: 'var(--texto-min)', color: 'var(--azul-marino)', fontWeight: '800' }}>Cuota vigente: ${obtenerCuotaMensualPupilo(pupilo).toLocaleString('es-CL')} / mes</span>
                     </div>
                   </div>
                 </div>
@@ -686,7 +764,7 @@ function PerfilTesoreriaPanel({
       )}
 
       {estadoCuenta === 'Moroso' && (
-        <div className="card fade-in mt-15 compact-debt-summary" style={{ borderLeft: '4px solid var(--rojo-alerta)', background: 'linear-gradient(180deg, rgba(255,59,48,0.08), rgba(255,59,48,0.02))', borderRadius: '24px' }}>
+        <div className="card fade-in mt-15 compact-debt-summary" style={{ borderLeft: '4px solid var(--rojo-alerta)', background: 'linear-gradient(180deg, rgba(255,59,48,0.08), rgba(255,59,48,0.02))', borderRadius: 'var(--radius-lg)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'center' }}>
             <div>
               <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', color: 'var(--rojo-alerta)', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={18} color="var(--gris-secundario)" strokeWidth={1.5} /> Deuda Pendiente</h4>
@@ -701,7 +779,20 @@ function PerfilTesoreriaPanel({
               <strong style={{ fontSize: '20px', color: 'var(--rojo-alerta)', fontWeight: '900' }}>-${Number(morosoActivo?.montoDeuda ?? (tarifaRedondeada * mesesAtraso)).toLocaleString('es-CL')}</strong>
             </div>
           </div>
-          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,59,48,0.15)', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+          {morosoDeportista && morosoSocio && (
+            <div className="desglose-deuda" style={{ marginTop: '12px', display: 'grid', gap: '6px' }}>
+              {[
+                ['Mensualidad deportista', morosoDeportista],
+                ['Cuota de socio', morosoSocio],
+              ].map(([etiqueta, deuda]) => (
+                <div key={etiqueta} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', fontWeight: 700, color: 'var(--texto-principal)' }}>
+                  <span>{etiqueta} · {deuda.mesesDeuda} {Number(deuda.mesesDeuda) === 1 ? 'mes' : 'meses'}</span>
+                  <strong style={{ color: 'var(--rojo-alerta)' }}>-${Number(deuda.montoDeuda || 0).toLocaleString('es-CL')}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,59,48,0.15)', fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700' }}>
             <span>Cuota mensual vigente: <strong style={{ color: 'var(--texto-principal)' }}>${tarifaRedondeada.toLocaleString('es-CL')}</strong></span>
           </div>
         </div>
@@ -714,7 +805,7 @@ function PerfilTesoreriaPanel({
           className={`btn-toggle-view ${pagoViewMode === 'grid' ? 'activo' : ''}`}
           onClick={() => setPageViewMode('grid')}
           title="Vista Cuadrícula"
-          style={{ padding: '9px 14px', borderRadius: '999px', border: '1px solid var(--borde-suave)', background: pagoViewMode === 'grid' ? 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' : 'rgba(255,255,255,0.9)', color: pagoViewMode === 'grid' ? 'white' : 'var(--texto-principal)', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s ease' }}
+          style={{ padding: '9px 14px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--borde-suave)', background: pagoViewMode === 'grid' ? 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' : 'rgba(255,255,255,0.9)', color: pagoViewMode === 'grid' ? 'white' : 'var(--texto-principal)', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s ease' }}
         >
           <LayoutGrid size={16} /> Cuadrícula
         </button>
@@ -722,21 +813,41 @@ function PerfilTesoreriaPanel({
           className={`btn-toggle-view ${pagoViewMode === 'list' ? 'activo' : ''}`}
           onClick={() => setPageViewMode('list')}
           title="Vista Lista"
-          style={{ padding: '9px 14px', borderRadius: '999px', border: '1px solid var(--borde-suave)', background: pagoViewMode === 'list' ? 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' : 'rgba(255,255,255,0.9)', color: pagoViewMode === 'list' ? 'white' : 'var(--texto-principal)', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s ease' }}
+          style={{ padding: '9px 14px', borderRadius: 'var(--radius-pill)', border: '1px solid var(--borde-suave)', background: pagoViewMode === 'list' ? 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)' : 'rgba(255,255,255,0.9)', color: pagoViewMode === 'list' ? 'white' : 'var(--texto-principal)', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s ease' }}
         >
           <List size={16} /> Lista Compacta
         </button>
       </div>
 
-      <div className="card finanzas-card payment-card" style={{ borderRadius: '22px', padding: '14px' }}>
+      <div className="leyenda-meses" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px', fontSize: 'var(--texto-min)', fontWeight: 700, color: 'var(--texto-secundario)', margin: '0 0 12px 4px' }}>
+        {[
+          ['mes-pagado', 'Pagado'],
+          ['mes-en-revision', 'En revisión'],
+          ['mes-pendiente', 'Por pagar'],
+          ['mes-futuro-calendario', 'Próximos'],
+        ].map(([clase, texto]) => (
+          <span key={clase} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span className={clase} style={{ width: '12px', height: '12px', borderRadius: 'var(--radius-sm)', display: 'inline-block' }} />
+            {texto}
+          </span>
+        ))}
+      </div>
+
+      <div className="card finanzas-card payment-card" style={{ borderRadius: 'var(--radius-lg)', padding: '14px' }}>
         {esSocio && (
           <div className="mb-20">
             <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: 'var(--texto-heading)', fontWeight: '800' }}>1. Cuotas de Socio: <span className="payment-chip">Socio activo</span></h4>
             <div className={pagoViewMode === 'grid' ? 'grid-12-meses' : 'lista-12-meses'}>
               {mesesVisuales.map((item) => (
-                <button type="button" key={item.id} onClick={() => toggleMesSocio(item.id, item.estado)} className={`mes-box mes-${item.estado} ${mesesSocioSeleccionados.includes(item.id) ? 'seleccionado' : ''}`}>
-                  <span className="mes-box-nombre">{item.mes}</span>
-                </button>
+                <MesBox
+                  key={item.id}
+                  mesNumero={item.id}
+                  nombre={item.mes}
+                  estado={item.estado}
+                  seleccionado={mesesSocioSeleccionados.includes(item.id)}
+                  esActual={item.id === mesActual}
+                  onClick={() => toggleMesSocio(item.id, item.estado)}
+                />
               ))}
             </div>
           </div>
@@ -760,6 +871,8 @@ function PerfilTesoreriaPanel({
                 const pagosDelPupilo = (pagosMensualidadesAdmin || []).filter(
                   (p) => {
                     if (esPagoInvalidoLegacy(p)) return false;
+                    // La cuota de socio tiene su propia grilla (independiente).
+                    if (esPagoCuotaSocio(p)) return false;
                     const rutJugadorPago = normalizarRutComparacion(p.rut_jugador);
                     const rutPagadorPago = normalizarRutComparacion(p.rut_pagos);
                     return rutJugadorPago === rutPupiloCardNormalizado || rutPagadorPago === rutPupiloCardNormalizado;
@@ -768,28 +881,20 @@ function PerfilTesoreriaPanel({
                 const estadosMes = pagosDelPupilo
                   .filter((pago) => monthFromPago(pago) === mesNumero)
                   .map((pago) => (pago.estado_pago || '').toLowerCase());
-                const estadoMes = (estadosMes.includes('aprobado') || estadosMes.includes('validado'))
-                  ? 'pagado'
-                  : (becaActivaPupilo && mesNumero <= limiteMesDeuda)
-                    ? 'pagado'
-                  : (mesNumero < inicioCobroPupilo)
-                    ? 'futuro-preingreso'
-                    : (mesNumero > limiteMesDeuda)
-                      ? 'futuro-calendario'
-                  : (estadosMes.includes('pendiente') || estadosMes.includes('rechazado'))
-                    ? 'pendiente'
-                    : (mesNumero <= limiteMesDeuda ? 'pendiente' : 'futuro-calendario');
+                const estadoMes = resolverEstadoMes({
+                  estadosMes, sinCargo: becaActivaPupilo, mesNumero, inicioCobro: inicioCobroPupilo, limiteMesDeuda,
+                });
 
                 return (
-                <button
-                  type="button"
-                  key={mesNumero + pupilo.id}
-                  onClick={() => toggleMesPupilo(pupilo.rut, mesNumero, estadoMes)}
-                  className={`mes-box mes-${estadoMes} ${(mesesSeleccionados[pupilo.rut] || []).includes(mesNumero) ? 'seleccionado' : ''}`}
-                  style={{ cursor: (estadoMes === 'pagado' || estadoMes === 'futuro-preingreso') ? 'not-allowed' : 'pointer' }}
-                >
-                  <span className="mes-box-nombre">{mes}</span>
-                </button>
+                  <MesBox
+                    key={mesNumero + pupilo.id}
+                    mesNumero={mesNumero}
+                    nombre={mes}
+                    estado={estadoMes}
+                    seleccionado={(mesesSeleccionados[pupilo.rut] || []).includes(mesNumero)}
+                    esActual={mesNumero === mesActual}
+                    onClick={() => toggleMesPupilo(pupilo.rut, mesNumero, estadoMes)}
+                  />
                 );
               })}
             </div>
@@ -797,11 +902,11 @@ function PerfilTesoreriaPanel({
         ))}
 
         {!comprobanteSubido && (
-          <div className="dynamic-checkout-box fade-in mt-15" style={{ padding: '16px', borderRadius: '18px' }}>
+          <div ref={checkoutRef} className="dynamic-checkout-box fade-in mt-15" style={{ padding: '16px', borderRadius: 'var(--radius-md)' }}>
             <h4 className="form-subtitle">Resumen de Liquidación</h4>
 
             {esSocio && cuotaSocioAplicada > 0 && (
-              <div style={{ marginBottom: '12px', border: '1px solid rgba(0,0,0,0.08)', borderRadius: '14px', padding: '12px', background: 'rgba(0,0,0,0.02)' }}>
+              <div style={{ marginBottom: '12px', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 'var(--radius-md)', padding: '12px', background: 'rgba(0,0,0,0.02)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--texto-secundario)' }}>
                     Cuota socio de este mes ({mesesBase[mesActual - 1]}, 0,3 UTM):
@@ -827,7 +932,7 @@ function PerfilTesoreriaPanel({
                 {mostrarDetalleCuotaSocio && (
                   <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '6px' }}>
                     {Array.from({ length: limiteMesDeuda }, (_, i) => i + 1).map((mesNum) => (
-                      <div key={`cuota-mes-${mesNum}`} style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
+                      <div key={`cuota-mes-${mesNum}`} style={{ fontSize: 'var(--texto-min)', fontWeight: '700', color: 'var(--texto-secundario)', display: 'flex', justifyContent: 'space-between', gap: '6px' }}>
                         <span>{mesesBase[mesNum - 1]}:</span>
                         <span>${obtenerCuotaSocioDelMes(mesNum).toLocaleString('es-CL')}</span>
                       </div>
@@ -850,8 +955,8 @@ function PerfilTesoreriaPanel({
             )}
             <div className="desglose-row"><span>Cuota deportista(s) ({totalMesesJugadorSeleccionados} {totalMesesJugadorSeleccionados === 1 ? 'mes' : 'meses'}):</span><strong>${totalJugadorSeleccionado.toLocaleString('es-CL')}</strong></div>
             {pupilosActivos.length > 1 && totalMesesJugadorSeleccionados > 0 && (
-              <div style={{ margin: '2px 0 10px 0', padding: '10px 12px', borderRadius: '12px', background: 'rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+              <div style={{ margin: '2px 0 10px 0', padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ fontSize: 'var(--texto-min)', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                   Detalle por deportista
                 </span>
                 {pupilosActivos.map((pupilo) => {
@@ -874,13 +979,13 @@ function PerfilTesoreriaPanel({
             <div className="desglose-row total-calc"><span>Total a Pagar:</span><strong>${totalSeleccionado.toLocaleString('es-CL')}</strong></div>
 
             {totalMesesSeleccionados === 0 && (
-              <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', marginTop: '6px' }}>
+              <div style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700', marginTop: '6px' }}>
                 Selecciona meses pendientes o futuros (de la cuota socio, deportista, o ambas) para calcular y enviar la liquidación.
               </div>
             )}
 
             {condicionesPagoPerfil && (
-              <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', marginBottom: '10px' }}>
+              <div style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700', marginBottom: '10px' }}>
                 Condiciones perfil: {condicionesPagoPerfil}
               </div>
             )}
@@ -897,11 +1002,11 @@ function PerfilTesoreriaPanel({
               </div>
             )}
 
-            <div className="checkout-total-box mt-10" style={{ padding: '20px 16px', borderRadius: '18px' }}>
+            <div className="checkout-total-box mt-10" style={{ padding: '20px 16px', borderRadius: 'var(--radius-md)' }}>
               <span>Monto a Transferir</span>
               <h2 style={{ fontSize: '38px' }}>${totalFinalPagar.toLocaleString('es-CL')}</h2>
             </div>
-            <div style={{ marginTop: '10px', border: '1px solid rgba(0,122,255,0.2)', borderRadius: '14px', padding: '12px', background: 'linear-gradient(180deg, rgba(0,122,255,0.07), rgba(0,122,255,0.02))' }}>
+            <div style={{ marginTop: '10px', border: '1px solid rgba(0,122,255,0.2)', borderRadius: 'var(--radius-md)', padding: '12px', background: 'linear-gradient(180deg, rgba(0,122,255,0.07), rgba(0,122,255,0.02))' }}>
               {/* Un solo botón: al tocarlo abre el selector nativo de archivos
                   (galería/cámara/PDF), y apenas se elige uno se envía solo —
                   sin un segundo click de "enviar" aparte. El <input> real
@@ -920,7 +1025,7 @@ function PerfilTesoreriaPanel({
               />
 
               {archivoComprobante && subiendoComprobante && (
-                <span style={{ display: 'block', marginBottom: '8px', fontSize: '11px', color: 'var(--azul-electrico)', fontWeight: '700' }}>
+                <span style={{ display: 'block', marginBottom: '8px', fontSize: 'var(--texto-min)', color: 'var(--azul-electrico)', fontWeight: '700' }}>
                   Enviando: {archivoComprobante.name}
                 </span>
               )}
@@ -933,14 +1038,26 @@ function PerfilTesoreriaPanel({
 
               <button
                 className="btn-pago-cta"
-                style={{ width: '100%', border: 'none', cursor: subiendoComprobante ? 'wait' : 'pointer', opacity: subiendoComprobante ? 0.8 : 1, padding: '14px 16px', borderRadius: '14px' }}
+                style={{
+                  width: '100%',
+                  border: 'none',
+                  cursor: subiendoComprobante ? 'wait' : (totalMesesSeleccionados === 0 ? 'not-allowed' : 'pointer'),
+                  // Deshabilitado sin meses elegidos: antes se veía igual de activo.
+                  opacity: subiendoComprobante ? 0.8 : (totalMesesSeleccionados === 0 ? 0.45 : 1),
+                  filter: totalMesesSeleccionados === 0 ? 'grayscale(0.6)' : 'none',
+                  transition: 'opacity 0.2s ease, filter 0.2s ease',
+                  padding: '14px 16px',
+                  borderRadius: 'var(--radius-md)',
+                }}
                 onClick={() => inputComprobanteRef.current?.click()}
                 disabled={subiendoComprobante || totalMesesSeleccionados === 0}
               >
                 <Camera size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <div>
                   <strong style={{ display: 'block', fontSize: '14px' }}>{subiendoComprobante ? 'Enviando comprobante...' : 'Adjuntar y Enviar Comprobante'}</strong>
-                  <span style={{ fontSize: '11px', opacity: 0.8 }}>JPG, PNG, WEBP o PDF · Tesorería validará y marcará en verde los meses aprobados.</span>
+                  <span style={{ fontSize: 'var(--texto-min)', opacity: 0.8 }}>{totalMesesSeleccionados === 0
+                    ? 'Primero toca los meses que vas a pagar en las grillas de arriba.'
+                    : 'JPG, PNG, WEBP o PDF · Tesorería validará y marcará en verde los meses aprobados.'}</span>
                 </div>
               </button>
             </div>
@@ -960,13 +1077,39 @@ function PerfilTesoreriaPanel({
       </div>
         </>
       ) : (
-        <div className="card mt-15 text-center" style={{ padding: '40px 20px', borderRadius: '22px' }}>
+        <div className="card mt-15 text-center" style={{ padding: '40px 20px', borderRadius: 'var(--radius-lg)' }}>
           <Search size={36} color="var(--gris-secundario)" strokeWidth={1.5} style={{ margin: '0 auto' }} />
           <h3 style={{ margin: '15px 0 8px 0', fontSize: '16px', fontWeight: '900', color: 'var(--texto-heading)' }}>Busca una cuenta para revisar</h3>
           <p style={{ fontSize: '13px', margin: 0, color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
             Usa el buscador de arriba para encontrar por nombre, RUT o correo de un jugador, socio o apoderado.
           </p>
         </div>
+      )}
+
+      {/* Barra fija de pago: el botón de enviar comprobante quedaba ~1.500 px
+          más abajo de las grillas en un teléfono. Aparece al elegir meses.
+          Portal a body porque .ios-main tiene transform (ver KioscoPanel). */}
+      {barraPagoVisible && createPortal(
+        <div className="barra-pago-fija" role="region" aria-label="Resumen del pago">
+          <button
+            type="button"
+            className="barra-pago-resumen"
+            onClick={() => checkoutRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+          >
+            <span>{totalMesesSeleccionados} {totalMesesSeleccionados === 1 ? 'mes' : 'meses'} · ver detalle</span>
+            <strong>${Number(totalFinalPagar || 0).toLocaleString('es-CL')}</strong>
+          </button>
+          <button
+            type="button"
+            className="barra-pago-cta"
+            disabled={subiendoComprobante}
+            onClick={() => inputComprobanteRef.current?.click()}
+          >
+            <Camera size={18} aria-hidden="true" />
+            {subiendoComprobante ? 'Enviando…' : 'Enviar comprobante'}
+          </button>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
+import { hoyLocalISO } from '../utils/fechas';
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+const hoyISO = () => hoyLocalISO();
 
 // Carga partidos y resultados directamente desde Torneos, sin pasar por
 // Mesa de Control — pensado para torneos donde solo interesa dejar
@@ -164,7 +165,7 @@ function TorneoPartidosManager({ idTorneo, torneo, equipos = [], partidosPendien
             {partidosPendientes.map((p) => {
               const valores = resultadosPendientes[p.id_partido] || {};
               return (
-                <div key={p.id_partido} style={{ border: '1px dashed var(--borde-suave)', borderRadius: '12px', padding: '8px 10px' }}>
+                <div key={p.id_partido} style={{ border: '1px dashed var(--borde-suave)', borderRadius: 'var(--radius-sm)', padding: '8px 10px' }}>
                   <div style={{ fontSize: '12px', fontWeight: '700', marginBottom: '6px' }}>{p.equipo_local} vs {p.equipo_visitante}</div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <input

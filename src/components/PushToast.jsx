@@ -21,7 +21,7 @@ function PushToast({ pushNotificaciones, setPushNotificaciones }) {
         right: '16px',
         width: '320px',
         background: 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(249,250,255,0.96) 100%)',
-        borderRadius: '22px',
+        borderRadius: 'var(--radius-lg)',
         boxShadow: '0 18px 40px rgba(10, 20, 35, 0.18)',
         padding: '14px 14px 14px 16px',
         border: '1px solid rgba(255,255,255,0.65)',
@@ -36,7 +36,7 @@ function PushToast({ pushNotificaciones, setPushNotificaciones }) {
         <div style={{
           width: '36px',
           height: '36px',
-          borderRadius: '12px',
+          borderRadius: 'var(--radius-sm)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -55,8 +55,8 @@ function PushToast({ pushNotificaciones, setPushNotificaciones }) {
             {push.descripcion}
           </p>
           <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: 'var(--texto-secundario)', flexWrap: 'wrap' }}>
-            <span style={{ padding: '4px 8px', borderRadius: '999px', background: 'rgba(120,120,128,0.10)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Clock size={11} strokeWidth={2} /> {push.timestamp.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
-            <span style={{ padding: '4px 8px', borderRadius: '999px', background: `${colorUrgencia}1A`, color: colorUrgencia, fontWeight: '700' }}>● {push.urgencia}</span>
+            <span style={{ padding: '4px 8px', borderRadius: 'var(--radius-pill)', background: 'rgba(120,120,128,0.10)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Clock size={11} strokeWidth={2} /> {push.timestamp.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
+            <span style={{ padding: '4px 8px', borderRadius: 'var(--radius-pill)', background: `${colorUrgencia}1A`, color: colorUrgencia, fontWeight: '700' }}>● {push.urgencia}</span>
           </div>
         </div>
         <button
@@ -66,7 +66,7 @@ function PushToast({ pushNotificaciones, setPushNotificaciones }) {
             border: 'none',
             width: '28px',
             height: '28px',
-            borderRadius: '999px',
+            borderRadius: 'var(--radius-pill)',
             cursor: 'pointer',
             color: 'var(--texto-secundario)',
             flexShrink: 0,

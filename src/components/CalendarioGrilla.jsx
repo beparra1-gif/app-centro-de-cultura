@@ -184,7 +184,7 @@ function VistaMes({ rangoDesde, rangoHasta, mesReferencia, eventosPorFecha, hoyI
   }
 
   return (
-    <div className="card" style={{ borderRadius: '16px', padding: '8px' }}>
+    <div className="card" style={{ borderRadius: 'var(--radius-md)', padding: '8px' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: '2px', marginBottom: '4px' }}>
         {DIAS_SEMANA.map((d) => (
           <div key={d} style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', textAlign: 'center', padding: '4px 0' }}>{d}</div>
@@ -206,7 +206,7 @@ function VistaMes({ rangoDesde, rangoHasta, mesReferencia, eventosPorFecha, hoyI
               style={{
                 minHeight: '76px',
                 minWidth: 0,
-                borderRadius: '10px',
+                borderRadius: 'var(--radius-sm)',
                 padding: '4px',
                 background: esHoy ? 'rgba(0,122,255,0.08)' : 'transparent',
                 border: esHoy ? '1px solid rgba(0,122,255,0.3)' : '1px solid rgba(0,0,0,0.05)',
@@ -267,7 +267,7 @@ function VistaAgenda({ dias, eventosPorFecha, hoyISO, horaMin, horaMax, onClickE
   for (let h = horaMin; h < horaMax; h += 1) horas.push(h);
 
   return (
-    <div className="card" style={{ borderRadius: '16px', padding: '8px', overflowX: 'auto' }}>
+    <div className="card" style={{ borderRadius: 'var(--radius-md)', padding: '8px', overflowX: 'auto' }}>
       <div style={{ display: 'grid', gridTemplateColumns: `56px repeat(${dias.length}, minmax(${detallado ? '220px' : '110px'}, 1fr))`, minWidth: detallado ? 'auto' : `${56 + dias.length * 110}px` }}>
         <div />
         {dias.map((dia) => {
@@ -315,7 +315,7 @@ function VistaAgenda({ dias, eventosPorFecha, hoyISO, horaMin, horaMax, onClickE
                       background: ev.color,
                       color: 'white',
                       border: 'none',
-                      borderRadius: '6px',
+                      borderRadius: 'var(--radius-sm)',
                       padding: '3px 6px',
                       fontSize: detallado ? '12px' : '10px',
                       fontWeight: '800',

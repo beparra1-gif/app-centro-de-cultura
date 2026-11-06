@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import html2canvas from 'html2canvas';
 import { Eraser, Pencil, Move, Trash2, UserPlus, Circle } from 'lucide-react';
 
 const CANCHAS = {
@@ -92,6 +91,7 @@ function PizarraTacticaCanvas({ onCapturar }) {
 
   const capturarPizarra = async () => {
     if (!boardRef.current) return;
+    const { default: html2canvas } = await import('html2canvas');
     const canvas = await html2canvas(boardRef.current, { backgroundColor: '#F4EFE4', scale: 2 });
     canvas.toBlob((blob) => {
       if (blob && typeof onCapturar === 'function') onCapturar(blob);

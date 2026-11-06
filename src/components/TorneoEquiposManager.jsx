@@ -55,7 +55,7 @@ function TorneoEquiposManager({ idTorneo, equipos = [], onEquiposChanged }) {
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
         {equipos.map((eq) => (
-          <div key={eq.id_equipo} style={{ display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid var(--borde-suave)', borderRadius: '12px', padding: '6px 10px' }}>
+          <div key={eq.id_equipo} style={{ display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid var(--borde-suave)', borderRadius: 'var(--radius-sm)', padding: '6px 10px' }}>
             <LogoAvatar nombre={eq.nombre_equipo} logoUrl={eq.logo_url} tipo="club" size={28} borderRadius="8px" />
             <span style={{ flex: 1, fontSize: '13px', fontWeight: '700' }}>{eq.nombre_equipo}</span>
             <button

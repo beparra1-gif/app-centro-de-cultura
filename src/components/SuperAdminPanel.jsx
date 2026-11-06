@@ -54,6 +54,8 @@ import SaludDashboardPanel from './SaludDashboardPanel';
 import SaludTimelinePanel from './SaludTimelinePanel';
 import SettingsPanel from './SettingsPanel';
 import { absolutizarLogoUrl } from '../utils/logoResolver';
+import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
+import useModalAccesible from '../utils/useModalAccesible';
 
 // comprobante_url llega en 2 formatos: URL relativa del backend
 // (/api/logo-assets/file/...) para imágenes subidas como archivo, o un data
@@ -561,11 +563,12 @@ function SuperAdminPanel({
     rama: 'Mixta',
     categoria: 'SUB-13',
     cancha_sede: '',
-    fecha_hora: new Date().toISOString().slice(0, 10),
+    fecha_hora: hoyLocalISO(),
     publicado: true,
   });
   const [torneosDisponibles, setTorneosDisponibles] = useState([]);
   const [comprobanteEnVista, setComprobanteEnVista] = useState(null); // { url, esImagen } | null
+  useModalAccesible(Boolean(comprobanteEnVista), () => setComprobanteEnVista(null));
 
   // Categorías disponibles según rama (catálogo compartido, ver src/utils/categoriasDeportivas.js)
   const categoriasDisponibles = CATEGORIAS_POR_RAMA;
@@ -584,6 +587,9 @@ function SuperAdminPanel({
   const [nuevaClaveCuenta, setNuevaClaveCuenta] = useState('');
   const [mostrarNuevaClaveCuenta, setMostrarNuevaClaveCuenta] = useState(false);
   const [reseteandoClaveId, setReseteandoClaveId] = useState(null);
+  // { codigo, nombre, rut, telefono, vigencia_horas } del último código de activación generado.
+  const [codigoActivacion, setCodigoActivacion] = useState(null);
+  useModalAccesible(Boolean(codigoActivacion), () => setCodigoActivacion(null));
   const [tipoNuevoUsuario, setTipoNuevoUsuario] = useState('cuenta');
   const [guardandoUsuario, setGuardandoUsuario] = useState(false);
   const [eliminandoUsuarioId, setEliminandoUsuarioId] = useState('');
@@ -612,7 +618,7 @@ function SuperAdminPanel({
     return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T22:00`;
   };
   const crearCitaFormInicial = () => {
-    const diaCitacionInicial = new Date().toISOString().slice(0, 10);
+    const diaCitacionInicial = hoyLocalISO();
     return {
       tipo_competencia: 'Liga',
       competencia_nombre: '',
@@ -790,7 +796,7 @@ function SuperAdminPanel({
     setFormBeca({
       porcentaje: jugador?.beca || '',
       motivo: jugador?.beca_motivo || '',
-      fechaInicio: jugador?.beca_fecha_inicio ? String(jugador.beca_fecha_inicio).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      fechaInicio: jugador?.beca_fecha_inicio ? String(jugador.beca_fecha_inicio).slice(0, 10) : hoyLocalISO(),
       fechaFin: jugador?.beca_fecha_fin ? String(jugador.beca_fecha_fin).slice(0, 10) : '',
       sinFechaFin: !jugador?.beca_fecha_fin,
     });
@@ -943,7 +949,7 @@ function SuperAdminPanel({
 
   const calcularFechaCorteMesAnterior = () => {
     const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10);
+    return fechaLocalISO(new Date(now.getFullYear(), now.getMonth(), 0));
   };
 
   const calcularMensualidadSocio = (utm = 71649) => {
@@ -1293,7 +1299,7 @@ function SuperAdminPanel({
         style={{
           marginBottom: '10px',
           borderLeft: `4px solid ${sinApoderado ? 'var(--rojo-alerta)' : (u.tipo === 'jugador' ? 'var(--azul-electrico)' : '#FF9500')}`,
-          borderRadius: '22px',
+          borderRadius: 'var(--radius-lg)',
           background: sinApoderado ? 'rgba(255,59,48,0.05)' : undefined,
         }}
       >
@@ -1301,11 +1307,11 @@ function SuperAdminPanel({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <strong style={{ fontSize: '14px' }}>{u.nombre}</strong>
-              <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', color: esIncompleta ? '#b36200' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
+              <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: esIncompleta ? '#b36200' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
                 {esIncompleta ? 'Incompleta' : 'Completa'}
               </span>
               {sinApoderado && (
-                <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', color: '#b00020', background: 'rgba(255,59,48,0.12)' }}>
+                <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: '#b00020', background: 'rgba(255,59,48,0.12)' }}>
                   Sin apoderado
                 </span>
               )}
@@ -1339,7 +1345,7 @@ function SuperAdminPanel({
                 onClick={() => resetearClaveDesdeLista(u.raw)}
                 disabled={reseteandoClaveId === u.raw.id}
               >
-                <Lock size={13} /> {reseteandoClaveId === u.raw.id ? 'Restableciendo...' : 'Restablecer clave'}
+                <Lock size={13} /> {reseteandoClaveId === u.raw.id ? 'Generando...' : 'Código de acceso'}
               </button>
             )}
             {u.tipo === 'jugador' && (esAdmin || esSuperAdmin) && (
@@ -1350,10 +1356,10 @@ function SuperAdminPanel({
                   onClick={() => resetearClaveDesdeLista(cuentaPropiaJugador)}
                   disabled={reseteandoClaveId === cuentaPropiaJugador.id}
                 >
-                  <Lock size={13} /> {reseteandoClaveId === cuentaPropiaJugador.id ? 'Restableciendo...' : 'Restablecer clave'}
+                  <Lock size={13} /> {reseteandoClaveId === cuentaPropiaJugador.id ? 'Generando...' : 'Código de acceso'}
                 </button>
               ) : (
-                <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', color: 'var(--texto-secundario)', background: 'rgba(120,120,128,0.12)' }}>
+                <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: 'var(--texto-secundario)', background: 'rgba(120,120,128,0.12)' }}>
                   Sin cuenta propia
                 </span>
               )
@@ -1514,7 +1520,7 @@ function SuperAdminPanel({
 
     if (!config) {
       return (
-        <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+        <div className="card" style={{ marginTop: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
           <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> {titulo}</h4>
           <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)' }}>{emptyMessage}</p>
         </div>
@@ -1522,20 +1528,20 @@ function SuperAdminPanel({
     }
 
     return (
-      <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+      <div className="card" style={{ marginTop: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
         <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> {titulo}</h4>
         <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '10px' }}>
           {descripcion}
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
-          <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '5px 10px', borderRadius: '999px' }}>
+          <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '5px 10px', borderRadius: 'var(--radius-pill)' }}>
             Cuenta: {config.nombre}
           </span>
-          <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', background: 'rgba(15,23,42,0.06)', padding: '5px 10px', borderRadius: '999px' }}>
+          <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--texto-secundario)', background: 'rgba(15,23,42,0.06)', padding: '5px 10px', borderRadius: 'var(--radius-pill)' }}>
             Rol base: {config.rol}
           </span>
           {config.esSuperAdmin && (
-            <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: '999px' }}>
+            <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: 'var(--radius-pill)' }}>
               Super Admin mantiene acceso total
             </span>
           )}
@@ -1553,7 +1559,7 @@ function SuperAdminPanel({
                 disabled={config.esSuperAdmin}
                 style={{
                   textAlign: 'left',
-                  borderRadius: '14px',
+                  borderRadius: 'var(--radius-md)',
                   border: habilitado ? '1px solid rgba(52,199,89,0.45)' : '1px solid rgba(15,23,42,0.08)',
                   background: habilitado ? 'rgba(52,199,89,0.10)' : 'rgba(255,255,255,0.92)',
                   padding: '10px 12px',
@@ -1805,7 +1811,7 @@ function SuperAdminPanel({
       rama: 'Mixta',
       categoria: 'SUB-13',
       cancha_sede: '',
-      fecha_hora: new Date().toISOString().slice(0, 10),
+      fecha_hora: hoyLocalISO(),
       publicado: true,
     });
     setPartidoEditandoId(null);
@@ -1911,42 +1917,45 @@ function SuperAdminPanel({
     return () => window.clearTimeout(timer);
   }, [editandoTipo]);
 
-  // Sin 0/O/1/l/I para que no se confundan al transcribirla a mano cuando
-  // el superadmin se la dicte o escriba al usuario que olvidó su clave.
-  const generarClaveAleatoria = () => {
-    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-    let clave = '';
-    for (let i = 0; i < 8; i += 1) clave += chars[Math.floor(Math.random() * chars.length)];
-    return clave;
-  };
 
-  // Acción directa desde la fila de la lista (sin tener que abrir "Modificar"
-  // primero) — genera y guarda la clave nueva en un solo clic, la copia al
-  // portapapeles y la deja igual en el toast por si el portapapeles no está
-  // disponible (ej. sin HTTPS).
+  // "Código de acceso": genera un código de activación de 6 dígitos (48 h,
+  // un solo uso) para entregar por WhatsApp o en persona. Antes generaba una
+  // clave temporal que se mostraba en pantalla; con la clave inicial cerrada
+  // (CLAVE_INICIAL_HASTA en el backend), el código es la vía para cuentas sin
+  // correo. La persona lo canjea en "¿Primera vez u olvidaste tu contraseña?"
+  // → "Tengo un código del club".
   const resetearClaveDesdeLista = async (cuenta) => {
-    const nombreMostrar = `${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim() || cuenta.correo || cuenta.rut;
-    const clave = generarClaveAleatoria();
     setReseteandoClaveId(cuenta.id);
     try {
-      await guardarCuentaAdmin({ password: clave, forzar_clave: true }, cuenta.id);
-      let copiada = false;
-      try {
-        await navigator.clipboard.writeText(clave);
-        copiada = true;
-      } catch {
-        // Portapapeles no disponible (ej. sin HTTPS) — igual se muestra en el toast.
-      }
-      showToast({
-        message: `Nueva clave para ${nombreMostrar}: ${clave}${copiada ? ' (copiada al portapapeles)' : ''}`,
-        type: 'success',
-        duration: 10000,
-      });
+      const respuesta = await api.cuentasAPI.generarCodigoActivacion(cuenta.id);
+      setCodigoActivacion(respuesta);
     } catch (error) {
-      showToast({ message: `No se pudo restablecer la contraseña: ${error.message}`, type: 'error' });
+      showToast({ message: `No se pudo generar el código: ${error.message}`, type: 'error' });
     } finally {
       setReseteandoClaveId(null);
     }
+  };
+
+  // Número para wa.me: solo dígitos con código de país (Chile por defecto).
+  const telefonoParaWhatsApp = (telefono = '') => {
+    const digitos = String(telefono || '').replace(/\D/g, '');
+    if (digitos.startsWith('56') && digitos.length === 11) return digitos;
+    if (digitos.length === 9 && digitos.startsWith('9')) return `56${digitos}`;
+    if (digitos.length === 8) return `569${digitos}`;
+    return digitos.length >= 10 ? digitos : '';
+  };
+
+  const mensajeCodigoActivacion = (datos) => {
+    const nombre = String(datos?.nombre || '').split(' ')[0];
+    return [
+      `Hola${nombre ? ` ${nombre}` : ''}! Este es tu código de activación de la app del Club Centro de Cultura Física: ${datos?.codigo}`,
+      '',
+      `1. Entra a ${window.location.origin}`,
+      '2. Toca "Ingreso Usuarios CCF" y luego "¿Primera vez u olvidaste tu contraseña?"',
+      `3. Elige "Tengo un código del club", ingresa tu RUT (${datos?.rut || ''}) y el código, y crea tu contraseña.`,
+      '',
+      `El código vence en ${datos?.vigencia_horas || 48} horas y sirve una sola vez. No lo compartas con nadie.`,
+    ].join('\n');
   };
 
   const guardarEdicionActual = async () => {
@@ -2799,7 +2808,7 @@ function SuperAdminPanel({
       className="card"
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-        padding: '20px 12px', borderRadius: '18px', border: '1px solid var(--borde)', cursor: 'pointer',
+        padding: '20px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--borde)', cursor: 'pointer',
         background: 'white', textAlign: 'center', minHeight: '96px',
       }}
     >
@@ -2878,14 +2887,14 @@ function SuperAdminPanel({
           <h3 className="section-title">Cuentas por tipo</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', marginBottom: '20px' }}>
             {[...personasStats.porRol.entries()].sort((a, b) => b[1] - a[1]).map(([rol, cantidad]) => (
-              <div key={`personas-rol-${rol}`} className="card" style={{ borderRadius: '16px', padding: '12px', textAlign: 'center' }}>
+              <div key={`personas-rol-${rol}`} className="card" style={{ borderRadius: 'var(--radius-md)', padding: '12px', textAlign: 'center' }}>
                 <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--azul-electrico)' }}>{cantidad}</div>
                 <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--texto-secundario)' }}>{ETIQUETAS_ROL_RESUMEN[rol] || rol}</div>
               </div>
             ))}
           </div>
 
-          <div className="card" style={{ borderRadius: '18px', padding: '16px', textAlign: 'center' }}>
+          <div className="card" style={{ borderRadius: 'var(--radius-md)', padding: '16px', textAlign: 'center' }}>
             <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', margin: 0 }}>
               Para dar de alta un nuevo socio, apoderado o deportista, o revisar/editar cualquier ficha, ve a <strong>Usuarios y Cuentas</strong>.
             </p>
@@ -2907,6 +2916,11 @@ function SuperAdminPanel({
             </button>
             <button type="button" className={`segment-btn ${vistaUsuarios === 'cuentas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('cuentas')}>
               <User size={14} /> Cuentas ({cuentasAdmin.length})
+            </button>
+            {/* Permisos individuales: antes solo en el engranaje (panel chico)
+                o escondidos en Sistema; ahora junto a las cuentas que afectan. */}
+            <button type="button" className="segment-btn" onClick={() => setVistaAdmin('permisos')}>
+              <ShieldCheck size={14} /> Permisos
             </button>
           </div>
 
@@ -3018,11 +3032,11 @@ function SuperAdminPanel({
           )}
 
           {editandoTipo === 'cuenta' && cuentaAdminEdit && (
-            <div ref={edicionCuentaRef} className="card" style={{ borderRadius: '24px' }}>
+            <div ref={edicionCuentaRef} className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
               <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
 
               {(esAdmin || esSuperAdmin) && (
-                <div style={{ marginBottom: '16px', padding: '14px', borderRadius: '16px', background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.18)' }}>
+                <div style={{ marginBottom: '16px', padding: '14px', borderRadius: 'var(--radius-md)', background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.18)' }}>
                   <label style={{ display: 'block', fontWeight: '800', marginBottom: '8px' }}>¿El usuario olvidó su contraseña?</label>
                   {nuevaClaveCuenta.trim() ? (
                     <>
@@ -3062,14 +3076,13 @@ function SuperAdminPanel({
                       type="button"
                       className="btn-electric"
                       style={{ width: 'auto' }}
-                      onClick={() => {
-                        const clave = generarClaveAleatoria();
-                        setNuevaClaveCuenta(clave);
-                        setMostrarNuevaClaveCuenta(true);
-                        setCuentaAdminEdit((p) => ({ ...p, forzar_clave: true }));
-                      }}
+                      // Código de activación (WhatsApp/en persona) en vez de una clave
+                      // temporal: con la clave inicial cerrada, una clave temporal con
+                      // forzar_clave ya no da acceso a cuentas sin correo.
+                      onClick={() => resetearClaveDesdeLista(cuentaAdminEdit)}
+                      disabled={reseteandoClaveId === cuentaAdminEdit.id}
                     >
-                      <Lock size={15} /> Restablecer contraseña
+                      <Lock size={15} /> {reseteandoClaveId === cuentaAdminEdit.id ? 'Generando...' : 'Código de acceso por WhatsApp'}
                     </button>
                   )}
                 </div>
@@ -3172,14 +3185,14 @@ function SuperAdminPanel({
                 )}
               </div>
 
-              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+              <div className="card" style={{ marginTop: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
                 <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><Users size={15} /> Pupilos del apoderado</h4>
                 <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0 }}>
                   Asigna o corrige manualmente los hijos/pupilos para esta cuenta usando el correo del apoderado.
                 </p>
 
                 {!String(cuentaPupilosActiva?.correo || '').trim() && (
-                  <div style={{ fontSize: '12px', color: '#b36200', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: '10px', padding: '8px 10px', marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12px', color: '#b36200', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', marginBottom: '10px' }}>
                     Guarda un correo válido en la cuenta antes de asignar pupilos.
                   </div>
                 )}
@@ -3188,7 +3201,7 @@ function SuperAdminPanel({
                   <strong style={{ fontSize: '12px' }}>Pupilos actualmente asociados ({pupilosAsignadosCuenta.length})</strong>
                   <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {pupilosAsignadosCuenta.map((j) => (
-                      <div key={`pupilo-asig-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'rgba(0,122,255,0.07)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: '10px', padding: '8px' }}>
+                      <div key={`pupilo-asig-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'rgba(0,122,255,0.07)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: 'var(--radius-sm)', padding: '8px' }}>
                         <div>
                           <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
                           <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.categoria || 'Sin categoría'}</div>
@@ -3243,7 +3256,7 @@ function SuperAdminPanel({
 
                   <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {jugadoresDisponiblesAsignacion.map((j) => (
-                      <div key={`pupilo-disp-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed rgba(0,0,0,0.15)', borderRadius: '10px', padding: '8px' }}>
+                      <div key={`pupilo-disp-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', border: '1px dashed rgba(0,0,0,0.15)', borderRadius: 'var(--radius-sm)', padding: '8px' }}>
                         <div>
                           <div style={{ fontSize: '12px', fontWeight: '800' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</div>
                           <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador || 'Sin RUT'} · {j.rama || 'Sin rama'} · {j.categoria || 'Sin categoría'}</div>
@@ -3337,7 +3350,7 @@ function SuperAdminPanel({
                 emptyMessage: 'Este jugador no tiene una cuenta asociada por correo_apoderado. Guarda o corrige esa relación para poder administrar permisos desde aquí.',
               })}
 
-              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+              <div className="card" style={{ marginTop: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
                 <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> Deportista autogestionable</h4>
                 <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '10px' }}>
                   Le da a este deportista acceso a "Mi Cuenta" con SU PROPIO login (entra con su RUT, no con el de su apoderado) para ver y pagar su mensualidad directamente. Si todavía no tiene cuenta propia, se crea sola con clave inicial <strong>12345</strong> (se la pide cambiar al primer ingreso).
@@ -3370,7 +3383,7 @@ function SuperAdminPanel({
             </div>
           )}
 
-          <div className="card" style={{ borderRadius: '24px' }}>
+          <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle"><Plus size={16} /> Agregar Nuevo Registro</h4>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
               <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'cuenta' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'cuenta' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('cuenta')}>Cuenta</button>
@@ -3456,14 +3469,14 @@ function SuperAdminPanel({
             )}
 
             {tipoNuevoUsuario === 'cuenta' && (
-              <div className="card" style={{ marginTop: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+              <div className="card" style={{ marginTop: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
                 <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> Permisos iniciales</h4>
                 <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '10px' }}>
                   La cuenta nueva tomará los permisos base según el rol de acceso seleccionado. Después de guardar, podrás ajustar módulos específicos en esta misma vista unificada.
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {MODULOS_ACCESO.filter((modulo) => modulo.id !== 'mesa_publica' && obtenerPermisosBasePorRol(nuevaCuenta.rol || 'apoderado')[modulo.id]).map((modulo) => (
-                    <span key={`nuevo-perm-${modulo.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 8px', borderRadius: '999px', background: 'rgba(0,122,255,0.08)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800' }}>
+                    <span key={`nuevo-perm-${modulo.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 8px', borderRadius: 'var(--radius-pill)', background: 'rgba(0,122,255,0.08)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800' }}>
                       <ShieldCheck size={11} /> {modulo.etiqueta}
                     </span>
                   ))}
@@ -3482,7 +3495,7 @@ function SuperAdminPanel({
         <div className="fade-in">
           <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
           <h3 className="section-title">Activos Visuales</h3>
-          <div className="card" style={{ borderLeft: '4px solid var(--verde-victoria)', marginBottom: '15px', borderRadius: '24px' }}>
+          <div className="card" style={{ borderLeft: '4px solid var(--verde-victoria)', marginBottom: '15px', borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle"><Image size={16} /> Subida de logos y activos visuales</h4>
             <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
               Sube logos de clubes, torneos o campeonatos. El archivo se guardará en /public/logos con nombre normalizado para reutilizarlo por nombre o slug.
@@ -3513,7 +3526,7 @@ function SuperAdminPanel({
             </div>
             {(subiendoLogoAsset || progresoLogoAsset > 0) && (
               <div style={{ marginTop: '12px' }}>
-                <div style={{ height: '10px', borderRadius: '999px', background: 'rgba(15,23,42,0.08)', overflow: 'hidden', border: '1px solid rgba(0,122,255,0.15)' }}>
+                <div style={{ height: '10px', borderRadius: 'var(--radius-pill)', background: 'rgba(15,23,42,0.08)', overflow: 'hidden', border: '1px solid rgba(0,122,255,0.15)' }}>
                   <div
                     style={{
                       width: `${progresoLogoAsset}%`,
@@ -3530,7 +3543,7 @@ function SuperAdminPanel({
             )}
           </div>
 
-          <div className="card" style={{ borderRadius: '24px' }}>
+          <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
               <h4 className="form-subtitle" style={{ margin: 0 }}><Image size={16} /> Logos disponibles</h4>
               <button className="btn-secondary" onClick={cargarLogosDisponiblesActivos} disabled={cargandoLogosDisponibles}>
@@ -3562,7 +3575,7 @@ function SuperAdminPanel({
             {!errorLogosDisponibles && logosDisponiblesActivos.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
                 {logosDisponiblesActivos.map((logo) => (
-                  <div key={logo.filename || logo.url} style={{ border: '1px solid rgba(15,23,42,0.08)', borderRadius: '14px', padding: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div key={logo.filename || logo.url} style={{ border: '1px solid rgba(15,23,42,0.08)', borderRadius: 'var(--radius-md)', padding: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <LogoAvatar nombre={logo.nombre || logo.filename || 'Logo'} logoUrl={logo.url || ''} size={36} borderRadius="10px" />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-principal)', wordBreak: 'break-word' }}>
@@ -3591,7 +3604,7 @@ function SuperAdminPanel({
       {vistaAdmin === 'pagos' && (
         <div className="fade-in">
           <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
-          <div className="card mb-15" style={{ borderRadius: '18px', padding: '12px' }}>
+          <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', padding: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
               <div className="form-group" style={{ marginBottom: 0, flex: '1 1 180px' }}>
                 <label style={{ fontSize: '11px' }}>Ver mes</label>
@@ -3627,7 +3640,7 @@ function SuperAdminPanel({
           <h3 className="section-title mt-0">Bandeja de Validación</h3>
 
           {rolUsuario === 'super_admin' && (
-            <div className="card mb-15" style={{ borderRadius: '18px', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
+            <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div>
                   <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>Pago manual</h4>
@@ -3647,7 +3660,7 @@ function SuperAdminPanel({
                     background: 'var(--azul-electrico)',
                     color: 'white',
                     border: 'none',
-                    borderRadius: '8px',
+                    borderRadius: 'var(--radius-sm)',
                     fontWeight: '600',
                     fontSize: '12px',
                     cursor: 'pointer',
@@ -3697,9 +3710,9 @@ function SuperAdminPanel({
                       type="button"
                       onClick={() => setComprobanteEnVista({ url: urlComprobante, esImagen: true })}
                       className="mb-15"
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: 'rgba(0,122,255,0.05)', border: '1px solid rgba(0,122,255,0.2)', borderRadius: '14px', cursor: 'pointer', width: '100%', textAlign: 'left' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: 'rgba(0,122,255,0.05)', border: '1px solid rgba(0,122,255,0.2)', borderRadius: 'var(--radius-md)', cursor: 'pointer', width: '100%', textAlign: 'left' }}
                     >
-                      <img src={urlComprobante} alt="Comprobante de pago" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '10px', border: '1px solid rgba(0,122,255,0.2)' }} />
+                      <img src={urlComprobante} alt="Comprobante de pago" style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(0,122,255,0.2)' }} />
                       <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--azul-electrico)' }}>Ver comprobante completo</span>
                     </button>
                   ) : (
@@ -3722,13 +3735,13 @@ function SuperAdminPanel({
               )}
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
-                  style={{ flex: 1, padding: '12px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                  style={{ flex: 1, padding: '12px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
                   onClick={async () => { await validarPagoMensualidad(pago.id, 'aprobado'); showToast({ message: 'Pago aprobado correctamente.', type: 'success' }); }}
                 >
                   <CheckSquare size={16} /> Aprobar
                 </button>
                 <button
-                  style={{ flex: 1, padding: '12px', background: 'var(--rojo-alerta)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                  style={{ flex: 1, padding: '12px', background: 'var(--rojo-alerta)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
                   onClick={async () => { await validarPagoMensualidad(pago.id, 'rechazado'); showToast({ message: 'Pago rechazado correctamente.', type: 'success' }); }}
                 >
                   <XSquare size={16} /> Rechazar
@@ -3760,7 +3773,7 @@ function SuperAdminPanel({
                   background: 'var(--azul-electrico)',
                   color: 'white',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: 'var(--radius-sm)',
                   fontWeight: '600',
                   fontSize: '12px',
                   cursor: 'pointer',
@@ -3796,7 +3809,7 @@ function SuperAdminPanel({
                           .trim();
 
                         return (
-                          <div key={pago.id} className="card" style={{ marginBottom: '8px', borderLeft: '4px solid #FF9500', borderRadius: '18px', background: 'rgba(255,149,0,0.04)' }}>
+                          <div key={pago.id} className="card" style={{ marginBottom: '8px', borderLeft: '4px solid #FF9500', borderRadius: 'var(--radius-md)', background: 'rgba(255,149,0,0.04)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
                               <div style={{ flex: 1 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -3812,7 +3825,7 @@ function SuperAdminPanel({
                               </div>
                               <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                                 <button
-                                  style={{ padding: '7px 10px', background: '#007AFF', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  style={{ padding: '7px 10px', background: '#007AFF', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: '700', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                   onClick={() => {
                                     setPagoEditandoId(pago.id);
                                     setMostrarFormularioPago(true);
@@ -3823,14 +3836,14 @@ function SuperAdminPanel({
                                   <Pencil size={12} />
                                 </button>
                                 <button
-                                  style={{ padding: '7px 10px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
+                                  style={{ padding: '7px 10px', background: 'var(--verde-victoria)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
                                   onClick={async () => { await validarPagoMensualidad(pago.id, 'aprobado'); }}
                                   title="Aprobar"
                                 >
                                   <CheckSquare size={13} />
                                 </button>
                                 <button
-                                  style={{ padding: '7px 10px', background: 'var(--rojo-alerta)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
+                                  style={{ padding: '7px 10px', background: 'var(--rojo-alerta)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: '700', fontSize: '11px', cursor: 'pointer' }}
                                   onClick={async () => { await validarPagoMensualidad(pago.id, 'rechazado'); }}
                                   title="Rechazar"
                                 >
@@ -3843,7 +3856,7 @@ function SuperAdminPanel({
                       })}
 
                       {totalPaginas > 1 && (
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '16px', padding: '12px', background: 'var(--gris-fondo)', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '16px', padding: '12px', background: 'var(--gris-fondo)', borderRadius: 'var(--radius-sm)' }}>
                           <button
                             onClick={() => setPaginaPagosMigrados(Math.max(1, paginaPagosMigrados - 1))}
                             disabled={paginaPagosMigrados === 1}
@@ -3852,7 +3865,7 @@ function SuperAdminPanel({
                               background: paginaPagosMigrados === 1 ? 'var(--gris-deshabilitado)' : 'var(--azul-electrico)',
                               color: 'white',
                               border: 'none',
-                              borderRadius: '6px',
+                              borderRadius: 'var(--radius-sm)',
                               cursor: paginaPagosMigrados === 1 ? 'not-allowed' : 'pointer',
                               fontSize: '12px',
                               fontWeight: '600'
@@ -3871,7 +3884,7 @@ function SuperAdminPanel({
                               background: paginaPagosMigrados === totalPaginas ? 'var(--gris-deshabilitado)' : 'var(--azul-electrico)',
                               color: 'white',
                               border: 'none',
-                              borderRadius: '6px',
+                              borderRadius: 'var(--radius-sm)',
                               cursor: paginaPagosMigrados === totalPaginas ? 'not-allowed' : 'pointer',
                               fontSize: '12px',
                               fontWeight: '600'
@@ -3892,7 +3905,7 @@ function SuperAdminPanel({
             type="button"
             onClick={() => setVistaAdmin('becas')}
             className="card mb-20"
-            style={{ borderRadius: '20px', padding: '14px', width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}
+            style={{ borderRadius: 'var(--radius-lg)', padding: '14px', width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}
           >
             <div>
               <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>🎓 Becas de Deportistas ({becasAdmin.length})</h4>
@@ -3900,12 +3913,12 @@ function SuperAdminPanel({
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {becasVencidasCount > 0 && (
-                <span style={{ fontSize: '11px', fontWeight: '800', color: 'white', background: 'var(--rojo-alerta)', padding: '4px 10px', borderRadius: '999px' }}>
+                <span style={{ fontSize: '11px', fontWeight: '800', color: 'white', background: 'var(--rojo-alerta)', padding: '4px 10px', borderRadius: 'var(--radius-pill)' }}>
                   {becasVencidasCount} vencida{becasVencidasCount === 1 ? '' : 's'}
                 </span>
               )}
               {becasPorVencerCount > 0 && (
-                <span style={{ fontSize: '11px', fontWeight: '800', color: 'white', background: '#FF9500', padding: '4px 10px', borderRadius: '999px' }}>
+                <span style={{ fontSize: '11px', fontWeight: '800', color: 'white', background: '#FF9500', padding: '4px 10px', borderRadius: 'var(--radius-pill)' }}>
                   {becasPorVencerCount} por vencer
                 </span>
               )}
@@ -3934,7 +3947,7 @@ function SuperAdminPanel({
           </div>
 
           <h3 className="section-title">Deportistas por Rama y Categoría</h3>
-          <div className="card mb-20" style={{ borderRadius: '20px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="card mb-20" style={{ borderRadius: 'var(--radius-lg)', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {deportistasPorRamaCategoria.length === 0 && (
               <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>Sin deportistas cargados todavía.</p>
             )}
@@ -3942,11 +3955,11 @@ function SuperAdminPanel({
               <div key={grupoRama.rama}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <strong style={{ fontSize: '13px' }}>{grupoRama.rama}</strong>
-                  <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '2px 9px', borderRadius: '999px' }}>{grupoRama.total}</span>
+                  <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '2px 9px', borderRadius: 'var(--radius-pill)' }}>{grupoRama.total}</span>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {grupoRama.categorias.map((c) => (
-                    <span key={`${grupoRama.rama}-${c.categoria}`} style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(0,0,0,0.05)', padding: '4px 9px', borderRadius: '999px' }}>
+                    <span key={`${grupoRama.rama}-${c.categoria}`} style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(0,0,0,0.05)', padding: '4px 9px', borderRadius: 'var(--radius-pill)' }}>
                       {c.categoria}: {c.total}
                     </span>
                   ))}
@@ -3955,7 +3968,7 @@ function SuperAdminPanel({
             ))}
           </div>
 
-          <div className="card mb-20" style={{ borderRadius: '20px', padding: '14px' }}>
+          <div className="card mb-20" style={{ borderRadius: 'var(--radius-lg)', padding: '14px' }}>
             <button
               type="button"
               onClick={() => setMostrarRecaudacion((v) => !v)}
@@ -3992,7 +4005,7 @@ function SuperAdminPanel({
           <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
             {filtroMesResumen === 'todos' ? 'Toca un mes para ver el detalle de quién pagó y quién quedó pendiente.' : `Viendo solo ${filtroMesResumen}. Elige "Todo el año" arriba para ver los 12 meses.`}
           </p>
-          <div className="card mb-20" style={{ borderRadius: '20px', padding: '8px' }}>
+          <div className="card mb-20" style={{ borderRadius: 'var(--radius-lg)', padding: '8px' }}>
             {(filtroMesResumen === 'todos' ? recaudacionMensual : recaudacionMensual.filter((f) => f.mes === filtroMesResumen)).map((fila) => {
               const abierto = filtroMesResumen !== 'todos' || mesRecaudacionActivo === fila.mes;
               const sociosDelMes = filtroRamaRecaudacion !== 'todas' || filtroCategoriaRecaudacion !== 'todas'
@@ -4101,7 +4114,7 @@ function SuperAdminPanel({
           {[...sociosMorososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map((s) => {
             const gravedad = s.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : s.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
             return (
-              <div key={s.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: '20px', background: 'rgba(255,255,255,0.72)' }}>
+              <div key={s.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: 'var(--radius-lg)', background: 'rgba(255,255,255,0.72)' }}>
                 <div className="moroso-info">
                   <span className="moroso-nombre">{s.nombre}</span>
                   <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
@@ -4110,7 +4123,7 @@ function SuperAdminPanel({
                   {(s.mesesMorosos || []).length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
                       {s.mesesMorosos.map((mes) => (
-                        <span key={`${s.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: '999px', padding: '2px 7px' }}>
+                        <span key={`${s.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: 'var(--radius-pill)', padding: '2px 7px' }}>
                           {mes}
                         </span>
                       ))}
@@ -4223,7 +4236,7 @@ function SuperAdminPanel({
                 </p>
               )}
               {[...pagadosFiltrados].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((p) => (
-                <div key={p.id} className="moroso-row" style={{ borderLeft: '4px solid var(--verde-victoria)', borderRadius: '20px', background: 'rgba(255,255,255,0.72)' }}>
+                <div key={p.id} className="moroso-row" style={{ borderLeft: '4px solid var(--verde-victoria)', borderRadius: 'var(--radius-lg)', background: 'rgba(255,255,255,0.72)' }}>
                   <div className="moroso-info">
                     <span className="moroso-nombre">{p.nombre}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
@@ -4234,7 +4247,7 @@ function SuperAdminPanel({
                         </span>
                       )}
                       {(p.rama || p.categoria) && (
-                        <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: '999px' }}>
+                        <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>
                           {[p.rama, p.categoria].filter(Boolean).join(' · ')}
                         </span>
                       )}
@@ -4263,7 +4276,7 @@ function SuperAdminPanel({
             const esFamiliaSocia = m.tipo === 'socio' || m.tipo === 'socio-apoderado';
             const { bg, color } = colorTipo(m.tipo);
             return (
-              <div key={m.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: '20px', background: 'rgba(255,255,255,0.72)' }}>
+              <div key={m.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: 'var(--radius-lg)', background: 'rgba(255,255,255,0.72)' }}>
                 <div className="moroso-info">
                   <span className="moroso-nombre">{m.nombre}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
@@ -4274,7 +4287,7 @@ function SuperAdminPanel({
                       </span>
                     )}
                     {(m.rama || m.categoria) && (
-                      <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: '999px' }}>
+                      <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>
                         {[m.rama, m.categoria].filter(Boolean).join(' · ')}
                       </span>
                     )}
@@ -4286,7 +4299,7 @@ function SuperAdminPanel({
                   {(m.mesesMorosos || []).length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
                       {m.mesesMorosos.map((mes) => (
-                        <span key={`${m.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: '999px', padding: '2px 7px' }}>
+                        <span key={`${m.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: 'var(--radius-pill)', padding: '2px 7px' }}>
                           {mes}
                         </span>
                       ))}
@@ -4403,16 +4416,16 @@ function SuperAdminPanel({
             const estadoInfo = ETIQUETA_ESTADO_BECA[j.estado_beca] || ETIQUETA_ESTADO_BECA.vigente;
             const historialAbierto = historialBecaAbierto === j.rut_jugador;
             return (
-              <div key={j.rut_jugador} className="card mb-10" style={{ borderRadius: '20px', padding: '14px', borderLeft: `4px solid ${estadoInfo.color}` }}>
+              <div key={j.rut_jugador} className="card mb-10" style={{ borderRadius: 'var(--radius-lg)', padding: '14px', borderLeft: `4px solid ${estadoInfo.color}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: '180px' }}>
                     <strong style={{ fontSize: '14px' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</strong>
                     <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '2px' }}>{j.rut_jugador} · {j.rama || 'N/A'} · {j.categoria || 'N/A'}</div>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '900', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.1)', padding: '3px 10px', borderRadius: '999px' }}>{Number(j.beca)}%</span>
-                      <span style={{ fontSize: '11px', fontWeight: '800', color: estadoInfo.color, background: estadoInfo.bg, padding: '3px 10px', borderRadius: '999px' }}>{estadoInfo.texto}</span>
+                      <span style={{ fontSize: '12px', fontWeight: '900', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.1)', padding: '3px 10px', borderRadius: 'var(--radius-pill)' }}>{Number(j.beca)}%</span>
+                      <span style={{ fontSize: '11px', fontWeight: '800', color: estadoInfo.color, background: estadoInfo.bg, padding: '3px 10px', borderRadius: 'var(--radius-pill)' }}>{estadoInfo.texto}</span>
                       {j.beca_motivo && (
-                        <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(0,0,0,0.05)', padding: '3px 10px', borderRadius: '999px' }}>{j.beca_motivo}</span>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(0,0,0,0.05)', padding: '3px 10px', borderRadius: 'var(--radius-pill)' }}>{j.beca_motivo}</span>
                       )}
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '6px', fontWeight: '700' }}>
@@ -4456,7 +4469,7 @@ function SuperAdminPanel({
           onClick={() => setMostrarModalBeca(false)}
         >
           <div
-            style={{ background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '480px', width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+            style={{ background: 'white', borderRadius: 'var(--radius-md)', padding: '24px', maxWidth: '480px', width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
@@ -4485,7 +4498,7 @@ function SuperAdminPanel({
                       key={j.rut_jugador}
                       type="button"
                       onClick={() => abrirNuevaBeca(j)}
-                      style={{ textAlign: 'left', padding: '10px 12px', borderRadius: '10px', border: '1px solid var(--borde)', background: 'white', cursor: 'pointer' }}
+                      style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--borde)', background: 'white', cursor: 'pointer' }}
                     >
                       <strong style={{ fontSize: '13px' }}>{`${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()}</strong>
                       <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{j.rut_jugador} · {j.rama || 'N/A'} · {j.categoria || 'N/A'}{j.beca > 0 ? ` · ya tiene ${j.beca}%` : ''}</div>
@@ -4498,7 +4511,7 @@ function SuperAdminPanel({
               </>
             ) : (
               <>
-                <div style={{ background: 'var(--gris-fondo)', borderRadius: '12px', padding: '10px 12px', marginBottom: '14px' }}>
+                <div style={{ background: 'var(--gris-fondo)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: '14px' }}>
                   <strong style={{ fontSize: '13px' }}>{`${jugadorBecaObjetivo.nombres || ''} ${jugadorBecaObjetivo.apellido_paterno || ''}`.trim()}</strong>
                   <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{jugadorBecaObjetivo.rut_jugador} · {jugadorBecaObjetivo.rama || 'N/A'} · {jugadorBecaObjetivo.categoria || 'N/A'}</div>
                 </div>
@@ -4559,7 +4572,7 @@ function SuperAdminPanel({
                   </button>
                   <button
                     type="button"
-                    style={{ flex: 1, padding: '12px', background: 'var(--azul-electrico)', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                    style={{ flex: 1, padding: '12px', background: 'var(--azul-electrico)', color: 'white', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: 'bold', cursor: 'pointer' }}
                     disabled={guardandoBeca}
                     onClick={guardarBeca}
                   >
@@ -4576,7 +4589,7 @@ function SuperAdminPanel({
       {vistaAdmin === 'auditoria' && (
         <div className="fade-in">
           <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
-          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
+          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: 'var(--radius-lg)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
               <div>
                 <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><RefreshCcw size={16} /> Sincronización Google Sheets</h4>
@@ -4588,7 +4601,7 @@ function SuperAdminPanel({
                   PAGOS_MENSUALIDADES enteros en el Sheet poco después, así que ahí sí se reflejan tanto altas como ediciones.
                 </p>
               </div>
-              <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '6px 10px', borderRadius: '999px' }}>
+              <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--azul-electrico)', background: 'rgba(0,122,255,0.08)', padding: '6px 10px', borderRadius: 'var(--radius-pill)' }}>
                 Fuente real activa
               </span>
             </div>
@@ -4616,7 +4629,7 @@ function SuperAdminPanel({
 
           </div>
 
-          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
+          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><RefreshCcw size={16} /> UTM histórica (cuota de socio)</h4>
             <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
               La cuota de socio (0,3 UTM) se calcula con el valor real de la UTM del mes que se cobra, guardado una sola vez
@@ -4639,7 +4652,7 @@ function SuperAdminPanel({
             )}
           </div>
 
-          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
+          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><AlertTriangle size={16} /> Cuotas de socio fijadas a mano</h4>
             <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
               Si una cuenta de socio tiene un monto guardado directo (no el cálculo real de 0,3 UTM del mes), ese valor le
@@ -4668,7 +4681,7 @@ function SuperAdminPanel({
             )}
           </div>
 
-          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
+          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle" style={{ marginBottom: '6px' }}><AlertTriangle size={16} /> Rol y perfil desincronizados</h4>
             <p style={{ margin: 0, fontSize: '12px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
               Solo el campo "Rol" determina qué puede ver cada cuenta — el formulario de edición ya escribe rol y perfil
@@ -4699,9 +4712,9 @@ function SuperAdminPanel({
             )}
           </div>
 
-          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: '24px' }}>
+          <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: 'var(--radius-lg)' }}>
             {(cuentasIncompletas.length > 0 || jugadoresIncompletos.length > 0 || pagosConCorreccion.length > 0) && (
-              <div className="card" style={{ marginTop: '12px', borderLeft: '4px solid #FF9500', borderRadius: '20px', background: 'rgba(255,149,0,0.08)' }}>
+              <div className="card" style={{ marginTop: '12px', borderLeft: '4px solid #FF9500', borderRadius: 'var(--radius-lg)', background: 'rgba(255,149,0,0.08)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                   <AlertTriangle size={16} color="#b36200" />
                   <strong style={{ color: '#b36200', fontSize: '13px' }}>Alertas de corrección pendientes</strong>
@@ -4745,7 +4758,7 @@ function SuperAdminPanel({
                 en la respuesta de /admin/sync-sheets (qualitySummary); acá
                 solo faltaba mostrarlos. */}
             {syncSheetsResult?.qualitySummary && (
-              <div className="card" style={{ marginTop: '12px', borderRadius: '18px', background: 'rgba(0,0,0,0.02)' }}>
+              <div className="card" style={{ marginTop: '12px', borderRadius: 'var(--radius-md)', background: 'rgba(0,0,0,0.02)' }}>
                 <h5 className="form-subtitle" style={{ marginBottom: '8px', fontSize: '12px' }}>Calidad de datos (último sync)</h5>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
                   {[
@@ -4760,7 +4773,7 @@ function SuperAdminPanel({
                       <div
                         key={label}
                         style={{
-                          borderRadius: '12px',
+                          borderRadius: 'var(--radius-sm)',
                           padding: '10px 12px',
                           background: conProblema ? 'rgba(255,59,48,0.08)' : 'rgba(52,199,89,0.08)',
                           border: `1px solid ${conProblema ? 'rgba(255,59,48,0.25)' : 'rgba(52,199,89,0.25)'}`,
@@ -4810,7 +4823,7 @@ function SuperAdminPanel({
           {vistaCitaciones === 'crear' && (
           <div className="card mt-15">
             {citaEditandoId && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: 'rgba(0,122,255,0.08)', border: '1px solid rgba(0,122,255,0.24)', borderRadius: '12px', padding: '10px 12px', marginBottom: '15px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: 'rgba(0,122,255,0.08)', border: '1px solid rgba(0,122,255,0.24)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: '15px' }}>
                 <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--azul-electrico)' }}>Editando citación #{citaEditandoId}</span>
                 <button type="button" className="btn-secondary" style={{ width: 'auto', padding: '7px 12px' }} onClick={resetFormularioCitacion}>Cancelar edición</button>
               </div>
@@ -4819,7 +4832,7 @@ function SuperAdminPanel({
               <h4 className="form-subtitle" style={{ margin: 0 }}>{citaEditandoId ? 'Datos de la citación' : 'Nómina FIBA (Tope 12)'}</h4>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {!citaEditandoId && (
-                  <span style={{ background: cuposCitados >= 12 ? 'var(--rojo-alerta)' : 'var(--verde-victoria)', color: 'white', padding: '6px 12px', borderRadius: '10px', fontSize: '12px', fontWeight: '900' }}>
+                  <span style={{ background: cuposCitados >= 12 ? 'var(--rojo-alerta)' : 'var(--verde-victoria)', color: 'white', padding: '6px 12px', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: '900' }}>
                     {cuposCitados}/12 Cupos
                   </span>
                 )}
@@ -4956,7 +4969,7 @@ function SuperAdminPanel({
               )}
             </div>
 
-            <div className="card" style={{ marginBottom: '12px', borderRadius: '16px', border: '1px solid rgba(0,122,255,0.16)' }}>
+            <div className="card" style={{ marginBottom: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <LogoAvatar nombre={citaForm.competencia_nombre || 'Competencia'} logoUrl={citaForm.competencia_logo_url || '/logos/club-logo.png'} size={30} borderRadius="999px" />
@@ -4992,7 +5005,7 @@ function SuperAdminPanel({
                   const autorizado = Boolean(autorizacionMorosos[jugador.rut_jugador]);
 
                   return (
-                  <div key={jugador.rut_jugador} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', background: 'var(--fondo-app)', border: `1px solid ${requiereAutorizacion ? 'rgba(255,149,0,0.45)' : 'rgba(0,0,0,0.05)'}`, borderRadius: '12px', marginBottom: '10px' }}>
+                  <div key={jugador.rut_jugador} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', background: 'var(--fondo-app)', border: `1px solid ${requiereAutorizacion ? 'rgba(255,149,0,0.45)' : 'rgba(0,0,0,0.05)'}`, borderRadius: 'var(--radius-sm)', marginBottom: '10px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <strong style={{ fontSize: '15px', color: 'var(--texto-principal)' }}>{`${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim()}</strong>
                       <span className="text-caption" style={{ fontWeight: 'bold' }}>
@@ -5001,12 +5014,12 @@ function SuperAdminPanel({
 
                       {requiereAutorizacion && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(255,149,0,0.14)', color: '#b36200', border: '1px solid rgba(255,149,0,0.45)', borderRadius: '999px', padding: '4px 9px', fontSize: '11px', fontWeight: '800' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(255,149,0,0.14)', color: '#b36200', border: '1px solid rgba(255,149,0,0.45)', borderRadius: 'var(--radius-pill)', padding: '4px 9px', fontSize: '11px', fontWeight: '800' }}>
                             <AlertTriangle size={12} /> Moroso
                           </span>
                           {!autorizado ? (
                             <button
-                              style={{ border: 'none', borderRadius: '999px', padding: '7px 12px', background: 'linear-gradient(180deg, #ffb347 0%, #FF9500 100%)', color: 'white', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                              style={{ border: 'none', borderRadius: 'var(--radius-pill)', padding: '7px 12px', background: 'linear-gradient(180deg, #ffb347 0%, #FF9500 100%)', color: 'white', fontSize: '11px', fontWeight: '800', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                               onClick={() => setAutorizacionMorosos((prev) => ({ ...prev, [jugador.rut_jugador]: true }))}
                             >
                               <ShieldCheck size={12} /> Autorizar citacion
@@ -5064,7 +5077,7 @@ function SuperAdminPanel({
                 const abierta = citacionActivaId === cita.id;
 
                 return (
-                  <div key={`cita-status-${cita.id}`} style={{ border: '1px solid rgba(0,122,255,0.14)', borderRadius: '14px', padding: '12px', marginBottom: '10px' }}>
+                  <div key={`cita-status-${cita.id}`} style={{ border: '1px solid rgba(0,122,255,0.14)', borderRadius: 'var(--radius-md)', padding: '12px', marginBottom: '10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <strong style={{ fontSize: '13px' }}>{cita.tipo_competencia} · {cita.competencia_nombre} · vs {cita.rival_nombre}</strong>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -5110,7 +5123,7 @@ function SuperAdminPanel({
                     )}
 
                     {abierta && puedeEditarNominaCitacion(cita) && (
-                      <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', background: 'rgba(0,122,255,0.05)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: '10px', padding: '8px' }}>
+                      <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', background: 'rgba(0,122,255,0.05)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: 'var(--radius-sm)', padding: '8px' }}>
                         <select
                           className="form-input"
                           style={{ margin: 0, minWidth: '240px', flex: 1 }}
@@ -5171,7 +5184,7 @@ function SuperAdminPanel({
                             ? { background: 'rgba(255,59,48,0.08)', border: '1px solid rgba(255,59,48,0.4)' }
                             : { background: 'var(--fondo-app)', border: '1px solid rgba(0,0,0,0.06)' };
                         return (
-                          <div key={`conv-${cita.id}-${conv.rut_jugador}`} style={{ ...estiloTarjeta, borderRadius: '10px', padding: '8px' }}>
+                          <div key={`conv-${cita.id}-${conv.rut_jugador}`} style={{ ...estiloTarjeta, borderRadius: 'var(--radius-sm)', padding: '8px' }}>
                             <div style={{ fontSize: '12px', fontWeight: '800' }}>{conv.nombre} · {conv.rama} · {conv.categoria}</div>
                             <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{conv.correo_apoderado || 'Sin correo apoderado'}</div>
                             <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
@@ -5285,7 +5298,7 @@ function SuperAdminPanel({
         <div className="fade-in">
           <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_deportistas')} label="Volver a Gestión Deportistas" />
           <h3 className="section-title">Jugadores de Equipos Invitados</h3>
-          <div className="card" style={{ borderRadius: '24px' }}>
+          <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle"><Plus size={16} /> Registrar jugador invitado</h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
               <div className="form-group"><label>RUT invitado *</label><input className="form-input" value={nuevoJugadorVisita.rut_visita} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, rut_visita: e.target.value }))} /></div>
@@ -5314,7 +5327,7 @@ function SuperAdminPanel({
               <div key={j.id_visita || `${j.rut_visita}-${j.nombres}`} className="card" style={{ marginBottom: '10px', borderLeft: '4px solid #00C7BE' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}>
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                    <div style={{ width: '58px', height: '58px', borderRadius: '18px', background: 'linear-gradient(135deg, rgba(0,122,255,0.12), rgba(52,199,89,0.12))', border: '1px solid rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                    <div style={{ width: '58px', height: '58px', borderRadius: 'var(--radius-md)', background: 'linear-gradient(135deg, rgba(0,122,255,0.12), rgba(52,199,89,0.12))', border: '1px solid rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
                       {j.club_logo_url ? (
                         <img src={j.club_logo_url} alt={`Logo de ${j.club_procedencia || 'club invitado'}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
@@ -5387,7 +5400,7 @@ function SuperAdminPanel({
           <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '16px' }}>
             Crea comunicaciones visibles en el Muro del club. Elige el tipo, urgencia, rama y audiencia antes de publicar.
           </p>
-          <div className="card" style={{ borderRadius: '24px' }}>
+          <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
             <div className="grid-auto-220" style={{ marginBottom: '12px' }}>
               <div className="form-group">
                 <label>Título *</label>
@@ -5490,7 +5503,7 @@ function SuperAdminPanel({
                   />
                   {subiendoImagenPublicacion && <span style={{ display: 'block', marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)' }}>Subiendo imagen...</span>}
                   {!subiendoImagenPublicacion && formPublicacion.mensaje && (
-                    <img src={formPublicacion.mensaje} alt="Vista previa" style={{ marginTop: '8px', maxWidth: '100%', maxHeight: '160px', borderRadius: '12px', display: 'block' }} />
+                    <img src={formPublicacion.mensaje} alt="Vista previa" style={{ marginTop: '8px', maxWidth: '100%', maxHeight: '160px', borderRadius: 'var(--radius-sm)', display: 'block' }} />
                   )}
                 </>
               )}
@@ -5519,12 +5532,12 @@ function SuperAdminPanel({
                     </span>
                   )}
                   {!subiendoVideoPublicacion && formPublicacion.mensaje && esUrlVideoInterno(formPublicacion.mensaje) && (
-                    <video controls preload="metadata" style={{ width: '100%', maxHeight: '220px', marginTop: '8px', borderRadius: '12px', display: 'block', background: '#000' }}>
+                    <video controls preload="metadata" style={{ width: '100%', maxHeight: '220px', marginTop: '8px', borderRadius: 'var(--radius-sm)', display: 'block', background: '#000' }}>
                       <source src={`${api.API_BASE_URL_CONFIG}/${formPublicacion.mensaje}`} />
                     </video>
                   )}
                   {!subiendoVideoPublicacion && formPublicacion.mensaje && esUrlYoutube(formPublicacion.mensaje) && (
-                    <img src={obtenerThumbnailYoutube(formPublicacion.mensaje)} alt="Miniatura del video" style={{ marginTop: '8px', maxWidth: '100%', maxHeight: '160px', borderRadius: '12px', display: 'block' }} />
+                    <img src={obtenerThumbnailYoutube(formPublicacion.mensaje)} alt="Miniatura del video" style={{ marginTop: '8px', maxWidth: '100%', maxHeight: '160px', borderRadius: 'var(--radius-sm)', display: 'block' }} />
                   )}
                 </>
               )}
@@ -5547,7 +5560,7 @@ function SuperAdminPanel({
             )}
           </div>
 
-          <div className="card" style={{ borderRadius: '24px', marginTop: '14px' }}>
+          <div className="card" style={{ borderRadius: 'var(--radius-lg)', marginTop: '14px' }}>
             <h4 className="form-subtitle" style={{ marginBottom: '10px' }}>Avisos y comunicados registrados</h4>
             {(comunicaciones || []).length === 0 && (
               <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', margin: 0 }}>No hay publicaciones registradas todavía.</p>
@@ -5555,7 +5568,7 @@ function SuperAdminPanel({
             {(comunicaciones || []).length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {(comunicaciones || []).slice(0, 20).map((com) => (
-                  <div key={`com-admin-${com.id}`} style={{ border: '1px solid rgba(0,0,0,0.08)', borderRadius: '14px', padding: '10px' }}>
+                  <div key={`com-admin-${com.id}`} style={{ border: '1px solid rgba(0,0,0,0.08)', borderRadius: 'var(--radius-md)', padding: '10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <strong style={{ fontSize: '13px' }}>{com.TITULO || 'Sin título'}</strong>
                       <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{com.FECHA || 'Sin fecha'}</span>
@@ -5589,7 +5602,7 @@ function SuperAdminPanel({
           </p>
 
           {/* Preview visual del marcador */}
-          <div className="card" style={{ borderRadius: '24px', marginBottom: '16px', background: 'linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(28,44,76,0.92) 100%)', color: 'white' }}>
+          <div className="card" style={{ borderRadius: 'var(--radius-lg)', marginBottom: '16px', background: 'linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(28,44,76,0.92) 100%)', color: 'white' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', padding: '12px 0' }}>
               {/* Torneo */}
               {formResultado.torneo_nombre && (
@@ -5623,7 +5636,7 @@ function SuperAdminPanel({
           </div>
 
           {/* Formulario */}
-          <div className="card" style={{ borderRadius: '24px', marginBottom: '16px' }}>
+          <div className="card" style={{ borderRadius: 'var(--radius-lg)', marginBottom: '16px' }}>
             <h4 className="form-subtitle" style={{ marginBottom: '12px' }}>Datos del partido</h4>
             <div className="grid-auto-220" style={{ marginBottom: '12px' }}>
               <LogoPicker
@@ -5761,7 +5774,7 @@ function SuperAdminPanel({
                     rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
                     categoria: p.categoria || p.categoria_rama || 'General',
                     cancha_sede: p.cancha_sede || '',
-                    fecha_hora: p.fecha_hora ? new Date(p.fecha_hora).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+                    fecha_hora: p.fecha_hora ? new Date(p.fecha_hora).toISOString().slice(0, 10) : hoyLocalISO(),
                     publicado: p.publicado !== false,
                   });
                   setVistaAdmin('resultados');
@@ -5824,13 +5837,14 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'permisos' && (
         <div className="fade-in card">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
-          <h4 className="form-subtitle">Permisos de Sistema</h4>
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('usuarios')} label="Volver a Usuarios y Cuentas" />
+          <h4 className="form-subtitle">Permisos por usuario</h4>
           <p style={{ marginTop: 0, marginBottom: '10px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
             Aquí puedes administrar permisos por usuario con la misma lógica del panel de configuración del header.
           </p>
           <SettingsPanel
             rolUsuario="super_admin"
+            modo="permisos"
             busquedaPermisos={busquedaPermisosAjustes}
             setBusquedaPermisos={setBusquedaPermisosAjustes}
             filtroRolPermisos={filtroRolPermisosAjustes}
@@ -5845,7 +5859,7 @@ function SuperAdminPanel({
             setPreferenciasSonido={() => {}}
             reproducirSonido={() => {}}
             onProbarPush={() => {}}
-            onCerrarConfiguracion={() => setVistaAdmin('grupo_sistema')}
+            onCerrarConfiguracion={() => setVistaAdmin('usuarios')}
           />
         </div>
       )}
@@ -5882,7 +5896,7 @@ function SuperAdminPanel({
           onClick={() => setMostrarModalNotificarTodos(false)}
         >
           <div
-            style={{ background: 'white', borderRadius: '16px', padding: '24px', maxWidth: '480px', width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+            style={{ background: 'white', borderRadius: 'var(--radius-md)', padding: '24px', maxWidth: '480px', width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
@@ -5898,7 +5912,7 @@ function SuperAdminPanel({
               {morososFiltrados.filter((m) => m.telefono).map((m) => {
                 const yaAvisado = avisadosEnLote.has(m.id);
                 return (
-                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '12px', background: yaAvisado ? 'rgba(52,199,89,0.08)' : 'var(--gris-fondo)', border: `1px solid ${yaAvisado ? 'rgba(52,199,89,0.3)' : 'var(--borde)'}` }}>
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: yaAvisado ? 'rgba(52,199,89,0.08)' : 'var(--gris-fondo)', border: `1px solid ${yaAvisado ? 'rgba(52,199,89,0.3)' : 'var(--borde)'}` }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: '700', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.nombre}</div>
                       <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{m.telefono} · ${m.montoDeuda.toLocaleString('es-CL')}</div>
@@ -5907,7 +5921,7 @@ function SuperAdminPanel({
                       type="button"
                       onClick={() => avisarMorosoEnLote(m)}
                       style={{
-                        padding: '8px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
+                        padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
                         background: yaAvisado ? 'rgba(52,199,89,0.15)' : 'var(--verde-victoria)',
                         color: yaAvisado ? 'var(--verde-victoria)' : 'white',
                         display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap',
@@ -5927,23 +5941,70 @@ function SuperAdminPanel({
         document.body
       )}
 
+      {codigoActivacion && (() => {
+        const numeroWsp = telefonoParaWhatsApp(codigoActivacion.telefono);
+        const mensaje = mensajeCodigoActivacion(codigoActivacion);
+        return (
+          <div className="modal-overlay-alert modal-animado-fondo" role="dialog" aria-modal="true" aria-label="Código de acceso" onClick={() => setCodigoActivacion(null)}>
+            <div className="modal-alert-card modal-animado codigo-activacion-card" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: '0 0 4px' }}>Código de acceso</h3>
+              <p className="codigo-activacion-sub">{codigoActivacion.nombre || codigoActivacion.rut}</p>
+              <div className="codigo-activacion-numero" aria-label={`Código ${codigoActivacion.codigo.split('').join(' ')}`}>{codigoActivacion.codigo}</div>
+              <p className="codigo-activacion-sub">Vence en {codigoActivacion.vigencia_horas} horas · un solo uso. Solo se muestra ahora.</p>
+              {numeroWsp ? (
+                <a
+                  className="btn-electric codigo-activacion-wsp"
+                  href={`https://wa.me/${numeroWsp}?text=${encodeURIComponent(mensaje)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Enviar por WhatsApp (+{numeroWsp})
+                </a>
+              ) : (
+                <p className="codigo-activacion-aviso">Esta cuenta no tiene teléfono registrado: entrega el código en persona o agrega el teléfono en la ficha.</p>
+              )}
+              <button
+                type="button"
+                className="btn-secondary mt-10"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(mensaje);
+                    showToast({ message: 'Mensaje copiado.', type: 'success' });
+                  } catch {
+                    showToast({ message: 'No se pudo copiar; dicta el código en pantalla.', type: 'error' });
+                  }
+                }}
+              >
+                Copiar mensaje
+              </button>
+              <button type="button" className="btn-volver-texto mt-10" onClick={() => setCodigoActivacion(null)}>Cerrar</button>
+            </div>
+          </div>
+        );
+      })()}
+
       {comprobanteEnVista && (
         <div
-          style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', animation: 'fadeIn 0.2s ease' }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Comprobante de pago"
+          className="modal-animado-fondo"
+          style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
           onClick={() => setComprobanteEnVista(null)}
         >
           <div
-            style={{ background: 'white', borderRadius: '20px', padding: '16px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: '0 20px 50px rgba(0,0,0,0.4)' }}
+            className="modal-animado"
+            style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '16px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: '0 20px 50px rgba(0,0,0,0.4)' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <strong style={{ fontSize: '14px' }}>Comprobante de pago</strong>
-              <button onClick={() => setComprobanteEnVista(null)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
+              <button onClick={() => setComprobanteEnVista(null)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: 'var(--radius-pill)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
             </div>
             {comprobanteEnVista.esImagen ? (
-              <img src={comprobanteEnVista.url} alt="Comprobante de pago" style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain', borderRadius: '12px' }} />
+              <img src={comprobanteEnVista.url} alt="Comprobante de pago" style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain', borderRadius: 'var(--radius-sm)' }} />
             ) : (
-              <iframe src={comprobanteEnVista.url} title="Comprobante de pago" style={{ width: '80vw', height: '75vh', border: 'none', borderRadius: '12px' }} />
+              <iframe src={comprobanteEnVista.url} title="Comprobante de pago" style={{ width: '80vw', height: '75vh', border: 'none', borderRadius: 'var(--radius-sm)' }} />
             )}
             <a href={comprobanteEnVista.url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--azul-electrico)', textAlign: 'center', fontWeight: '700' }}>
               Abrir en una pestaña nueva

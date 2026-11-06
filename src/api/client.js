@@ -33,10 +33,15 @@ export const setUnauthorizedHandler = (handler) => {
   onUnauthorized = typeof handler === 'function' ? handler : null;
 };
 
+let onCambioClaveRequerido = null;
+export const setCambioClaveRequeridoHandler = (handler) => {
+  onCambioClaveRequerido = typeof handler === 'function' ? handler : null;
+};
+
 // Login y change-password devuelven 401 como respuesta de negocio normal
 // (credenciales/clave actual incorrecta), no como sesión vencida — no deben
 // disparar el logout automático.
-const AUTH_ENDPOINTS_SIN_AUTOLOGOUT = ['/auth/login', '/auth/change-password'];
+const AUTH_ENDPOINTS_SIN_AUTOLOGOUT = ['/auth/login', '/auth/change-password', '/auth/solicitar-codigo', '/auth/canjear-codigo'];
 
 const apiFetch = async (url, options = {}) => {
   const teniaToken = Boolean(authToken);
@@ -52,6 +57,13 @@ const apiFetch = async (url, options = {}) => {
   const esEndpointAuth = AUTH_ENDPOINTS_SIN_AUTOLOGOUT.some((path) => url.includes(path));
   if (response.status === 401 && teniaToken && !esEndpointAuth && onUnauthorized) {
     onUnauthorized();
+  }
+
+  // El backend responde 403 + este header cuando la cuenta tiene forzar_clave
+  // activo (ej. un admin reseteó la clave con la sesión ya abierta).
+  if (response.status === 403 && teniaToken && onCambioClaveRequerido
+    && response.headers.get('X-Requiere-Cambio-Clave') === '1') {
+    onCambioClaveRequerido();
   }
 
   return response;
@@ -82,14 +94,17 @@ const construirHeadersActor = (actor = null) => {
 const handleResponse = async (response) => {
   if (!response.ok) {
     let message = 'Error en la solicitud';
+    let datos = null;
     try {
-      const error = await response.json();
-      message = error.error || error.message || message;
+      datos = await response.json();
+      message = datos.error || datos.message || message;
     } catch {
       message = `Error ${response.status}: ${response.statusText || 'Respuesta no válida'}`;
     }
 
-    throw new Error(message);
+    // code/status/datos permiten reaccionar a errores de negocio puntuales
+    // (ej. USAR_CODIGO_CORREO en el login) sin parsear el mensaje.
+    throw Object.assign(new Error(message), { status: response.status, code: datos?.code, datos });
   }
   return response.json();
 };
@@ -283,6 +298,25 @@ export const authAPI = {
     return handleResponse(response);
   },
 
+  // Código de acceso por correo (primer ingreso / olvidé mi contraseña).
+  solicitarCodigo: async (rut) => {
+    const response = await apiFetch(`${API_BASE_URL}/auth/solicitar-codigo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rut })
+    });
+    return handleResponse(response);
+  },
+
+  canjearCodigo: async ({ rut, codigo, nuevaClave }) => {
+    const response = await apiFetch(`${API_BASE_URL}/auth/canjear-codigo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rut, codigo, nuevaClave })
+    });
+    return handleResponse(response);
+  },
+
   changePassword: async ({ rut, currentPassword, newPassword }) => {
     const response = await apiFetch(`${API_BASE_URL}/auth/change-password`, {
       method: 'POST',
@@ -291,6 +325,25 @@ export const authAPI = {
     });
     return handleResponse(response);
   }
+};
+
+// ========== CONSENTIMIENTO DE DATOS ==========
+
+export const consentimientoAPI = {
+  // { tramo: 'adulto'|'adolescente16'|'adolescente14'|'nino', edad, version_aceptada }
+  estado: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/consentimiento/estado`);
+    return handleResponse(response);
+  },
+
+  aceptar: async ({ version, acepta_tratamiento, acepta_datos_salud, autoriza_imagen, declara_lectura }) => {
+    const response = await apiFetch(`${API_BASE_URL}/consentimiento`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version, acepta_tratamiento, acepta_datos_salud, autoriza_imagen, declara_lectura })
+    });
+    return handleResponse(response);
+  },
 };
 
 // ========== CUENTAS ==========
@@ -311,6 +364,31 @@ export const cuentasAPI = {
   // Obtener por ID
   getById: async (id) => {
     const response = await apiFetch(`${API_BASE_URL}/cuentas/${id}`);
+    return handleResponse(response);
+  },
+
+  // Primer ingreso: registrar y verificar el correo propio con un código.
+  solicitarVerificacionCorreo: async (correo) => {
+    const response = await apiFetch(`${API_BASE_URL}/cuentas/propia/correo/solicitar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ correo })
+    });
+    return handleResponse(response);
+  },
+
+  confirmarCorreo: async (codigo) => {
+    const response = await apiFetch(`${API_BASE_URL}/cuentas/propia/correo/confirmar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigo })
+    });
+    return handleResponse(response);
+  },
+
+  // Admin: código de activación para entregar por WhatsApp o en persona.
+  generarCodigoActivacion: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/admin/cuentas/${id}/codigo-activacion`, { method: 'POST' });
     return handleResponse(response);
   },
 

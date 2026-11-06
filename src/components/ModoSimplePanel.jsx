@@ -18,7 +18,7 @@ const BotonGrande = ({ icono, titulo, descripcion, onClick, color }) => (
     onClick={onClick}
     style={{
       width: '100%', display: 'flex', alignItems: 'center', gap: '20px',
-      padding: '28px 24px', borderRadius: '28px', border: 'none', cursor: 'pointer',
+      padding: '28px 24px', borderRadius: 'var(--radius-lg)', border: 'none', cursor: 'pointer',
       background: color, color: 'white', textAlign: 'left', marginBottom: '20px',
       boxShadow: '0 10px 24px rgba(15,23,42,0.18)',
     }}
@@ -111,7 +111,7 @@ function ModoSimplePanel({ pupiloActivo, comunicaciones, usuarioAutenticado, pue
           type="button"
           onClick={onSalir}
           style={{
-            display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '999px',
+            display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: 'var(--radius-pill)',
             border: '2px solid var(--borde-suave)', background: 'white', cursor: 'pointer',
             fontSize: '15px', fontWeight: '800', color: 'var(--texto-secundario)',
           }}
@@ -157,7 +157,7 @@ function ModoSimplePanel({ pupiloActivo, comunicaciones, usuarioAutenticado, pue
           {!pupiloActivo ? (
             <p style={{ fontSize: '20px', color: 'var(--texto-secundario)' }}>No encontramos datos de tu jugador/a.</p>
           ) : (
-            <div style={{ background: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 10px 24px rgba(15,23,42,0.1)' }}>
+            <div style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '28px', boxShadow: '0 10px 24px rgba(15,23,42,0.1)' }}>
               <div style={{ width: '140px', height: '140px', borderRadius: '50%', overflow: 'hidden', margin: '0 auto 20px', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {pupiloActivo.foto_jugador ? (
                   <img src={pupiloActivo.foto_jugador} alt={nombrePupilo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -180,7 +180,7 @@ function ModoSimplePanel({ pupiloActivo, comunicaciones, usuarioAutenticado, pue
       {vista === 'comprobante' && (
         <div>
           <BotonVolver onClick={() => setVista('home')} />
-          <div style={{ background: 'white', borderRadius: '28px', padding: '28px', boxShadow: '0 10px 24px rgba(15,23,42,0.1)', textAlign: 'center' }}>
+          <div style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '28px', boxShadow: '0 10px 24px rgba(15,23,42,0.1)', textAlign: 'center' }}>
             <p style={{ fontSize: '20px', fontWeight: '700', marginBottom: '10px' }}>
               Mensualidad de {nombrePupilo}:
             </p>
@@ -206,7 +206,7 @@ function ModoSimplePanel({ pupiloActivo, comunicaciones, usuarioAutenticado, pue
               onClick={() => inputRef.current?.click()}
               disabled={enviando}
               style={{
-                width: '100%', padding: '24px', borderRadius: '24px', border: 'none', cursor: enviando ? 'wait' : 'pointer',
+                width: '100%', padding: '24px', borderRadius: 'var(--radius-lg)', border: 'none', cursor: enviando ? 'wait' : 'pointer',
                 background: 'linear-gradient(135deg, #1D7A46 0%, #34C759 100%)', color: 'white',
                 fontSize: '22px', fontWeight: '900', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px',
               }}
@@ -232,7 +232,7 @@ function ModoSimplePanel({ pupiloActivo, comunicaciones, usuarioAutenticado, pue
                 .sort((a, b) => new Date(b.FECHA || 0) - new Date(a.FECHA || 0))
                 .slice(0, 15)
                 .map((c, i) => (
-                  <div key={c.id || i} style={{ background: 'white', borderRadius: '22px', padding: '20px', boxShadow: '0 6px 16px rgba(15,23,42,0.08)' }}>
+                  <div key={c.id || i} style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: '0 6px 16px rgba(15,23,42,0.08)' }}>
                     <h3 style={{ margin: '0 0 8px', fontSize: '22px', fontWeight: '900' }}>{c.TITULO || 'Aviso'}</h3>
                     <p style={{ margin: 0, fontSize: '18px', lineHeight: 1.5, color: 'var(--texto-secundario)' }}>{c.CUERPO_TEXTO || ''}</p>
                   </div>

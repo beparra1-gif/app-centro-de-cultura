@@ -25,6 +25,11 @@ import { showToast } from './utils/toast';
 import { confirmAction } from './utils/confirmDialog';
 import { esNuestroClub } from './utils/logoResolver';
 import { cuentasDemo } from './data/demoAccounts';
+import { hoyLocalISO, partesFechaCalendario } from './utils/fechas';
+import useIntervaloVisible from './utils/useIntervaloVisible';
+import useModalAccesible from './utils/useModalAccesible';
+import PrimerIngresoModal from './components/PrimerIngresoModal';
+import { VERSION_AVISO } from './legal/avisoPrivacidad';
 import {
   getColorUrgencia,
 } from './utils/appHelpers';
@@ -94,6 +99,9 @@ function App() {
   const [mostrarFormularioLogin, setMostrarFormularioLogin] = useState(false);
   const [tipoLoginSeleccionado, setTipoLoginSeleccionado] = useState('');
   const [rutInput, setRutInput] = useState('');
+  // El login pidió crear la clave con un código enviado al correo
+  // (USAR_CODIGO_CORREO): PublicFacadePanel abre directo el paso del código.
+  const [codigoCorreoPendiente, setCodigoCorreoPendiente] = useState(null);
   const [passInput, setPassInput] = useState('');
   // Solo para "Acceso Visitas": antes de esto, todo invitado veía la misma
   // Tarjeta genérica ("INVITADO TORNEO", sin club) sin importar quién fuera
@@ -261,6 +269,20 @@ function App() {
   const [partidosResumen, setPartidosResumen] = useState([]);
   const [morososAdmin, setMorososAdmin] = useState([]);
   const [sociosMorosos, setSociosMorosos] = useState([]);
+  // Cuenta del usuario logueado (GET /api/cuentas/:id, autoservicio). Una
+  // familia no puede leer GET /api/cuentas (solo admin), así que sin esto su
+  // propia condición de socio (es_socio, fecha_ingreso_socio, montos) no
+  // llegaba a Tesorería: el socio no veía su grilla ni su deuda de socio.
+  const [cuentaPropia, setCuentaPropia] = useState(null);
+  const cuentaPropiaRef = useRef(null);
+  useEffect(() => {
+    cuentaPropiaRef.current = cuentaPropia;
+  }, [cuentaPropia]);
+  // Lista de cuentas para calcular socios morosos: la completa (admin) o, si
+  // no hay, la propia cuenta de la familia.
+  const cuentasParaSocios = (lista) => (
+    Array.isArray(lista) && lista.length > 0 ? lista : (cuentaPropiaRef.current ? [cuentaPropiaRef.current] : [])
+  );
   const [materialesAcademia, setMaterialesAcademia] = useState([]);
   const [pizarrasAcademia, setPizarrasAcademia] = useState([]);
   const [quizList, setQuizList] = useState([]);
@@ -274,6 +296,9 @@ function App() {
   const [logAuditoria, setLogAuditoria] = useState([]);
   const [jugadoresVisitaAdmin, setJugadoresVisitaAdmin] = useState([]);
   const [usuarioAutenticado, setUsuarioAutenticado] = useState(null);
+  // "No tengo correo / Ahora no" en el paso de registrar correo: vale solo
+  // para esta sesión (se vuelve a pedir en el siguiente ingreso).
+  const [correoOmitidoSesion, setCorreoOmitidoSesion] = useState(false);
 
   const [destinatarios, setDestinatarios] = useState({ admin: false, staff: false, socios: true, apoderados: true, deportistas: true });
 
@@ -358,6 +383,10 @@ function App() {
   // --- ESTADOS: VISTAS Y CONFIGURACIÓN ---
   const [pagoViewMode, setPageViewMode] = useState('grid'); // grid | list
   const [showSettings, setShowSettings] = useState(false); // Panel de configuración
+  // Escape cierra paneles flotantes y el modal de salida (ver useModalAccesible).
+  useModalAccesible(showSettings, () => setShowSettings(false), { bloquearFondo: false });
+  useModalAccesible(mostrarNotificaciones, () => setMostrarNotificaciones(false), { bloquearFondo: false });
+  useModalAccesible(showModalSalir, () => setShowModalSalir(false));
   const [mostrarFormComunicaciones, setMostrarFormComunicaciones] = useState(false);
   const [comunicaciones, setComunicaciones] = useState([]);
   const [encuestas, setEncuestas] = useState([]);
@@ -615,11 +644,11 @@ function App() {
       const mesDesdeCampo = getMesNumero(jugador?.mes_inicio_cobro || '');
       if (mesDesdeCampo) return mesDesdeCampo;
 
-      const fechaIngreso = String(jugador?.fecha_ingreso || '').trim();
-      const fecha = fechaIngreso ? new Date(fechaIngreso) : null;
-      if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
-        return fecha.getMonth() + 1;
-      }
+      // Regla de negocio (confirmada 2026-11-05): se cobra DESDE el mes de
+      // ingreso. Misma regla que obtenerInicioCobro (PerfilTesoreriaPanel) y
+      // obtenerPrimerMesCobrableJugador (backend).
+      const partes = partesFechaCalendario(jugador?.fecha_ingreso);
+      if (partes) return partes.mes;
 
       // Regla de negocio: sin mes/año configurados => enero 2026.
       return 1;
@@ -671,6 +700,10 @@ function App() {
     const pagosPorRut = new Map();
     (pagos || []).forEach((pago) => {
       if (esPagoInvalidoLegacy(pago)) return;
+      // La cuota de socio se controla aparte (construirSociosMorosos): antes
+      // un pago "Mensualidad Socio" guardado con el RUT del hijo saldaba
+      // también la mensualidad del deportista de ese mes.
+      if (String(pago.concepto_pago || '').trim().toLowerCase().startsWith('mensualidad socio')) return;
       const rutPagoJugador = normalizarRutComparacion(pago.rut_jugador || '');
       const rutPagoPagador = normalizarRutComparacion(pago.rut_pagos || '');
       const rutPago = rutPagoJugador || rutPagoPagador;
@@ -897,13 +930,11 @@ function App() {
       const mesDesdeCampo = getMesNumero(cuenta?.mes_inicio_cobro || '');
       if (mesDesdeCampo) return mesDesdeCampo;
 
-      const fechaIngreso = String(cuenta?.fecha_ingreso_socio || '').trim();
-      const fecha = fechaIngreso ? new Date(fechaIngreso) : null;
-      if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
-        const anio = fecha.getFullYear();
-        if (anio > ANIO_OBJETIVO) return 13;
-        if (anio < ANIO_OBJETIVO) return 1;
-        return fecha.getMonth() + 1;
+      const partes = partesFechaCalendario(cuenta?.fecha_ingreso_socio);
+      if (partes) {
+        if (partes.anio > ANIO_OBJETIVO) return 13;
+        if (partes.anio < ANIO_OBJETIVO) return 1;
+        return partes.mes;
       }
       // Regla de negocio: sin fecha de ingreso configurada => enero 2026 (mismo criterio que deportistas).
       return 1;
@@ -1051,24 +1082,32 @@ function App() {
     // el pupiloActivo recién armado con su nombre/club en iniciarSesionFinal.
     const esInvitadoActivo = (rolActivo ?? rolUsuario) === 'visita';
 
+    // Sin token (portada pública, antes de iniciar sesión) los endpoints
+    // protegidos solo devolvían 401: 13 peticiones fallidas en cada visita a
+    // la portada y el aviso "Algunos servicios no respondieron". Se omiten y
+    // no cuentan como error; se cargan en iniciarSesionFinal → cargarDatos.
+    const conSesion = (llamada) => (api.getAuthToken()
+      ? llamada()
+      : Promise.reject(Object.assign(new Error('Sin sesión'), { sinSesion: true })));
+
     try {
       const resultados = await Promise.allSettled([
         api.comunicacionesAPI.getAll(),
-        api.whatsappAPI.getContactos(),
-        api.cuentasAPI.getIncompletas(),
-        api.cuentasAPI.getAll(),
-        api.jugadoresAPI.getAll(),
-        api.jugadoresVisitaAPI.getAll(),
-        api.pagosMensualidadesAPI.getAll(),
+        conSesion(() => api.whatsappAPI.getContactos()),
+        conSesion(() => api.cuentasAPI.getIncompletas()),
+        conSesion(() => api.cuentasAPI.getAll()),
+        conSesion(() => api.jugadoresAPI.getAll()),
+        conSesion(() => api.jugadoresVisitaAPI.getAll()),
+        conSesion(() => api.pagosMensualidadesAPI.getAll()),
         api.partidosLiveAPI.getAll(),
-        api.auditoriaAPI.getAll(),
+        conSesion(() => api.auditoriaAPI.getAll()),
         api.encuestasAPI.getAll(),
-        api.quizAPI.getAll(),
-        api.citacionesAPI.getAll(),
-        api.notificacionesAppAPI.getAll(),
-        api.utmAPI.getVigente(),
-        api.utmAPI.getHistorico(ANIO_OBJETIVO_TESORERIA),
-        api.becaAPI.getBecas(),
+        conSesion(() => api.quizAPI.getAll()),
+        conSesion(() => api.citacionesAPI.getAll()),
+        conSesion(() => api.notificacionesAppAPI.getAll()),
+        conSesion(() => api.utmAPI.getVigente()),
+        conSesion(() => api.utmAPI.getHistorico(ANIO_OBJETIVO_TESORERIA)),
+        conSesion(() => api.becaAPI.getBecas()),
       ]);
 
       const getResult = (index, fallback = []) => (
@@ -1093,7 +1132,7 @@ function App() {
       const utmVigenteRes = getResult(13, null);
       const utmHistoricoRes = getResult(14, null);
       const becasRes = getResult(15, []);
-      const totalErrores = resultados.filter((r) => r.status === 'rejected').length;
+      const totalErrores = resultados.filter((r) => r.status === 'rejected' && !r.reason?.sinSesion).length;
 
       if (utmVigenteRes?.valor) {
         setUtmVigente(utmVigenteRes);
@@ -1255,8 +1294,8 @@ function App() {
       if (Array.isArray(pagosMensualidadesRes)) {
         setPagosMensualidadesAdmin(pagosMensualidadesRes);
         setPagosPendientesAdmin(pagosMensualidadesRes.filter((p) => (p.estado_pago || '').toLowerCase() === 'pendiente'));
-        setMorososAdmin(construirMorososDesdePagos(pagosMensualidadesRes, jugadoresRes, cuentasRes));
-        setSociosMorosos(construirSociosMorosos(pagosMensualidadesRes, cuentasRes, utmVigenteRes, utmHistoricoRes?.porMes));
+        setMorososAdmin(construirMorososDesdePagos(pagosMensualidadesRes, jugadoresRes, cuentasParaSocios(cuentasRes)));
+        setSociosMorosos(construirSociosMorosos(pagosMensualidadesRes, cuentasParaSocios(cuentasRes), utmVigenteRes, utmHistoricoRes?.porMes));
       }
 
       if (Array.isArray(partidosLiveRes)) {
@@ -1306,7 +1345,7 @@ function App() {
       aplicarCitacionesYNotificaciones(citacionesRes, notificacionesAppRes);
 
       try {
-        const pizarrasRes = await api.academiaPizarrasAPI.getAll();
+        const pizarrasRes = api.getAuthToken() ? await api.academiaPizarrasAPI.getAll() : [];
         setPizarrasAcademia(Array.isArray(pizarrasRes) ? pizarrasRes : []);
       } catch {
         setPizarrasAcademia([]);
@@ -1326,14 +1365,15 @@ function App() {
     }
   };
 
-  // Cargar datos del API al montar el componente
+  // Cargar datos del API apenas se restauró (o no) la sesión guardada. Antes
+  // esperaba un setTimeout fijo de 1 s en cada apertura de la app para dar
+  // tiempo a que el token quedara seteado; sesionHidratada marca exactamente
+  // ese momento, sin el segundo de espera.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void cargarDatos();
-    }, 1000);
-    return () => clearTimeout(timer);
+    if (!sesionHidratada) return;
+    void cargarDatos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sesionHidratada]);
   
   // Efecto Skeleton Loader al cambiar de pantalla
 
@@ -1597,6 +1637,12 @@ function App() {
         iniciarSesionFinal(perfilDetectado, usuarioDetectado, loginRes?.token || null);
       }
     } catch (error) {
+      if (error?.code === 'USAR_CODIGO_CORREO') {
+        setPassInput('');
+        setCodigoCorreoPendiente({ destino: error.datos?.destino || '', solicitadoEn: Date.now() });
+        showToast({ message: error.message, type: 'info' });
+        return;
+      }
       const rutIngresado = String(rutInput || '').trim().toLowerCase();
       const passIngresada = String(passInput || '').trim();
       const cuentaDemo = (cuentasDemo || []).find((cuenta) => {
@@ -1778,6 +1824,8 @@ function App() {
 
   const cerrarSesion = () => {
     setShowModalSalir(false);
+    setCuentaPropia(null);
+    setCorreoOmitidoSesion(false);
     setRolUsuario(null);
     setUsuarioAutenticado(null);
     setSesionToken(null);
@@ -1810,6 +1858,40 @@ function App() {
   useEffect(() => {
     api.setUnauthorizedHandler(cerrarSesion);
     return () => api.setUnauthorizedHandler(null);
+  }, []);
+
+  // Si un admin cambia el perfil de esta cuenta con la sesión abierta, el
+  // backend ya aplica el nuevo perfil en cada request (authenticate lee la
+  // BD), pero el menú seguía mostrando las secciones del perfil anterior
+  // hasta volver a entrar. cuentaPropia se refresca cada 20 s: si el perfil
+  // cambió, se cierra la sesión con un aviso para entrar con el nuevo.
+  useEffect(() => {
+    if (!cuentaPropia || !usuarioAutenticado || isOnboarding) return;
+    if (String(cuentaPropia.id) !== String(usuarioAutenticado.id)) return;
+    const perfilBD = resolverRolPrincipal(cuentaPropia.rol, { perfil_principal: cuentaPropia.perfil_principal, rol: cuentaPropia.rol });
+    const perfilSesion = resolverRolPrincipal(usuarioAutenticado.rol, { perfil_principal: usuarioAutenticado.perfil_principal, rol: usuarioAutenticado.rol });
+    if (!perfilBD || !perfilSesion || perfilBD === perfilSesion) return;
+    cerrarSesion();
+    showToast({ message: 'Tu perfil fue actualizado por la administración. Vuelve a ingresar para ver tus secciones.', type: 'info' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cuentaPropia]);
+
+  // El backend responde 403 "cambio de clave requerido" cuando la cuenta tiene
+  // forzar_clave activo. Durante el onboarding es esperable (todavía no se
+  // cambia la clave) y no se hace nada; con una sesión ya abierta (ej. un
+  // admin reseteó la clave) se cierra para que al volver a entrar aparezca
+  // el paso de cambio de contraseña.
+  const isOnboardingRef = useRef(isOnboarding);
+  useEffect(() => {
+    isOnboardingRef.current = isOnboarding;
+  }, [isOnboarding]);
+  useEffect(() => {
+    api.setCambioClaveRequeridoHandler(() => {
+      if (isOnboardingRef.current) return;
+      cerrarSesion();
+      showToast({ message: 'Debes cambiar tu contraseña. Vuelve a iniciar sesión.', type: 'error' });
+    });
+    return () => api.setCambioClaveRequeridoHandler(null);
   }, []);
 
   const toggleSettingsPanel = () => {
@@ -1935,15 +2017,12 @@ function App() {
   // Sin este refresco, el muro y "Control de Citaciones" solo se actualizaban
   // en la carga inicial de la sesión: si otra persona respondía una citación
   // en otra sesión, no se veía hasta recargar la página manualmente.
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      void cargarCitacionesYNotificaciones();
-      void recargarJugadoresLigero();
-    }, 20000);
-
-    return () => window.clearInterval(intervalId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Solo con sesión y con la pestaña visible (ver useIntervaloVisible).
+  useIntervaloVisible(() => {
+    if (!api.getAuthToken()) return;
+    void cargarCitacionesYNotificaciones();
+    void recargarJugadoresLigero();
+  }, 20000);
 
   // Refresca los permisos_override de la PROPIA cuenta — sin esto, un módulo
   // que el super_admin le activa a otro usuario nunca se reflejaba para ese
@@ -1963,15 +2042,39 @@ function App() {
       try {
         const cuentaPropia = await api.cuentasAPI.getById(idPropio);
         setPermisosPorUsuario((prev) => ({ ...prev, [idPropio]: cuentaPropia?.permisos_override || {} }));
+        if (cuentaPropia?.id) setCuentaPropia(cuentaPropia);
       } catch (error) {
         // silencioso — no debe interrumpir la sesión si falla
       }
     };
 
     void refrescarPermisosPropios();
-    const intervalId = window.setInterval(refrescarPermisosPropios, 20000);
-    return () => window.clearInterval(intervalId);
   }, [usuarioAutenticado?.id]);
+
+  useEffect(() => {
+    if (!cuentaPropia || (cuentasAdminRef.current || []).length > 0) return;
+    // La cuota del deportista también depende de la cuenta de la familia
+    // (socio+apoderado paga tarifa rebajada, monto acordado, etc.).
+    setMorososAdmin(construirMorososDesdePagos(
+      pagosMensualidadesAdmin || [], jugadoresAdminRef.current, [cuentaPropia]
+    ));
+    setSociosMorosos(construirSociosMorosos(
+      pagosMensualidadesAdmin || [], [cuentaPropia], utmVigenteRef.current, utmHistoricoRef.current
+    ));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cuentaPropia, pagosMensualidadesAdmin]);
+
+  useIntervaloVisible(async () => {
+    const idPropio = usuarioAutenticado?.id;
+    if (!idPropio || !Number.isFinite(Number(idPropio))) return;
+    try {
+      const cuentaPropia = await api.cuentasAPI.getById(idPropio);
+      setPermisosPorUsuario((prev) => ({ ...prev, [idPropio]: cuentaPropia?.permisos_override || {} }));
+      if (cuentaPropia?.id) setCuentaPropia(cuentaPropia);
+    } catch {
+      // silencioso — no debe interrumpir la sesión si falla
+    }
+  }, 20000, [usuarioAutenticado?.id]);
 
   useEffect(() => {
     if (!showSettings && !mostrarNotificaciones) return;
@@ -2079,12 +2182,12 @@ function App() {
     );
     setMorososAdmin(
       Array.isArray(pagosRes)
-        ? construirMorososDesdePagos(pagosRes, jugadoresAdminRef.current, cuentasAdminRef.current)
+        ? construirMorososDesdePagos(pagosRes, jugadoresAdminRef.current, cuentasParaSocios(cuentasAdminRef.current))
         : []
     );
     setSociosMorosos(
       Array.isArray(pagosRes)
-        ? construirSociosMorosos(pagosRes, cuentasAdminRef.current, utmVigenteRef.current, utmHistoricoRef.current)
+        ? construirSociosMorosos(pagosRes, cuentasParaSocios(cuentasAdminRef.current), utmVigenteRef.current, utmHistoricoRef.current)
         : []
     );
   };
@@ -2097,13 +2200,10 @@ function App() {
   // página a mano. Efecto propio (no el de citaciones/jugadores de arriba)
   // porque recargarPagosMensualidades se declara después de aquel — juntarlos
   // ahí violaba el orden de declaración de variables (lint real, no cosmético).
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      void recargarPagosMensualidades();
-    }, 20000);
-    return () => window.clearInterval(intervalId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useIntervaloVisible(() => {
+    if (!api.getAuthToken()) return;
+    void recargarPagosMensualidades();
+  }, 20000);
 
   const guardarCuentaAdmin = async (payload, id = null) => {
     const rutPayload = String(payload?.rut || '').trim();
@@ -2485,7 +2585,7 @@ function App() {
     // Crear blob y descargar
     const elemento = document.createElement('a');
     elemento.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(contenido);
-    elemento.download = `Reporte_CCF_${new Date().toISOString().split('T')[0]}.txt`;
+    elemento.download = `Reporte_CCF_${hoyLocalISO()}.txt`;
     document.body.appendChild(elemento);
     elemento.click();
     document.body.removeChild(elemento);
@@ -2935,6 +3035,23 @@ function App() {
   // rol no-admin, ya que 'admin_dashboard' nunca les aparece -- para que
   // quien paga la mensualidad (deportista o socio) la encuentre de
   // inmediato, sin tener que buscarla entre el resto de los botones.
+  // Pasos obligatorios del primer ingreso (PrimerIngresoModal): aceptar el
+  // aviso de datos vigente y, si la cuenta no tiene correo real, registrarlo.
+  // Fuente: la cuenta propia (BD, se refresca cada 20 s) o, mientras carga,
+  // lo que devolvió el login. Nunca para invitados ni durante el cambio de
+  // clave obligatorio (onboarding).
+  const pasoPrimerIngreso = (() => {
+    if (!sesionToken || !usuarioAutenticado || isOnboarding || rolUsuario === 'visita') return null;
+    if (!Number.isFinite(Number(usuarioAutenticado.id))) return null;
+    const cuentaVigente = cuentaPropia && String(cuentaPropia.id) === String(usuarioAutenticado.id) ? cuentaPropia : null;
+    const versionAceptada = cuentaVigente ? cuentaVigente.consentimiento_version : usuarioAutenticado.consentimiento_version;
+    if (versionAceptada !== VERSION_AVISO) return 'consentimiento';
+    const correo = String((cuentaVigente ? cuentaVigente.correo : usuarioAutenticado.correo) || '').trim().toLowerCase();
+    const correoReal = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(correo) && !correo.endsWith('@actualizar.local');
+    if (!correoReal && usuarioAutenticado.correo_disponible === true && !correoOmitidoSesion) return 'correo';
+    return null;
+  })();
+
   const modulosNavegacionOrden = ['admin_dashboard', 'perfil', 'comunicaciones', 'academia', 'jugador', 'asistencia_staff', 'scoreboard_live', 'kiosco'];
   // admin/super_admin ya no tienen entradas de nav separadas para Mi Cuenta,
   // Jugador (Pupilos), Lista ni Mesa -- todo eso vive ahora dentro de Panel →
@@ -2944,6 +3061,9 @@ function App() {
   // pantallaActiva === 'scoreboard_live' más abajo, por si se reactiva).
   const modulosNavegacionVisibles = modulosNavegacionOrden
     .filter((modulo) => !(esRolAdminUnificado && ['perfil', 'jugador', 'asistencia_staff', 'scoreboard_live'].includes(modulo)))
+    // "Pupilos" sin deportistas a cargo (ej. socio sin hijos) era una pestaña
+    // vacía: se oculta hasta que la familia tenga al menos un pupilo.
+    .filter((modulo) => !(modulo === 'jugador' && esPerfilFamiliarNav && pupilosDisponibles.length === 0))
     .filter((modulo) => puedeVerPantalla(modulo));
   const LOCAL_PREVIEW_LABEL = 'MODO LOCAL · CAMBIOS INMEDIATOS';
   const mostrarApartadoLocal = (() => {
@@ -3044,7 +3164,7 @@ function App() {
               <div className="home-header-brand">
                 <img src="/logos/Club-frase.png" alt="Club Centro de Cultura Física" className="home-header-club-mark" />
                 <span className="home-header-subtitle">{getHeaderTitle()}</span>
-                <span className="home-header-usuario" style={{ fontSize: '10px', color: 'var(--gris-secundario)', fontWeight: '700', display: 'block', lineHeight: '1.3' }}>
+                <span className="home-header-usuario" style={{ fontSize: 'var(--texto-min)', color: 'var(--gris-secundario)', fontWeight: '700', display: 'block', lineHeight: '1.3' }}>
                   {nombreUsuarioActivo}
                 </span>
               </div>
@@ -3066,14 +3186,12 @@ function App() {
               >
                 <Bell size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
                 {notificaciones.filter(n=>!n.leida).length > 0 && (
-                  <span style={{position: 'absolute', top: '-5px', right: '-5px', background: 'var(--rojo-alerta)', color: 'white', fontSize: '11px', fontWeight: '900', padding: '3px 6px', borderRadius: '10px', border: '2px solid var(--azul-marino)'}}>
+                  <span style={{position: 'absolute', top: '-5px', right: '-5px', background: 'var(--rojo-alerta)', color: 'white', fontSize: '11px', fontWeight: '900', padding: '3px 6px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--azul-marino)'}}>
                     {notificaciones.filter(n=>!n.leida).length}
                   </span>
                 )}
               </button>
-              <button className="btn-icon-header" onClick={() => setShowModalSalir(true)}>
-                <LogOut size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
-              </button>
+              {/* Cerrar sesión se movió a Configuración (engranaje): era un ícono suelto junto a la campana, fácil de tocar por error. */}
             </div>
           )}
         </div>
@@ -3112,9 +3230,19 @@ function App() {
       )}
 
       {rolUsuario && showSettings && (
-        <div ref={settingsPanelRef} className="floating-panel settings-panel" style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
+        <div ref={settingsPanelRef} className="floating-panel settings-panel" style={{position: 'absolute', top: '90px', right: '15px', width: '380px', maxHeight: '500px', background: 'var(--blanco-tarjeta)', borderRadius: 'var(--radius-md)', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
           <SettingsPanel
             rolUsuario={rolUsuario}
+            rutUsuario={rolUsuario !== 'visita' && sesionToken ? usuarioAutenticado?.rut : ''}
+            onAbrirPermisos={() => {
+              setShowSettings(false);
+              setPantallaActiva('admin_dashboard');
+              setVistaAdmin('permisos');
+            }}
+            onCerrarSesion={() => {
+              setShowSettings(false);
+              setShowModalSalir(true);
+            }}
             busquedaPermisos={busquedaPermisos}
             setBusquedaPermisos={setBusquedaPermisos}
             filtroRolPermisos={filtroRolPermisos}
@@ -3149,7 +3277,7 @@ function App() {
 
       {/* Panel antiguo de notificaciones - REMOVIDO EN FAVOR DE RENDERNOTIFICACIONES */}
       {mostrarBusqueda && (
-        <div className="floating-panel search-panel" style={{position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '500px', maxHeight: '600px', background: 'var(--blanco-tarjeta)', borderRadius: '16px', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
+        <div className="floating-panel search-panel" style={{position: 'fixed', top: '90px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '500px', maxHeight: '600px', background: 'var(--blanco-tarjeta)', borderRadius: 'var(--radius-md)', boxShadow: '0 15px 40px rgba(0,0,0,0.3)', zIndex: 999, padding: '20px', border: '1px solid rgba(0,0,0,0.05)', overflowY: 'auto'}}>
           <SearchPanel
             busquedaGlobal={busquedaGlobal}
             setBusquedaGlobal={setBusquedaGlobal}
@@ -3178,6 +3306,22 @@ function App() {
       {/* TOASTS Y CONFIRMACIONES (reemplazo de alert()/confirm() nativos) */}
       <ToastContainer />
       <ConfirmDialog />
+      <PrimerIngresoModal
+        paso={pasoPrimerIngreso}
+        onConsentimientoAceptado={({ version, autoriza_imagen }) => {
+          setUsuarioAutenticado((prev) => (prev ? { ...prev, consentimiento_version: version } : prev));
+          setCuentaPropia((prev) => (prev ? { ...prev, consentimiento_version: version, autorizacion_imagen: autoriza_imagen } : prev));
+        }}
+        onCorreoConfirmado={(correo) => {
+          setUsuarioAutenticado((prev) => (prev ? { ...prev, correo, correo_registrado: true } : prev));
+          setCuentaPropia((prev) => (prev ? { ...prev, correo } : prev));
+        }}
+        onOmitirCorreo={() => setCorreoOmitidoSesion(true)}
+        onRechazar={() => {
+          cerrarSesion();
+          showToast({ message: 'Sin aceptar el aviso de datos no es posible usar la aplicación. Puedes revisarlo cuando quieras al ingresar.', type: 'info' });
+        }}
+      />
       
       {/* HISTORIAL DE PUSH MODAL */}
       {mostrarHistorialPush && (
@@ -3252,6 +3396,8 @@ function App() {
           <>
             {!rolUsuario && (
               <PublicFacadePanel
+                codigoCorreoPendiente={codigoCorreoPendiente}
+                limpiarCodigoCorreoPendiente={() => setCodigoCorreoPendiente(null)}
                 vistaPublica={vistaPublica}
                 mostrarFormularioLogin={mostrarFormularioLogin}
                 abrirFormularioLogin={abrirFormularioLogin}
@@ -3274,7 +3420,7 @@ function App() {
               />
             )}
             {esPerfilFamiliarNav && puedeVerPantalla('comunicaciones') && pantallaActiva === 'comunicaciones' && (
-              <div className="card mt-15" style={{ borderRadius: '22px', padding: '14px' }}>
+              <div className="card mt-15" style={{ borderRadius: 'var(--radius-lg)', padding: '14px' }}>
                 <h4 style={{ margin: '2px 4px 10px 4px', fontSize: '12px', fontWeight: '900', color: 'var(--texto-heading)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                   Accesos rápidos
                 </h4>
@@ -3283,12 +3429,12 @@ function App() {
                     <button
                       type="button"
                       onClick={() => cambiarPantallaConLoader('perfil')}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: '16px', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
                     >
                       <CreditCard size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
                       <div>
                         <strong style={{ display: 'block', fontSize: '13px' }}>Mi Cuenta</strong>
-                        <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>Mensualidad y comprobantes</span>
+                        <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>Mensualidad y comprobantes</span>
                       </div>
                     </button>
                   )}
@@ -3296,12 +3442,12 @@ function App() {
                     <button
                       type="button"
                       onClick={() => cambiarPantallaConLoader('jugador')}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: '16px', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
                     >
                       <User size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
                       <div>
                         <strong style={{ display: 'block', fontSize: '13px' }}>Pupilos</strong>
-                        <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>Perfil y tarjeta de cada deportista</span>
+                        <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>Perfil y tarjeta de cada deportista</span>
                       </div>
                     </button>
                   )}
@@ -3309,12 +3455,12 @@ function App() {
                     <button
                       type="button"
                       onClick={() => cambiarPantallaConLoader('academia')}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: '16px', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
                     >
                       <BookOpen size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
                       <div>
                         <strong style={{ display: 'block', fontSize: '13px' }}>Academia</strong>
-                        <span style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>Material y evaluaciones</span>
+                        <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>Material y evaluaciones</span>
                       </div>
                     </button>
                   )}
@@ -3412,6 +3558,7 @@ function App() {
                 rolUsuario={rolUsuario}
                 pupilosDisponibles={pupilosDisponibles}
                 cuentasAdmin={cuentasAdmin}
+                cuentaPropia={cuentaPropia}
                 pagosMensualidadesAdmin={pagosMensualidadesAdmin}
                 morososAdmin={morososAdmin}
                 sociosMorosos={sociosMorosos}
@@ -3647,8 +3794,8 @@ function App() {
 
       {/* MODAL DE CIERRE DE SESIÓN */}
       {showModalSalir && (
-        <div className="modal-overlay-alert">
-          <div className="modal-alert-card text-center">
+        <div className="modal-overlay-alert" role="dialog" aria-modal="true" aria-label="Cerrar sesión" onClick={() => setShowModalSalir(false)}>
+          <div className="modal-alert-card text-center" onClick={(e) => e.stopPropagation()}>
             <AlertTriangle size={48} color="var(--rojo-alerta)" className="icon-bounce mb-15" />
             <h3 style={{margin: '0 0 10px 0', fontSize: '22px', color: 'var(--texto-principal)'}}>¿Cerrar Sesión?</h3>
             <p style={{color: 'var(--texto-secundario)', marginBottom: '20px'}}>Se cerrará el módulo actual de trabajo.</p>

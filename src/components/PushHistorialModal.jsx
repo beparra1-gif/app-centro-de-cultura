@@ -35,7 +35,7 @@ function PushHistorialModal({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
           <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: 'var(--texto-principal)' }}>Historial de Push</h4>
-          <button onClick={() => setMostrarHistorialPush(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: '999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
+          <button onClick={() => setMostrarHistorialPush(false)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: 'var(--radius-pill)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
         </div>
 
         {historialPushTotal.length === 0 ? (
@@ -48,7 +48,7 @@ function PushHistorialModal({
                 style={{
                   background: push.leida ? 'rgba(0,0,0,0.01)' : 'rgba(0,122,255,0.05)',
                   padding: '12px',
-                  borderRadius: '18px',
+                  borderRadius: 'var(--radius-md)',
                   borderLeft: push.urgencia === 'Crítica' ? '4px solid var(--rojo-alerta)' : push.urgencia === 'Alta' ? '4px solid #FF9500' : push.urgencia === 'Media' ? '4px solid #FFD60A' : '4px solid #34C759',
                   display: 'flex',
                   gap: '10px',
@@ -67,7 +67,7 @@ function PushHistorialModal({
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                   <span style={{ fontSize: '11px', fontWeight: '600', color: push.urgencia === 'Crítica' ? 'var(--rojo-alerta)' : push.urgencia === 'Alta' ? '#FF9500' : '#34C759' }}>● {push.urgencia}</span>
-                  {!push.leida && <span style={{ fontSize: '11px', background: 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)', color: 'white', padding: '2px 6px', borderRadius: '999px', fontWeight: '700' }}>NUEVA</span>}
+                  {!push.leida && <span style={{ fontSize: '11px', background: 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)', color: 'white', padding: '2px 6px', borderRadius: 'var(--radius-pill)', fontWeight: '700' }}>NUEVA</span>}
                 </div>
               </div>
             ))}

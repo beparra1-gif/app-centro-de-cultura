@@ -17,7 +17,7 @@ function ApiStatusBanner({
         background: 'rgba(255,149,0,0.14)',
         border: '1px solid rgba(255,149,0,0.45)',
         color: 'var(--texto-principal)',
-        borderRadius: '20px',
+        borderRadius: 'var(--radius-lg)',
         padding: '12px 14px',
         zIndex: 1200,
         backdropFilter: 'blur(18px)',
@@ -40,7 +40,7 @@ function ApiStatusBanner({
         disabled={retrying}
         style={{
           border: 'none',
-          borderRadius: '999px',
+          borderRadius: 'var(--radius-pill)',
           padding: '9px 12px',
           background: retrying ? 'rgba(0,0,0,0.15)' : 'linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%)',
           color: 'white',

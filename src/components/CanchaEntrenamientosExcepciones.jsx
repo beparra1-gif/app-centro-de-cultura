@@ -5,9 +5,10 @@ import { confirmAction } from '../utils/confirmDialog';
 import { useHorasOcupadasEnFecha } from '../utils/useHorasOcupadasEnFecha';
 import { describirRecurrencia } from '../utils/horariosEntrenamientoTexto';
 import CanchaEntrenamientosOcupacion from './CanchaEntrenamientosOcupacion';
+import { hoyLocalISO } from '../utils/fechas';
 
 const EXCEPCION_FORM_VACIO = {
-  fecha: new Date().toISOString().slice(0, 10),
+  fecha: hoyLocalISO(),
   tipo: 'cancelado',
   hora_inicio_nueva: '',
   hora_fin_nueva: '',
@@ -107,7 +108,7 @@ function CanchaEntrenamientosExcepciones({ onCambio }) {
 
       {horarioSeleccionado && (
         <>
-          <div className="card mb-15" style={{ borderRadius: '18px' }}>
+          <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)' }}>
             <h5 style={{ margin: '0 0 10px', fontSize: '13px' }}>Nueva excepción</h5>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -156,7 +157,7 @@ function CanchaEntrenamientosExcepciones({ onCambio }) {
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {excepciones.map((ex) => (
-              <div key={ex.id_excepcion} className="card" style={{ borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <div key={ex.id_excepcion} className="card" style={{ borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <div style={{ fontSize: '12px' }}>
                   <strong>{ex.fecha}</strong> — {ex.tipo === 'cancelado' ? 'Cancelado' : `Reprogramado a ${ex.hora_inicio_nueva?.slice(0, 5)}-${ex.hora_fin_nueva?.slice(0, 5)}${ex.lugar_nuevo ? ` (${ex.lugar_nuevo})` : ''}`}
                   {ex.motivo && <span style={{ color: 'var(--texto-secundario)' }}> · {ex.motivo}</span>}

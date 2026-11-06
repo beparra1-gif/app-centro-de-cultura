@@ -10,6 +10,7 @@ import AcademiaDashboardPanel from './AcademiaDashboardPanel';
 import { filtraPorRamaCategoria } from '../utils/academia';
 import { calcularProgresoNivel } from '../utils/gamificacion';
 import { esUrlYoutube, esUrlVimeo, esUrlVideoInterno, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
+import SkeletonLoaderPanel from './SkeletonLoaderPanel';
 
 const normalizarRutAcademia = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 
@@ -43,7 +44,7 @@ function ReproductorMaterial({ material, rutJugador }) {
     const id = obtenerIdYoutube(url);
     if (id) {
       return (
-        <div style={{ borderRadius: '16px', overflow: 'hidden', aspectRatio: '16/9', marginBottom: '8px' }}>
+        <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', aspectRatio: '16/9', marginBottom: '8px' }}>
           <iframe
             src={`https://www.youtube.com/embed/${id}`}
             title={material.TITULO}
@@ -60,7 +61,7 @@ function ReproductorMaterial({ material, rutJugador }) {
     const id = obtenerIdVimeo(url);
     if (id) {
       return (
-        <div style={{ borderRadius: '16px', overflow: 'hidden', aspectRatio: '16/9', marginBottom: '8px' }}>
+        <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', aspectRatio: '16/9', marginBottom: '8px' }}>
           <iframe
             src={`https://player.vimeo.com/video/${id}`}
             title={material.TITULO}
@@ -75,7 +76,7 @@ function ReproductorMaterial({ material, rutJugador }) {
 
   if (esVideo && esUrlVideoInterno(url)) {
     return (
-      <video controls preload="metadata" onPlay={registrarInteraccion} style={{ width: '100%', borderRadius: '16px', marginBottom: '8px', background: '#000' }}>
+      <video controls preload="metadata" onPlay={registrarInteraccion} style={{ width: '100%', borderRadius: 'var(--radius-md)', marginBottom: '8px', background: '#000' }}>
         <source src={resolverUrlVideo(url)} />
         Tu navegador no soporta reproducción de video.
       </video>
@@ -91,7 +92,7 @@ function ReproductorMaterial({ material, rutJugador }) {
       onClick={registrarInteraccion}
       style={{
         display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', color: 'var(--texto-principal)',
-        border: '1px solid var(--borde-suave)', borderRadius: '18px', padding: '10px 12px',
+        border: '1px solid var(--borde-suave)', borderRadius: 'var(--radius-md)', padding: '10px 12px',
         background: 'rgba(255,255,255,0.86)', boxShadow: '0 8px 18px rgba(15,23,42,0.04)',
       }}
     >
@@ -143,7 +144,7 @@ function SelectorRamaCategoria({ form, setForm, toggleCategoria, categoriasDispo
 // seguidos y obligar a hacer scroll para encontrar el que se necesita.
 function SeccionPublicar({ id, titulo, subtitulo, Icon, abierta, onToggle, children }) {
   return (
-    <div className="mb-10" style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '16px', overflow: 'hidden', background: 'rgba(255,255,255,0.86)' }}>
+    <div className="mb-10" style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'rgba(255,255,255,0.86)' }}>
       <button
         type="button"
         onClick={() => onToggle(abierta ? null : id)}
@@ -156,7 +157,7 @@ function SeccionPublicar({ id, titulo, subtitulo, Icon, abierta, onToggle, child
           <Icon size={18} color="var(--azul-electrico)" strokeWidth={1.5} />
           <span>
             <strong style={{ display: 'block', fontSize: '14px' }}>{titulo}</strong>
-            {subtitulo && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{subtitulo}</span>}
+            {subtitulo && <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700' }}>{subtitulo}</span>}
           </span>
         </span>
         <ChevronDown size={18} color="var(--gris-secundario)" strokeWidth={1.5} style={{ transform: abierta ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
@@ -326,7 +327,7 @@ function AcademiaPanel({
   const todoElQuiz = quizList || [];
 
   if (!pupiloActivo) {
-    return <div className="mt-20 fade-in">Cargando datos de academia...</div>;
+    return <SkeletonLoaderPanel etiqueta="Cargando academia" />;
   }
 
   const progresoNivel = calcularProgresoNivel(pupiloActivo.xp);
@@ -537,7 +538,7 @@ function AcademiaPanel({
 
       {!esProfesor && (
         <>
-          <div className={`card academy-hero-card gamificacion-card mb-20 ${animacionXP ? 'xp-boost-anim' : ''}`} style={{ background: 'linear-gradient(180deg, rgba(11,29,58,0.98) 0%, rgba(0,122,255,0.92) 55%, rgba(0,199,190,0.90) 100%)', color: 'white', border: 'none', position: 'relative', overflow: 'hidden', borderRadius: '28px', boxShadow: '0 18px 40px rgba(0,0,0,0.18)' }}>
+          <div className={`card academy-hero-card gamificacion-card mb-20 ${animacionXP ? 'xp-boost-anim' : ''}`} style={{ background: 'linear-gradient(180deg, rgba(11,29,58,0.98) 0%, rgba(0,122,255,0.92) 55%, rgba(0,199,190,0.90) 100%)', color: 'white', border: 'none', position: 'relative', overflow: 'hidden', borderRadius: 'var(--radius-lg)', boxShadow: '0 18px 40px rgba(0,0,0,0.18)' }}>
             {animacionXP && <div className="particulas-xp">✨ +50 XP ✨</div>}
             <div className="gamificacion-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="nivel-box" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -548,21 +549,21 @@ function AcademiaPanel({
                 </div>
               </div>
             </div>
-            <div className="admin-progress-bg mt-15" style={{ background: 'rgba(255,255,255,0.2)', height: '14px', borderRadius: '999px' }}>
-              <div className="admin-progress-fill" style={{ width: `${progresoNivel.porcentaje}%`, background: '#00C7BE', height: '100%', borderRadius: '999px' }}></div>
+            <div className="admin-progress-bg mt-15" style={{ background: 'rgba(255,255,255,0.2)', height: '14px', borderRadius: 'var(--radius-pill)' }}>
+              <div className="admin-progress-fill" style={{ width: `${progresoNivel.porcentaje}%`, background: '#00C7BE', height: '100%', borderRadius: 'var(--radius-pill)' }}></div>
             </div>
-            <p style={{ textAlign: 'right', margin: '8px 0 0 0', fontSize: '11px', fontWeight: '800' }}>Faltan {progresoNivel.xpFaltante} XP para Lvl {progresoNivel.nivel + 1}</p>
+            <p style={{ textAlign: 'right', margin: '8px 0 0 0', fontSize: 'var(--texto-min)', fontWeight: '800' }}>Faltan {progresoNivel.xpFaltante} XP para Lvl {progresoNivel.nivel + 1}</p>
           </div>
 
           {materialesVisibles.length > 0 && (
-            <div className="card mt-15" style={{ borderRadius: '24px' }}>
+            <div className="card mt-15" style={{ borderRadius: 'var(--radius-lg)' }}>
               <h4 className="form-subtitle" style={{ marginBottom: '12px', fontWeight: '900' }}>Materiales de Academia</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {materialesVisibles.slice(0, 6).map((mat, idx) => (
                   <div key={mat.id || `${mat.TITULO || 'material'}-${idx}`}>
                     <ReproductorMaterial material={mat} rutJugador={pupiloActivo.rut} />
                     <strong style={{ fontSize: '13px', display: 'block', marginTop: '4px' }}>{mat.TITULO}</strong>
-                    <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                    <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700' }}>
                       {mat.rama || 'General'} · {(Array.isArray(mat.categorias_objetivo) && mat.categorias_objetivo.length > 0) ? mat.categorias_objetivo.join(', ') : 'Todas las categorías'}
                     </span>
                   </div>
@@ -577,9 +578,9 @@ function AcademiaPanel({
               {quizVisibles.map((quiz) => {
                 const respuesta = respuestasQuiz[quiz.id] || {};
                 return (
-                  <div key={quiz.id} className="card academia-card mt-10" style={{ border: '2px solid #FF9500', borderRadius: '26px', boxShadow: '0 14px 34px rgba(15,23,42,0.08)' }}>
+                  <div key={quiz.id} className="card academia-card mt-10" style={{ border: '2px solid #FF9500', borderRadius: 'var(--radius-lg)', boxShadow: '0 14px 34px rgba(15,23,42,0.08)' }}>
                     <div className="academia-header">
-                      <span className="badge-academia" style={{ background: '#FF9500', color: 'white', borderRadius: '999px', padding: '6px 10px' }}><Brain size={12} color="var(--gris-secundario)" strokeWidth={1.5} /> QUIZ TÁCTICO</span>
+                      <span className="badge-academia" style={{ background: '#FF9500', color: 'white', borderRadius: 'var(--radius-pill)', padding: '6px 10px' }}><Brain size={12} color="var(--gris-secundario)" strokeWidth={1.5} /> QUIZ TÁCTICO</span>
                       <span className="xp-recompensa">+50 XP</span>
                     </div>
                     <h4 className="titulo-leccion">{quiz.titulo}</h4>
@@ -604,7 +605,7 @@ function AcademiaPanel({
             </>
           )}
 
-          <div className="card mt-15" style={{ borderRadius: '24px' }}>
+          <div className="card mt-15" style={{ borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle" style={{ marginBottom: '12px', fontWeight: '900' }}>Mis Evaluaciones</h4>
             {cargandoEvaluacionesJugador && <p className="text-muted">Cargando...</p>}
             {!cargandoEvaluacionesJugador && evaluacionesJugador.length === 0 && (
@@ -613,13 +614,13 @@ function AcademiaPanel({
             {!cargandoEvaluacionesJugador && evaluacionesJugador.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {evaluacionesJugador.map((ev) => (
-                  <div key={ev.id_evaluacion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
+                  <div key={ev.id_evaluacion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: 'var(--radius-md)', padding: '10px 12px', background: 'rgba(255,255,255,0.84)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <strong style={{ fontSize: '12px' }}>{ev.fecha_evaluacion ? new Date(ev.fecha_evaluacion).toLocaleDateString('es-CL') : 'Sin fecha'}</strong>
-                      <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{ev.tipo_evaluacion || 'Evaluación'}</span>
+                      <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700' }}>{ev.tipo_evaluacion || 'Evaluación'}</span>
                     </div>
                     {ev.tipo_evaluacion === 'Evaluación Psicomotriz' ? (
-                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px', fontSize: '11px', fontWeight: '800' }}>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px', fontSize: 'var(--texto-min)', fontWeight: '800' }}>
                         <span>Coordinación: {ev.puntaje_coordinacion ?? '-'}</span>
                         <span>Coord. óculo-manual: {ev.puntaje_coordinacion_ocular ?? '-'}</span>
                         <span>Equilibrio: {ev.puntaje_equilibrio ?? '-'}</span>
@@ -627,7 +628,7 @@ function AcademiaPanel({
                         {ETIQUETAS_LATERALIDAD[ev.lateralidad] && <span>Lateralidad: {ETIQUETAS_LATERALIDAD[ev.lateralidad]}</span>}
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px', fontSize: '11px', fontWeight: '800' }}>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '6px', fontSize: 'var(--texto-min)', fontWeight: '800' }}>
                         <span>Tiro: {ev.puntaje_tecnica ?? '-'}</span>
                         <span>Defensa: {ev.puntaje_actitud ?? '-'}</span>
                         <span>Físico: {ev.puntaje_condicion ?? '-'}</span>
@@ -635,10 +636,10 @@ function AcademiaPanel({
                       </div>
                     )}
                     {ev.comentarios && (
-                      <p style={{ margin: '6px 0 0 0', fontSize: '11px', color: 'var(--texto-secundario)', whiteSpace: 'pre-line' }}>{ev.comentarios}</p>
+                      <p style={{ margin: '6px 0 0 0', fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', whiteSpace: 'pre-line' }}>{ev.comentarios}</p>
                     )}
                     {ev.recomendaciones && (
-                      <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: 'var(--azul-electrico)', whiteSpace: 'pre-line' }}><strong>Recomendaciones:</strong> {ev.recomendaciones}</p>
+                      <p style={{ margin: '4px 0 0 0', fontSize: 'var(--texto-min)', color: 'var(--azul-electrico)', whiteSpace: 'pre-line' }}><strong>Recomendaciones:</strong> {ev.recomendaciones}</p>
                     )}
                   </div>
                 ))}
@@ -649,7 +650,7 @@ function AcademiaPanel({
       )}
 
       {esProfesor && (
-        <div className="card mt-20" style={{ border: '2px solid rgba(0,122,255,0.22)', borderRadius: '24px' }}>
+        <div className="card mt-20" style={{ border: '2px solid rgba(0,122,255,0.22)', borderRadius: 'var(--radius-lg)' }}>
           <h4 className="form-subtitle" style={{ marginBottom: '10px', fontWeight: '900' }}>Panel Docente</h4>
 
           <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
@@ -717,7 +718,7 @@ function AcademiaPanel({
                 <Upload size={16} /> {subiendoVideo ? `Subiendo... ${progresoVideo}%` : 'Subir y publicar video'}
               </button>
               {subiendoVideo && (
-                <div style={{ marginTop: '8px', height: '8px', borderRadius: '999px', background: 'rgba(15,23,42,0.08)', overflow: 'hidden' }}>
+                <div style={{ marginTop: '8px', height: '8px', borderRadius: 'var(--radius-pill)', background: 'rgba(15,23,42,0.08)', overflow: 'hidden' }}>
                   <div style={{ width: `${progresoVideo}%`, height: '100%', background: 'var(--azul-electrico)', transition: 'width 0.2s ease' }} />
                 </div>
               )}
@@ -746,7 +747,7 @@ function AcademiaPanel({
 
           <PizarraTacticaCanvas onCapturar={setImagenPizarra} />
           {imagenPizarra && (
-            <p style={{ textAlign: 'center', fontSize: '11px', color: 'var(--verde-victoria)', fontWeight: '800', marginTop: '6px' }}>
+            <p style={{ textAlign: 'center', fontSize: 'var(--texto-min)', color: 'var(--verde-victoria)', fontWeight: '800', marginTop: '6px' }}>
               Pizarra capturada. Completa la rama/categoría y guarda para publicarla.
             </p>
           )}
@@ -781,7 +782,7 @@ function AcademiaPanel({
                   const claveEdicion = `material-${mat.id}`;
                   const editando = itemEnEdicion === claveEdicion;
                   return (
-                    <div key={claveEdicion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px', marginBottom: '8px', background: mat.activo === false ? 'rgba(255,59,48,0.05)' : 'rgba(255,255,255,0.84)' }}>
+                    <div key={claveEdicion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: 'var(--radius-md)', padding: '10px', marginBottom: '8px', background: mat.activo === false ? 'rgba(255,59,48,0.05)' : 'rgba(255,255,255,0.84)' }}>
                       {editando ? (
                         <>
                           <input className="form-input mb-10" placeholder="Título" value={editForm.titulo} onChange={(e) => setEditForm((p) => ({ ...p, titulo: e.target.value }))} />
@@ -796,17 +797,17 @@ function AcademiaPanel({
                         <>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <strong style={{ fontSize: '13px' }}>{mat.TITULO}</strong>
-                            <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', background: mat.activo === false ? 'rgba(255,59,48,0.14)' : 'rgba(52,199,89,0.14)', color: mat.activo === false ? '#b91c1c' : '#15803d' }}>
+                            <span style={{ fontSize: 'var(--texto-min)', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', background: mat.activo === false ? 'rgba(255,59,48,0.14)' : 'rgba(52,199,89,0.14)', color: mat.activo === false ? '#b91c1c' : '#15803d' }}>
                               {mat.activo === false ? 'Despublicado' : 'Publicado'}
                             </span>
                           </div>
-                          <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                          <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700' }}>
                             {mat.rama || 'General'} · {(Array.isArray(mat.categorias_objetivo) && mat.categorias_objetivo.length > 0) ? mat.categorias_objetivo.join(', ') : 'Todas las categorías'}
                           </span>
                           <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: '11px' }} onClick={() => iniciarEdicion('material', mat)}><PenSquare size={12} /> Editar</button>
-                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: '11px' }} onClick={() => togglePublicado('material', mat)}>{mat.activo === false ? 'Publicar' : 'Despublicar'}</button>
-                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: '11px', borderColor: 'rgba(255,59,48,0.35)', color: '#b91c1c' }} onClick={() => eliminarItem('material', mat)}><Trash2 size={12} /> Eliminar</button>
+                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: 'var(--texto-min)' }} onClick={() => iniciarEdicion('material', mat)}><PenSquare size={12} /> Editar</button>
+                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: 'var(--texto-min)' }} onClick={() => togglePublicado('material', mat)}>{mat.activo === false ? 'Publicar' : 'Despublicar'}</button>
+                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: 'var(--texto-min)', borderColor: 'rgba(255,59,48,0.35)', color: '#b91c1c' }} onClick={() => eliminarItem('material', mat)}><Trash2 size={12} /> Eliminar</button>
                           </div>
                         </>
                       )}
@@ -825,7 +826,7 @@ function AcademiaPanel({
                   const claveEdicion = `pizarra-${pz.id}`;
                   const editando = itemEnEdicion === claveEdicion;
                   return (
-                    <div key={claveEdicion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px', marginBottom: '8px', background: pz.activo === false ? 'rgba(255,59,48,0.05)' : 'rgba(255,255,255,0.84)' }}>
+                    <div key={claveEdicion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: 'var(--radius-md)', padding: '10px', marginBottom: '8px', background: pz.activo === false ? 'rgba(255,59,48,0.05)' : 'rgba(255,255,255,0.84)' }}>
                       {editando ? (
                         <>
                           <input className="form-input mb-10" placeholder="Nombre de la táctica" value={editForm.nombre_tactica} onChange={(e) => setEditForm((p) => ({ ...p, nombre_tactica: e.target.value }))} />
@@ -840,17 +841,17 @@ function AcademiaPanel({
                         <>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <strong style={{ fontSize: '13px' }}>{pz.nombre_tactica || 'Táctica sin nombre'}</strong>
-                            <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', background: pz.activo === false ? 'rgba(255,59,48,0.14)' : 'rgba(52,199,89,0.14)', color: pz.activo === false ? '#b91c1c' : '#15803d' }}>
+                            <span style={{ fontSize: 'var(--texto-min)', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', background: pz.activo === false ? 'rgba(255,59,48,0.14)' : 'rgba(52,199,89,0.14)', color: pz.activo === false ? '#b91c1c' : '#15803d' }}>
                               {pz.activo === false ? 'Despublicado' : 'Publicado'}
                             </span>
                           </div>
-                          <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                          <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700' }}>
                             {pz.rama || 'General'} · {(Array.isArray(pz.categorias_objetivo) && pz.categorias_objetivo.length > 0) ? pz.categorias_objetivo.join(', ') : 'Todas las categorías'}
                           </span>
                           <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: '11px' }} onClick={() => iniciarEdicion('pizarra', pz)}><PenSquare size={12} /> Editar</button>
-                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: '11px' }} onClick={() => togglePublicado('pizarra', pz)}>{pz.activo === false ? 'Publicar' : 'Despublicar'}</button>
-                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: '11px', borderColor: 'rgba(255,59,48,0.35)', color: '#b91c1c' }} onClick={() => eliminarItem('pizarra', pz)}><Trash2 size={12} /> Eliminar</button>
+                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: 'var(--texto-min)' }} onClick={() => iniciarEdicion('pizarra', pz)}><PenSquare size={12} /> Editar</button>
+                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: 'var(--texto-min)' }} onClick={() => togglePublicado('pizarra', pz)}>{pz.activo === false ? 'Publicar' : 'Despublicar'}</button>
+                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: 'var(--texto-min)', borderColor: 'rgba(255,59,48,0.35)', color: '#b91c1c' }} onClick={() => eliminarItem('pizarra', pz)}><Trash2 size={12} /> Eliminar</button>
                           </div>
                         </>
                       )}
@@ -869,7 +870,7 @@ function AcademiaPanel({
                   const claveEdicion = `quiz-${quiz.id}`;
                   const editando = itemEnEdicion === claveEdicion;
                   return (
-                    <div key={claveEdicion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '14px', padding: '10px', marginBottom: '8px', background: quiz.activo === false ? 'rgba(255,59,48,0.05)' : 'rgba(255,255,255,0.84)' }}>
+                    <div key={claveEdicion} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: 'var(--radius-md)', padding: '10px', marginBottom: '8px', background: quiz.activo === false ? 'rgba(255,59,48,0.05)' : 'rgba(255,255,255,0.84)' }}>
                       {editando ? (
                         <>
                           <input className="form-input mb-10" placeholder="Título" value={editForm.titulo} onChange={(e) => setEditForm((p) => ({ ...p, titulo: e.target.value }))} />
@@ -892,17 +893,17 @@ function AcademiaPanel({
                         <>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <strong style={{ fontSize: '13px' }}>{quiz.titulo}</strong>
-                            <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', background: quiz.activo === false ? 'rgba(255,59,48,0.14)' : 'rgba(52,199,89,0.14)', color: quiz.activo === false ? '#b91c1c' : '#15803d' }}>
+                            <span style={{ fontSize: 'var(--texto-min)', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', background: quiz.activo === false ? 'rgba(255,59,48,0.14)' : 'rgba(52,199,89,0.14)', color: quiz.activo === false ? '#b91c1c' : '#15803d' }}>
                               {quiz.activo === false ? 'Despublicado' : 'Publicado'}
                             </span>
                           </div>
-                          <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
+                          <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700' }}>
                             {quiz.rama || 'General'} · {(Array.isArray(quiz.categorias_objetivo) && quiz.categorias_objetivo.length > 0) ? quiz.categorias_objetivo.join(', ') : 'Todas las categorías'}
                           </span>
                           <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: '11px' }} onClick={() => iniciarEdicion('quiz', quiz)}><PenSquare size={12} /> Editar</button>
-                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: '11px' }} onClick={() => togglePublicado('quiz', quiz)}>{quiz.activo === false ? 'Publicar' : 'Despublicar'}</button>
-                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: '11px', borderColor: 'rgba(255,59,48,0.35)', color: '#b91c1c' }} onClick={() => eliminarItem('quiz', quiz)}><Trash2 size={12} /> Eliminar</button>
+                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: 'var(--texto-min)' }} onClick={() => iniciarEdicion('quiz', quiz)}><PenSquare size={12} /> Editar</button>
+                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: 'var(--texto-min)' }} onClick={() => togglePublicado('quiz', quiz)}>{quiz.activo === false ? 'Publicar' : 'Despublicar'}</button>
+                            <button className="btn-secondary" style={{ width: 'auto', padding: '6px 10px', fontSize: 'var(--texto-min)', borderColor: 'rgba(255,59,48,0.35)', color: '#b91c1c' }} onClick={() => eliminarItem('quiz', quiz)}><Trash2 size={12} /> Eliminar</button>
                           </div>
                         </>
                       )}
@@ -940,16 +941,16 @@ function AcademiaPanel({
       )}
 
       {pizarrasVisibles.length > 0 && (
-        <div className="card mt-15" style={{ borderRadius: '24px' }}>
+        <div className="card mt-15" style={{ borderRadius: 'var(--radius-lg)' }}>
           <h4 className="form-subtitle" style={{ fontWeight: '900' }}>Últimas pizarras tácticas</h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {pizarrasVisibles.slice(0, 5).map((pz, idx) => (
-              <div key={pz.id || `${pz.nombre_tactica || 'tactica'}-${idx}`} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: '18px', padding: '12px', background: 'rgba(255,255,255,0.84)' }}>
+              <div key={pz.id || `${pz.nombre_tactica || 'tactica'}-${idx}`} style={{ border: '1px solid rgba(120,120,128,0.14)', borderRadius: 'var(--radius-md)', padding: '12px', background: 'rgba(255,255,255,0.84)' }}>
                 {pz.imagen_filename && (
                   <img
                     src={`${api.API_BASE_URL_CONFIG}/academia-pizarras/imagen/${pz.id}?sig=${pz.imagen_sig || ''}`}
                     alt={pz.nombre_tactica || 'Pizarra táctica'}
-                    style={{ width: '100%', borderRadius: '12px', marginBottom: '8px' }}
+                    style={{ width: '100%', borderRadius: 'var(--radius-sm)', marginBottom: '8px' }}
                   />
                 )}
                 <strong style={{ display: 'block', fontSize: '13px' }}>{pz.nombre_tactica || 'Táctica sin nombre'}</strong>

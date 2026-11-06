@@ -1,0 +1,53 @@
+# CI: verifica cada push y pull request.
+# Ojo: el deploy a producción lo dispara DigitalOcean directamente al hacer
+# push a main (ver DEPLOYMENT.md); este workflow NO lo bloquea. Sirve para
+# ver en GitHub (✓ / ✗ junto al commit) si lo publicado pasó lint, tests y
+# build. Para que bloquee, conviene trabajar en ramas + PR con este check
+# como requerido antes de mergear a main.
+#
+# Las pruebas E2E (tests/e2e) quedan fuera por ahora: necesitan Postgres,
+# backend y frontend levantados. Se corren en local con la configuración
+# "backend-pruebas" de .claude/launch.json (apaga webhook/backup/import).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint, tests, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+
+  backend:
+    name: Backend (sintaxis, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: node --check server.js
+      - run: npx vitest run

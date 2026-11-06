@@ -15,7 +15,10 @@ export default defineConfig({
         // sentido precachearlo de entrada para todos los visitantes — se
         // sirve como asset normal bajo demanda solo cuando alguien realmente
         // usa esa función.
-        globIgnores: ['**/ort*.wasm', '**/ort*.mjs', '**/ort.*.js'],
+        // Mismo criterio para las librerías de exportación (PDF del Kiosco,
+        // imagen de la tarjeta/pizarra): ~600 KB que casi nadie usa y que se
+        // cargan con import() recién al exportar.
+        globIgnores: ['**/ort*.wasm', '**/ort*.mjs', '**/ort.*.js', '**/jspdf*.js', '**/html2canvas*.js', '**/purify*.js'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
       },
       manifest: {

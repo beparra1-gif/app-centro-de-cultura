@@ -24,7 +24,7 @@ function CanchaEntrenamientosOcupacion({ ocupaciones, cargando }) {
               fontSize: '11px',
               fontWeight: '700',
               padding: '4px 9px',
-              borderRadius: '999px',
+              borderRadius: 'var(--radius-pill)',
               background: o.origen === 'arriendo' ? 'rgba(255,149,0,0.12)' : 'rgba(94,92,230,0.14)',
               color: o.origen === 'arriendo' ? '#b36200' : '#3d3ba0',
             }}

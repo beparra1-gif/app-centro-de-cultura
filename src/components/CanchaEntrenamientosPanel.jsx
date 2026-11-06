@@ -11,6 +11,7 @@ import CanchaEntrenamientosReservaForm from './CanchaEntrenamientosReservaForm';
 import CanchaEntrenamientosHorarioForm from './CanchaEntrenamientosHorarioForm';
 import CanchaEntrenamientosExcepciones from './CanchaEntrenamientosExcepciones';
 import CanchaEntrenamientosAnalisis from './CanchaEntrenamientosAnalisis';
+import SkeletonLoaderPanel from './SkeletonLoaderPanel';
 
 const ESTADO_LABEL = { pendiente: 'Pendiente', parcial: 'Parcial', pagado: 'Pagado', anulado: 'Anulado' };
 
@@ -125,7 +126,7 @@ function CanchaEntrenamientosPanel({ puedeCancha, puedeHorarios }) {
             <span><span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '3px', background: colorBarraPorRama('mixta'), marginRight: '4px', verticalAlign: '-1px' }} />Entrenamiento mixto</span>
           </div>
 
-          {cargando && <p className="text-muted">Cargando calendario...</p>}
+          {cargando && <SkeletonLoaderPanel variante="lista" etiqueta="Cargando calendario" />}
 
           <CalendarioGrilla
             vista={vistaCalendario}
@@ -148,7 +149,7 @@ function CanchaEntrenamientosPanel({ puedeCancha, puedeHorarios }) {
           )}
 
           {arriendoSeleccionado && (
-            <div className="card mt-15" style={{ borderRadius: '16px', borderLeft: `4px solid ${COLOR_BARRA_ARRIENDO[arriendoSeleccionado.estado_pago] || COLOR_BARRA_ARRIENDO.pendiente}` }}>
+            <div className="card mt-15" style={{ borderRadius: 'var(--radius-md)', borderLeft: `4px solid ${COLOR_BARRA_ARRIENDO[arriendoSeleccionado.estado_pago] || COLOR_BARRA_ARRIENDO.pendiente}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
                 <div>
                   <strong style={{ fontSize: '14px' }}>
@@ -229,7 +230,7 @@ function CanchaEntrenamientosPanel({ puedeCancha, puedeHorarios }) {
           )}
 
           {entrenamientoSeleccionado && (
-            <div className="card mt-15" style={{ borderRadius: '16px', borderLeft: `4px solid ${colorBarraPorRama(entrenamientoSeleccionado.rama)}` }}>
+            <div className="card mt-15" style={{ borderRadius: 'var(--radius-md)', borderLeft: `4px solid ${colorBarraPorRama(entrenamientoSeleccionado.rama)}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
                 <div>
                   <strong style={{ fontSize: '14px' }}>
