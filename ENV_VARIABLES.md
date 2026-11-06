@@ -110,3 +110,10 @@ Sin estas variables, en producción el envío queda deshabilitado: el login sigu
 - `CLAVE_INICIAL_HASTA` (opcional, formato `AAAA-MM-DD`): hasta ese día inclusive (hora de Chile) las cuentas **sin correo** todavía pueden entrar con la clave inicial `12345` o con una clave marcada para cambio. **Sin esta variable, la clave inicial queda cerrada.** Úsala para anunciar una transición (por ejemplo, un mes) mientras el club entrega códigos de activación.
 - Las cuentas sin correo se activan con un **código de activación** que genera un admin en *Admin → Usuarios y Cuentas → "Código de acceso"* (48 horas, un solo uso) y que se entrega por WhatsApp (botón con el mensaje listo) o en persona. La persona lo usa en *"¿Primera vez u olvidaste tu contraseña?" → "Tengo un código del club"*.
 - En el primer ingreso, cada cuenta debe aceptar el **aviso de protección de datos** (texto y versión en `src/legal/avisoPrivacidad.js`; cada aceptación queda en la tabla `consentimientos_datos`) y, si no tiene correo, se le pide registrarlo y verificarlo con un código.
+
+## 💾 Backups: frecuencia, tamaño y retención (2026-11)
+
+- Por defecto: **un backup diario** (`BACKUP_CRON`, default `0 4 * * *` UTC) y **sin backup al arrancar** (`BACKUP_RUN_ON_START`, default `false`). Antes eran cada 6 h + uno en cada deploy.
+- Los backups se guardan **comprimidos (gzip)** y los archivos binarios (fotos, logos, videos) en base64: ~74 % menos que el JSON anterior.
+- **Retención en Spaces** después de cada subida: todos los de los últimos `BACKUP_S3_KEEP_DAILY` días (7), el más reciente de cada semana por `BACKUP_S3_KEEP_WEEKLY` semanas (8) y el más reciente de cada mes por `BACKUP_S3_KEEP_MONTHLY` meses (12). Nunca se borra el más reciente.
+- **Borrar es irreversible**: la retención corre en **simulación** (solo informa en los logs cuántos borraría) hasta que se configure `BACKUP_S3_RETENCION_APLICAR=true` en DigitalOcean.

@@ -32,6 +32,9 @@
   --estado-pendiente-fondo: rgba(255, 59, 48, 0.12);
   --estado-pendiente-texto: #b3261e;
   --estado-pendiente-borde: rgba(255, 59, 48, 0.32);
+  --estado-parcial-fondo: rgba(0, 122, 255, 0.10);
+  --estado-parcial-texto: #0a58ca;
+  --estado-parcial-borde: rgba(0, 122, 255, 0.45);
   --estado-futuro-fondo: #f1f4f8;
   --estado-futuro-texto: #6b7280;
   --estado-futuro-borde: #d5dbe4;
@@ -3914,3 +3917,16 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .codigo-activacion-numero { margin: 6px 0 10px; font-size: 40px; font-weight: 900; letter-spacing: 10px; font-variant-numeric: tabular-nums; color: var(--azul-marino); }
 .codigo-activacion-wsp { display: flex; align-items: center; justify-content: center; min-height: var(--toque-min); text-decoration: none; background: linear-gradient(180deg, #2fd16b 0%, #25b85c 100%); }
 .codigo-activacion-aviso { margin: 0 0 6px; padding: 10px; border-radius: var(--radius-md); background: var(--estado-revision-fondo); color: var(--estado-revision-texto); font-size: 13px; font-weight: 700; }
+
+/* Abono parcial: el mes tiene abonos pero no completa la cuota. */
+.mes-parcial { background-color: var(--estado-parcial-fondo); color: var(--estado-parcial-texto); border: 1px solid var(--estado-parcial-borde); }
+.mes-box-faltante { display: flex; flex-direction: column; align-items: center; font-size: 11px; font-weight: 800; line-height: 1.15; white-space: nowrap; }
+
+/* "Este mes": abonado vs cuota del mes en curso. */
+.resumen-mes-actual { margin: 10px 2px 2px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--fondo-input); border: 1px solid var(--borde-suave); font-size: 13px; color: var(--texto-principal); }
+.resumen-mes-actual-fila { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.resumen-mes-actual-falta { color: var(--estado-pendiente-texto); white-space: nowrap; }
+.resumen-mes-actual-barra { margin-top: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--estado-futuro-fondo); overflow: hidden; }
+.resumen-mes-actual-barra span { display: block; height: 100%; border-radius: inherit; background: var(--estado-parcial-texto); transition: width 0.3s ease; }
+.resumen-mes-actual small { display: block; margin-top: 6px; font-size: var(--texto-min); color: var(--estado-revision-texto); }
+.resumen-mes-actual-completo { display: flex; align-items: center; gap: 6px; color: var(--estado-pagado-texto); font-weight: 800; }

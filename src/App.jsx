@@ -26,6 +26,7 @@ import { confirmAction } from './utils/confirmDialog';
 import { esNuestroClub } from './utils/logoResolver';
 import { cuentasDemo } from './data/demoAccounts';
 import { hoyLocalISO, partesFechaCalendario } from './utils/fechas';
+import { resumirAbonosMes } from './utils/abonosMes';
 import useIntervaloVisible from './utils/useIntervaloVisible';
 import useModalAccesible from './utils/useModalAccesible';
 import PrimerIngresoModal from './components/PrimerIngresoModal';
@@ -767,27 +768,16 @@ function App() {
         : (anioIngreso < ANIO_OBJETIVO ? 1 : mesIngreso);
       const pagosJugador = pagosPorRut.get(rutJugadorNorm) || [];
 
-      const estadoPorMes = new Map();
+      // Montos por mes (un pago que cubre varios meses se reparte parejo):
+      // el mes queda pagado solo cuando lo abonado completa la cuota.
+      const pagosPorMes = new Map();
       pagosJugador.forEach((pago) => {
-        const estado = String(pago.estado_pago || '').toLowerCase();
+        const montoPorMes = (Number(pago.monto_total_pagado) || 0) / Math.max(1, pago.mesesPago.length);
         pago.mesesPago.forEach((mes) => {
-          if (!estadoPorMes.has(mes)) estadoPorMes.set(mes, new Set());
-          estadoPorMes.get(mes).add(estado);
+          if (!pagosPorMes.has(mes)) pagosPorMes.set(mes, []);
+          pagosPorMes.get(mes).push({ estado: pago.estado_pago, monto: montoPorMes });
         });
       });
-
-      // mesesMorosos guarda los meses concretos (no solo el conteo), ya
-      // acotado por inicioCobro — un jugador que ingresó en marzo nunca
-      // arrastra ene/feb acá porque el loop ni siquiera los recorre.
-      const mesesMorososNums = [];
-      for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
-        const estados = estadoPorMes.get(mes) || new Set();
-        const pagado = estados.has('aprobado') || estados.has('validado');
-        if (!pagado) mesesMorososNums.push(mes);
-      }
-      const mesesDeuda = mesesMorososNums.length;
-
-      if (mesesDeuda <= 0) return;
 
       // obtenerCuotaJugador aplica el % de beca parcial (si tiene) al monto
       // propio, o a la tarifa referencial de su familia si no tiene
@@ -795,6 +785,24 @@ function App() {
       // número de meses mostrado como si fueran pesos).
       const cuotaReferencialFamilia = cuotaReferencialPorFamilia.get(obtenerFamilyKey(jugador)) || 0;
       const cuotaRef = obtenerCuotaJugador(jugador, cuotaReferencialFamilia);
+
+      // mesesMorosos guarda los meses concretos (no solo el conteo), ya
+      // acotado por inicioCobro — un jugador que ingresó en marzo nunca
+      // arrastra ene/feb acá porque el loop ni siquiera los recorre.
+      const mesesMorososNums = [];
+      let montoDeudaJugador = 0;
+      let mesesConAbonoParcial = 0;
+      for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
+        const resumen = resumirAbonosMes(pagosPorMes.get(mes) || [], cuotaRef);
+        if (!resumen.completo) {
+          mesesMorososNums.push(mes);
+          montoDeudaJugador += resumen.faltante;
+          if (resumen.parcial) mesesConAbonoParcial += 1;
+        }
+      }
+      const mesesDeuda = mesesMorososNums.length;
+
+      if (mesesDeuda <= 0) return;
       const cuentaApoderado = cuentaPorRut.get(normalizarRutComparacion(jugador.rut_apoderado))
         || cuentaPorCorreo.get(normalizarCorreo(jugador.correo_apoderado));
       const telefonoCuenta = String(cuentaApoderado?.telefono || '').trim();
@@ -821,7 +829,9 @@ function App() {
         categoria: jugador.categoria || '',
         mesesDeuda,
         mesesMorosos: mesesMorososNums.map((n) => NOMBRES_MESES[n - 1]),
-        montoDeuda: mesesDeuda * cuotaRef,
+        // Suma de lo que FALTA de cada mes (descuenta abonos parciales).
+        montoDeuda: montoDeudaJugador,
+        mesesConAbonoParcial,
         contacto: telefono || jugador.correo_apoderado || 'Sin contacto',
         telefono,
         correo: jugador.correo_apoderado || '',
@@ -948,23 +958,14 @@ function App() {
       const inicioCobro = getMesIngresoSocio(cuenta);
       const pagosSocio = pagosPorRutSocio.get(rutSocioNorm) || [];
 
-      const estadoPorMes = new Map();
+      const pagosPorMes = new Map();
       pagosSocio.forEach((pago) => {
-        const estado = String(pago.estado_pago || '').toLowerCase();
+        const montoPorMes = (Number(pago.monto_total_pagado) || 0) / Math.max(1, pago.mesesPago.length);
         pago.mesesPago.forEach((mes) => {
-          if (!estadoPorMes.has(mes)) estadoPorMes.set(mes, new Set());
-          estadoPorMes.get(mes).add(estado);
+          if (!pagosPorMes.has(mes)) pagosPorMes.set(mes, []);
+          pagosPorMes.get(mes).push({ estado: pago.estado_pago, monto: montoPorMes });
         });
       });
-
-      const mesesMorososNums = [];
-      for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
-        const estados = estadoPorMes.get(mes) || new Set();
-        const pagado = estados.has('aprobado') || estados.has('validado');
-        if (!pagado) mesesMorososNums.push(mes);
-      }
-      const mesesDeuda = mesesMorososNums.length;
-      if (mesesDeuda <= 0) return;
 
       // Mismo cálculo de cuota automática de socio que PerfilTesoreriaPanel:
       // monto_mensual_base/utm_valor_referencia de la cuenta si existen (override
@@ -981,6 +982,19 @@ function App() {
         return Math.round(utmDelMes * 0.3);
       };
 
+      // Cada mes se completa con abonos hasta su propia cuota (UTM del mes).
+      const mesesMorososNums = [];
+      let montoDeudaSocio = 0;
+      for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
+        const resumen = resumirAbonosMes(pagosPorMes.get(mes) || [], obtenerCuotaSocioDelMes(mes));
+        if (!resumen.completo) {
+          mesesMorososNums.push(mes);
+          montoDeudaSocio += resumen.faltante;
+        }
+      }
+      const mesesDeuda = mesesMorososNums.length;
+      if (mesesDeuda <= 0) return;
+
       const telefonoCuenta = String(cuenta.telefono || '').trim();
       const telefono = telefonoCuenta
         ? `${String(cuenta.prefijo_tel || '+56').trim()}${telefonoCuenta}`
@@ -992,7 +1006,7 @@ function App() {
         nombre: `${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim() || `Socio ${cuenta.rut || ''}`,
         mesesDeuda,
         mesesMorosos: mesesMorososNums.map((n) => NOMBRES_MESES[n - 1]),
-        montoDeuda: mesesMorososNums.reduce((suma, mesNum) => suma + obtenerCuotaSocioDelMes(mesNum), 0),
+        montoDeuda: montoDeudaSocio,
         contacto: telefono || cuenta.correo || 'Sin contacto',
         telefono,
         correo: cuenta.correo || '',

@@ -7,7 +7,9 @@ const crypto = require('crypto');
 const compression = require('compression');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { S3Client, PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
+const zlib = require('zlib');
+const { clasificarBackupsPorRetencion } = require('./lib/retencionBackups');
 const multer = require('multer');
 require('dotenv').config();
 const cron = require('node-cron');
@@ -79,10 +81,14 @@ const resolveRuntimePath = (rawPath = '') => {
 const getBackupConfig = () => {
   const backupDir = resolveRuntimePath(String(process.env.BACKUP_DIR || 'backups'));
   const manifestPath = resolveRuntimePath(String(process.env.BACKUP_MANIFEST_PATH || path.join(backupDir, 'backup-manifest.json')));
-  const cronExpr = String(process.env.BACKUP_CRON || '0 */6 * * *').trim();
+  // Costos (2026-11): antes cada 6 h + uno en CADA arranque (cada deploy
+  // reinicia el servidor) → cientos de copias en Spaces. Ahora uno diario
+  // (04:00 UTC ≈ 01:00 en Chile) y sin backup al arrancar, salvo que se
+  // configure BACKUP_CRON / BACKUP_RUN_ON_START.
+  const cronExpr = String(process.env.BACKUP_CRON || '0 4 * * *').trim();
   const keepDays = Number(process.env.BACKUP_KEEP_DAYS || 7);
   const keepMaxFiles = Number(process.env.BACKUP_KEEP_MAX_FILES || 48);
-  const runOnStart = String(process.env.BACKUP_RUN_ON_START || 'true').toLowerCase() === 'true';
+  const runOnStart = String(process.env.BACKUP_RUN_ON_START || 'false').toLowerCase() === 'true';
   const enabled = String(process.env.BACKUP_ENABLED || 'true').toLowerCase() === 'true';
   const allowJsonFallback = String(process.env.BACKUP_ALLOW_JSON_FALLBACK || 'true').toLowerCase() === 'true';
 
@@ -136,6 +142,63 @@ const getBackupStorageConfig = () => {
   };
 };
 
+// Retención de backups en Spaces. Antes nunca se borraba nada del bucket
+// (la limpieza solo actuaba dentro del contenedor, que igual se descarta en
+// cada deploy). Política: todos los de los últimos BACKUP_S3_KEEP_DAILY días,
+// el más reciente de cada semana por BACKUP_S3_KEEP_WEEKLY semanas y el más
+// reciente de cada mes por BACKUP_S3_KEEP_MONTHLY meses. Borrar es
+// irreversible: solo se aplica con BACKUP_S3_RETENCION_APLICAR=true; si no,
+// se calcula y se informa (simulación) en el manifiesto y en los logs.
+const configRetencionSpaces = () => {
+  const num = (valor, porDefecto) => {
+    const n = Number(valor);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : porDefecto;
+  };
+  return {
+    aplicar: String(process.env.BACKUP_S3_RETENCION_APLICAR || 'false').toLowerCase() === 'true',
+    diarios: num(process.env.BACKUP_S3_KEEP_DAILY, 7),
+    semanales: num(process.env.BACKUP_S3_KEEP_WEEKLY, 8),
+    mensuales: num(process.env.BACKUP_S3_KEEP_MONTHLY, 12),
+  };
+};
+
+const aplicarRetencionSpaces = async ({ s3, storage }) => {
+  const cfg = configRetencionSpaces();
+  const objetos = [];
+  let token;
+  do {
+    const r = await s3.send(new ListObjectsV2Command({ Bucket: storage.bucket, Prefix: `${storage.prefix}/`, ContinuationToken: token }));
+    (r.Contents || []).forEach((o) => objetos.push({ Key: o.Key, LastModified: o.LastModified, Size: o.Size || 0 }));
+    token = r.IsTruncated ? r.NextContinuationToken : undefined;
+  } while (token);
+
+  const { conservar, borrar } = clasificarBackupsPorRetencion(objetos, cfg);
+  const bytes = (lista) => lista.reduce((suma, o) => suma + (o.Size || 0), 0);
+  const resumen = {
+    modo: cfg.aplicar ? 'aplicada' : 'simulacion',
+    politica: { diarios: cfg.diarios, semanales: cfg.semanales, mensuales: cfg.mensuales },
+    totalObjetos: objetos.length,
+    totalMB: Math.round(bytes(objetos) / 1048576),
+    conservar: conservar.length,
+    conservarMB: Math.round(bytes(conservar) / 1048576),
+    borrar: borrar.length,
+    borrarMB: Math.round(bytes(borrar) / 1048576),
+    borrados: 0,
+  };
+  if (cfg.aplicar && borrar.length > 0) {
+    for (let i = 0; i < borrar.length; i += 1000) {
+      const lote = borrar.slice(i, i + 1000);
+      await s3.send(new DeleteObjectsCommand({
+        Bucket: storage.bucket,
+        Delete: { Objects: lote.map((o) => ({ Key: o.Key })), Quiet: true },
+      }));
+      resumen.borrados += lote.length;
+    }
+  }
+  console.log(`[BACKUP] Retención Spaces (${resumen.modo}): ${resumen.totalObjetos} objetos / ${resumen.totalMB} MB → conservar ${resumen.conservar} (${resumen.conservarMB} MB), ${cfg.aplicar ? 'borrados' : 'se borrarían'} ${resumen.borrar} (${resumen.borrarMB} MB).`);
+  return resumen;
+};
+
 const uploadBackupToObjectStorage = async ({ localFilePath, trigger, strategy }) => {
   const storage = getBackupStorageConfig();
   if (!storage.uploadEnabled) {
@@ -172,7 +235,7 @@ const uploadBackupToObjectStorage = async ({ localFilePath, trigger, strategy })
   const fileName = path.basename(localFilePath);
   const objectKey = `${storage.prefix}/${new Date().toISOString().slice(0, 10)}/${fileName}`;
   const fileBuffer = fs.readFileSync(localFilePath);
-  const contentType = strategy === 'json_fallback' ? 'application/json' : 'application/sql';
+  const contentType = fileName.endsWith('.gz') ? 'application/gzip' : (strategy === 'json_fallback' ? 'application/json' : 'application/sql');
 
   await s3.send(new PutObjectCommand({
     Bucket: storage.bucket,
@@ -191,6 +254,14 @@ const uploadBackupToObjectStorage = async ({ localFilePath, trigger, strategy })
     Key: objectKey,
   }));
 
+  let retencion;
+  try {
+    retencion = await aplicarRetencionSpaces({ s3, storage });
+  } catch (error) {
+    console.error('[BACKUP] Retención Spaces falló (el backup sí se subió):', error.message);
+    retencion = { error: error.message };
+  }
+
   return {
     attempted: true,
     uploaded: true,
@@ -198,6 +269,7 @@ const uploadBackupToObjectStorage = async ({ localFilePath, trigger, strategy })
     endpoint: storage.endpoint,
     region: storage.region,
     objectKey,
+    retencion,
     etag: headRes.ETag || null,
     remoteSizeBytes: Number(headRes.ContentLength || 0),
     verifiedAt: new Date().toISOString(),
@@ -301,7 +373,15 @@ const runJsonBackupFallback = async ({ outputFile }) => {
     backupPayload.tables[tableName] = tableData.rows;
   }
 
-  fs.writeFileSync(outputFile, `${JSON.stringify(backupPayload)}\n`, 'utf8');
+  // Columnas bytea (logos, fotos, videos, pizarras) llegan como Buffer y
+  // JSON.stringify las escribía como {"type":"Buffer","data":[1,2,…]}: ~3,5×
+  // el tamaño real. Se guardan en base64 y el archivo completo va en gzip.
+  const json = JSON.stringify(backupPayload, (_clave, valor) => (
+    valor && valor.type === 'Buffer' && Array.isArray(valor.data)
+      ? { $base64: Buffer.from(valor.data).toString('base64') }
+      : valor
+  ));
+  fs.writeFileSync(outputFile, zlib.gzipSync(Buffer.from(`${json}\n`, 'utf8'), { level: 9 }));
 };
 
 const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
@@ -326,7 +406,7 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
     fs.mkdirSync(cfg.backupDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '_');
     const sqlFileName = `ccf_backup_${stamp}.sql`;
-    const jsonFileName = `ccf_backup_${stamp}.json`;
+    const jsonFileName = `ccf_backup_${stamp}.json.gz`;
     const sqlOutput = path.join(cfg.backupDir, sqlFileName);
     const jsonOutput = path.join(cfg.backupDir, jsonFileName);
 
@@ -335,6 +415,11 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
 
     try {
       await runPgDumpBackup({ databaseUrl, outputFile: sqlOutput });
+      // Comprimir el .sql (texto: suele quedar en ~10-15%).
+      const sqlComprimido = `${sqlOutput}.gz`;
+      fs.writeFileSync(sqlComprimido, zlib.gzipSync(fs.readFileSync(sqlOutput), { level: 9 }));
+      fs.unlinkSync(sqlOutput);
+      outputPath = sqlComprimido;
     } catch (error) {
       const msg = String(error.message || '').toLowerCase();
       const isCommandMissing = String(error.code || '').toUpperCase() === 'ENOENT' || msg.includes('not recognized');

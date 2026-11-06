@@ -7,21 +7,26 @@ import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import { normalizarRol } from '../security/accessControl';
 import { partesFechaCalendario } from '../utils/fechas';
+import { asignarAbonoEnOrden, resumirAbonosMes } from '../utils/abonosMes';
 
 // Pago de cuota de socio (concepto "Mensualidad Socio"); todo lo demás es
 // mensualidad de deportista. Mismo criterio que App.jsx y SuperAdminPanel.
 const esPagoCuotaSocio = (pago = {}) => String(pago.concepto_pago || '').trim().toLowerCase().startsWith('mensualidad socio');
 
-// Estado visual de un mes en la grilla de pagos. 'en-revision' = hay un
+// Estado visual de un mes en la grilla de pagos (a partir de lo ABONADO vs
+// la cuota del mes, ver utils/abonosMes.js). 'en-revision' = hay un
 // comprobante enviado que Tesorería aún no valida: antes se pintaba igual
 // que un mes impago ('pendiente'), así la familia no veía que ya lo había
 // informado y podía pagarlo dos veces. Un comprobante rechazado vuelve a
 // 'pendiente' (hay que pagarlo de nuevo).
-const resolverEstadoMes = ({ estadosMes, sinCargo, mesNumero, inicioCobro, limiteMesDeuda }) => {
-  if (estadosMes.includes('aprobado') || estadosMes.includes('validado')) return 'pagado';
+const resolverEstadoMes = ({ resumen, sinCargo, mesNumero, inicioCobro, limiteMesDeuda }) => {
+  if (resumen.completo) return 'pagado';
   if (sinCargo && mesNumero <= limiteMesDeuda) return 'pagado';
   if (mesNumero < inicioCobro) return 'futuro-preingreso';
-  if (estadosMes.includes('pendiente')) return 'en-revision';
+  if (resumen.hayRevision) return 'en-revision';
+  // Abonado pero sin completar la cuota: muestra cuánto falta y se puede
+  // seleccionar para pagar solo el saldo.
+  if (resumen.parcial) return 'parcial';
   if (mesNumero > limiteMesDeuda) return 'futuro-calendario';
   return 'pendiente';
 };
@@ -31,6 +36,7 @@ const TEXTO_ESTADO_MES = {
   pagado: 'pagado',
   'en-revision': 'comprobante en revisión',
   pendiente: 'por pagar',
+  parcial: 'abono parcial',
   'futuro-calendario': 'próximo',
   'futuro-preingreso': 'anterior a la fecha de ingreso',
 };
@@ -38,7 +44,7 @@ const TEXTO_ESTADO_MES = {
 // Casilla de un mes. Además del color: ícono (✓ pagado, reloj en revisión)
 // para quien no distingue colores o ve la pantalla al sol, marca del mes
 // actual y etiqueta accesible ("Marzo: por pagar").
-function MesBox({ mesNumero, nombre, estado, seleccionado, esActual, onClick }) {
+function MesBox({ mesNumero, nombre, estado, seleccionado, esActual, onClick, faltante = 0 }) {
   const Icono = estado === 'pagado' ? Check : (estado === 'en-revision' ? Clock : null);
   const textoEstado = TEXTO_ESTADO_MES[estado] || estado;
   return (
@@ -46,7 +52,7 @@ function MesBox({ mesNumero, nombre, estado, seleccionado, esActual, onClick }) 
       type="button"
       onClick={onClick}
       aria-pressed={seleccionado}
-      aria-label={`${NOMBRES_MESES_COMPLETOS[mesNumero - 1]}: ${textoEstado}${esActual ? ' (mes actual)' : ''}${seleccionado ? ', seleccionado' : ''}`}
+      aria-label={`${NOMBRES_MESES_COMPLETOS[mesNumero - 1]}: ${textoEstado}${estado === 'parcial' ? `, faltan $${Number(faltante).toLocaleString('es-CL')}` : ''}${esActual ? ' (mes actual)' : ''}${seleccionado ? ', seleccionado' : ''}`}
       className={`mes-box mes-${estado} ${seleccionado ? 'seleccionado' : ''} ${esActual ? 'mes-actual' : ''}`}
       style={{ cursor: (estado === 'pagado' || estado === 'futuro-preingreso' || estado === 'en-revision') ? 'not-allowed' : 'pointer' }}
     >
@@ -54,7 +60,31 @@ function MesBox({ mesNumero, nombre, estado, seleccionado, esActual, onClick }) 
       <span className="mes-box-nombre">{nombre}</span>
       {Icono && <Icono size={14} strokeWidth={3} className="mes-box-icono" aria-hidden="true" />}
       {seleccionado && !Icono && <Check size={14} strokeWidth={3} className="mes-box-icono" aria-hidden="true" />}
+      {estado === 'parcial' && (
+        <span className="mes-box-faltante" aria-hidden="true"><span>falta</span><span>${Number(faltante).toLocaleString('es-CL')}</span></span>
+      )}
     </button>
+  );
+}
+
+// "Este mes": cuánto se ha abonado de la cuota del mes en curso y cuánto falta.
+function ResumenMesActual({ nombreMes, resumen }) {
+  if (!resumen || resumen.estado === 'futuro-preingreso') return null;
+  if (resumen.estado === 'pagado') {
+    return <p className="resumen-mes-actual resumen-mes-actual-completo"><Check size={14} strokeWidth={3} aria-hidden="true" /> {nombreMes}: pagado</p>;
+  }
+  const porcentaje = resumen.cuota > 0 ? Math.min(100, Math.round((resumen.abonado / resumen.cuota) * 100)) : 0;
+  return (
+    <div className="resumen-mes-actual" role="status">
+      <div className="resumen-mes-actual-fila">
+        <span>{nombreMes}: abonado <strong>${resumen.abonado.toLocaleString('es-CL')}</strong> de ${resumen.cuota.toLocaleString('es-CL')}</span>
+        <strong className="resumen-mes-actual-falta">Faltan ${resumen.faltante.toLocaleString('es-CL')}</strong>
+      </div>
+      <div className="resumen-mes-actual-barra" aria-hidden="true"><span style={{ width: `${porcentaje}%` }} /></div>
+      {resumen.enRevision > 0 && (
+        <small>En revisión: ${resumen.enRevision.toLocaleString('es-CL')} (se descuenta cuando Tesorería lo apruebe)</small>
+      )}
+    </div>
   );
 }
 
@@ -332,9 +362,8 @@ function PerfilTesoreriaPanel({
   const pagosPorMes = pagosSocioCuenta.reduce((acc, pago) => {
     const mes = monthFromPago(pago);
     if (!mes) return acc;
-    const estado = (pago.estado_pago || '').toLowerCase();
     if (!acc[mes]) acc[mes] = [];
-    acc[mes].push(estado);
+    acc[mes].push({ estado: pago.estado_pago, monto: pago.monto_total_pagado });
     return acc;
   }, {});
 
@@ -354,16 +383,6 @@ function PerfilTesoreriaPanel({
     }
     return 1;
   })();
-  const mesesVisuales = mesesBase.map((mes, idx) => {
-    const mesNumero = idx + 1;
-    const estadosMes = pagosPorMes[mesNumero] || [];
-    // La beca/exención es del deportista: no exime la cuota de socio.
-    const estado = resolverEstadoMes({
-      estadosMes, sinCargo: false, mesNumero, inicioCobro: inicioCobroSocio, limiteMesDeuda,
-    });
-
-    return { id: mesNumero, mes, estado };
-  });
 
   const now = new Date();
   const fechaCorte = new Date(now.getFullYear(), now.getMonth(), 0);
@@ -401,13 +420,46 @@ function PerfilTesoreriaPanel({
   // Ver obtenerCuotaJugador en utils/beca — mismo cálculo que usa Morosos.
   const obtenerCuotaMensualPupilo = (pupilo = {}) => obtenerCuotaJugador(pupilo, cuotaDeportistaReferencial);
 
+  // Resumen de cada mes (abonado, faltante, estado) para la grilla, los
+  // totales y la creación de pagos: el mes se completa sumando abonos.
+  const pagosDePupilo = (pupilo = {}) => {
+    const rut = normalizarRutComparacion(pupilo.rut);
+    return (pagosMensualidadesAdmin || []).filter((p) => (
+      !esPagoInvalidoLegacy(p)
+      && !esPagoCuotaSocio(p) // la cuota de socio tiene su propia grilla
+      && (normalizarRutComparacion(p.rut_jugador) === rut || normalizarRutComparacion(p.rut_pagos) === rut)
+    ));
+  };
+  const resumenMesPupilo = (pupilo, mesNumero) => {
+    const pagosMes = pagosDePupilo(pupilo)
+      .filter((pago) => monthFromPago(pago) === mesNumero)
+      .map((pago) => ({ estado: pago.estado_pago, monto: pago.monto_total_pagado }));
+    const resumen = resumirAbonosMes(pagosMes, obtenerCuotaMensualPupilo(pupilo));
+    return {
+      ...resumen,
+      estado: resolverEstadoMes({
+        resumen, sinCargo: noDebeMensualidad(pupilo), mesNumero, inicioCobro: obtenerInicioCobro(pupilo), limiteMesDeuda,
+      }),
+    };
+  };
+  const resumenMesSocio = (mesNumero) => {
+    const resumen = resumirAbonosMes(pagosPorMes[mesNumero] || [], obtenerCuotaSocioDelMes(mesNumero));
+    // La beca/exención es del deportista: no exime la cuota de socio.
+    return {
+      ...resumen,
+      estado: resolverEstadoMes({ resumen, sinCargo: false, mesNumero, inicioCobro: inicioCobroSocio, limiteMesDeuda }),
+    };
+  };
+  const mesesVisuales = mesesBase.map((mes, idx) => ({ id: idx + 1, mes, ...resumenMesSocio(idx + 1) }));
+  const nombreMesActual = NOMBRES_MESES_COMPLETOS[mesActual - 1];
+
   const tarifaRedondeada = Math.round(tarifaMensual);
   const totalSocioSeleccionado = esSocio
-    ? mesesSocioSeleccionados.reduce((suma, mesNum) => suma + obtenerCuotaSocioDelMes(mesNum), 0)
+    ? mesesSocioSeleccionados.reduce((suma, mesNum) => suma + resumenMesSocio(mesNum).faltante, 0)
     : 0;
   const totalMesesJugadorSeleccionados = pupilosActivos.reduce((acc, p) => acc + (mesesSeleccionados[p.rut] || []).length, 0);
   const totalJugadorSeleccionado = pupilosActivos.reduce((acc, p) => (
-    acc + obtenerCuotaMensualPupilo(p) * (mesesSeleccionados[p.rut] || []).length
+    acc + (mesesSeleccionados[p.rut] || []).reduce((suma, mesNum) => suma + resumenMesPupilo(p, mesNum).faltante, 0)
   ), 0);
   const totalSeleccionado = totalSocioSeleccionado + totalJugadorSeleccionado;
   const totalMesesSeleccionados = mesesSocioSeleccionados.length + totalMesesJugadorSeleccionados;
@@ -433,7 +485,7 @@ function PerfilTesoreriaPanel({
       showToast({ message: 'Ese mes es anterior a la fecha de ingreso: no corresponde cobrarlo.', type: 'error' });
       return;
     }
-    if (!['pendiente', 'futuro-calendario'].includes(estado)) return;
+    if (!['pendiente', 'parcial', 'futuro-calendario'].includes(estado)) return;
     if (lista.includes(idMes)) {
       setLista(lista.filter((m) => m !== idMes));
     } else {
@@ -456,7 +508,7 @@ function PerfilTesoreriaPanel({
       showToast({ message: 'Ese mes es anterior a la fecha de ingreso: no corresponde cobrarlo.', type: 'error' });
       return;
     }
-    if (!['pendiente', 'futuro-calendario'].includes(estado)) return;
+    if (!['pendiente', 'parcial', 'futuro-calendario'].includes(estado)) return;
     setMesesSeleccionados((prev) => {
       const actuales = prev[rutPupilo] || [];
       const nuevos = actuales.includes(idMes) ? actuales.filter((m) => m !== idMes) : [...actuales, idMes];
@@ -530,51 +582,41 @@ function PerfilTesoreriaPanel({
       // Reparto parejo del abono entre TODOS los meses seleccionados de ambas
       // grillas y de todos los pupilos (misma regla de reparto que ya existía
       // para un solo set de meses).
-      // Base entera por mes y el resto (por redondeo) va a la ÚLTIMA fila,
-      // para que la suma de los pagos sea exactamente el monto transferido
-      // (antes $100.000 en 3 meses quedaba en 3 × $33.333 = $99.999).
-      const montoUnitarioAbono = tipoPago === 'abono' && totalMesesSeleccionados > 0
-        ? Math.floor(monto / totalMesesSeleccionados)
-        : null;
-      const restoAbono = montoUnitarioAbono !== null ? monto - (montoUnitarioAbono * totalMesesSeleccionados) : 0;
-      let filasAbonoCreadas = 0;
-      const montoAbonoDeFila = () => {
-        filasAbonoCreadas += 1;
-        return montoUnitarioAbono + (filasAbonoCreadas === totalMesesSeleccionados ? restoAbono : 0);
-      };
+      // Cada mes seleccionado se paga por su SALDO (cuota del mes menos lo ya
+      // abonado). En "Abono parcial" el monto completa los meses en orden, el
+      // más antiguo primero (antes se repartía en partes iguales, dejando
+      // todos los meses a medias).
+      const itemsAPagar = [
+        // La cuota de socio es de la CUENTA, no del hijo: sin rut_jugador.
+        ...mesesSocioSeleccionados.map((mesNumero) => ({
+          clave: `socio-${mesNumero}`, mesNumero, orden: mesNumero * 10, concepto: 'Mensualidad Socio', rutJugador: null,
+          faltante: resumenMesSocio(mesNumero).faltante,
+        })),
+        ...pupilosActivos.flatMap((pupilo, idxPupilo) => (mesesSeleccionados[pupilo.rut] || []).map((mesNumero) => ({
+          clave: `${pupilo.rut}-${mesNumero}`, mesNumero, orden: mesNumero * 10 + idxPupilo + 1, concepto: 'Mensualidad', rutJugador: pupilo.rut,
+          faltante: resumenMesPupilo(pupilo, mesNumero).faltante,
+        }))),
+      ].sort((a, b) => a.orden - b.orden);
+
+      const montosPorClave = new Map(
+        tipoPago === 'abono'
+          ? asignarAbonoEnOrden(monto, itemsAPagar).map((a) => [a.clave, a.monto])
+          : itemsAPagar.map((item) => [item.clave, item.faltante])
+      );
 
       const pagosCreados = [];
-      // montoPorDefecto puede ser un número fijo (deportistas, no depende de
-      // UTM) o una función (mesNum) => monto (cuota socio: cada mes puede
-      // tener su propia UTM de corte, así que cada fila de pago se guarda
-      // con el monto REAL de ese mes específico, no uno único repetido.
-      const crearPagosPara = async (meses, concepto, montoPorDefecto, rutJugadorPago) => {
-        const mesesOrdenados = [...meses].sort((a, b) => a - b);
-        for (const mesNumero of mesesOrdenados) {
-          const mesTexto = String(mesesBase[mesNumero - 1] || '').toLowerCase();
-          const montoDelMes = typeof montoPorDefecto === 'function' ? montoPorDefecto(mesNumero) : montoPorDefecto;
-          const pagoCreado = await api.pagosMensualidadesAPI.create({
-            ...payloadBase,
-            rut_jugador: rutJugadorPago,
-            concepto_pago: concepto,
-            meses_correspondientes: `${mesTexto}-${anioObjetivo}`,
-            monto_total_pagado: montoUnitarioAbono !== null && monto > 0 ? montoAbonoDeFila() : montoDelMes,
-          });
-          pagosCreados.push(pagoCreado);
-        }
-      };
-
-      // La cuota de socio es de la CUENTA, no del hijo: sin rut_jugador (antes se
-      // guardaba con el RUT del pupilo y contaba como mensualidad del hijo).
-      await crearPagosPara(mesesSocioSeleccionados, 'Mensualidad Socio', obtenerCuotaSocioDelMes, null);
-
-      // Cada pupilo genera sus propias filas de pago, con su propia cuota y
-      // sus propios meses seleccionados (antes se usaba un único set de meses
-      // compartido entre todos los hermanos).
-      for (const pupilo of pupilosActivos) {
-        const mesesPupilo = mesesSeleccionados[pupilo.rut] || [];
-        if (mesesPupilo.length === 0) continue;
-        await crearPagosPara(mesesPupilo, 'Mensualidad', obtenerCuotaMensualPupilo(pupilo), pupilo.rut);
+      for (const item of itemsAPagar) {
+        const montoItem = montosPorClave.get(item.clave) || 0;
+        if (montoItem <= 0) continue; // un pago de $0 significaría "mes eximido"
+        const mesTexto = String(mesesBase[item.mesNumero - 1] || '').toLowerCase();
+        const pagoCreado = await api.pagosMensualidadesAPI.create({
+          ...payloadBase,
+          rut_jugador: item.rutJugador,
+          concepto_pago: item.concepto,
+          meses_correspondientes: `${mesTexto}-${anioObjetivo}`,
+          monto_total_pagado: montoItem,
+        });
+        pagosCreados.push(pagoCreado);
       }
 
       setComprobanteSubido(true);
@@ -823,6 +865,7 @@ function PerfilTesoreriaPanel({
         {[
           ['mes-pagado', 'Pagado'],
           ['mes-en-revision', 'En revisión'],
+          ['mes-parcial', 'Abono parcial'],
           ['mes-pendiente', 'Por pagar'],
           ['mes-futuro-calendario', 'Próximos'],
         ].map(([clase, texto]) => (
@@ -846,10 +889,12 @@ function PerfilTesoreriaPanel({
                   estado={item.estado}
                   seleccionado={mesesSocioSeleccionados.includes(item.id)}
                   esActual={item.id === mesActual}
+                  faltante={item.faltante}
                   onClick={() => toggleMesSocio(item.id, item.estado)}
                 />
               ))}
             </div>
+            <ResumenMesActual nombreMes={nombreMesActual} resumen={mesesVisuales[mesActual - 1]} />
           </div>
         )}
 
@@ -865,25 +910,8 @@ function PerfilTesoreriaPanel({
             <div className={pagoViewMode === 'grid' ? 'grid-12-meses' : 'lista-12-meses'}>
               {mesesBase.map((mes, idx) => {
                 const mesNumero = idx + 1;
-                const inicioCobroPupilo = obtenerInicioCobro(pupilo);
-                const becaActivaPupilo = noDebeMensualidad(pupilo);
-                const rutPupiloCardNormalizado = normalizarRutComparacion(pupilo.rut);
-                const pagosDelPupilo = (pagosMensualidadesAdmin || []).filter(
-                  (p) => {
-                    if (esPagoInvalidoLegacy(p)) return false;
-                    // La cuota de socio tiene su propia grilla (independiente).
-                    if (esPagoCuotaSocio(p)) return false;
-                    const rutJugadorPago = normalizarRutComparacion(p.rut_jugador);
-                    const rutPagadorPago = normalizarRutComparacion(p.rut_pagos);
-                    return rutJugadorPago === rutPupiloCardNormalizado || rutPagadorPago === rutPupiloCardNormalizado;
-                  }
-                );
-                const estadosMes = pagosDelPupilo
-                  .filter((pago) => monthFromPago(pago) === mesNumero)
-                  .map((pago) => (pago.estado_pago || '').toLowerCase());
-                const estadoMes = resolverEstadoMes({
-                  estadosMes, sinCargo: becaActivaPupilo, mesNumero, inicioCobro: inicioCobroPupilo, limiteMesDeuda,
-                });
+                const resumenMes = resumenMesPupilo(pupilo, mesNumero);
+                const estadoMes = resumenMes.estado;
 
                 return (
                   <MesBox
@@ -893,11 +921,13 @@ function PerfilTesoreriaPanel({
                     estado={estadoMes}
                     seleccionado={(mesesSeleccionados[pupilo.rut] || []).includes(mesNumero)}
                     esActual={mesNumero === mesActual}
+                    faltante={resumenMes.faltante}
                     onClick={() => toggleMesPupilo(pupilo.rut, mesNumero, estadoMes)}
                   />
                 );
               })}
             </div>
+            <ResumenMesActual nombreMes={nombreMesActual} resumen={resumenMesPupilo(pupilo, mesActual)} />
           </div>
         ))}
 
