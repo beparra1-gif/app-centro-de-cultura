@@ -3741,8 +3741,16 @@ const generarYEnviarCodigoAcceso = async (cuenta) => {
 app.post('/api/auth/solicitar-codigo', codigoRateLimiter, async (req, res) => {
   const rut = String(req.body?.rut || '').trim();
   if (!rut) return res.status(400).json({ error: 'Ingresa tu RUT.' });
+  // Sin SMTP: 200 con enviado=false (no 503: DigitalOcean reemplaza las
+  // respuestas 503 por su propia página de error y el frontend no recibiría
+  // este mensaje ni mostraría el botón de WhatsApp).
   if (!correoDisponible()) {
-    return res.status(503).json({ error: 'El envío de correos no está disponible. Contacta al club para restablecer tu clave.', code: 'CORREO_NO_CONFIGURADO' });
+    return res.json({
+      ok: false,
+      enviado: false,
+      code: 'CORREO_NO_CONFIGURADO',
+      mensaje: 'Por ahora el club no envía códigos por correo. Pide tu código de activación al club por WhatsApp y úsalo en "Tengo un código del club".',
+    });
   }
   try {
     const cuenta = await obtenerCuentaPorRutNormalizado(normalizarRut(rut));
@@ -3941,7 +3949,7 @@ app.post('/api/cuentas/propia/correo/solicitar', codigoRateLimiter, authenticate
   const correo = String(req.body?.correo || '').trim().toLowerCase();
   if (!Number.isFinite(idCuenta)) return res.status(400).json({ error: 'Cuenta no válida.' });
   if (!esCorreoReal(correo)) return res.status(400).json({ error: 'Ingresa un correo válido.' });
-  if (!correoDisponible()) return res.status(503).json({ error: 'El envío de correos no está disponible por ahora.', code: 'CORREO_NO_CONFIGURADO' });
+  if (!correoDisponible()) return res.status(409).json({ error: 'El envío de correos no está disponible por ahora.', code: 'CORREO_NO_CONFIGURADO' });
   try {
     const ocupado = await pool.query('SELECT 1 FROM cuentas WHERE LOWER(correo) = $1 AND id <> $2 LIMIT 1', [correo, idCuenta]);
     if (ocupado.rows.length > 0) {
