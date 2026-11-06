@@ -298,6 +298,18 @@ export const authAPI = {
     return handleResponse(response);
   },
 
+  // ¿El club envía códigos por correo (SMTP configurado)? Si no, el código
+  // de activación se pide por WhatsApp. Ante cualquier error: false.
+  codigosPorCorreo: async () => {
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/health`);
+      const datos = await handleResponse(response);
+      return datos?.codigosPorCorreo === true;
+    } catch {
+      return false;
+    }
+  },
+
   // Código de acceso por correo (primer ingreso / olvidé mi contraseña).
   solicitarCodigo: async (rut) => {
     const response = await apiFetch(`${API_BASE_URL}/auth/solicitar-codigo`, {

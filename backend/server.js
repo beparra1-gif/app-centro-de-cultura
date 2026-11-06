@@ -3160,7 +3160,9 @@ const getBackupStatus = () => {
 
 // ========== HEALTH CHECK ==========
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date() });
+  // codigosPorCorreo: la pantalla de acceso ofrece "enviar código al correo"
+  // solo si hay SMTP; si no, el código se pide al club por WhatsApp.
+  res.json({ status: 'OK', timestamp: new Date(), codigosPorCorreo: correoDisponible() });
 });
 
 app.get('/api/admin/sync-sheets/status', (req, res) => {
