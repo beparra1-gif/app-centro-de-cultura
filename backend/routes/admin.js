@@ -5,6 +5,7 @@ const cron = require('node-cron');
 const { fetchSheetRows, runImportFromSheets } = require('../import-google-sheets');
 const { authenticate, requireModule } = require('../security/auth');
 const { pool, sheetsSyncManager, sheetsWebhookSyncManager } = require('../lib/db');
+const { correoDisponible } = require('../lib/correo');
 const { formatearRut } = require('../lib/rut');
 const { detectarCamposFaltantesCuenta } = require('../lib/cuentas');
 const { getBackupStatus, obtenerEstadoEjecucionBackup, runDatabaseBackup } = require('../lib/backup');
@@ -297,7 +298,9 @@ const obtenerDetalleCalidadDatos = async () => {
 
 // ========== HEALTH CHECK ==========
 router.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date() });
+  // codigosPorCorreo: la pantalla de acceso ofrece "enviar código al correo"
+  // solo si hay SMTP; si no, el código se pide al club por WhatsApp.
+  res.json({ status: 'OK', timestamp: new Date(), codigosPorCorreo: correoDisponible() });
 });
 
 router.get('/api/admin/sync-sheets/status', (req, res) => {

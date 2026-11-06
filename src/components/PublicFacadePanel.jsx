@@ -199,6 +199,15 @@ function AccesoConCodigo({ rut, setRut, pasoInicial, destinoInicial, onVolver, o
   const [sinCorreo, setSinCorreo] = useState('');
   // true = el código lo entregó el club (WhatsApp/en persona), no llegó al correo.
   const [codigoDelClub, setCodigoDelClub] = useState(false);
+  // Mientras el club no tenga SMTP, el código se pide solo por WhatsApp.
+  // null = consultando (se muestra la versión WhatsApp, la más segura).
+  const [porCorreo, setPorCorreo] = useState(null);
+
+  useEffect(() => {
+    let activo = true;
+    api.authAPI.codigosPorCorreo().then((valor) => { if (activo) setPorCorreo(valor); });
+    return () => { activo = false; };
+  }, []);
 
   const pedirCodigo = async (event) => {
     event?.preventDefault();
@@ -295,6 +304,29 @@ function AccesoConCodigo({ rut, setRut, pasoInicial, destinoInicial, onVolver, o
     );
   }
 
+  if (porCorreo !== true) {
+    return (
+      <div className="login-form-real fade-in" style={{ borderRadius: 'var(--radius-lg)' }}>
+        <h4 className="login-form-title">Primer ingreso o clave olvidada</h4>
+        <p className="acceso-codigo-ayuda">
+          Pide tu código de activación al club por WhatsApp. Cuando lo tengas, elige
+          <strong> “Tengo un código del club”</strong> y crea tu contraseña.
+        </p>
+        <div className="input-group-login">
+          <User size={18} color="var(--gris-secundario)" strokeWidth={1.5} />
+          <input type="text" placeholder="RUT (opcional, para el mensaje)" value={rut} onChange={(e) => setRut(e.target.value)} />
+        </div>
+        <button type="button" className="btn-electric mt-20" onClick={onWhatsApp}>Pedir código por WhatsApp</button>
+        <button type="button" className="btn-secondary mt-10" onClick={() => { setCodigoDelClub(true); setPaso('canjear'); }}>
+          Tengo un código del club
+        </button>
+        <button type="button" className="btn-volver-texto mt-15" onClick={onVolver}>
+          <ChevronLeft size={16} /> Volver al ingreso
+        </button>
+      </div>
+    );
+  }
+
   return (
     <form className="login-form-real fade-in" onSubmit={pedirCodigo} style={{ borderRadius: 'var(--radius-lg)' }}>
       <h4 className="login-form-title">Primer ingreso o clave olvidada</h4>
@@ -373,7 +405,7 @@ function PublicFacadePanel({
   const abrirRecuperarClave = () => {
     const rut = String(rutInput || '').trim();
     const mensaje = encodeURIComponent(
-      `Hola! Olvidé mi contraseña de acceso al club.${rut ? ` Mi RUT es: ${rut}.` : ''} ¿Me pueden ayudar a restablecerla?`
+      `Hola! Necesito mi código de activación para entrar a la app del club (primer ingreso o clave olvidada).${rut ? ` Mi RUT es: ${rut}.` : ''}`
     );
     window.open(`https://wa.me/56953297869?text=${mensaje}`, '_blank');
   };
