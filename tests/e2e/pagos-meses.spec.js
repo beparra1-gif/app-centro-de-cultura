@@ -64,6 +64,8 @@ test('admin aprueba los comprobantes en Tesorería', async ({ page }, testInfo) 
   await iniciarSesion(page, CUENTAS.admin.rut);
   await page.locator('.nav-item', { hasText: 'Admin' }).click();
   await page.getByText('Tesorería', { exact: true }).first().click();
+  // Los comprobantes por revisar viven en la pestaña "Validar pagos" (con contador).
+  await page.getByRole('tab', { name: /Validar pagos/ }).click();
   await expect(page.getByText(/Comprobantes enviados \(\d+\)/)).toBeVisible({ timeout: 10000 });
 
   for (let i = 0; i < 2; i++) {

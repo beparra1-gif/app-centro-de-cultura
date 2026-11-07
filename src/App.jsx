@@ -293,7 +293,6 @@ function App() {
 
   // --- ESTADOS: SUPER ADMIN (MODO DIOS) ---
   const [vistaAdmin, setVistaAdmin] = useState('inicio');
-  const [filtroMorosos, setFiltroMorosos] = useState('todos');
   const [logAuditoria, setLogAuditoria] = useState([]);
   const [jugadoresVisitaAdmin, setJugadoresVisitaAdmin] = useState([]);
   const [usuarioAutenticado, setUsuarioAutenticado] = useState(null);
@@ -3654,8 +3653,6 @@ function App() {
                 vistaAdmin={vistaAdmin}
                 setVistaAdmin={setVistaAdmin}
                 generarAlertas={generarAlertas}
-                filtroMorosos={filtroMorosos}
-                setFiltroMorosos={setFiltroMorosos}
                 pagosPendientesAdmin={pagosPendientesAdmin}
                 setPagosPendientesAdmin={setPagosPendientesAdmin}
                 logAuditoria={logAuditoria}

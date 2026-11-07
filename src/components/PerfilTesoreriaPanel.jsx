@@ -111,6 +111,10 @@ function PerfilTesoreriaPanel({
   setPageViewMode,
   onIrAPagoManual,
   onIrABecas,
+  // Opcional (Tesorería admin): cuenta elegida desde la lista "Por cobrar".
+  // Si se pasa el setter, la cuenta activa queda controlada por el padre.
+  cuentaActivaAdmin,
+  setCuentaActivaAdmin,
   utmVigente,
   utmHistorico,
 }) {
@@ -124,7 +128,10 @@ function PerfilTesoreriaPanel({
   // Cuenta seleccionada directo (sin pasar por un jugador) — necesario para
   // poder revisar la Tesorería de un socio que no tiene ningún deportista
   // asociado, caso que "cuentaActual" antes no contemplaba en absoluto.
-  const [cuentaSocioActiva, setCuentaSocioActiva] = useState(null);
+  const [cuentaSocioActivaLocal, setCuentaSocioActivaLocal] = useState(null);
+  const cuentaControlada = typeof setCuentaActivaAdmin === 'function';
+  const cuentaSocioActiva = cuentaControlada ? (cuentaActivaAdmin || null) : cuentaSocioActivaLocal;
+  const setCuentaSocioActiva = cuentaControlada ? setCuentaActivaAdmin : setCuentaSocioActivaLocal;
   // mesesSeleccionados (prop, { [rutPupilo]: number[] }) representa la
   // grilla de Mensualidad Deportista, con selección independiente por
   // pupilo; la de Cuota Socio es independiente para que el socio/apoderado
@@ -218,8 +225,22 @@ function PerfilTesoreriaPanel({
       return Boolean(correoCuenta && correoApoderado && correoCuenta === correoApoderado);
     }) || null
     : null);
+  // Admin: al revisar una cuenta se ven TODOS sus pupilos (antes solo el
+  // deportista buscado: una socia con 2 hijos solo mostraba a uno). El
+  // vínculo es el mismo del backend: rut o correo del apoderado, o la cuenta
+  // propia del deportista que se autogestiona.
+  const pupilosDeCuentaAdmin = (esVistaAdmin && cuentaActual && Array.isArray(pupilosDisponibles))
+    ? pupilosDisponibles.filter((p) => {
+      const rutCuenta = normalizarRutCuenta(cuentaActual.rut || '');
+      const correoCuenta = String(cuentaActual.correo || '').trim().toLowerCase();
+      if (!rutCuenta) return false;
+      if (normalizarRutCuenta(p.rut_apoderado || '') === rutCuenta) return true;
+      if (normalizarRutCuenta(p.rut || '') === rutCuenta) return true;
+      return Boolean(correoCuenta && String(p.correo_apoderado || '').trim().toLowerCase() === correoCuenta);
+    })
+    : [];
   const pupilosActivos = esVistaAdmin
-    ? (pupiloActivo ? [pupiloActivo] : [])
+    ? (pupilosDeCuentaAdmin.length > 0 ? pupilosDeCuentaAdmin : (pupiloActivo ? [pupiloActivo] : []))
     : (Array.isArray(pupilosDisponibles) && pupilosDisponibles.length > 0
       ? pupilosDisponibles
       : (pupiloActivo ? [pupiloActivo] : []));

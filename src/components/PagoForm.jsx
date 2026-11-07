@@ -3,12 +3,16 @@ import { createPortal } from 'react-dom';
 import { X, Upload, Search, ClipboardList, Check, Pin, Lightbulb } from 'lucide-react';
 import * as api from '../api/client.js';
 import { calcularCuotaFinal } from '../utils/beca';
+import { resumirAbonosMes } from '../utils/abonosMes';
 import { confirmAction } from '../utils/confirmDialog';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const MESES_ABREV = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 const normalizarRutPago = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
+// Mismo criterio que PerfilTesoreriaPanel/App.jsx: la cuota de socio es el
+// concepto "Mensualidad Socio"; todo lo demás es del deportista.
+const esPagoCuotaSocio = (pago = {}) => String(pago.concepto_pago || '').trim().toLowerCase().startsWith('mensualidad socio');
 
 const DIACRITICOS_REGEX = new RegExp('[̀-ͯ]', 'g');
 const getMesNumeroDesdeTexto = (texto = '') => {
@@ -126,25 +130,54 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
   const puedeContinuar = modoPago === 'deportista' ? Boolean(formData.rut_jugador) : Boolean(rutCuentaSocio);
   const montoTotalMeses = mesesSeleccionados.reduce((acc, idx) => acc + (Number(montosPorMes[idx]) || 0), 0);
 
-  // Meses ya pagados (aprobado/validado) del deportista o socio elegido, para
-  // el año en pantalla — un mes pagado queda bloqueado y en verde: solo se
-  // pueden registrar manualmente meses morosos (impagos, ya vencidos) o
-  // futuros que todavía no se pagan.
+  // Estado de cada mes (1..12) del deportista o socio elegido, para el año
+  // en pantalla, sumando abonos hasta la cuota (resumirAbonosMes). Un mes
+  // completo queda bloqueado en verde; uno con abono parcial se puede
+  // completar (se sugiere lo que falta). Cada concepto se controla aparte:
+  // antes se mezclaban — si la socia había pagado la mensualidad de su hijo
+  // (rut_pagos = ella), su cuota de socio de ese mes aparecía pagada.
   const rutParaVerificarPagos = modoPago === 'socio' ? rutCuentaSocio : formData.rut_jugador;
-  const mesesYaPagados = useMemo(() => {
+  const cuentaSocioElegida = modoPago === 'socio' ? cuentas.find((c) => c.rut === rutCuentaSocio) : null;
+  const cuotaSugeridaDelMes = (mesNum) => (
+    modoPago === 'socio' ? obtenerCuotaSocioSugeridaDelMes(mesNum, cuentaSocioElegida) : valorMensualidad
+  );
+  const estadoMeses = useMemo(() => {
     const rutNormalizado = normalizarRutPago(rutParaVerificarPagos);
-    if (!rutNormalizado) return new Set();
-    const pagados = new Set();
+    const porMes = new Map();
+    const resultado = new Map();
+    if (!rutNormalizado) return resultado;
     (pagosExistentes || []).forEach((p) => {
-      const estado = String(p.estado_pago || '').toLowerCase();
-      if (estado !== 'aprobado' && estado !== 'validado') return;
-      const coincideJugador = normalizarRutPago(p.rut_jugador) === rutNormalizado;
-      const coincidePagador = normalizarRutPago(p.rut_pagos) === rutNormalizado;
-      if (!coincideJugador && !coincidePagador) return;
-      expandirMesesDePago(p.meses_correspondientes, anioSeleccionado).forEach((mes) => pagados.add(mes));
+      if (pago?.id && p.id === pago.id) return; // editando: no contarse a sí mismo
+      const deSocio = esPagoCuotaSocio(p);
+      let corresponde;
+      if (modoPago === 'socio') {
+        corresponde = deSocio && normalizarRutPago(p.rut_pagos) === rutNormalizado;
+      } else {
+        const rutJugadorPago = normalizarRutPago(p.rut_jugador);
+        corresponde = !deSocio && (rutJugadorPago
+          ? rutJugadorPago === rutNormalizado
+          : normalizarRutPago(p.rut_pagos) === rutNormalizado);
+      }
+      if (!corresponde) return;
+      const meses = expandirMesesDePago(p.meses_correspondientes, anioSeleccionado);
+      const montoPorMes = (Number(p.monto_total_pagado) || 0) / Math.max(1, meses.length);
+      meses.forEach((mes) => {
+        if (!porMes.has(mes)) porMes.set(mes, []);
+        porMes.get(mes).push({ estado: p.estado_pago, monto: montoPorMes });
+      });
     });
-    return pagados;
-  }, [pagosExistentes, rutParaVerificarPagos, anioSeleccionado]);
+    for (let mes = 1; mes <= 12; mes += 1) {
+      resultado.set(mes, resumirAbonosMes(porMes.get(mes) || [], cuotaSugeridaDelMes(mes)));
+    }
+    return resultado;
+    // cuotaSugeridaDelMes depende de modoPago/valorMensualidad/cuenta/UTM (ya en deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagosExistentes, rutParaVerificarPagos, anioSeleccionado, modoPago, valorMensualidad, cuentaSocioElegida, utmHistorico, utmVigente, pago?.id]);
+  // Monto sugerido al marcar un mes: lo que falta (cuota completa si no hay abonos).
+  const montoSugeridoMes = (mesNum) => {
+    const resumen = estadoMeses.get(mesNum);
+    return resumen && resumen.parcial ? resumen.faltante : cuotaSugeridaDelMes(mesNum);
+  };
 
   // Actualizar cuando se selecciona un deportista
   useEffect(() => {
@@ -161,19 +194,21 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
           correo_apoderado: jugador.correo_apoderado || ''
         }));
 
-        // Buscar apoderado asignado
-        const apoderado = cuentas.find(c => c.correo === jugador.correo_apoderado);
+        // Quién paga: la cuenta del apoderado (por RUT o correo) o, si no
+        // tiene, la del propio deportista (mayor de edad que se autogestiona).
+        // Antes solo se buscaba por correo y el pago quedaba sin pagador.
+        const rutApoderado = normalizarRutPago(jugador.rut_apoderado);
+        const correoApoderado = String(jugador.correo_apoderado || '').trim().toLowerCase();
+        const apoderado = (rutApoderado && cuentas.find(c => normalizarRutPago(c.rut) === rutApoderado))
+          || (correoApoderado && cuentas.find(c => String(c.correo || '').trim().toLowerCase() === correoApoderado))
+          || cuentas.find(c => normalizarRutPago(c.rut) === normalizarRutPago(jugador.rut_jugador));
         setApoderadoAsignado(apoderado || null);
 
-        // Determinar concepto automáticamente
-        const esMatricula = !jugador.matricula_pagada;
-        let conceptoAuto = 'Mensualidad';
-        
-        if (esMatricula) {
-          conceptoAuto = 'Matrícula';
-        } else if (apoderado?.es_socio) {
-          conceptoAuto = 'Mensualidad Socio';
-        }
+        // Concepto automático. Antes, si el apoderado era socio, la
+        // mensualidad del HIJO se guardaba como "Mensualidad Socio": se
+        // contaba como cuota de socio del apoderado y el deportista seguía
+        // moroso. La cuota de socio se registra aparte (modo "Socio").
+        const conceptoAuto = jugador.matricula_pagada ? 'Mensualidad' : 'Matrícula';
 
         setFormData(prev => ({
           ...prev,
@@ -596,7 +631,10 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 </div>
                 {apoderadoAsignado && (
                   <div style={{ fontSize: '11px', color: 'var(--azul-electrico)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <ClipboardList size={12} /> Apoderado: {apoderadoAsignado.nombres || 'Sin nombre'} ({apoderadoAsignado.correo})
+                    <ClipboardList size={12} />
+                    {normalizarRutPago(apoderadoAsignado.rut) === normalizarRutPago(formData.rut_jugador)
+                      ? 'Paga él mismo (deportista que se autogestiona)'
+                      : `Paga: ${`${apoderadoAsignado.nombres || ''} ${apoderadoAsignado.apellido_paterno || ''}`.trim() || 'Sin nombre'}${apoderadoAsignado.correo ? ` (${apoderadoAsignado.correo})` : ''}`}
                   </div>
                 )}
               </div>
@@ -735,14 +773,16 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                   gap: '6px'
                 }}>
                   {MESES_ABREV.map((mesAbrev, idx) => {
-                    const pagado = mesesYaPagados.has(idx + 1);
+                    const resumenMes = estadoMeses.get(idx + 1);
+                    const pagado = Boolean(resumenMes?.completo);
+                    const parcial = Boolean(resumenMes?.parcial);
                     const seleccionado = mesesSeleccionados.includes(idx);
                     return (
                     <button
                       key={idx}
                       type="button"
                       disabled={pagado}
-                      title={pagado ? 'Ya pagado — no se puede volver a registrar' : undefined}
+                      title={pagado ? 'Ya pagado — no se puede volver a registrar' : (parcial ? `Abonado $${resumenMes.abonado.toLocaleString('es-CL')}, faltan $${resumenMes.faltante.toLocaleString('es-CL')}` : undefined)}
                       onClick={() => {
                         if (pagado) return;
                         const yaSeleccionado = mesesSeleccionados.includes(idx);
@@ -760,18 +800,14 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                             // En modo socio, cada mes sugiere su propia cuota
                             // (la UTM varía mes a mes) en vez de repetir el
                             // mismo valorMensualidad para todos los meses.
-                            siguiente[idx] = modoPago === 'socio'
-                              ? obtenerCuotaSocioSugeridaDelMes(idx + 1, cuentas.find(c => c.rut === rutCuentaSocio))
-                              : valorMensualidad;
+                            siguiente[idx] = montoSugeridoMes(idx + 1);
                           }
                           return siguiente;
                         });
 
                         if (nuevosMeses.length === 1) {
                           const soloMes = nuevosMeses[0];
-                          const sugeridoMesSolo = modoPago === 'socio'
-                            ? obtenerCuotaSocioSugeridaDelMes(soloMes + 1, cuentas.find(c => c.rut === rutCuentaSocio))
-                            : valorMensualidad;
+                          const sugeridoMesSolo = montoSugeridoMes(soloMes + 1);
                           setFormData(prev => ({
                             ...prev,
                             monto_total_pagado: soloMes === idx && !yaSeleccionado ? sugeridoMesSolo : (montosPorMes[soloMes] ?? sugeridoMesSolo)
@@ -803,14 +839,22 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                         cursor: pagado ? 'not-allowed' : 'pointer',
                         opacity: pagado ? 0.85 : 1,
                         display: 'flex',
+                        flexDirection: parcial ? 'column' : 'row',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '4px',
+                        gap: parcial ? '1px' : '4px',
                         transition: 'all 0.2s'
                       }}
                     >
-                      {pagado && <Check size={11} />}
-                      {mesAbrev}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        {pagado && <Check size={11} />}
+                        {mesAbrev}
+                      </span>
+                      {parcial && (
+                        <span style={{ fontSize: '10px', fontWeight: '800', color: '#B26A00' }}>
+                          falta ${resumenMes.faltante.toLocaleString('es-CL')}
+                        </span>
+                      )}
                     </button>
                     );
                   })}

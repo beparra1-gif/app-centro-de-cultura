@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Activity,
   AlertTriangle,
+  BarChart3,
   Bell,
   Check,
   CheckSquare,
@@ -18,7 +19,6 @@ import {
   Lock,
   Megaphone,
   Pencil,
-  Phone,
   Plus,
   QrCode,
   Search,
@@ -41,9 +41,10 @@ import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
 import PagoForm from './PagoForm';
 import PerfilTesoreriaPanel from './PerfilTesoreriaPanel';
+import TesoreriaCuentasPanel from './TesoreriaCuentasPanel';
+import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
 import QrScanner from './QrScanner';
 import ResultadosCards from './ResultadosCards';
-import { colorTipo } from '../utils/appHelpers';
 import { calcularResumenCitacion } from '../utils/citaciones';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { mapearJugadorAPupilo } from '../utils/pupiloMapper';
@@ -99,8 +100,6 @@ function SuperAdminPanel({
   vistaAdmin,
   setVistaAdmin,
   generarAlertas,
-  filtroMorosos,
-  setFiltroMorosos,
   pagosPendientesAdmin,
   setPagosPendientesAdmin,
   logAuditoria,
@@ -307,7 +306,6 @@ function SuperAdminPanel({
   }, [pagosMensualidadesAdmin, sociosMorosos, morososAdmin]);
 
   const [mesRecaudacionActivo, setMesRecaudacionActivo] = useState(null);
-  const [busquedaSociosMorosos, setBusquedaSociosMorosos] = useState('');
 
   // La recaudación en $ va oculta por defecto (el club pidió no mostrar
   // montos a simple vista) — se revela con este toggle, junto a filtros
@@ -353,90 +351,6 @@ function SuperAdminPanel({
     ? recaudacionMensual.find((f) => f.mes === filtroMesResumen)
     : null;
 
-  const sociosMorososFiltrados = (sociosMorosos || []).filter((s) => {
-    if (filtroMesResumen !== 'todos' && !(s.mesesMorosos || []).includes(filtroMesResumen)) return false;
-    const q = busquedaSociosMorosos.trim().toLowerCase();
-    if (!q) return true;
-    return String(s.nombre || '').toLowerCase().includes(q);
-  });
-
-  const construirMensajeRecordatorioSocio = (s) => (
-    `Hola ${String(s.nombre || '').trim().split(' ')[0] || s.nombre}, te recordamos que tienes ${s.mesesDeuda} ${s.mesesDeuda === 1 ? 'mes' : 'meses'} de cuota de socio pendiente ($${s.montoDeuda.toLocaleString('es-CL')}) en el Centro de Cultura Física. Por favor regulariza tu pago a la brevedad.\n\n*Centro de Cultura Física*`
-  );
-
-  const avisarSocioMoroso = async (s) => {
-    if (!s.telefono) {
-      showToast({ message: `${s.nombre} no tiene teléfono registrado en su cuenta.`, type: 'error' });
-      return;
-    }
-    await enviarPorWhatsApp(s.telefono, construirMensajeRecordatorioSocio(s), 'pago');
-    showToast({ message: `WhatsApp abierto para ${s.nombre} · ${s.telefono}`, type: 'success' });
-  };
-
-  const [busquedaMorosos, setBusquedaMorosos] = useState('');
-  const [filtroRamaMorosos, setFiltroRamaMorosos] = useState('todas');
-  const [filtroCategoriaMorosos, setFiltroCategoriaMorosos] = useState('todas');
-
-  // Opciones de los dropdown de rama/categoría: solo las que de verdad tienen
-  // algún moroso, no el universo completo de ramas/categorías del club.
-  const ramasMorosos = [...new Set((morososAdmin || []).map((m) => m.rama).filter(Boolean))].sort();
-  const categoriasMorosos = [...new Set((morososAdmin || []).map((m) => m.categoria).filter(Boolean))].sort();
-
-  const morososFiltrados = (filtroMorosos === 'todos'
-    ? (morososAdmin || [])
-    : filtroMorosos === 'socios'
-      ? (morososAdmin || []).filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado')
-      : (morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado')
-  ).filter((m) => {
-    if (filtroRamaMorosos !== 'todas' && m.rama !== filtroRamaMorosos) return false;
-    if (filtroCategoriaMorosos !== 'todas' && m.categoria !== filtroCategoriaMorosos) return false;
-    if (filtroMesResumen !== 'todos' && !(m.mesesMorosos || []).includes(filtroMesResumen)) return false;
-    const q = busquedaMorosos.trim().toLowerCase();
-    if (!q) return true;
-    if (String(m.nombre || '').toLowerCase().includes(q)) return true;
-    return (m.pupilos || []).some((p) => String(p || '').toLowerCase().includes(q));
-  });
-
-  // "Pagados": el complemento de morososAdmin — deportistas cuyo rut no
-  // aparece en la lista de morosos. Reusa el mismo lookup de cuenta que
-  // construirMorososDesdePagos (App.jsx) para poder mostrar el mismo aviso
-  // de "sin apoderado asignado" también acá, no solo en morosos.
-  const [vistaEstatusPagos, setVistaEstatusPagos] = useState('morosos');
-  const normalizarRutLocal = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
-  const rutsMorososSet = useMemo(() => new Set((morososAdmin || []).map((m) => normalizarRutLocal(m.rut))), [morososAdmin]);
-  const deportistasAlDiaLista = useMemo(() => {
-    const cuentaPorRut = new Map();
-    const cuentaPorCorreo = new Map();
-    (cuentasAdmin || []).forEach((c) => {
-      if (c.rut) cuentaPorRut.set(normalizarRutLocal(c.rut), c);
-      if (c.correo) cuentaPorCorreo.set(String(c.correo).trim().toLowerCase(), c);
-    });
-    return (jugadoresAdmin || [])
-      .filter((j) => !rutsMorososSet.has(normalizarRutLocal(j.rut_jugador)))
-      .map((j) => {
-        const cuenta = cuentaPorRut.get(normalizarRutLocal(j.rut_apoderado || ''))
-          || cuentaPorCorreo.get(String(j.correo_apoderado || '').trim().toLowerCase());
-        const telefonoCuenta = String(cuenta?.telefono || '').trim();
-        return {
-          id: normalizarRutLocal(j.rut_jugador) || j.rut_jugador,
-          nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim() || `Jugador ${j.rut_jugador || ''}`,
-          rama: j.rama || '',
-          categoria: j.categoria || '',
-          sinApoderado: !cuenta,
-          telefono: telefonoCuenta ? `${String(cuenta?.prefijo_tel || '+56').trim()}${telefonoCuenta}` : '',
-          correo: j.correo_apoderado || '',
-        };
-      });
-  }, [jugadoresAdmin, cuentasAdmin, rutsMorososSet]);
-
-  const pagadosFiltrados = deportistasAlDiaLista.filter((p) => {
-    if (filtroRamaMorosos !== 'todas' && p.rama !== filtroRamaMorosos) return false;
-    if (filtroCategoriaMorosos !== 'todas' && p.categoria !== filtroCategoriaMorosos) return false;
-    const q = busquedaMorosos.trim().toLowerCase();
-    if (!q) return true;
-    return String(p.nombre || '').toLowerCase().includes(q);
-  });
-
   const construirMensajeRecordatorioMoroso = (m) => {
     const primerNombre = String(m.nombre || '').trim().split(' ')[0] || m.nombre;
     return `Hola ${primerNombre}, te recordamos que tienes ${m.mesesDeuda} ${m.mesesDeuda === 1 ? 'mes' : 'meses'} de mensualidad pendiente ($${m.montoDeuda.toLocaleString('es-CL')}) en el Centro de Cultura Física. Por favor regulariza tu pago a la brevedad.\n\n*Centro de Cultura Física*`;
@@ -462,16 +376,8 @@ function SuperAdminPanel({
   // check y no perder el lugar si lo interrumpen).
   const [mostrarModalNotificarTodos, setMostrarModalNotificarTodos] = useState(false);
   const [avisadosEnLote, setAvisadosEnLote] = useState(new Set());
-
-  const abrirModalNotificarTodos = () => {
-    const conTelefono = morososFiltrados.filter((m) => m.telefono);
-    if (conTelefono.length === 0) {
-      showToast({ message: 'Ningún deudor de esta lista tiene teléfono registrado.', type: 'error' });
-      return;
-    }
-    setAvisadosEnLote(new Set());
-    setMostrarModalNotificarTodos(true);
-  };
+  // Personas a avisar en el modal (las filas con deuda de "Por cobrar").
+  const [listaAvisoLote, setListaAvisoLote] = useState([]);
 
   const avisarMorosoEnLote = async (m) => {
     await avisarMoroso(m);
@@ -751,8 +657,8 @@ function SuperAdminPanel({
   // pendiente. Se resetea al abrir "Nuevo Pago" normal o al editar.
   const [pagoManualAutoAprobar, setPagoManualAutoAprobar] = useState(false);
   // Quién quedó preseleccionado al abrir "Pago manual" desde una fila de
-  // moroso en Resumen (ver sociosMorososFiltrados/morososFiltrados más
-  // abajo) — null cuando se abre vacío desde el botón general de Pagos.
+  // deudor en Tesorería → Por cobrar (abrirPagoManualTesoreria) — null
+  // cuando se abre vacío desde "Registrar pago".
   const [pagoManualObjetivo, setPagoManualObjetivo] = useState(null);
   const [paginaPagosMigrados, setPaginaPagosMigrados] = useState(1);
   const [itemsPorPaginaPagos] = useState(15);
@@ -1061,6 +967,46 @@ function SuperAdminPanel({
     }),
     [pagosPendientesAdmin]
   );
+
+  // ===== Tesorería: pestañas (Por cobrar / Validar pagos / Resumen) =====
+  // Antes era una sola página larguísima (bandeja, panorama, recaudación,
+  // socios morosos, morosos por deportista y la cuenta de una familia, todo
+  // seguido) y cada persona aparecía repartida en varias listas.
+  const [seccionTesoreria, setSeccionTesoreria] = useState('cobrar');
+  const totalPorValidar = pagosPendientesReales.length + pagosMigradosPendientes.length;
+  const cuentasQuePagan = useMemo(
+    () => construirCuentasQuePagan({ cuentas: cuentasAdmin, jugadores: jugadoresAdmin, morosos: morososAdmin, sociosMorosos }),
+    [cuentasAdmin, jugadoresAdmin, morososAdmin, sociosMorosos]
+  );
+  const [cuentaTesoreriaAdmin, setCuentaTesoreriaAdmin] = useState(null);
+  const cuentaFamiliaTesoreriaRef = useRef(null);
+  const verCuentaTesoreria = (fila) => {
+    if (fila.cuenta) {
+      setCuentaTesoreriaAdmin(fila.cuenta);
+      setPupiloTesoreriaAdmin(null);
+    } else {
+      const rut = normalizarRutTesoreria(fila.rut);
+      setCuentaTesoreriaAdmin(null);
+      setPupiloTesoreriaAdmin(pupilosParaBusquedaTesoreria.find((p) => normalizarRutTesoreria(p.rut) === rut) || null);
+    }
+    setMesesSeleccionadosTesoreria({});
+    requestAnimationFrame(() => cuentaFamiliaTesoreriaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+  // objetivo: { modoPago: 'socio' | 'deportista', rut } o null (formulario vacío).
+  const abrirPagoManualTesoreria = (objetivo) => {
+    setPagoEditandoId(null);
+    setPagoManualAutoAprobar(true);
+    setPagoManualObjetivo(objetivo || null);
+    setMostrarFormularioPago(true);
+  };
+  // Forma que esperan avisarMoroso/construirMensajeRecordatorioMoroso.
+  const filaComoMoroso = (fila) => ({
+    id: fila.id,
+    nombre: fila.nombre,
+    telefono: fila.telefono,
+    mesesDeuda: fila.mesesDeudaTotal,
+    montoDeuda: fila.deudaTotal,
+  });
 
   const jugadoresIncompletos = useMemo(() => {
     return (jugadoresAdmin || []).filter((j) => {
@@ -3604,77 +3550,39 @@ function SuperAdminPanel({
       {vistaAdmin === 'pagos' && (
         <div className="fade-in">
           <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
-          <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', padding: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
-              <div className="form-group" style={{ marginBottom: 0, flex: '1 1 180px' }}>
-                <label style={{ fontSize: '11px' }}>Ver mes</label>
-                <select
-                  className="form-input"
-                  value={filtroMesResumen}
-                  onChange={(e) => { setFiltroMesResumen(e.target.value); setMesRecaudacionActivo(e.target.value === 'todos' ? null : e.target.value); }}
-                >
-                  <option value="todos">Todo el año {ANIO_RECAUDACION}</option>
-                  {NOMBRES_MESES_RECAUDACION.map((mes) => (
-                    <option key={`filtro-mes-${mes}`} value={mes}>{mes}</option>
-                  ))}
-                </select>
-              </div>
-              {filtroMesResumen !== 'todos' && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ width: 'auto', padding: '10px 14px' }}
-                  onClick={() => { setFiltroMesResumen('todos'); setMesRecaudacionActivo(null); }}
-                >
-                  <X size={14} /> Ver todo el año
-                </button>
-              )}
-            </div>
-            {filtroMesResumen !== 'todos' && (
-              <p style={{ fontSize: '11px', color: 'var(--texto-secundario)', margin: '8px 0 0', fontWeight: '700' }}>
-                Mostrando stats, recaudación y morosos solo de {filtroMesResumen}.
-              </p>
+          <div className="tesoreria-cabecera">
+            <h2>Tesorería</h2>
+            {rolUsuario === 'super_admin' && (
+              <button
+                type="button"
+                className="btn-electric tesoreria-btn-pago"
+                onClick={() => abrirPagoManualTesoreria(null)}
+              >
+                <Plus size={15} /> Registrar pago
+              </button>
             )}
           </div>
-
-          <h3 className="section-title mt-0">Bandeja de Validación</h3>
-
-          {rolUsuario === 'super_admin' && (
-            <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <div>
-                  <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>Pago manual</h4>
-                  <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
-                    Elige un deportista o socio y registra un pago ya confirmado (mes o meses, pasados o futuros), sin pasar por la bandeja de validación. Solo superadmin.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMostrarFormularioPago(true);
-                    setPagoEditandoId(null);
-                    setPagoManualAutoAprobar(true);
-                  }}
-                  style={{
-                    padding: '10px 16px',
-                    background: 'var(--azul-electrico)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: 'var(--radius-sm)',
-                    fontWeight: '600',
-                    fontSize: '12px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <Plus size={14} /> Registrar pago manual
-                </button>
-              </div>
+          <div className="tesoreria-tabs-wrap">
+            <div className="segment-control tesoreria-tabs" role="tablist" aria-label="Secciones de Tesorería">
+              <button type="button" role="tab" aria-selected={seccionTesoreria === 'cobrar'} className={`segment-btn ${seccionTesoreria === 'cobrar' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('cobrar')}>
+                <Users size={14} /> Por cobrar
+              </button>
+              <button type="button" role="tab" aria-selected={seccionTesoreria === 'validar'} className={`segment-btn ${seccionTesoreria === 'validar' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('validar')}>
+                <CheckSquare size={14} /> Validar pagos
+                {totalPorValidar > 0 && <span className="tesoreria-tab-badge">{totalPorValidar}</span>}
+              </button>
+              <button type="button" role="tab" aria-selected={seccionTesoreria === 'resumen'} className={`segment-btn ${seccionTesoreria === 'resumen' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('resumen')}>
+                <BarChart3 size={14} /> Resumen
+              </button>
+              <button type="button" className="segment-btn" onClick={() => setVistaAdmin('becas')}>
+                🎓 Becas
+                {becasVencidasCount + becasPorVencerCount > 0 && <span className="tesoreria-tab-badge">{becasVencidasCount + becasPorVencerCount}</span>}
+              </button>
             </div>
-          )}
+          </div>
+          {seccionTesoreria === 'validar' && (
+            <>
+          <h3 className="section-title mt-0">Bandeja de Validación</h3>
 
           {/* Pagos reales con comprobante */}
           <h4 className="form-subtitle" style={{ marginBottom: '8px' }}>
@@ -3900,7 +3808,42 @@ function SuperAdminPanel({
               </>
             )}
           </div>
-
+            </>
+          )}
+          {seccionTesoreria === 'resumen' && (
+            <>
+          <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', padding: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+              <div className="form-group" style={{ marginBottom: 0, flex: '1 1 180px' }}>
+                <label style={{ fontSize: '11px' }}>Ver mes</label>
+                <select
+                  className="form-input"
+                  value={filtroMesResumen}
+                  onChange={(e) => { setFiltroMesResumen(e.target.value); setMesRecaudacionActivo(e.target.value === 'todos' ? null : e.target.value); }}
+                >
+                  <option value="todos">Todo el año {ANIO_RECAUDACION}</option>
+                  {NOMBRES_MESES_RECAUDACION.map((mes) => (
+                    <option key={`filtro-mes-${mes}`} value={mes}>{mes}</option>
+                  ))}
+                </select>
+              </div>
+              {filtroMesResumen !== 'todos' && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ width: 'auto', padding: '10px 14px' }}
+                  onClick={() => { setFiltroMesResumen('todos'); setMesRecaudacionActivo(null); }}
+                >
+                  <X size={14} /> Ver todo el año
+                </button>
+              )}
+            </div>
+            {filtroMesResumen !== 'todos' && (
+              <p style={{ fontSize: '11px', color: 'var(--texto-secundario)', margin: '8px 0 0', fontWeight: '700' }}>
+                Mostrando stats, recaudación y morosos solo de {filtroMesResumen}.
+              </p>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setVistaAdmin('becas')}
@@ -3924,7 +3867,6 @@ function SuperAdminPanel({
               )}
             </div>
           </button>
-
           <h3 className="section-title">Panorama General{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
           <div className="caja-triple-grid mb-20">
             <div className="admin-stat-pill azul"><span>Socios Inscritos</span><h2>{af.totalSocios}</h2></div>
@@ -4083,268 +4025,31 @@ function SuperAdminPanel({
           </div>
           </>
           )}
-
-          <h3 className="section-title">Socios Morosos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
-          <div style={{ position: 'relative', marginBottom: '10px' }}>
-            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-            <input
-              type="text"
-              className="form-input"
-              style={{ paddingLeft: '34px', paddingRight: busquedaSociosMorosos ? '34px' : undefined }}
-              placeholder="Buscar socio..."
-              value={busquedaSociosMorosos}
-              onChange={(e) => setBusquedaSociosMorosos(e.target.value)}
-            />
-            {busquedaSociosMorosos && (
-              <button
-                type="button"
-                onClick={() => setBusquedaSociosMorosos('')}
-                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
-                aria-label="Limpiar búsqueda"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          {sociosMorososFiltrados.length === 0 && (
-            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
-              Sin socios morosos que coincidan con la búsqueda.
-            </p>
-          )}
-          {[...sociosMorososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map((s) => {
-            const gravedad = s.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : s.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
-            return (
-              <div key={s.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: 'var(--radius-lg)', background: 'rgba(255,255,255,0.72)' }}>
-                <div className="moroso-info">
-                  <span className="moroso-nombre">{s.nombre}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
-                    {s.telefono ? <><Phone size={11} /> {s.telefono}</> : <>{s.correo || 'Sin contacto'}</>}
-                  </span>
-                  {(s.mesesMorosos || []).length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                      {s.mesesMorosos.map((mes) => (
-                        <span key={`${s.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: 'var(--radius-pill)', padding: '2px 7px' }}>
-                          {mes}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="moroso-deuda">
-                  <span className="moroso-monto">${s.montoDeuda.toLocaleString('es-CL')}</span>
-                  <span className="moroso-meses" style={{ color: gravedad }}>{s.mesesDeuda} {s.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <button
-                    className="btn-notificar"
-                    onClick={() => avisarSocioMoroso(s)}
-                    disabled={!s.telefono}
-                    title={s.telefono ? `Enviar recordatorio por WhatsApp a ${s.telefono}` : 'Sin teléfono registrado en la cuenta'}
-                    style={!s.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                  >
-                    <Bell size={13} /> Avisar
-                  </button>
-                  {rolUsuario === 'super_admin' && (
-                    <button
-                      className="btn-notificar"
-                      style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }}
-                      onClick={() => {
-                        setMostrarFormularioPago(true);
-                        setPagoEditandoId(null);
-                        setPagoManualAutoAprobar(true);
-                        setPagoManualObjetivo({ modoPago: 'socio', rut: s.rut });
-                      }}
-                      title={`Registrar pago manual de ${s.nombre}`}
-                    >
-                      <Plus size={13} /> Pago manual
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', marginTop: '20px', flexWrap: 'wrap', gap: '10px' }}>
-            <h3 className="section-title" style={{ margin: 0 }}>Estatus de pagos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
-            {vistaEstatusPagos === 'morosos' && (
-              <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={abrirModalNotificarTodos}>
-                <Bell size={13} /> Notificar Todos
-              </button>
-            )}
-          </div>
-          <div className="filter-chips mb-15">
-            <button className={`filter-chip ${vistaEstatusPagos === 'morosos' ? 'active' : ''}`} onClick={() => setVistaEstatusPagos('morosos')}>
-              <AlertTriangle size={12} /> Morosos ({(morososAdmin || []).length})
-            </button>
-            <button className={`filter-chip ${vistaEstatusPagos === 'pagados' ? 'active' : ''}`} onClick={() => setVistaEstatusPagos('pagados')}>
-              <CheckSquare size={12} /> Pagados ({deportistasAlDiaLista.length})
-            </button>
-          </div>
-          <div style={{ position: 'relative', marginBottom: '10px' }}>
-            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-            <input
-              type="text"
-              className="form-input"
-              style={{ paddingLeft: '34px', paddingRight: busquedaMorosos ? '34px' : undefined }}
-              placeholder="Buscar por socio, apoderado o deportista..."
-              value={busquedaMorosos}
-              onChange={(e) => setBusquedaMorosos(e.target.value)}
-            />
-            {busquedaMorosos && (
-              <button
-                type="button"
-                onClick={() => setBusquedaMorosos('')}
-                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
-                aria-label="Limpiar búsqueda"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          {vistaEstatusPagos === 'morosos' && (
-          <div className="filter-chips mb-15">
-            <button className={`filter-chip ${filtroMorosos === 'todos' ? 'active' : ''}`} onClick={() => setFiltroMorosos('todos')}>Todos ({(morososAdmin || []).length})</button>
-            <button className={`filter-chip ${filtroMorosos === 'socios' ? 'active' : ''}`} onClick={() => setFiltroMorosos('socios')}>Socios ({(morososAdmin || []).filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado').length})</button>
-            <button className={`filter-chip ${filtroMorosos === 'apoderados' ? 'active' : ''}`} onClick={() => setFiltroMorosos('apoderados')}>Apoderados ({(morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado').length})</button>
-          </div>
-          )}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '15px' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: '11px' }}>Rama</label>
-              <select className="form-input" value={filtroRamaMorosos} onChange={(e) => setFiltroRamaMorosos(e.target.value)}>
-                <option value="todas">Todas</option>
-                {ramasMorosos.map((rama) => (
-                  <option key={`rama-moroso-${rama}`} value={rama}>{rama}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: '11px' }}>Categoría</label>
-              <select className="form-input" value={filtroCategoriaMorosos} onChange={(e) => setFiltroCategoriaMorosos(e.target.value)}>
-                <option value="todas">Todas</option>
-                {categoriasMorosos.map((categoria) => (
-                  <option key={`categoria-moroso-${categoria}`} value={categoria}>{categoria}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {vistaEstatusPagos === 'pagados' && (
-            <>
-              {pagadosFiltrados.length === 0 && (
-                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
-                  Sin deportistas al día que coincidan con la búsqueda.
-                </p>
-              )}
-              {[...pagadosFiltrados].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((p) => (
-                <div key={p.id} className="moroso-row" style={{ borderLeft: '4px solid var(--verde-victoria)', borderRadius: 'var(--radius-lg)', background: 'rgba(255,255,255,0.72)' }}>
-                  <div className="moroso-info">
-                    <span className="moroso-nombre">{p.nombre}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
-                      <span className="moroso-tipo-badge" style={{ background: 'rgba(52,199,89,0.12)', color: 'var(--verde-victoria)' }}>Al día</span>
-                      {p.sinApoderado && (
-                        <span className="moroso-tipo-badge" style={{ background: 'rgba(255,59,48,0.12)', color: 'var(--rojo-alerta)' }} title="El deportista no tiene ninguna cuenta vinculada por RUT ni correo del apoderado">
-                          <AlertTriangle size={10} style={{ marginRight: '3px', verticalAlign: '-1px' }} /> Sin apoderado asignado
-                        </span>
-                      )}
-                      {(p.rama || p.categoria) && (
-                        <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>
-                          {[p.rama, p.categoria].filter(Boolean).join(' · ')}
-                        </span>
-                      )}
-                    </div>
-                    <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
-                      {p.telefono ? <><Phone size={11} /> {p.telefono}</> : <>{p.correo || 'Sin contacto'}</>}
-                    </span>
-                  </div>
-                </div>
-              ))}
             </>
           )}
-          {vistaEstatusPagos === 'morosos' && (
-          <>
-          {morososFiltrados.length === 0 && (
-            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
-              Sin morosos que coincidan con la búsqueda.
-            </p>
-          )}
-          {[...morososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map(m => {
-            const gravedad = m.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : m.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
-            // El badge de "tipo" solo suma información cuando la familia SÍ es
-            // socia (afecta el monto de la cuota) — "apoderado" es el caso
-            // normal/mayoritario y no amerita marcarlo. La única alerta real
-            // acá es que falte el vínculo con una cuenta de apoderado.
-            const esFamiliaSocia = m.tipo === 'socio' || m.tipo === 'socio-apoderado';
-            const { bg, color } = colorTipo(m.tipo);
-            return (
-              <div key={m.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: 'var(--radius-lg)', background: 'rgba(255,255,255,0.72)' }}>
-                <div className="moroso-info">
-                  <span className="moroso-nombre">{m.nombre}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
-                    {esFamiliaSocia && <span className="moroso-tipo-badge" style={{ background: bg, color }}>Socio</span>}
-                    {m.sinApoderado && (
-                      <span className="moroso-tipo-badge" style={{ background: 'rgba(255,59,48,0.12)', color: 'var(--rojo-alerta)' }} title="El deportista no tiene ninguna cuenta vinculada por RUT ni correo del apoderado">
-                        <AlertTriangle size={10} style={{ marginRight: '3px', verticalAlign: '-1px' }} /> Sin apoderado asignado
-                      </span>
-                    )}
-                    {(m.rama || m.categoria) && (
-                      <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>
-                        {[m.rama, m.categoria].filter(Boolean).join(' · ')}
-                      </span>
-                    )}
-                    {m.pupilos.length > 0 && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><User size={11} /> {m.pupilos.join(' · ')}</span>}
-                  </div>
-                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
-                    {m.telefono ? <><Phone size={11} /> {m.telefono}</> : <>{m.correo || 'Sin contacto'}</>}
-                  </span>
-                  {(m.mesesMorosos || []).length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                      {m.mesesMorosos.map((mes) => (
-                        <span key={`${m.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: 'var(--radius-pill)', padding: '2px 7px' }}>
-                          {mes}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="moroso-deuda">
-                  <span className="moroso-monto">${m.montoDeuda.toLocaleString('es-CL')}</span>
-                  <span className="moroso-meses" style={{ color: gravedad }}>{m.mesesDeuda} {m.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <button
-                    className="btn-notificar"
-                    onClick={() => avisarMoroso(m)}
-                    disabled={!m.telefono}
-                    title={m.telefono ? `Enviar recordatorio por WhatsApp a ${m.telefono}` : 'Sin teléfono registrado en la cuenta'}
-                    style={!m.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                  >
-                    <Bell size={13} /> Avisar
-                  </button>
-                  {rolUsuario === 'super_admin' && (
-                    <button
-                      className="btn-notificar"
-                      style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }}
-                      onClick={() => {
-                        setMostrarFormularioPago(true);
-                        setPagoEditandoId(null);
-                        setPagoManualAutoAprobar(true);
-                        setPagoManualObjetivo({ modoPago: 'deportista', rut: m.rut });
-                      }}
-                      title={`Registrar pago manual de ${m.nombre}`}
-                    >
-                      <Plus size={13} /> Pago manual
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-          </>
-          )}
-
-          <h3 className="section-title mt-20">Cuenta de una familia puntual</h3>
-          <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
-            Busca a un deportista, socio o apoderado para ver su calendario de pagos, registrar un abono o descargar su historial — lo mismo que ve la familia en su propia cuenta.
+          {seccionTesoreria === 'cobrar' && (
+            <>
+              <TesoreriaCuentasPanel
+                filas={cuentasQuePagan}
+                puedeRegistrarPago={rolUsuario === 'super_admin'}
+                onRegistrarPago={abrirPagoManualTesoreria}
+                onVerCuenta={verCuentaTesoreria}
+                onAvisar={(fila) => avisarMoroso(filaComoMoroso(fila))}
+                onNotificarTodos={(lista) => {
+                  const conTelefono = lista.filter((f) => f.telefono).map(filaComoMoroso);
+                  if (conTelefono.length === 0) {
+                    showToast({ message: 'Nadie de esta lista tiene teléfono registrado.', type: 'error' });
+                    return;
+                  }
+                  setListaAvisoLote(conTelefono);
+                  setAvisadosEnLote(new Set());
+                  setMostrarModalNotificarTodos(true);
+                }}
+              />
+              <div ref={cuentaFamiliaTesoreriaRef} style={{ scrollMarginTop: '80px' }}>
+          <h3 className="section-title mt-20">Cuenta de la familia</h3>
+          <p style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
+            Toca “Ver cuenta” en la lista o busca aquí: verás la cuota de socio y la mensualidad de cada pupilo por separado, mes a mes, tal como la ve la familia.
           </p>
           <PerfilTesoreriaPanel
             pupiloActivo={pupiloTesoreriaAdmin}
@@ -4368,8 +4073,19 @@ function SuperAdminPanel({
             setPageViewMode={setPagoViewModeTesoreria}
             utmVigente={utmVigente}
             utmHistorico={utmHistorico}
-            onIrABecas={() => setVistaAdmin('becas')}
+            cuentaActivaAdmin={cuentaTesoreriaAdmin}
+            setCuentaActivaAdmin={setCuentaTesoreriaAdmin}
+            onIrAPagoManual={rolUsuario === 'super_admin' ? () => {
+              const cuenta = cuentaTesoreriaAdmin;
+              const pupilo = pupiloTesoreriaAdmin;
+              if (pupilo) abrirPagoManualTesoreria({ modoPago: 'deportista', rut: pupilo.rut });
+              else if (cuenta?.es_socio) abrirPagoManualTesoreria({ modoPago: 'socio', rut: cuenta.rut });
+              else abrirPagoManualTesoreria(null);
+            } : undefined}
           />
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -5909,7 +5625,7 @@ function SuperAdminPanel({
               WhatsApp solo abre una conversación por vez — toca "Enviar" en cada fila para abrirle su recordatorio, ya escrito, listo para mandar.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {morososFiltrados.filter((m) => m.telefono).map((m) => {
+              {listaAvisoLote.filter((m) => m.telefono).map((m) => {
                 const yaAvisado = avisadosEnLote.has(m.id);
                 return (
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: yaAvisado ? 'rgba(52,199,89,0.08)' : 'var(--gris-fondo)', border: `1px solid ${yaAvisado ? 'rgba(52,199,89,0.3)' : 'var(--borde)'}` }}>
@@ -5934,7 +5650,7 @@ function SuperAdminPanel({
               })}
             </div>
             <p style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '14px', marginBottom: 0 }}>
-              {avisadosEnLote.size} de {morososFiltrados.filter((m) => m.telefono).length} enviados en esta ronda.
+              {avisadosEnLote.size} de {listaAvisoLote.length} enviados en esta ronda.
             </p>
           </div>
         </div>,
