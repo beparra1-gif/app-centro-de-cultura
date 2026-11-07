@@ -900,6 +900,18 @@ const createSchema = async () => {
     await pool.query('ALTER TABLE codigos_acceso ADD COLUMN IF NOT EXISTS creado_por INTEGER');
     console.log('✅ Tablas de consentimiento y códigos de acceso verificadas');
 
+    // Configuración del sistema (clave/valor), p. ej. la carga automática de
+    // la planilla de pagos (server.js también la crea al usarla).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS configuracion_sistema (
+        clave VARCHAR(100) PRIMARY KEY,
+        valor JSONB NOT NULL DEFAULT '{}'::jsonb,
+        actualizado_por VARCHAR(50),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    console.log('✅ Tabla configuracion_sistema verificada');
+
     console.log('\n✅ ¡Esquema completo creado exitosamente!');
     process.exit(0);
   } catch (err) {

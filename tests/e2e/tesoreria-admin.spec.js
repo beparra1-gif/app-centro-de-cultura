@@ -138,6 +138,46 @@ test('revisión: un pago del hijo guardado como cuota de socio se pasa a mensual
   expect(corregido.notas_tesoreria).toMatch(/Reclasificado de "Mensualidad Socio" a "Mensualidad".*E2E SuperAdmin/);
 });
 
+test('condonar: el mes queda al día con $0 y nota "Deuda condonada"', async ({ page }) => {
+  await irATesoreria(page);
+  await page.getByLabel('Buscar en Tesorería').fill('hijodos');
+  await filaFamilia(page).locator('.tc-linea', { hasText: 'E2E HijoDos Prueba' }).getByRole('button', { name: /Pago/ }).click();
+  await page.getByRole('button', { name: 'Mar', exact: true }).click();
+  await page.getByText(/Condonar la deuda de este mes/).click();
+  await page.getByRole('button', { name: 'Registrar y Confirmar' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Condonar' }).click();
+  await expect(page.getByText(/Deuda condonada \(1 mes\)/)).toBeVisible({ timeout: 15000 });
+  const { rows } = await pool.query(
+    "SELECT monto_total_pagado, notas_tesoreria, estado_pago FROM pagos_mensualidades WHERE rut_jugador = $1 AND meses_correspondientes ILIKE 'marzo%'",
+    [HIJO2.rut]
+  );
+  expect(rows).toHaveLength(1);
+  expect(Number(rows[0].monto_total_pagado)).toBe(0);
+  expect(rows[0].notas_tesoreria).toMatch(/^Deuda condonada/);
+});
+
+test('informe por categoría: filtra y descarga la imagen', async ({ page }, testInfo) => {
+  await irATesoreria(page);
+  await page.getByRole('tab', { name: /Informes/ }).click();
+  await page.getByLabel('Estado').selectOption('todos');
+  await page.getByLabel('Buscar en el informe').fill('e2e');
+  const tabla = page.locator('.id-tabla');
+  await expect(tabla.locator('.id-grupo', { hasText: 'SUB-15' })).toBeVisible();
+  // HijoDos: marzo condonado en la prueba anterior.
+  const filaHijo2 = tabla.locator('tr', { hasText: 'E2E HijoDos' });
+  await expect(filaHijo2.locator('td.id-condonado')).toHaveCount(1);
+  await page.getByLabel('Categoría').selectOption('SUB-15');
+  await expect(tabla.locator('.id-grupo')).toHaveCount(1);
+  const [descarga] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Descargar imagen' }).click(),
+  ]);
+  expect(descarga.suggestedFilename()).toMatch(/^informe-deuda-deportistas-.*sub-15.*\.png$/);
+  await descarga.saveAs(testInfo.outputPath('informe-sub-15.png'));
+  await page.getByRole('tab', { name: 'Socios' }).click();
+  await expect(tabla.locator('tr', { hasText: 'E2E SocioApoderado' })).toBeVisible();
+});
+
 test('las pestañas separan Validar pagos y Resumen', async ({ page }) => {
   await irATesoreria(page);
   await page.getByRole('tab', { name: /Validar pagos/ }).click();

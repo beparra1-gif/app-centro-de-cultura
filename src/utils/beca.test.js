@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularCuotaFinal, obtenerPorcentajeBeca, tieneBecaCompleta } from './beca';
+import { calcularCuotaDeportistasFamilia, calcularCuotaFinal, obtenerPorcentajeBeca, tarifaPorDeportista, tieneBecaCompleta } from './beca';
 
 describe('obtenerPorcentajeBeca', () => {
   it('sin campo beca, da 0', () => {
@@ -44,5 +44,28 @@ describe('calcularCuotaFinal', () => {
   it('redondea el resultado a un entero', () => {
     // 9999 * (1 - 15/100) = 8499.15 -> redondea a 8499
     expect(calcularCuotaFinal(9999, { beca: 15 })).toBe(8499);
+  });
+});
+
+describe('tarifas del club por familia', () => {
+  const p = (extra = {}) => ({ ...extra });
+  it('un pupilo $30.000; hermanos $25.000 c/u', () => {
+    expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [p()] })).toEqual({ cuotaDeportistas: 30000, cuotaReferencial: 30000 });
+    expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [p(), p()] })).toEqual({ cuotaDeportistas: 50000, cuotaReferencial: 25000 });
+  });
+  it('hijo de socio $15.000; 2 hijos de socio $12.000 c/u', () => {
+    expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [p()], esSocioApoderado: true }).cuotaDeportistas).toBe(15000);
+    expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [p(), p()], esSocioApoderado: true })).toEqual({ cuotaDeportistas: 24000, cuotaReferencial: 12000 });
+  });
+  it('un hermano con monto propio no cambia la tarifa del otro', () => {
+    const r = calcularCuotaDeportistasFamilia({ pupilosFamilia: [p({ valor_mensualidad: 20000 }), p()] });
+    expect(r).toEqual({ cuotaDeportistas: 45000, cuotaReferencial: 25000 });
+  });
+  it('becas parciales y completas se descuentan por deportista', () => {
+    const r = calcularCuotaDeportistasFamilia({ pupilosFamilia: [p({ beca: 50 }), p({ beca: 100 })] });
+    expect(r.cuotaDeportistas).toBe(12500);
+  });
+  it('tarifaPorDeportista', () => {
+    expect([tarifaPorDeportista(1), tarifaPorDeportista(3), tarifaPorDeportista(1, true), tarifaPorDeportista(2, true)]).toEqual([30000, 25000, 15000, 12000]);
   });
 });

@@ -44,6 +44,7 @@ import PerfilTesoreriaPanel from './PerfilTesoreriaPanel';
 import TesoreriaCuentasPanel from './TesoreriaCuentasPanel';
 import RevisionClasificacionPagos from './RevisionClasificacionPagos';
 import ImportarPagosPlanilla from './ImportarPagosPlanilla';
+import InformeDeudaPanel from './InformeDeudaPanel';
 import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
 import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
 import QrScanner from './QrScanner';
@@ -3586,6 +3587,9 @@ function SuperAdminPanel({
               <button type="button" role="tab" aria-selected={seccionTesoreria === 'resumen'} className={`segment-btn ${seccionTesoreria === 'resumen' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('resumen')}>
                 <BarChart3 size={14} /> Resumen
               </button>
+              <button type="button" role="tab" aria-selected={seccionTesoreria === 'informes'} className={`segment-btn ${seccionTesoreria === 'informes' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('informes')}>
+                <FileText size={14} /> Informes
+              </button>
               <button type="button" className="segment-btn" onClick={() => setVistaAdmin('becas')}>
                 🎓 Becas
                 {becasVencidasCount + becasPorVencerCount > 0 && <span className="tesoreria-tab-badge">{becasVencidasCount + becasPorVencerCount}</span>}
@@ -4058,6 +4062,16 @@ function SuperAdminPanel({
           )}
             </>
           )}
+          {seccionTesoreria === 'informes' && (
+            <InformeDeudaPanel
+              jugadores={jugadoresAdmin}
+              cuentas={cuentasAdmin}
+              morosos={morososAdmin}
+              sociosMorosos={sociosMorosos}
+              pagos={pagosMensualidadesAdmin}
+            />
+          )}
+
           {seccionTesoreria === 'cobrar' && (
             <>
               {pagosMalClasificados.length > 0 && (

@@ -743,7 +743,9 @@ function App() {
       const perfilPrincipalFamilia = String(cuentaFamilia?.perfil_principal || cuentaFamilia?.rol || '').toLowerCase();
       const { cuotaReferencial } = calcularCuotaDeportistasFamilia({
         pupilosFamilia,
-        esSocioApoderado: perfilPrincipalFamilia === 'socio_apoderado',
+        // Hijo(s) de socio: tarifa rebajada si la cuenta del apoderado es
+        // socia (es_socio), cualquiera sea su perfil.
+        esSocioApoderado: Boolean(cuentaFamilia?.es_socio) || ['socio', 'socio_apoderado', 'socio-apoderado'].includes(perfilPrincipalFamilia),
         montoAcordado: Number(cuentaFamilia?.monto_mensual_override || 0),
       });
       cuotaReferencialPorFamilia.set(key, cuotaReferencial);
@@ -791,12 +793,13 @@ function App() {
       const mesesMorososNums = [];
       let montoDeudaJugador = 0;
       let mesesConAbonoParcial = 0;
+      const mesesParcialesNums = [];
       for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
         const resumen = resumirAbonosMes(pagosPorMes.get(mes) || [], cuotaRef);
         if (!resumen.completo) {
           mesesMorososNums.push(mes);
           montoDeudaJugador += resumen.faltante;
-          if (resumen.parcial) mesesConAbonoParcial += 1;
+          if (resumen.parcial) { mesesConAbonoParcial += 1; mesesParcialesNums.push(mes); }
         }
       }
       const mesesDeuda = mesesMorososNums.length;
@@ -831,6 +834,8 @@ function App() {
         // Suma de lo que FALTA de cada mes (descuenta abonos parciales).
         montoDeuda: montoDeudaJugador,
         mesesConAbonoParcial,
+        // Meses con abono que no completa la cuota (informe de deuda).
+        mesesParciales: mesesParcialesNums.map((n) => NOMBRES_MESES[n - 1]),
         contacto: telefono || jugador.correo_apoderado || 'Sin contacto',
         telefono,
         correo: jugador.correo_apoderado || '',
@@ -984,11 +989,13 @@ function App() {
       // Cada mes se completa con abonos hasta su propia cuota (UTM del mes).
       const mesesMorososNums = [];
       let montoDeudaSocio = 0;
+      const mesesParcialesNums = [];
       for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
         const resumen = resumirAbonosMes(pagosPorMes.get(mes) || [], obtenerCuotaSocioDelMes(mes));
         if (!resumen.completo) {
           mesesMorososNums.push(mes);
           montoDeudaSocio += resumen.faltante;
+          if (resumen.parcial) mesesParcialesNums.push(mes);
         }
       }
       const mesesDeuda = mesesMorososNums.length;
@@ -1006,6 +1013,7 @@ function App() {
         mesesDeuda,
         mesesMorosos: mesesMorososNums.map((n) => NOMBRES_MESES[n - 1]),
         montoDeuda: montoDeudaSocio,
+        mesesParciales: mesesParcialesNums.map((n) => NOMBRES_MESES[n - 1]),
         contacto: telefono || cuenta.correo || 'Sin contacto',
         telefono,
         correo: cuenta.correo || '',

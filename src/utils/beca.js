@@ -36,41 +36,34 @@ export const calcularCuotaFinal = (valorMensualidad, jugador = {}) => {
   return calcularCuotaConBeca(valorMensualidad, jugador);
 };
 
-// Tarifa por defecto de mensualidad deportistas para UNA familia (todos los
-// pupilos del mismo apoderado), usada solo cuando NINGÚN pupilo de la
-// familia trae valor_mensualidad propio desde el Sheet. Si al menos uno sí
-// lo trae, se usa la suma de esos montos (ya con beca/exención aplicada) en
-// vez de la tarifa por defecto — mismo criterio en Tesorería y en Morosos
-// para que ambas pantallas muestren siempre el mismo número por familia.
+// Tarifas del club (confirmadas 2026-11-07), por deportista:
+//  - un solo pupilo: $30.000
+//  - hermanos: $25.000 cada uno
+//  - hijo de socio: $15.000
+//  - 2 hijos de socio: $12.000 cada uno (desde el 3ro, tope familiar $24.000)
+// Un pupilo con valor_mensualidad propio (cargado a mano o desde la
+// planilla) usa ese valor: es una condición especial y gana sobre la regla.
+export const tarifaPorDeportista = (cantidadPupilos = 1, esSocio = false) => {
+  const n = Math.max(1, Number(cantidadPupilos) || 1);
+  if (esSocio) return n === 1 ? 15000 : (n === 2 ? 12000 : Math.round(24000 / n));
+  return n === 1 ? 30000 : 25000;
+};
+
+// Cuota de deportistas de UNA familia (todos los pupilos del mismo
+// apoderado). cuotaReferencial es la tarifa de un pupilo SIN valor propio:
+// la de la regla, o el monto acordado de la familia repartido. Antes, si un
+// hermano traía valor propio y el otro no, al segundo se le cobraba la mitad
+// del valor del primero; y el descuento de socio dependía del perfil
+// "socio_apoderado" en vez de que la cuenta fuera socia.
 export const calcularCuotaDeportistasFamilia = ({ pupilosFamilia = [], esSocioApoderado = false, montoAcordado = 0 } = {}) => {
   const cantidadPupilos = pupilosFamilia.length;
   if (cantidadPupilos <= 0) return { cuotaDeportistas: 0, cuotaReferencial: 0 };
 
-  const pupilosConCuota = pupilosFamilia.filter((p) => !noDebeMensualidad(p));
-  if (pupilosConCuota.length === 0) return { cuotaDeportistas: 0, cuotaReferencial: 0 };
-
-  const sumaDesdeSheet = pupilosConCuota.reduce((acc, p) => {
-    const monto = Number(p?.valor_mensualidad || 0);
-    const base = Number.isFinite(monto) && monto > 0 ? monto : 0;
-    return acc + calcularCuotaFinal(base, p);
-  }, 0);
-
-  let cuotaDeportistas;
-  if (sumaDesdeSheet > 0) {
-    cuotaDeportistas = Math.round(sumaDesdeSheet);
-  } else if (Number.isFinite(montoAcordado) && montoAcordado > 0) {
-    cuotaDeportistas = montoAcordado;
-  } else if (esSocioApoderado) {
-    // Socio + apoderado: 15.000 (1 pupilo); desde 2, 12.000 c/u con el 3ro
-    // gratis (tope 24.000).
-    cuotaDeportistas = cantidadPupilos === 1 ? 15000 : 24000;
-  } else {
-    // Apoderado sin membresía socio: 30.000 (1 pupilo), 25.000 c/u desde 2.
-    cuotaDeportistas = cantidadPupilos === 1 ? 30000 : 25000 * cantidadPupilos;
-  }
-
-  const cuotaReferencial = Math.round(cuotaDeportistas / cantidadPupilos);
-  return { cuotaDeportistas, cuotaReferencial };
+  const cuotaReferencial = Number.isFinite(montoAcordado) && montoAcordado > 0
+    ? Math.round(montoAcordado / cantidadPupilos)
+    : tarifaPorDeportista(cantidadPupilos, esSocioApoderado);
+  const cuotaDeportistas = pupilosFamilia.reduce((acc, p) => acc + obtenerCuotaJugador(p, cuotaReferencial), 0);
+  return { cuotaDeportistas: Math.round(cuotaDeportistas), cuotaReferencial };
 };
 
 // Cuota mensual real de UN pupilo dentro de su familia: si trae

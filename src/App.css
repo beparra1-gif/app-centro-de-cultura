@@ -4037,3 +4037,63 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .ip-lista ul { margin: 8px 0 0; padding-left: 18px; max-height: 260px; overflow-y: auto; font-size: var(--texto-min); color: var(--texto-principal); display: flex; flex-direction: column; gap: 4px; }
 .ip-aplicar { margin-top: 14px; width: 100%; }
 @media (max-width: 560px) { .ip-resumen { grid-template-columns: repeat(2, 1fr); } }
+.ip-auto { margin-top: 12px; padding: 10px 12px; background: var(--fondo-input); border-radius: var(--radius-sm); }
+.ip-auto-check { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; color: var(--texto-principal); cursor: pointer; min-height: 32px; }
+.ip-auto-check input { width: 18px; height: 18px; }
+.ip-auto .ip-ayuda { margin-top: 4px; }
+.ip-error { color: var(--estado-pendiente-texto); font-weight: 700; }
+
+/* ==========================================
+   TESORERÍA → INFORMES (InformeDeudaPanel)
+   ========================================== */
+.id-tipo { margin-bottom: 12px; overflow-x: auto; }
+.id-tipo .segment-btn { padding: 10px 14px; font-size: 13px; }
+.id-filtros { display: grid; grid-template-columns: 2fr repeat(4, minmax(130px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.id-filtros .form-input { margin: 0; min-height: var(--toque-min); }
+.id-buscar { margin: 0; }
+.id-acciones { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.id-acciones-descarga { display: flex; gap: 8px; flex-wrap: wrap; }
+.id-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius-md); }
+.id-informe { background: var(--blanco-tarjeta); border: 1px solid var(--borde-suave); border-radius: var(--radius-md); padding: 14px; min-width: 720px; color: var(--texto-principal); }
+.id-cabecera { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
+.id-cabecera h3 { margin: 0; font-size: 17px; font-weight: 900; color: var(--texto-heading); }
+.id-cabecera p { margin: 3px 0 0; font-size: var(--texto-min); font-weight: 700; color: var(--texto-secundario); }
+.id-totales { display: flex; gap: 12px; flex-wrap: wrap; font-size: var(--texto-min); color: var(--texto-secundario); }
+.id-totales b { color: var(--texto-principal); font-size: 14px; }
+.id-tabla { width: 100%; border-collapse: collapse; font-size: 12px; }
+.id-tabla th, .id-tabla td { border-bottom: 1px solid var(--borde-suave); padding: 5px 4px; }
+.id-tabla thead th { font-size: 11px; font-weight: 900; color: var(--texto-secundario); text-transform: uppercase; text-align: center; position: sticky; top: 0; background: var(--blanco-tarjeta); }
+.id-tabla .id-nombre { text-align: left; font-weight: 800; min-width: 170px; white-space: nowrap; }
+.id-beca { font-size: 11px; font-weight: 700; color: var(--estado-parcial-texto); }
+.id-mes { width: 34px; }
+.id-num { text-align: right; font-weight: 800; white-space: nowrap; min-width: 46px; }
+.id-monto { color: var(--estado-pendiente-texto); min-width: 76px; }
+.id-grupo th, .id-grupo td { background: var(--fondo-input); font-size: 12px; font-weight: 900; color: var(--texto-heading); text-align: left; padding-top: 8px; }
+.id-grupo td { text-align: right; }
+.id-celda { text-align: center; font-weight: 900; font-size: 12px; width: 30px; height: 24px; font-style: normal; }
+.id-pagado { background: var(--estado-pagado-fondo); color: var(--estado-pagado-texto); }
+.id-debe { background: var(--estado-pendiente-fondo); color: var(--estado-pendiente-texto); }
+.id-parcial { background: var(--estado-revision-fondo); color: var(--estado-revision-texto); }
+.id-exento { background: var(--estado-parcial-fondo); color: var(--estado-parcial-texto); }
+.id-no-aplica, .id-en-curso, .id-futuro { background: transparent; color: var(--texto-secundario); }
+.id-en-curso { box-shadow: inset 0 0 0 1px var(--borde-suave); }
+.id-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 11px; font-weight: 700; color: var(--texto-secundario); }
+.id-leyenda i { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; margin-right: 3px; vertical-align: middle; }
+/* Captura de imagen: sin recorte y siempre en tema claro. */
+.id-informe.id-exportando {
+  min-width: 900px; width: max-content; border: none; border-radius: 0;
+  --blanco-tarjeta: #ffffff; --fondo-input: #f3f4f6; --texto-principal: #1c1c1e; --texto-secundario: #6b7280;
+  --texto-heading: #0b1d3a; --borde-suave: rgba(0,0,0,0.08);
+  --estado-pagado-texto: #137a39; --estado-pendiente-texto: #b3261e; --estado-revision-texto: #8a5300; --estado-parcial-texto: #0a58ca;
+}
+.id-informe.id-exportando thead th { position: static; }
+@media (max-width: 700px) {
+  .id-filtros { grid-template-columns: 1fr 1fr; }
+  .id-buscar { grid-column: 1 / -1; }
+}
+/* Pago manual: condonar deuda */
+.pf-condonar { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-bottom: 12px; border-radius: var(--radius-sm); background: var(--estado-revision-fondo); border: 1px solid var(--estado-revision-borde); cursor: pointer; }
+.pf-condonar input { width: 18px; height: 18px; margin-top: 2px; }
+.pf-condonar strong { display: block; font-size: 13px; color: var(--texto-principal); }
+.pf-condonar small { display: block; font-size: var(--texto-min); color: var(--texto-secundario); margin-top: 2px; }
+.id-condonado { background: rgba(142, 142, 147, 0.18); color: var(--texto-principal); }

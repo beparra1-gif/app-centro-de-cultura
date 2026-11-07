@@ -82,6 +82,10 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
   // parsear rangos.
   const [montosPorMes, setMontosPorMes] = useState({});
   const [apoderadoAsignado, setApoderadoAsignado] = useState(null);
+  // Condonar: el club perdona la deuda de los meses elegidos. Se registra
+  // como pago aprobado de $0 (= mes eximido, ver resumirAbonosMes) con nota
+  // "Deuda condonada", para que se distinga de un pago real.
+  const [condonar, setCondonar] = useState(false);
 
   // Modo "socio": permite registrar la cuota de un socio que no tiene ningún
   // deportista asociado — hoy ese socio es invisible para el sistema de
@@ -370,6 +374,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
         // texto) — así el cálculo de morosidad y el calendario de Tesorería,
         // que solo entienden un mes por registro, ven correctamente TODOS los
         // meses pagados y no solo el primero.
+        const notaCondonacion = condonar ? `Deuda condonada${formData.notas_tesoreria ? ` · ${formData.notas_tesoreria}` : ''}` : null;
         const pagosACrear = mesesSeleccionados.map((idx) => ({
           rut_jugador: formData.rut_jugador,
           rut_pagos: rutPagosResuelto,
@@ -377,9 +382,9 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
           concepto_pago: formData.concepto_pago,
           cantidad_meses_pagados: 1,
           meses_correspondientes: `${MESES[idx]} ${anioSeleccionado}`,
-          monto_total_pagado: Number(mesesSeleccionados.length === 1 ? formData.monto_total_pagado : montosPorMes[idx]),
+          monto_total_pagado: condonar ? 0 : Number(mesesSeleccionados.length === 1 ? formData.monto_total_pagado : montosPorMes[idx]),
           comprobante_url: comprobanteUrlFinal,
-          notas_tesoreria: formData.notas_tesoreria,
+          notas_tesoreria: notaCondonacion || formData.notas_tesoreria,
         }));
 
         if (autoAprobar) {
@@ -388,9 +393,11 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
           const totalConfirmar = pagosACrear.reduce((acc, p) => acc + p.monto_total_pagado, 0);
           const listaMeses = pagosACrear.map((p) => p.meses_correspondientes).join(', ');
           const confirmado = await confirmAction({
-            title: 'Confirmar pago manual',
-            message: `¿Confirmas registrar ${pagosACrear.length > 1 ? `estos ${pagosACrear.length} meses` : 'este pago'} como YA PAGADO por un total de $${totalConfirmar.toLocaleString('es-CL')} (${listaMeses})? Queda${pagosACrear.length > 1 ? 'n' : ''} aprobado${pagosACrear.length > 1 ? 's' : ''} de inmediato, sin pasar por la bandeja de validación.`,
-            confirmText: 'Registrar y confirmar',
+            title: condonar ? 'Confirmar condonación' : 'Confirmar pago manual',
+            message: condonar
+              ? `¿Confirmas CONDONAR la deuda de ${listaMeses}? Esos meses quedan al día sin cobro ($0) y con la nota "Deuda condonada".`
+              : `¿Confirmas registrar ${pagosACrear.length > 1 ? `estos ${pagosACrear.length} meses` : 'este pago'} como YA PAGADO por un total de $${totalConfirmar.toLocaleString('es-CL')} (${listaMeses})? Queda${pagosACrear.length > 1 ? 'n' : ''} aprobado${pagosACrear.length > 1 ? 's' : ''} de inmediato, sin pasar por la bandeja de validación.`,
+            confirmText: condonar ? 'Condonar' : 'Registrar y confirmar',
           });
           if (!confirmado) {
             setCargando(false);
@@ -402,7 +409,9 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
               await api.pagosMensualidadesAPI.validar(nuevoPago.id, 'aprobado');
             }
           }
-          setSuccess(pagosACrear.length > 1 ? `${pagosACrear.length} meses registrados y confirmados.` : 'Pago registrado y confirmado.');
+          setSuccess(condonar
+            ? `Deuda condonada (${pagosACrear.length} ${pagosACrear.length === 1 ? 'mes' : 'meses'}).`
+            : (pagosACrear.length > 1 ? `${pagosACrear.length} meses registrados y confirmados.` : 'Pago registrado y confirmado.'));
         } else {
           for (const datosGuardar of pagosACrear) {
             await api.pagosMensualidadesAPI.create(datosGuardar);
@@ -800,14 +809,14 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                             // En modo socio, cada mes sugiere su propia cuota
                             // (la UTM varía mes a mes) en vez de repetir el
                             // mismo valorMensualidad para todos los meses.
-                            siguiente[idx] = montoSugeridoMes(idx + 1);
+                            siguiente[idx] = condonar ? 0 : montoSugeridoMes(idx + 1);
                           }
                           return siguiente;
                         });
 
                         if (nuevosMeses.length === 1) {
                           const soloMes = nuevosMeses[0];
-                          const sugeridoMesSolo = montoSugeridoMes(soloMes + 1);
+                          const sugeridoMesSolo = condonar ? 0 : montoSugeridoMes(soloMes + 1);
                           setFormData(prev => ({
                             ...prev,
                             monto_total_pagado: soloMes === idx && !yaSeleccionado ? sugeridoMesSolo : (montosPorMes[soloMes] ?? sugeridoMesSolo)
@@ -949,6 +958,30 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 </div>
               )}
             </div>
+          )}
+
+          {autoAprobar && !pago?.id && puedeContinuar && mesesSeleccionados.length > 0 && (
+            <label className="pf-condonar">
+              <input
+                type="checkbox"
+                checked={condonar}
+                onChange={(e) => {
+                  const activo = e.target.checked;
+                  setCondonar(activo);
+                  if (activo) {
+                    setMontosPorMes(Object.fromEntries(mesesSeleccionados.map((idx) => [idx, 0])));
+                    setFormData((prev) => ({ ...prev, monto_total_pagado: 0 }));
+                  } else {
+                    setMontosPorMes(Object.fromEntries(mesesSeleccionados.map((idx) => [idx, montoSugeridoMes(idx + 1)])));
+                    if (mesesSeleccionados.length === 1) setFormData((prev) => ({ ...prev, monto_total_pagado: montoSugeridoMes(mesesSeleccionados[0] + 1) }));
+                  }
+                }}
+              />
+              <span>
+                <strong>Condonar la deuda de {mesesSeleccionados.length === 1 ? 'este mes' : `estos ${mesesSeleccionados.length} meses`}</strong>
+                <small>El club perdona lo adeudado: queda al día, con monto $0 y nota “Deuda condonada”.</small>
+              </span>
+            </label>
           )}
 
           {/* Monto pagado — un solo campo si es un mes, uno por mes si son varios

@@ -44,6 +44,8 @@ test('olvidé mi contraseña: código al correo y nueva clave', async ({ page, r
   const desde = Date.now() - 1000;
   await abrirIngreso(page);
   await page.getByRole('button', { name: /Primera vez u olvidaste/ }).click();
+  // Con correo configurado (local), la vista de correo aparece tras consultar /api/health.
+  await expect(page.getByRole('button', { name: 'Enviar código a mi correo' })).toBeVisible();
   await page.getByPlaceholder('RUT').fill(CUENTAS.socio.rut);
   await page.getByRole('button', { name: 'Enviar código a mi correo' }).click();
   await expect(page.getByRole('heading', { name: 'Crea tu contraseña' })).toBeVisible();
@@ -96,6 +98,8 @@ test('cuenta sin correo real: ofrece WhatsApp del club', async ({ page }) => {
   await pool.query("UPDATE cuentas SET correo = 'pendiente-99700007@actualizar.local' WHERE rut = $1", [CUENTAS.mesa.rut]);
   await abrirIngreso(page);
   await page.getByRole('button', { name: /Primera vez u olvidaste/ }).click();
+  // Con correo configurado (local), la vista de correo aparece tras consultar /api/health.
+  await expect(page.getByRole('button', { name: 'Enviar código a mi correo' })).toBeVisible();
   await page.getByPlaceholder('RUT').fill(CUENTAS.mesa.rut);
   await page.getByRole('button', { name: 'Enviar código a mi correo' }).click();
   await expect(page.getByText(/No encontramos un correo registrado/)).toBeVisible();

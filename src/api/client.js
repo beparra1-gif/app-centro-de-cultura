@@ -822,6 +822,18 @@ export const pagosMensualidadesAPI = {
     const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/importar-planilla?url=${encodeURIComponent(url)}`);
     return handleResponse(response);
   },
+  obtenerImportacionAutomatica: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/importar-planilla/auto`);
+    return handleResponse(response);
+  },
+  guardarImportacionAutomatica: async ({ url, activo }) => {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/importar-planilla/auto`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, activo }),
+    });
+    return handleResponse(response);
+  },
   aplicarImportacionPlanilla: async ({ url, resumen }) => {
     const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/importar-planilla`, {
       method: 'POST',

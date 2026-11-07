@@ -264,7 +264,6 @@ function PerfilTesoreriaPanel({
   // cuenta guardada con guión no disparaba el reparto de cuota socio+hijos.
   const perfilPrincipal = normalizarRol(cuentaActual?.perfil_principal || cuentaActual?.rol || '');
   const esSocio = Boolean(cuentaActual?.es_socio) || ['socio', 'socio_apoderado', 'directiva'].includes(perfilPrincipal);
-  const esSocioApoderado = perfilPrincipal === 'socio_apoderado';
 
   // Sin pupilo (socio revisado directo, sin deportistas) la deuda no vive en
   // morososAdmin (deuda de jugadores) sino en sociosMorosos (deuda de cuota
@@ -428,7 +427,7 @@ function PerfilTesoreriaPanel({
   const montoAcordadoFamilia = Number(cuentaActual?.monto_mensual_override || 0);
   const { cuotaDeportistas, cuotaReferencial: cuotaDeportistaReferencial } = calcularCuotaDeportistasFamilia({
     pupilosFamilia: pupilosActivos,
-    esSocioApoderado,
+    esSocioApoderado: esSocio,
     montoAcordado: montoAcordadoFamilia,
   });
   const cuotaSocioAplicada = esSocio ? cuotaSocio : 0;

@@ -38,7 +38,7 @@ const {
 } = require('./security/auth');
 const { normalizarRol, ROLES_BASE } = require('./security/accessControl');
 const { enviarCorreo, correoDisponible, enmascararCorreo, esCorreoReal } = require('./lib/correo');
-const { planificarImportacion } = require('./lib/importarPagosPlanilla');
+const { planificarImportacion, parsearGidsPlanilla } = require('./lib/importarPagosPlanilla');
 
 const app = express();
 let isSheetsSyncRunning = false;
@@ -6503,34 +6503,57 @@ const obtenerPrimerMesCobrableJugador = (jugador = {}) => {
 // IMPORTAR PAGOS 2026 DESDE LA PLANILLA DE TESORERÍA (solo super admin)
 // ==========================================
 // GET revisa (no cambia nada) y POST aplica el MISMO plan recalculado en el
-// servidor (ver backend/lib/importarPagosPlanilla.js). La planilla debe
-// estar compartida "cualquiera con el enlace" (lectura) mientras se usa.
+// servidor (ver backend/lib/importarPagosPlanilla.js). Con la carga
+// automática activada, un cron aplica cada 30 min lo que falte (crear
+// deportistas y agregar pagos; los duplicados se borran solo a mano). La
+// planilla debe estar compartida "cualquiera con el enlace" (lectura).
 const leerPlanillaPagos = async (urlPlanilla) => {
   const id = (String(urlPlanilla || '').match(/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/) || [])[1];
   if (!id) throw Object.assign(new Error('Pega el enlace completo de la planilla de Google.'), { status: 400 });
-  const leerHoja = async (hoja) => {
-    const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(hoja)}`, { signal: AbortSignal.timeout(20000) });
-    const texto = await r.text();
-    if (!r.ok || /^\s*<!DOCTYPE|<html/i.test(texto)) {
-      throw Object.assign(new Error(`No se pudo leer la hoja "${hoja}". Revisa que la planilla esté compartida con "Cualquier persona con el enlace".`), { status: 400 });
+  const errorLectura = (hoja) => Object.assign(
+    new Error(`No se pudo leer la hoja "${hoja}". Revisa que la planilla esté compartida con "Cualquier persona con el enlace".`),
+    { status: 400 }
+  );
+  const esHtml = (texto) => /^\s*<!DOCTYPE|<html/i.test(texto);
+  // gid de cada pestaña: la exportación por gid trae TODAS las filas (gviz
+  // puede truncar). Si no se logra, se usa gviz por nombre como respaldo.
+  let gids = {};
+  try {
+    const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/edit`, { signal: AbortSignal.timeout(20000) });
+    if (r.ok) gids = parsearGidsPlanilla(await r.text());
+  } catch { /* respaldo gviz */ }
+  const leerHoja = async (hoja, { opcional = false } = {}) => {
+    const gid = gids[hoja.toLowerCase()];
+    const url = gid
+      ? `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`
+      : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(hoja)}`;
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
+      const texto = await r.text();
+      if (!r.ok || esHtml(texto)) throw errorLectura(hoja);
+      return texto;
+    } catch (error) {
+      if (opcional) return '';
+      throw error.status ? error : errorLectura(hoja);
     }
-    return texto;
   };
-  const [csvDeportistas, csvSocios] = await Promise.all([leerHoja('Pagos deportistas'), leerHoja('Pagos Socio')]);
-  return { csvDeportistas, csvSocios };
+  const [csvDeportistas, csvSocios, csvBase] = await Promise.all([
+    leerHoja('Pagos deportistas'), leerHoja('Pagos Socio'), leerHoja('Base Principal', { opcional: true }),
+  ]);
+  return { csvDeportistas, csvSocios, csvBase };
 };
 
 const construirPlanImportacionPagos = async (urlPlanilla) => {
-  const { csvDeportistas, csvSocios } = await leerPlanillaPagos(urlPlanilla);
+  const { csvDeportistas, csvSocios, csvBase } = await leerPlanillaPagos(urlPlanilla);
   const [jugadores, cuentas, pagos, utm] = await Promise.all([
     pool.query('SELECT rut_jugador, nombres, apellido_paterno, rut_apoderado, correo_apoderado, valor_mensualidad, beca, exento_mensualidad FROM jugadores'),
-    pool.query('SELECT rut, nombres, apellido_paterno, correo, es_socio, monto_mensual_base, utm_valor_referencia FROM cuentas'),
+    pool.query('SELECT rut, nombres, apellido_paterno, correo, es_socio, monto_mensual_base, utm_valor_referencia, monto_mensual_override FROM cuentas'),
     pool.query('SELECT id, rut_jugador, rut_pagos, concepto_pago, meses_correspondientes, monto_total_pagado, estado_pago, comprobante_url, notas_tesoreria FROM pagos_mensualidades'),
     pool.query('SELECT mes, valor FROM utm_mensual WHERE anio = 2026'),
   ]);
   try {
     return planificarImportacion({
-      csvDeportistas, csvSocios,
+      csvDeportistas, csvSocios, csvBase,
       jugadores: jugadores.rows, cuentas: cuentas.rows, pagos: pagos.rows,
       utmPorMes: Object.fromEntries(utm.rows.map((r) => [Number(r.mes), Number(r.valor)])),
     });
@@ -6538,6 +6561,134 @@ const construirPlanImportacionPagos = async (urlPlanilla) => {
     throw Object.assign(error, { status: 400 });
   }
 };
+
+// Aplica un plan en UNA transacción: fichas nuevas → pagos → (opcional)
+// borrar duplicados. Quien llama debe tener tomado isSheetsSyncRunning.
+const aplicarPlanImportacionPagos = async (plan, { borrarDuplicados }) => {
+  const client = await pool.connect();
+  let creados = 0;
+  let borrados = 0;
+  try {
+    await client.query('BEGIN');
+    for (const { ficha } of plan.crearDeportistas || []) {
+      const r = await client.query(
+        `INSERT INTO jugadores (rut_jugador, nombres, apellido_paterno, apellido_materno, fecha_nacimiento, rama, categoria,
+                                correo_apoderado, fecha_ingreso, estado)
+         SELECT $1::varchar, $2, $3, $4, $5::date, $6, $7, $8, $9::date, 'ACTIVO'
+         WHERE NOT EXISTS (SELECT 1 FROM jugadores WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = REPLACE(UPPER($1::varchar), '-', ''))`,
+        [ficha.rut_jugador, ficha.nombres, ficha.apellido_paterno, ficha.apellido_materno, ficha.fecha_nacimiento,
+          ficha.rama, ficha.categoria, ficha.correo_apoderado, ficha.fecha_ingreso]
+      );
+      creados += r.rowCount;
+    }
+    for (const item of plan.agregar) {
+      const p = item.pago;
+      await client.query(
+        `INSERT INTO pagos_mensualidades (rut_jugador, rut_pagos, correo_apoderado, concepto_pago, cantidad_meses_pagados,
+                                          meses_correspondientes, monto_total_pagado, estado_pago, fecha_aprobacion, notas_tesoreria)
+         VALUES ($1, $2, $3, $4, 1, $5, $6, 'APROBADO', NOW(), $7)`,
+        [p.rut_jugador, p.rut_pagos, p.correo_apoderado, p.concepto_pago, p.meses_correspondientes, p.monto_total_pagado, p.notas_tesoreria]
+      );
+    }
+    const ids = borrarDuplicados ? plan.duplicadosBorrar.map((d) => d.id) : [];
+    if (ids.length) borrados = (await client.query('DELETE FROM pagos_mensualidades WHERE id = ANY($1::int[])', [ids])).rowCount;
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+  // Reescribe ya las pestañas de BASE_CCF (antes de soltar el bloqueo de la
+  // importación automática, que re-insertaría por id lo borrado).
+  if (creados) sheetsSyncManager.enqueueTable('jugadores');
+  sheetsSyncManager.enqueueTable('pagos_mensualidades');
+  await sheetsSyncManager.flush().catch((e) => console.error('[IMPORTAR-PLANILLA] flush Sheets:', e.message));
+  return { creados, agregados: plan.agregar.length, borrados };
+};
+
+// Configuración persistente (tabla clave/valor; ver migrations/init.js).
+let tablaConfiguracionLista = null;
+const asegurarTablaConfiguracion = () => {
+  tablaConfiguracionLista = tablaConfiguracionLista || pool.query(
+    `CREATE TABLE IF NOT EXISTS configuracion_sistema (
+       clave VARCHAR(100) PRIMARY KEY,
+       valor JSONB NOT NULL DEFAULT '{}'::jsonb,
+       actualizado_por VARCHAR(50),
+       updated_at TIMESTAMP DEFAULT NOW()
+     )`
+  ).catch((e) => { tablaConfiguracionLista = null; throw e; });
+  return tablaConfiguracionLista;
+};
+const CLAVE_IMPORTACION_AUTO = 'importacion_planilla_pagos';
+const leerConfigImportacion = async () => {
+  await asegurarTablaConfiguracion();
+  const r = await pool.query('SELECT valor FROM configuracion_sistema WHERE clave = $1', [CLAVE_IMPORTACION_AUTO]);
+  return { url: '', activo: false, ultimaEjecucion: null, ...(r.rows[0]?.valor || {}) };
+};
+const guardarConfigImportacion = async (cambios, actor = null) => {
+  const actual = await leerConfigImportacion();
+  const nuevo = { ...actual, ...cambios };
+  await pool.query(
+    `INSERT INTO configuracion_sistema (clave, valor, actualizado_por, updated_at) VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado_por = COALESCE(EXCLUDED.actualizado_por, configuracion_sistema.actualizado_por), updated_at = NOW()`,
+    [CLAVE_IMPORTACION_AUTO, JSON.stringify(nuevo), actor]
+  );
+  return nuevo;
+};
+
+const ejecutarImportacionAutomatica = async () => {
+  const config = await leerConfigImportacion().catch(() => null);
+  if (!config?.activo || !config.url || isSheetsSyncRunning) return null;
+  isSheetsSyncRunning = true;
+  let resultado;
+  try {
+    const plan = await construirPlanImportacionPagos(config.url);
+    const hayCambios = plan.agregar.length + (plan.crearDeportistas || []).length > 0;
+    const aplicado = hayCambios ? await aplicarPlanImportacionPagos(plan, { borrarDuplicados: false }) : { creados: 0, agregados: 0, borrados: 0 };
+    resultado = {
+      fecha: new Date().toISOString(), ok: true, ...aplicado,
+      omitidos: plan.resumen.omitidos, duplicadosPendientes: plan.resumen.duplicadosBorrar,
+    };
+    if (hayCambios) console.log(`[IMPORTAR-PLANILLA][AUTO] ${aplicado.creados} deportistas creados, ${aplicado.agregados} pagos agregados.`);
+  } catch (error) {
+    resultado = { fecha: new Date().toISOString(), ok: false, error: error.message };
+    console.error('[IMPORTAR-PLANILLA][AUTO]', error.message);
+  } finally {
+    isSheetsSyncRunning = false;
+  }
+  await guardarConfigImportacion({ ultimaEjecucion: resultado }).catch(() => {});
+  return resultado;
+};
+// Cada 30 min, desfasado del cron de BASE_CCF (*/10).
+cron.schedule('5,35 * * * *', () => { void ejecutarImportacionAutomatica(); });
+
+app.get('/api/pagos-mensualidades/importar-planilla/auto', authenticate, requireRole('super_admin'), async (req, res) => {
+  try {
+    res.json(await leerConfigImportacion());
+  } catch (err) {
+    console.error('[GET importar-planilla/auto]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/pagos-mensualidades/importar-planilla/auto', authenticate, requireRole('super_admin'), async (req, res) => {
+  try {
+    const activo = Boolean(req.body?.activo);
+    const url = String(req.body?.url || '').trim();
+    if (activo) {
+      // Solo se activa con una planilla que se pueda leer y tenga las hojas esperadas.
+      await construirPlanImportacionPagos(url);
+    }
+    const config = await guardarConfigImportacion({ url, activo }, req.actor?.rut || null);
+    let ejecucion = null;
+    if (activo) ejecucion = await ejecutarImportacionAutomatica();
+    res.json({ ...config, ultimaEjecucion: ejecucion || config.ultimaEjecucion });
+  } catch (err) {
+    if (!err.status) console.error('[PUT importar-planilla/auto]', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
 
 app.get('/api/pagos-mensualidades/importar-planilla', authenticate, requireRole('super_admin'), async (req, res) => {
   try {
@@ -6550,52 +6701,27 @@ app.get('/api/pagos-mensualidades/importar-planilla', authenticate, requireRole(
 
 app.post('/api/pagos-mensualidades/importar-planilla', authenticate, requireRole('super_admin'), async (req, res) => {
   // Mientras se aplica, se pausa la importación automática desde BASE_CCF
-  // (cron cada 10 min): esa importación re-inserta por id cualquier fila que
-  // siga en la pestaña PAGOS_MENSUALIDADES, así que los duplicados borrados
-  // volverían si la pestaña no se reescribe antes (ver flush más abajo).
+  // (cron cada 10 min), que re-insertaría por id los duplicados borrados.
   if (isSheetsSyncRunning) {
     return res.status(409).json({ error: 'Hay una sincronización con Google Sheets en curso. Intenta de nuevo en un minuto.' });
   }
   isSheetsSyncRunning = true;
-  const client = await pool.connect();
   try {
     const plan = await construirPlanImportacionPagos(req.body?.url);
     // Lo que se aplica debe ser lo que el admin revisó.
     const esperado = req.body?.resumen || {};
-    const cambio = ['agregarDeportistas', 'agregarSocios', 'duplicadosBorrar']
-      .some((k) => Number(esperado[k]) !== Number(plan.resumen[k]));
+    const cambio = ['crearDeportistas', 'agregarDeportistas', 'agregarSocios', 'duplicadosBorrar']
+      .some((k) => Number(esperado[k] || 0) !== Number(plan.resumen[k] || 0));
     if (cambio) {
       return res.status(409).json({ error: 'Los datos cambiaron desde que revisaste la planilla. Vuelve a revisarla antes de aplicar.', resumen: plan.resumen });
     }
-
-    await client.query('BEGIN');
-    for (const item of plan.agregar) {
-      const p = item.pago;
-      await client.query(
-        `INSERT INTO pagos_mensualidades (rut_jugador, rut_pagos, correo_apoderado, concepto_pago, cantidad_meses_pagados,
-                                          meses_correspondientes, monto_total_pagado, estado_pago, fecha_aprobacion, notas_tesoreria)
-         VALUES ($1, $2, $3, $4, 1, $5, $6, 'APROBADO', NOW(), $7)`,
-        [p.rut_jugador, p.rut_pagos, p.correo_apoderado, p.concepto_pago, p.meses_correspondientes, p.monto_total_pagado, p.notas_tesoreria]
-      );
-    }
-    const ids = plan.duplicadosBorrar.map((d) => d.id);
-    const borrados = ids.length
-      ? (await client.query('DELETE FROM pagos_mensualidades WHERE id = ANY($1::int[])', [ids])).rowCount
-      : 0;
-    await client.query('COMMIT');
-
-    // Reescribe ya la pestaña PAGOS_MENSUALIDADES de BASE_CCF (antes de
-    // soltar el bloqueo de la importación automática).
-    sheetsSyncManager.enqueueTable('pagos_mensualidades');
-    await sheetsSyncManager.flush().catch((e) => console.error('[IMPORTAR-PLANILLA] flush Sheets:', e.message));
-    console.log(`[IMPORTAR-PLANILLA] ${plan.agregar.length} pagos agregados, ${borrados} duplicados borrados (por ${req.actor?.rut}).`);
-    return res.json({ ok: true, agregados: plan.agregar.length, borrados, resumen: plan.resumen });
+    const aplicado = await aplicarPlanImportacionPagos(plan, { borrarDuplicados: true });
+    console.log(`[IMPORTAR-PLANILLA] ${aplicado.creados} deportistas creados, ${aplicado.agregados} pagos agregados, ${aplicado.borrados} duplicados borrados (por ${req.actor?.rut}).`);
+    return res.json({ ok: true, ...aplicado, resumen: plan.resumen });
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
     if (!err.status) console.error('[POST /api/pagos-mensualidades/importar-planilla]', err);
     return res.status(err.status || 500).json({ error: err.message });
   } finally {
-    client.release();
     isSheetsSyncRunning = false;
   }
 });
@@ -6701,9 +6827,13 @@ app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'v
         meses_correspondientes,
         monto_total_pagado,
         comprobante_url,
-        correccionesPago.length > 0
-          ? `Correccion requerida: ${correccionesPago.join(', ')}`
-          : null,
+        // Nota de Tesorería (p. ej. "Deuda condonada" o el detalle de un
+        // pago manual): antes se descartaba siempre. Solo staff/admin la
+        // puede escribir; una familia que sube un comprobante, no.
+        [
+          correccionesPago.length > 0 ? `Correccion requerida: ${correccionesPago.join(', ')}` : '',
+          esStaffOAdminPago ? String(req.body?.notas_tesoreria || '').trim().slice(0, 1000) : '',
+        ].filter(Boolean).join(' · ') || null,
       ]
     );
     res.json(result.rows[0]);
