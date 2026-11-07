@@ -3695,6 +3695,7 @@ function App() {
                 morososAdmin={morososAdmin}
                 sociosMorosos={sociosMorosos}
                 pagosMensualidadesAdmin={pagosMensualidadesAdmin}
+                recargarPagosMensualidades={recargarPagosMensualidades}
                 onSheetsSyncComplete={sincronizarDatosDesdeSheets}
                 onCancelEdit={restaurarPermisosAntesCancelacion}
                 onPartidosChanged={recargarPartidosResumen}

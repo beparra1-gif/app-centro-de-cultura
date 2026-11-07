@@ -113,6 +113,31 @@ test('"Ver cuenta" abre la cuenta de la familia con ambos hijos', async ({ page 
   await expect(page.getByText(/E2E HijoDos/).last()).toBeVisible();
 });
 
+test('revisión: un pago del hijo guardado como cuota de socio se pasa a mensualidad', async ({ page }) => {
+  // Así quedaban los pagos manuales antes de la corrección.
+  const { rows: [malo] } = await pool.query(
+    `INSERT INTO pagos_mensualidades (rut_jugador, rut_pagos, concepto_pago, cantidad_meses_pagados, meses_correspondientes, monto_total_pagado, estado_pago)
+     VALUES ($1, $2, 'Mensualidad Socio', 1, 'Febrero 2026', 30000, 'aprobado') RETURNING id`,
+    [HIJO2.rut, CUENTAS.socio_apoderado.rut]
+  );
+  await irATesoreria(page);
+  await expect(page.getByRole('button', { name: /guardado como cuota de socio/ })).toBeVisible();
+  await page.getByRole('button', { name: /guardado como cuota de socio/ }).click();
+  await expect(page.getByRole('tab', { name: /Validar pagos/ })).toHaveAttribute('aria-selected', 'true');
+
+  const item = page.locator('.rc-item', { hasText: 'E2E HijoDos Prueba' });
+  await expect(item).toContainText('Febrero 2026');
+  await expect(item).toContainText('Pagó: E2E SocioApoderado Prueba');
+  await item.getByRole('button', { name: 'Es mensualidad del deportista' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Pasar a mensualidad' }).click();
+  await expect(page.getByText('1 pago pasó a mensualidad del deportista.')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('.rc-item', { hasText: 'E2E HijoDos Prueba' })).toHaveCount(0);
+
+  const { rows: [corregido] } = await pool.query('SELECT concepto_pago, rut_jugador, estado_pago, notas_tesoreria FROM pagos_mensualidades WHERE id = $1', [malo.id]);
+  expect(corregido).toMatchObject({ concepto_pago: 'Mensualidad', rut_jugador: HIJO2.rut, estado_pago: 'aprobado' });
+  expect(corregido.notas_tesoreria).toMatch(/Reclasificado de "Mensualidad Socio" a "Mensualidad".*E2E SuperAdmin/);
+});
+
 test('las pestañas separan Validar pagos y Resumen', async ({ page }) => {
   await irATesoreria(page);
   await page.getByRole('tab', { name: /Validar pagos/ }).click();

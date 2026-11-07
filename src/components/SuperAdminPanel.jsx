@@ -42,6 +42,8 @@ import LogoPicker from './LogoPicker';
 import PagoForm from './PagoForm';
 import PerfilTesoreriaPanel from './PerfilTesoreriaPanel';
 import TesoreriaCuentasPanel from './TesoreriaCuentasPanel';
+import RevisionClasificacionPagos from './RevisionClasificacionPagos';
+import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
 import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
 import QrScanner from './QrScanner';
 import ResultadosCards from './ResultadosCards';
@@ -142,6 +144,7 @@ function SuperAdminPanel({
   morososAdmin,
   sociosMorosos,
   pagosMensualidadesAdmin,
+  recargarPagosMensualidades,
   onSheetsSyncComplete,
   onCancelEdit,
   onPartidosChanged,
@@ -973,7 +976,15 @@ function SuperAdminPanel({
   // socios morosos, morosos por deportista y la cuenta de una familia, todo
   // seguido) y cada persona aparecía repartida en varias listas.
   const [seccionTesoreria, setSeccionTesoreria] = useState('cobrar');
-  const totalPorValidar = pagosPendientesReales.length + pagosMigradosPendientes.length;
+  // Pagos de deportistas guardados por error como cuota de socio (ver
+  // utils/pagosMalClasificados): se revisan en "Validar pagos".
+  const pagosMalClasificados = useMemo(
+    () => (puedeAdminCompleto
+      ? detectarPagosMalClasificados({ pagos: pagosMensualidadesAdmin, jugadores: jugadoresAdmin, cuentas: cuentasAdmin })
+      : []),
+    [puedeAdminCompleto, pagosMensualidadesAdmin, jugadoresAdmin, cuentasAdmin]
+  );
+  const totalPorValidar = pagosPendientesReales.length + pagosMigradosPendientes.length + pagosMalClasificados.length;
   const cuentasQuePagan = useMemo(
     () => construirCuentasQuePagan({ cuentas: cuentasAdmin, jugadores: jugadoresAdmin, morosos: morososAdmin, sociosMorosos }),
     [cuentasAdmin, jugadoresAdmin, morososAdmin, sociosMorosos]
@@ -3582,6 +3593,17 @@ function SuperAdminPanel({
           </div>
           {seccionTesoreria === 'validar' && (
             <>
+          <RevisionClasificacionPagos
+            items={pagosMalClasificados}
+            autor={usuarioAutenticado?.nombre
+              || `${usuarioAutenticado?.nombres || ''} ${usuarioAutenticado?.apellido_paterno || ''}`.trim()
+              || usuarioAutenticado?.rut
+              || ''}
+            onActualizado={async () => {
+              if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades();
+              else window.location.reload();
+            }}
+          />
           <h3 className="section-title mt-0">Bandeja de Validación</h3>
 
           {/* Pagos reales con comprobante */}
@@ -4029,6 +4051,14 @@ function SuperAdminPanel({
           )}
           {seccionTesoreria === 'cobrar' && (
             <>
+              {pagosMalClasificados.length > 0 && (
+                <button type="button" className="tc-aviso-revision" onClick={() => setSeccionTesoreria('validar')}>
+                  <AlertTriangle size={16} color="var(--naranja-aviso)" />
+                  <span>
+                    Hay {pagosMalClasificados.length} {pagosMalClasificados.length === 1 ? 'pago de un deportista guardado' : 'pagos de deportistas guardados'} como cuota de socio: los montos por cobrar pueden estar mal hasta revisarlos. Revisar →
+                  </span>
+                </button>
+              )}
               <TesoreriaCuentasPanel
                 filas={cuentasQuePagan}
                 puedeRegistrarPago={rolUsuario === 'super_admin'}

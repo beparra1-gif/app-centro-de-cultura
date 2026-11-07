@@ -4000,3 +4000,20 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
   .tc-resumen-total { grid-column: 1 / -1; }
   .tc-select-rama { width: 100%; }
 }
+
+/* Tesorería → revisión de pagos de deportistas guardados como cuota de socio */
+.rc-card { background: var(--estado-revision-fondo); border: 1px solid var(--estado-revision-borde); border-radius: var(--radius-md); padding: 14px; margin-bottom: 18px; }
+.rc-header { display: flex; gap: 10px; align-items: flex-start; }
+.rc-header h4 { margin: 0 0 4px; font-size: 15px; font-weight: 900; color: var(--texto-principal); }
+.rc-header p { margin: 0; font-size: var(--texto-min); font-weight: 600; color: var(--texto-principal); opacity: 0.8; }
+.rc-lote { width: 100%; margin-top: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.rc-lista { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.rc-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--blanco-tarjeta); border-radius: var(--radius-sm); padding: 10px 12px; border: 1px solid var(--borde-suave); }
+.rc-item-texto { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 200px; }
+.rc-item-texto strong { font-size: 14px; color: var(--texto-principal); }
+.rc-item-texto span { font-size: var(--texto-min); font-weight: 700; color: var(--texto-secundario); }
+.rc-pagador { display: inline-flex; align-items: center; gap: 4px; }
+.rc-item-texto .rc-pista { color: var(--estado-pagado-texto); }
+.rc-item-botones { display: flex; gap: 6px; flex-wrap: wrap; }
+.rc-item-botones button:disabled { opacity: 0.55; cursor: not-allowed; }
+.tc-aviso-revision { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: var(--estado-revision-fondo); border: 1px solid var(--estado-revision-borde); color: var(--texto-principal); border-radius: var(--radius-md); padding: 10px 12px; margin-bottom: 12px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
