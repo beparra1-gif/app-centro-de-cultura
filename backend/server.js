@@ -38,6 +38,7 @@ const {
 } = require('./security/auth');
 const { normalizarRol, ROLES_BASE } = require('./security/accessControl');
 const { enviarCorreo, correoDisponible, enmascararCorreo, esCorreoReal } = require('./lib/correo');
+const { planificarImportacion } = require('./lib/importarPagosPlanilla');
 
 const app = express();
 let isSheetsSyncRunning = false;
@@ -6497,6 +6498,107 @@ const obtenerPrimerMesCobrableJugador = (jugador = {}) => {
 
   return null;
 };
+
+// ==========================================
+// IMPORTAR PAGOS 2026 DESDE LA PLANILLA DE TESORERÍA (solo super admin)
+// ==========================================
+// GET revisa (no cambia nada) y POST aplica el MISMO plan recalculado en el
+// servidor (ver backend/lib/importarPagosPlanilla.js). La planilla debe
+// estar compartida "cualquiera con el enlace" (lectura) mientras se usa.
+const leerPlanillaPagos = async (urlPlanilla) => {
+  const id = (String(urlPlanilla || '').match(/spreadsheets\/d\/([a-zA-Z0-9_-]{20,})/) || [])[1];
+  if (!id) throw Object.assign(new Error('Pega el enlace completo de la planilla de Google.'), { status: 400 });
+  const leerHoja = async (hoja) => {
+    const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(hoja)}`, { signal: AbortSignal.timeout(20000) });
+    const texto = await r.text();
+    if (!r.ok || /^\s*<!DOCTYPE|<html/i.test(texto)) {
+      throw Object.assign(new Error(`No se pudo leer la hoja "${hoja}". Revisa que la planilla esté compartida con "Cualquier persona con el enlace".`), { status: 400 });
+    }
+    return texto;
+  };
+  const [csvDeportistas, csvSocios] = await Promise.all([leerHoja('Pagos deportistas'), leerHoja('Pagos Socio')]);
+  return { csvDeportistas, csvSocios };
+};
+
+const construirPlanImportacionPagos = async (urlPlanilla) => {
+  const { csvDeportistas, csvSocios } = await leerPlanillaPagos(urlPlanilla);
+  const [jugadores, cuentas, pagos, utm] = await Promise.all([
+    pool.query('SELECT rut_jugador, nombres, apellido_paterno, rut_apoderado, correo_apoderado, valor_mensualidad, beca, exento_mensualidad FROM jugadores'),
+    pool.query('SELECT rut, nombres, apellido_paterno, correo, es_socio, monto_mensual_base, utm_valor_referencia FROM cuentas'),
+    pool.query('SELECT id, rut_jugador, rut_pagos, concepto_pago, meses_correspondientes, monto_total_pagado, estado_pago, comprobante_url, notas_tesoreria FROM pagos_mensualidades'),
+    pool.query('SELECT mes, valor FROM utm_mensual WHERE anio = 2026'),
+  ]);
+  try {
+    return planificarImportacion({
+      csvDeportistas, csvSocios,
+      jugadores: jugadores.rows, cuentas: cuentas.rows, pagos: pagos.rows,
+      utmPorMes: Object.fromEntries(utm.rows.map((r) => [Number(r.mes), Number(r.valor)])),
+    });
+  } catch (error) {
+    throw Object.assign(error, { status: 400 });
+  }
+};
+
+app.get('/api/pagos-mensualidades/importar-planilla', authenticate, requireRole('super_admin'), async (req, res) => {
+  try {
+    res.json(await construirPlanImportacionPagos(req.query.url));
+  } catch (err) {
+    if (!err.status) console.error('[GET /api/pagos-mensualidades/importar-planilla]', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.post('/api/pagos-mensualidades/importar-planilla', authenticate, requireRole('super_admin'), async (req, res) => {
+  // Mientras se aplica, se pausa la importación automática desde BASE_CCF
+  // (cron cada 10 min): esa importación re-inserta por id cualquier fila que
+  // siga en la pestaña PAGOS_MENSUALIDADES, así que los duplicados borrados
+  // volverían si la pestaña no se reescribe antes (ver flush más abajo).
+  if (isSheetsSyncRunning) {
+    return res.status(409).json({ error: 'Hay una sincronización con Google Sheets en curso. Intenta de nuevo en un minuto.' });
+  }
+  isSheetsSyncRunning = true;
+  const client = await pool.connect();
+  try {
+    const plan = await construirPlanImportacionPagos(req.body?.url);
+    // Lo que se aplica debe ser lo que el admin revisó.
+    const esperado = req.body?.resumen || {};
+    const cambio = ['agregarDeportistas', 'agregarSocios', 'duplicadosBorrar']
+      .some((k) => Number(esperado[k]) !== Number(plan.resumen[k]));
+    if (cambio) {
+      return res.status(409).json({ error: 'Los datos cambiaron desde que revisaste la planilla. Vuelve a revisarla antes de aplicar.', resumen: plan.resumen });
+    }
+
+    await client.query('BEGIN');
+    for (const item of plan.agregar) {
+      const p = item.pago;
+      await client.query(
+        `INSERT INTO pagos_mensualidades (rut_jugador, rut_pagos, correo_apoderado, concepto_pago, cantidad_meses_pagados,
+                                          meses_correspondientes, monto_total_pagado, estado_pago, fecha_aprobacion, notas_tesoreria)
+         VALUES ($1, $2, $3, $4, 1, $5, $6, 'APROBADO', NOW(), $7)`,
+        [p.rut_jugador, p.rut_pagos, p.correo_apoderado, p.concepto_pago, p.meses_correspondientes, p.monto_total_pagado, p.notas_tesoreria]
+      );
+    }
+    const ids = plan.duplicadosBorrar.map((d) => d.id);
+    const borrados = ids.length
+      ? (await client.query('DELETE FROM pagos_mensualidades WHERE id = ANY($1::int[])', [ids])).rowCount
+      : 0;
+    await client.query('COMMIT');
+
+    // Reescribe ya la pestaña PAGOS_MENSUALIDADES de BASE_CCF (antes de
+    // soltar el bloqueo de la importación automática).
+    sheetsSyncManager.enqueueTable('pagos_mensualidades');
+    await sheetsSyncManager.flush().catch((e) => console.error('[IMPORTAR-PLANILLA] flush Sheets:', e.message));
+    console.log(`[IMPORTAR-PLANILLA] ${plan.agregar.length} pagos agregados, ${borrados} duplicados borrados (por ${req.actor?.rut}).`);
+    return res.json({ ok: true, agregados: plan.agregar.length, borrados, resumen: plan.resumen });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (!err.status) console.error('[POST /api/pagos-mensualidades/importar-planilla]', err);
+    return res.status(err.status || 500).json({ error: err.message });
+  } finally {
+    client.release();
+    isSheetsSyncRunning = false;
+  }
+});
 
 app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'validacion_pagos', 'admin_dashboard'), async (req, res) => {
   const {

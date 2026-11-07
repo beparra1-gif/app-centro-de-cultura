@@ -4017,3 +4017,23 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .rc-item-botones { display: flex; gap: 6px; flex-wrap: wrap; }
 .rc-item-botones button:disabled { opacity: 0.55; cursor: not-allowed; }
 .tc-aviso-revision { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: var(--estado-revision-fondo); border: 1px solid var(--estado-revision-borde); color: var(--texto-principal); border-radius: var(--radius-md); padding: 10px 12px; margin-bottom: 12px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+
+/* Tesorería → Importar pagos desde la planilla (ImportarPagosPlanilla) */
+.ip-card { background: var(--blanco-tarjeta); border: 1px solid var(--borde-suave); border-radius: var(--radius-md); margin-bottom: 18px; box-shadow: var(--sombra-tarjeta); }
+.ip-toggle { width: 100%; display: flex; gap: 10px; align-items: flex-start; text-align: left; background: none; border: none; padding: 14px; cursor: pointer; font-family: inherit; color: var(--texto-principal); min-height: var(--toque-min); }
+.ip-toggle strong { display: block; font-size: 14px; font-weight: 900; }
+.ip-toggle small { display: block; font-size: var(--texto-min); font-weight: 600; color: var(--texto-secundario); margin-top: 2px; }
+.ip-cuerpo { padding: 0 14px 14px; }
+.ip-label { display: block; font-size: var(--texto-min); font-weight: 800; color: var(--texto-secundario); margin-bottom: 6px; }
+.ip-fila-url { display: flex; gap: 8px; }
+.ip-fila-url .form-input { flex: 1; min-width: 0; margin: 0; }
+.ip-ayuda { font-size: var(--texto-min); color: var(--texto-secundario); margin: 8px 0 0; }
+.ip-resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0 10px; }
+.ip-resumen div { background: var(--fondo-input); border-radius: var(--radius-sm); padding: 8px 10px; display: flex; flex-direction: column; }
+.ip-resumen span { font-size: 11px; font-weight: 800; color: var(--texto-secundario); text-transform: uppercase; }
+.ip-resumen strong { font-size: 17px; font-weight: 900; color: var(--texto-principal); }
+.ip-lista { margin-top: 8px; border: 1px solid var(--borde-suave); border-radius: var(--radius-sm); padding: 8px 10px; }
+.ip-lista summary { cursor: pointer; font-size: 13px; font-weight: 800; color: var(--texto-principal); }
+.ip-lista ul { margin: 8px 0 0; padding-left: 18px; max-height: 260px; overflow-y: auto; font-size: var(--texto-min); color: var(--texto-principal); display: flex; flex-direction: column; gap: 4px; }
+.ip-aplicar { margin-top: 14px; width: 100%; }
+@media (max-width: 560px) { .ip-resumen { grid-template-columns: repeat(2, 1fr); } }

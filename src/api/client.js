@@ -816,6 +816,21 @@ export const utmAPI = {
 // ========== PAGOS MENSUALIDADES (FASE 1) ==========
 
 export const pagosMensualidadesAPI = {
+  // Importar pagos 2026 desde la planilla de Tesorería (solo super admin):
+  // revisar no cambia nada; aplicar recibe el resumen revisado.
+  revisarImportacionPlanilla: async (url) => {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/importar-planilla?url=${encodeURIComponent(url)}`);
+    return handleResponse(response);
+  },
+  aplicarImportacionPlanilla: async ({ url, resumen }) => {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/importar-planilla`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, resumen }),
+    });
+    return handleResponse(response);
+  },
+
   // Obtener todos
   getAll: async () => {
     const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades`);

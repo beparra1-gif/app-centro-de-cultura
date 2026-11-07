@@ -43,6 +43,7 @@ import PagoForm from './PagoForm';
 import PerfilTesoreriaPanel from './PerfilTesoreriaPanel';
 import TesoreriaCuentasPanel from './TesoreriaCuentasPanel';
 import RevisionClasificacionPagos from './RevisionClasificacionPagos';
+import ImportarPagosPlanilla from './ImportarPagosPlanilla';
 import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
 import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
 import QrScanner from './QrScanner';
@@ -3593,6 +3594,14 @@ function SuperAdminPanel({
           </div>
           {seccionTesoreria === 'validar' && (
             <>
+          {rolUsuario === 'super_admin' && (
+            <ImportarPagosPlanilla
+              onAplicado={async () => {
+                if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades();
+                else window.location.reload();
+              }}
+            />
+          )}
           <RevisionClasificacionPagos
             items={pagosMalClasificados}
             autor={usuarioAutenticado?.nombre
