@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Download, FileText, Image as ImageIcon, Search, X } from 'lucide-react';
 import { showToast } from '../utils/toast';
+import CierreMesPanel from './CierreMesPanel';
 import { hoyLocalISO } from '../utils/fechas';
 import {
   ANIO_INFORME, ETIQUETA_ESTADO, MESES_INFORME, agruparPorCategoria, construirInformeDeportistas, construirInformeSocios,
@@ -121,16 +122,28 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
     descargar(new Blob([`${String.fromCharCode(0xFEFF)}${csv}`], { type: 'text/csv;charset=utf-8' }), 'csv');
   };
 
+  const selectorTipo = (
+    <div className="segment-control id-tipo" role="tablist" aria-label="Tipo de informe">
+      {[['deportistas', 'Deportistas por categoría'], ['socios', 'Socios'], ['cierre', 'Cierre de mes']].map(([valor, etiqueta]) => (
+        <button key={valor} type="button" role="tab" aria-selected={tipo === valor} className={`segment-btn ${tipo === valor ? 'active' : ''}`} onClick={() => setTipo(valor)}>
+          {etiqueta}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (tipo === 'cierre') {
+    return (
+      <div className="fade-in">
+        {selectorTipo}
+        <CierreMesPanel pagos={pagos} filasDeportistas={filasDeportistas} filasSocios={filasSocios} jugadores={jugadores} />
+      </div>
+    );
+  }
+
   return (
     <div className="fade-in">
-      <div className="segment-control id-tipo" role="tablist" aria-label="Tipo de informe">
-        <button type="button" role="tab" aria-selected={esDeportistas} className={`segment-btn ${esDeportistas ? 'active' : ''}`} onClick={() => setTipo('deportistas')}>
-          Deportistas por categoría
-        </button>
-        <button type="button" role="tab" aria-selected={!esDeportistas} className={`segment-btn ${!esDeportistas ? 'active' : ''}`} onClick={() => setTipo('socios')}>
-          Socios
-        </button>
-      </div>
+      {selectorTipo}
 
       <div className="id-filtros">
         <div className="tc-buscador id-buscar">

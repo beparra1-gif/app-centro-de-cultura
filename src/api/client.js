@@ -1013,6 +1013,19 @@ export const citacionesAPI = {
 // ========== NOTIFICACIONES APP (in-app, persistidas) ==========
 
 export const notificacionesAppAPI = {
+  // Recordatorio de pago en la app para las familias con deuda (Tesorería).
+  enviarRecordatorioPagos: async (avisos) => {
+    const response = await apiFetch(`${API_BASE_URL}/notificaciones/recordatorio-pagos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ avisos }),
+    });
+    return handleResponse(response);
+  },
+  ultimoRecordatorioPagos: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/notificaciones/recordatorio-pagos`);
+    return handleResponse(response);
+  },
   getAll: async () => {
     const response = await apiFetch(`${API_BASE_URL}/notificaciones`);
     return handleResponse(response);

@@ -53,6 +53,7 @@ export const mapearJugadorAPupilo = (j, idx = 0) => ({
   estadoDeportivo: j.estado_deportivo || 'Activo',
   beca: j.beca || 'Sin beca',
   exento_mensualidad: Boolean(j.exento_mensualidad),
+  apoderado_socio: Boolean(j.apoderado_socio),
   fecha_ingreso: j.fecha_ingreso || null,
   mes_inicio_cobro: j.mes_inicio_cobro || '',
   anio_ingreso: j.anio_ingreso ?? j.año_ingreso ?? null,

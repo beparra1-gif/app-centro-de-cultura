@@ -162,7 +162,7 @@ const cuotaSocio = (cuenta = {}, mes, utmPorMes = {}) => {
   return utm > 0 ? Math.round(utm * 0.3) : 0;
 };
 
-const leerFilasPlanilla = (filas, { colRut, colRutAlterno = null, colMes, colMonto, colNombre, colEstado }) => (
+const leerFilasPlanilla = (filas, { colRut, colRutAlterno = null, colMes, colMonto, colNombre, colEstado, colObs = null }) => (
   filas.slice(1).map((r, i) => ({
     fila: i + 2,
     rut: normalizarRut(r[colRut]) || (colRutAlterno !== null ? normalizarRut(r[colRutAlterno]) : ''),
@@ -172,11 +172,12 @@ const leerFilasPlanilla = (filas, { colRut, colRutAlterno = null, colMes, colMon
     monto: montoNumero(r[colMonto]),
     nombre: String(r[colNombre] || '').trim(),
     estado: sinTildes(r[colEstado]),
+    obs: colObs !== null ? sinTildes(r[colObs]) : '',
   })).filter((f) => f.rut || f.mesTexto || f.nombre)
 );
 
 const COLUMNAS = {
-  deportistas: { colRut: 3, colMes: 4, colMonto: 7, colNombre: 2, colEstado: 6 },
+  deportistas: { colRut: 3, colMes: 4, colMonto: 7, colNombre: 2, colEstado: 6, colObs: 8 },
   socios: { colRut: 2, colRutAlterno: 5, colMes: 3, colMonto: 7, colNombre: 1, colEstado: 6 },
 };
 
@@ -196,6 +197,7 @@ const leerBasePrincipal = (filas = []) => {
       rama: String(r[17] || '').trim().toUpperCase(),
       categoria: mapearCategoria(r[19]),
       correoApoderado: correo.includes('@') ? correo : '',
+      socio: /^s[ií]/i.test(String(r[7] || '').trim()) || /^s[ií]/i.test(String(r[12] || '').trim()),
       ingreso: String(r[24] || '').trim(),
     });
   });
@@ -216,7 +218,7 @@ const validarEncabezados = (filas, tipo) => {
 };
 
 const planificarImportacion = ({
-  csvDeportistas = '', csvSocios = '', csvBase = '', jugadores = [], cuentas = [], pagos = [], utmPorMes = {},
+  csvDeportistas = '', csvSocios = '', csvBase = '', jugadores = [], cuentas = [], pagos = [], utmPorMes = {}, hoy = new Date(),
 } = {}) => {
   const filasDeportistas = parsearCsv(csvDeportistas);
   const filasSocios = parsearCsv(csvSocios);
@@ -225,6 +227,21 @@ const planificarImportacion = ({
   const basePrincipal = leerBasePrincipal(parsearCsv(csvBase));
   const jugadorPorRut = new Map(jugadores.map((j) => [normalizarRut(j.rut_jugador), j]));
   const crearDeportistas = [];
+  // Pistas de que el apoderado es socio, por RUT del deportista: "¿Es Socio
+  // Activo?" = Sí en Base Principal, observación "socio" en un pago, o haber
+  // pagado $15.000 / $12.000 (tarifas exclusivas de hijos de socio) sin que
+  // la observación diga "beca".
+  const pistasSocio = new Map();
+  const agregarPista = (rut, pista) => {
+    if (!pistasSocio.has(rut)) pistasSocio.set(rut, new Set());
+    pistasSocio.get(rut).add(pista);
+  };
+  basePrincipal.forEach((b, rut) => { if (b.socio) agregarPista(rut, '"Es socio activo: Sí" en Base Principal'); });
+  leerFilasPlanilla(filasDeportistas, COLUMNAS.deportistas).forEach((f) => {
+    if (!f.rut) return;
+    if (f.obs.includes('socio')) agregarPista(f.rut, 'observación "socio" en sus pagos');
+    else if ([15000, 12000].includes(f.monto) && !f.obs.includes('beca')) agregarPista(f.rut, `pagó $${f.monto.toLocaleString('es-CL')} (tarifa de hijo de socio)`);
+  });
   // Primer mes pagado de cada RUT en la planilla (para la fecha de ingreso
   // de una ficha nueva sin "MES AÑO INGRESO").
   const primerMesPagado = new Map();
@@ -238,7 +255,10 @@ const planificarImportacion = ({
     if (!b || !rutValido(rut) || !b.nombreCompleto) return null;
     const mesIngreso = mesDesdeTexto(b.ingreso);
     const anioIngreso = Number((b.ingreso.match(/(20\d{2})/) || [])[1]) || ANIO;
-    const mes = mesIngreso || primerMesPagado.get(rut) || 1;
+    // Sin mes de ingreso ni pagos: se cobra desde el mes actual (no se le
+    // inventa deuda desde enero).
+    const mesActual = hoy.getFullYear() === ANIO ? hoy.getMonth() + 1 : 1;
+    const mes = mesIngreso || primerMesPagado.get(rut) || mesActual;
     const ficha = {
       rut_jugador: formatearRut(rut),
       ...dividirNombre(b.nombreCompleto),
@@ -247,6 +267,7 @@ const planificarImportacion = ({
       categoria: b.categoria || null,
       correo_apoderado: b.correoApoderado || null,
       fecha_ingreso: `${mesIngreso ? anioIngreso : ANIO}-${String(mes).padStart(2, '0')}-01`,
+      apoderado_socio: pistasSocio.has(rut),
     };
     crearDeportistas.push({
       rut: ficha.rut_jugador,
@@ -337,7 +358,7 @@ const planificarImportacion = ({
         const monto = sinMonto
           ? cuotaDeportista(jugador, {
             hermanos: pagador ? (hermanosPorPagador.get(normalizarRut(pagador.rut)) || 1) : 1,
-            esSocio: Boolean(pagador?.es_socio),
+            esSocio: Boolean(pagador?.es_socio) || Boolean(jugador.apoderado_socio) || pistasSocio.has(elegido.rut),
             montoAcordado: Number(pagador?.monto_mensual_override) || 0,
           })
           : elegido.monto;
@@ -384,6 +405,19 @@ const planificarImportacion = ({
   procesar('deportista', leerFilasPlanilla(filasDeportistas, COLUMNAS.deportistas));
   procesar('socio', leerFilasPlanilla(filasSocios, COLUMNAS.socios));
 
+  // Todos los deportistas de "Base Principal" que falten en la base (aunque
+  // no tengan pagos), no solo los que aparecen en la hoja de pagos.
+  basePrincipal.forEach((b, rut) => {
+    if (jugadorPorRut.has(rut)) return;
+    if (!rutValido(rut)) {
+      omitidos.push({ tipo: 'deportista', fila: b.fila, rut, nombre: b.nombreCompleto, mesTexto: '', motivo: 'Base Principal: RUT inválido (dígito verificador)' });
+      return;
+    }
+    if (!fichaNueva(rut)) {
+      omitidos.push({ tipo: 'deportista', fila: b.fila, rut, nombre: b.nombreCompleto, mesTexto: '', motivo: 'Base Principal: sin nombre' });
+    }
+  });
+
   // Duplicados en la base: mismo tipo, RUT, mes (un solo mes) y monto.
   const gruposDb = new Map();
   pagos.forEach((p) => {
@@ -416,11 +450,41 @@ const planificarImportacion = ({
     });
   });
 
+  // Fichas existentes a completar: marcar pupilo de socio (con su motivo) y
+  // el correo del apoderado si falta (eso agrupa hermanos y vincula la
+  // cuenta). Solo se aplican con "Aplicar" (no en la carga automática), para
+  // no pisar una corrección manual.
+  const actualizarFichas = [];
+  jugadores.forEach((j) => {
+    const rut = normalizarRut(j.rut_jugador);
+    const cambios = {};
+    const motivos = [];
+    if (!j.apoderado_socio && pistasSocio.has(rut)) {
+      cambios.apoderado_socio = true;
+      motivos.push(`pupilo de socio: ${[...pistasSocio.get(rut)].join('; ')}`);
+    }
+    const correoBase = basePrincipal.get(rut)?.correoApoderado;
+    if (!String(j.correo_apoderado || '').trim() && correoBase) {
+      cambios.correo_apoderado = correoBase;
+      motivos.push(`correo del apoderado: ${correoBase}`);
+    }
+    if (motivos.length) {
+      actualizarFichas.push({
+        rut: j.rut_jugador,
+        nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim() || j.rut_jugador,
+        cambios,
+        motivo: motivos.join(' · '),
+      });
+    }
+  });
+
   const contar = (lista, tipo) => lista.filter((x) => x.tipo === tipo).length;
   return {
     crearDeportistas,
+    actualizarFichas,
     resumen: {
       crearDeportistas: crearDeportistas.length,
+      actualizarFichas: actualizarFichas.length,
       agregarDeportistas: contar(agregar, 'deportista'),
       agregarSocios: contar(agregar, 'socio'),
       yaEstaban: yaEstaban.length,

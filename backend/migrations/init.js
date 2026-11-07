@@ -912,6 +912,10 @@ const createSchema = async () => {
     `);
     console.log('✅ Tabla configuracion_sistema verificada');
 
+    // Pupilo de socio (tarifa rebajada) aunque la ficha no esté vinculada a
+    // la cuenta del apoderado.
+    await pool.query('ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS apoderado_socio BOOLEAN DEFAULT false');
+
     console.log('\n✅ ¡Esquema completo creado exitosamente!');
     process.exit(0);
   } catch (err) {

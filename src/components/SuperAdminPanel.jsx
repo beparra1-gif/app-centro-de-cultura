@@ -9,6 +9,7 @@ import {
   CheckSquare,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   Eye,
   EyeOff,
   FileText,
@@ -45,6 +46,8 @@ import TesoreriaCuentasPanel from './TesoreriaCuentasPanel';
 import RevisionClasificacionPagos from './RevisionClasificacionPagos';
 import ImportarPagosPlanilla from './ImportarPagosPlanilla';
 import InformeDeudaPanel from './InformeDeudaPanel';
+import FichaPersonaModal from './FichaPersonaModal';
+import VincularApoderadosPanel from './VincularApoderadosPanel';
 import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
 import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
 import QrScanner from './QrScanner';
@@ -52,6 +55,7 @@ import ResultadosCards from './ResultadosCards';
 import { calcularResumenCitacion } from '../utils/citaciones';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { mapearJugadorAPupilo } from '../utils/pupiloMapper';
+import { estaActivo, soloActivos } from '../utils/estadoActivo';
 import { CATEGORIAS_POR_RAMA } from '../utils/categoriasDeportivas';
 import ReportesPanel from './ReportesPanel';
 import SaludAlertasPanel from './SaludAlertasPanel';
@@ -128,16 +132,17 @@ function SuperAdminPanel({
   calcularScoreDeCliente,
   comunicaciones,
   setComunicaciones,
-  cuentasAdmin,
+  cuentasAdmin: cuentasAdminTodas,
   matrixPermisos,
   togglePermiso,
   cuentasConCambiosPendientes,
   guardandoCuentaId,
   onGuardarCuenta,
   rolesBaseInfo,
-  jugadoresAdmin,
+  jugadoresAdmin: jugadoresAdminTodos,
   jugadoresVisitaAdmin,
   guardarCuentaAdmin,
+  recargarUsuariosAdmin,
   guardarJugadorAdmin,
   eliminarCuentaAdmin,
   eliminarJugadorAdmin,
@@ -163,6 +168,11 @@ function SuperAdminPanel({
   void setNominaCita;
 
   const rolActual = normalizarRol(usuarioAutenticado?.rol || usuarioAutenticado?.perfil_principal || '');
+  // Inactivos/baja fuera de todos los listados operativos (Tesorería,
+  // citaciones, becas, estadísticas...). Usuarios y Cuentas y la ficha usan
+  // las listas completas (…Todos/…Todas), desde ahí se reactivan.
+  const jugadoresAdmin = useMemo(() => soloActivos(jugadoresAdminTodos), [jugadoresAdminTodos]);
+  const cuentasAdmin = useMemo(() => soloActivos(cuentasAdminTodas), [cuentasAdminTodas]);
   const esStaff = rolActual === 'staff';
   const esAdmin = rolActual === 'admin';
   const esSuperAdmin = rolActual === 'super_admin';
@@ -397,6 +407,7 @@ function SuperAdminPanel({
   const [filtroUsuariosTexto, setFiltroUsuariosTexto] = useState('');
   const [filtroCuentasTexto, setFiltroCuentasTexto] = useState('');
   const [filtroTipoPerfil, setFiltroTipoPerfil] = useState('todos');
+  const [filtroEstadoUsuarios, setFiltroEstadoUsuarios] = useState('activos');
   const [filtroRamaJugadores, setFiltroRamaJugadores] = useState('todas');
   const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState('todas');
   const [filtroApoderadoJugadores, setFiltroApoderadoJugadores] = useState('todos');
@@ -1012,6 +1023,38 @@ function SuperAdminPanel({
     setPagoManualObjetivo(objetivo || null);
     setMostrarFormularioPago(true);
   };
+  // Recordatorio de pago en la app (notificación con "Ir a" → Mi Cuenta).
+  const [ultimoRecordatorio, setUltimoRecordatorio] = useState(null);
+  useEffect(() => {
+    if (vistaAdmin !== 'pagos' || !puedeAdminCompleto) return undefined;
+    let activo = true;
+    api.notificacionesAppAPI.ultimoRecordatorioPagos().then((r) => { if (activo) setUltimoRecordatorio(r); }).catch(() => {});
+    return () => { activo = false; };
+  }, [vistaAdmin, puedeAdminCompleto]);
+  const recordarEnApp = async (lista) => {
+    const pesosTxt = (n) => `$${Math.round(n).toLocaleString('es-CL')}`;
+    const confirmado = await confirmAction({
+      title: `Recordar a ${lista.length} ${lista.length === 1 ? 'familia' : 'familias'}`,
+      message: 'Cada una recibe una notificación en la app con lo que debe y un acceso para subir el comprobante. No se repite a quien ya recibió uno hoy.',
+      confirmText: 'Enviar recordatorios',
+    });
+    if (!confirmado) return;
+    const avisos = lista.map((f) => ({
+      rut: f.rut,
+      cuerpo: `Tienes ${pesosTxt(f.deudaTotal)} pendiente (${[
+        f.socio?.deuda > 0 ? `cuota de socio: ${f.socio.mesesMorosos.join(', ')}` : null,
+        ...f.pupilos.filter((p) => p.deuda > 0).map((p) => `${p.nombre}: ${p.mesesMorosos.join(', ')}`),
+      ].filter(Boolean).join('; ')}). Sube tu comprobante desde el Muro.`,
+    }));
+    try {
+      const r = await api.notificacionesAppAPI.enviarRecordatorioPagos(avisos);
+      showToast({ message: `Recordatorio enviado a ${r.enviados} ${r.enviados === 1 ? 'familia' : 'familias'}${r.omitidos ? ` (${r.omitidos} omitidas: ya avisadas hoy o sin cuenta activa)` : ''}.`, type: 'success' });
+      setUltimoRecordatorio({ ultimoEnvio: new Date().toISOString(), enviados: r.enviados });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudieron enviar los recordatorios.', type: 'error' });
+    }
+  };
+
   // Forma que esperan avisarMoroso/construirMensajeRecordatorioMoroso.
   const filaComoMoroso = (fila) => ({
     id: fila.id,
@@ -1022,7 +1065,7 @@ function SuperAdminPanel({
   });
 
   const jugadoresIncompletos = useMemo(() => {
-    return (jugadoresAdmin || []).filter((j) => {
+    return (jugadoresAdminTodos || []).filter((j) => {
       const rut = String(j.rut_jugador || '').trim();
       const rutValido = rut ? api.validarRutChileno(rut) : false;
       return (
@@ -1036,7 +1079,7 @@ function SuperAdminPanel({
   }, [jugadoresAdmin]);
 
   const jugadoresSinApoderado = useMemo(() => {
-    return (jugadoresAdmin || []).filter((j) => (
+    return (jugadoresAdminTodos || []).filter((j) => (
       !String(j.rut_apoderado || '').trim() && !String(j.correo_apoderado || '').trim()
     ));
   }, [jugadoresAdmin]);
@@ -1158,7 +1201,7 @@ function SuperAdminPanel({
   ), [ausenciasActivasCitacion]);
 
   const jugadorasCitacion = useMemo(() => {
-    const base = (jugadoresAdmin || []).filter((j) => (j.estado || 'ACTIVO').toUpperCase() !== 'BAJA' && !rutsConAusenciaActiva.has(String(j.rut_jugador || '').trim()));
+    const base = (jugadoresAdmin || []).filter((j) => estaActivo(j) && !rutsConAusenciaActiva.has(String(j.rut_jugador || '').trim()));
     const categoriasPermitidas = new Set(
       [citaCategoria, ...categoriasExtraCitacion]
         .map((c) => String(c || '').trim().toLowerCase())
@@ -1178,7 +1221,7 @@ function SuperAdminPanel({
   const cuposCitados = Object.values(seleccionCitacion).filter(Boolean).length;
 
   const listadoUsuarios = useMemo(() => {
-    const cuentas = (cuentasAdmin || []).map((c) => ({
+    const cuentas = (cuentasAdminTodas || []).map((c) => ({
       id: `cuenta-${c.id}`,
       tipo: 'cuenta',
       perfil: (() => {
@@ -1192,7 +1235,7 @@ function SuperAdminPanel({
       raw: c,
     }));
 
-    const jugadores = (jugadoresAdmin || []).map((j) => ({
+    const jugadores = (jugadoresAdminTodos || []).map((j) => ({
       id: `jugador-${j.rut_jugador}`,
       tipo: 'jugador',
       perfil: 'jugador',
@@ -1204,13 +1247,15 @@ function SuperAdminPanel({
     }));
 
     return [...cuentas, ...jugadores];
-  }, [cuentasAdmin, jugadoresAdmin]);
+  }, [cuentasAdminTodas, jugadoresAdminTodos]);
 
   const deportistasFiltrados = useMemo(() => {
     const q = filtroUsuariosTexto.trim().toLowerCase();
     return listadoUsuarios
       .filter((u) => {
         if (u.tipo !== 'jugador') return false;
+        if (filtroEstadoUsuarios === 'activos' && !estaActivo(u.raw)) return false;
+        if (filtroEstadoUsuarios === 'inactivos' && estaActivo(u.raw)) return false;
         if (q && !u.busqueda.includes(q)) return false;
         if (filtroRamaJugadores !== 'todas' && u.rama !== filtroRamaJugadores.toLowerCase()) return false;
         if (filtroCategoriaJugadores !== 'todas' && u.categoria !== filtroCategoriaJugadores.toLowerCase()) return false;
@@ -1227,17 +1272,20 @@ function SuperAdminPanel({
     filtroCategoriaJugadores,
     filtroApoderadoJugadores,
     rutsJugadoresSinApoderado,
+    filtroEstadoUsuarios,
   ]);
 
   const cuentasUsuariosFiltradas = useMemo(() => {
     const q = filtroCuentasTexto.trim().toLowerCase();
     return listadoUsuarios.filter((u) => {
       if (u.tipo !== 'cuenta') return false;
+      if (filtroEstadoUsuarios === 'activos' && !estaActivo(u.raw)) return false;
+      if (filtroEstadoUsuarios === 'inactivos' && estaActivo(u.raw)) return false;
       if (filtroTipoPerfil !== 'todos' && u.perfil !== filtroTipoPerfil) return false;
       if (q && !u.busqueda.includes(q)) return false;
       return true;
     });
-  }, [listadoUsuarios, filtroCuentasTexto, filtroTipoPerfil]);
+  }, [listadoUsuarios, filtroCuentasTexto, filtroTipoPerfil, filtroEstadoUsuarios]);
 
   // Tarjeta compartida por Deportistas y Cuentas — misma estructura, evita
   // duplicar ~90 líneas de JSX entre las dos pestañas.
@@ -1265,7 +1313,9 @@ function SuperAdminPanel({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <strong style={{ fontSize: '14px' }}>{u.nombre}</strong>
+              <button type="button" className="fp-nombre-link" onClick={() => setFichaPersona({ tipo: u.tipo, raw: u.raw })} title="Ver ficha completa">
+                {u.nombre}
+              </button>
               <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: esIncompleta ? '#b36200' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
                 {esIncompleta ? 'Incompleta' : 'Completa'}
               </span>
@@ -1274,6 +1324,7 @@ function SuperAdminPanel({
                   Sin apoderado
                 </span>
               )}
+              {!estaActivo(u.raw) && <span className="tc-perfil alerta">{String(u.raw.estado || 'Inactivo').toUpperCase()}</span>}
             </div>
             <div className="text-caption">
               {u.tipo === 'jugador'
@@ -1294,6 +1345,19 @@ function SuperAdminPanel({
                 {mostrandoAsignar ? 'Cancelar' : 'Asignar apoderado'}
               </button>
             )}
+            {u.tipo === 'cuenta' && (esAdmin || esSuperAdmin) && (
+              <select
+                className="form-input uc-perfil-rapido"
+                aria-label={`Perfil de ${u.nombre}`}
+                value={perfilBaseParaSelector(u.raw.rol || u.raw.perfil_principal)}
+                onChange={(e) => cambiarPerfilRapido(u.raw, e.target.value)}
+              >
+                {PERFIL_UNICO_OPTIONS.filter((o) => esSuperAdmin || o.value !== 'super_admin').map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            )}
+            <button type="button" className="btn-secondary" style={{ width: 'auto' }} onClick={() => setFichaPersona({ tipo: u.tipo, raw: u.raw })}>
+              <Eye size={13} /> Ver ficha
+            </button>
             <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
               Modificar
             </button>
@@ -1376,8 +1440,8 @@ function SuperAdminPanel({
     const correoCuenta = String(cuentaPupilosActiva.correo || '').trim().toLowerCase();
     if (!correoCuenta) return [];
 
-    return (jugadoresAdmin || []).filter((j) => String(j.correo_apoderado || '').trim().toLowerCase() === correoCuenta);
-  }, [cuentaPupilosActiva, jugadoresAdmin]);
+    return (jugadoresAdminTodos || []).filter((j) => String(j.correo_apoderado || '').trim().toLowerCase() === correoCuenta);
+  }, [cuentaPupilosActiva, jugadoresAdminTodos]);
 
   const jugadoresDisponiblesAsignacion = useMemo(() => {
     if (!cuentaPupilosActiva) return [];
@@ -1385,7 +1449,7 @@ function SuperAdminPanel({
     const q = String(filtroPupiloManual || '').trim().toLowerCase();
 
     return (jugadoresAdmin || []).filter((j) => {
-      if ((j.estado || 'ACTIVO').toUpperCase() === 'BAJA') return false;
+      if (!estaActivo(j)) return false;
       if (correoCuenta && String(j.correo_apoderado || '').trim().toLowerCase() === correoCuenta) return false;
 
       if (!q) return true;
@@ -1433,8 +1497,8 @@ function SuperAdminPanel({
     const correoApoderado = String(jugadorAdminEdit?.correo_apoderado || '').trim().toLowerCase();
     if (!correoApoderado) return null;
 
-    return (cuentasAdmin || []).find((cuenta) => String(cuenta.correo || '').trim().toLowerCase() === correoApoderado) || null;
-  }, [jugadorAdminEdit, cuentasAdmin]);
+    return (cuentasAdminTodas || []).find((cuenta) => String(cuenta.correo || '').trim().toLowerCase() === correoApoderado) || null;
+  }, [jugadorAdminEdit, cuentasAdminTodas]);
 
   // Cuenta PROPIA del deportista (login con su propio RUT, no la del
   // apoderado) — distinta de cuentaAsociadaJugadorEdit de arriba. Puede no
@@ -1443,8 +1507,8 @@ function SuperAdminPanel({
   const cuentaPropiaJugadorEdit = useMemo(() => {
     const rutJugador = normalizarRutUsuarios(jugadorAdminEdit?.rut_jugador || '');
     if (!rutJugador) return null;
-    return (cuentasAdmin || []).find((cuenta) => normalizarRutUsuarios(cuenta.rut || '') === rutJugador) || null;
-  }, [jugadorAdminEdit, cuentasAdmin]);
+    return (cuentasAdminTodas || []).find((cuenta) => normalizarRutUsuarios(cuenta.rut || '') === rutJugador) || null;
+  }, [jugadorAdminEdit, cuentasAdminTodas]);
 
   const esAutogestionable = Boolean(cuentaPropiaJugadorEdit?.permisos_override?.perfil);
   const [guardandoAutogestionable, setGuardandoAutogestionable] = useState(false);
@@ -1627,6 +1691,9 @@ function SuperAdminPanel({
     }
   };
 
+  // Ficha completa (datos, vínculos y pagos) en una ventana aparte.
+  const [fichaPersona, setFichaPersona] = useState(null);
+
   const iniciarEdicion = (item) => {
     // Snapshot current matrixPermisos so we can restore on cancel.
     const snap = {};
@@ -1669,6 +1736,24 @@ function SuperAdminPanel({
     setNuevaClaveCuenta('');
     setMostrarNuevaClaveCuenta(false);
     if (typeof onCancelEdit === 'function') onCancelEdit(permisosSnapshotAntesEdicion);
+  };
+  useModalAccesible(Boolean(editandoTipo && (cuentaAdminEdit || jugadorAdminEdit)), cancelarEdicion);
+
+  // Cambio rápido de perfil desde la lista de cuentas.
+  const cambiarPerfilRapido = async (cuenta, nuevoPerfil) => {
+    const etiqueta = PERFIL_UNICO_OPTIONS.find((o) => o.value === nuevoPerfil)?.label || nuevoPerfil;
+    const confirmado = await confirmAction({
+      title: 'Cambiar perfil',
+      message: `¿Cambiar el perfil de ${`${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim() || cuenta.rut} a "${etiqueta}"? Sus permisos cambian de inmediato y deberá volver a ingresar.`,
+      confirmText: 'Cambiar perfil',
+    });
+    if (!confirmado) return;
+    try {
+      await guardarCuentaAdmin(construirCambioPerfilUnico(nuevoPerfil, nuevoPerfil === 'socio' && esSocioApoderadoStacked(cuenta.rol)), cuenta.id);
+      showToast({ message: `Perfil actualizado a ${etiqueta}.`, type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo cambiar el perfil.', type: 'error' });
+    }
   };
 
   const publicarAnuncio = async () => {
@@ -2778,17 +2863,77 @@ function SuperAdminPanel({
 
   return (
     <div className="admin-container fade-in">
-      {vistaAdmin === 'inicio' && (
-        <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px' }}>
-          {puedeAdminCompleto && renderTarjetaAdmin('inicio-resumen', Activity, 'Resumen', () => setVistaAdmin('dashboard'))}
-          {puedeAdminCompleto && renderTarjetaAdmin('inicio-usuarios', Users, 'Usuarios y Cuentas', () => setVistaAdmin('usuarios'))}
-          {puedeAdminCompleto && renderTarjetaAdmin('inicio-publicar', Megaphone, 'Publicar', () => setVistaAdmin('publicar'))}
-          {puedeAdminCompleto && renderTarjetaAdmin('inicio-tesoreria', CheckSquare, 'Tesorería', () => setVistaAdmin('pagos'))}
-          {(puedeAdminCompleto || puedeVerCitaciones) && renderTarjetaAdmin('inicio-deportistas', UserPlus, 'Gestión Deportistas', () => setVistaAdmin('grupo_deportistas'))}
-          {puedeAdminCompleto && renderTarjetaAdmin('inicio-sistema', Filter, 'Sistema', () => setVistaAdmin('grupo_sistema'))}
-          {(puedeAdminCompleto || puedeVerResultados) && renderTarjetaAdmin('inicio-publicaciones', Trophy, 'Publicaciones y Equipos', () => setVistaAdmin('grupo_publicaciones'))}
-        </div>
-      )}
+      {vistaAdmin === 'inicio' && (() => {
+        // Panel en una sola lista agrupada: cada destino a un toque, con una
+        // descripción y lo que tiene pendiente (antes: 7 cuadros sin datos y
+        // un segundo nivel de cuadros dentro de cada grupo).
+        const sinApoderadoActivos = jugadoresSinApoderado.filter(estaActivo).length;
+        const grupos = [
+          {
+            titulo: 'Dinero',
+            items: [
+              { key: 'tesoreria', Icon: CheckSquare, titulo: 'Tesorería', desc: 'Por cobrar, validar pagos, informes y becas', badge: totalPorValidar, badgeTxt: 'por validar', ver: puedeAdminCompleto, ir: () => setVistaAdmin('pagos') },
+            ],
+          },
+          {
+            titulo: 'Personas',
+            items: [
+              { key: 'usuarios', Icon: Users, titulo: 'Usuarios y Cuentas', desc: 'Fichas, cuentas, perfiles y vincular apoderados', badge: sinApoderadoActivos, badgeTxt: 'sin apoderado', ver: puedeAdminCompleto, ir: () => setVistaAdmin('usuarios') },
+              { key: 'lista', Icon: Users, titulo: 'Pasar lista', desc: 'Asistencia a entrenamientos', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('asistencia_staff') },
+              { key: 'citaciones', Icon: UserPlus, titulo: 'Citaciones', desc: 'Convocatorias a partidos y torneos', ver: puedeAdminCompleto || puedeVerCitaciones, ir: () => setVistaAdmin('citaciones') },
+              { key: 'jugador', Icon: UserPlus, titulo: 'Fichas deportivas', desc: 'Perfil, tarjeta y evaluaciones de cada deportista', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('jugador') },
+              { key: 'invitados', Icon: Users, titulo: 'Invitados', desc: 'Visitas y jugadores de prueba', ver: puedeAdminCompleto, ir: () => setVistaAdmin('invitados') },
+            ],
+          },
+          {
+            titulo: 'Comunicación',
+            items: [
+              { key: 'publicar', Icon: Megaphone, titulo: 'Publicar en el Muro', desc: 'Avisos, noticias y encuestas', ver: puedeAdminCompleto, ir: () => setVistaAdmin('publicar') },
+            ],
+          },
+          {
+            titulo: 'Competencia',
+            items: [
+              { key: 'torneos', Icon: Trophy, titulo: 'Torneos', desc: 'Fixture, llaves y equipos', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('torneos') },
+              { key: 'resultados', Icon: Trophy, titulo: 'Resultados', desc: 'Marcadores de partidos', ver: puedeAdminCompleto || puedeVerResultados, ir: () => { setVistaAdmin('resultados'); cargarPartidosAdmin(); } },
+              { key: 'cancha', Icon: Image, titulo: 'Cancha y horarios', desc: 'Arriendos y horarios de entrenamiento', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('cancha_entrenamientos') },
+            ],
+          },
+          {
+            titulo: 'Sistema',
+            items: [
+              { key: 'resumen', Icon: Activity, titulo: 'Resumen del club', desc: 'Indicadores generales', ver: puedeAdminCompleto, ir: () => setVistaAdmin('dashboard') },
+              { key: 'reportes', Icon: FileText, titulo: 'Reportes de actividad', desc: 'Participación y uso de la app', ver: puedeAdminCompleto, ir: () => setVistaAdmin('reportes') },
+              { key: 'salud', Icon: Stethoscope, titulo: 'Salud', desc: 'Alertas médicas y fichas de salud', ver: puedeAdminCompleto, ir: () => { setVistaAdmin('salud'); generarAlertas(); } },
+              { key: 'ajustes', Icon: ShieldCheck, titulo: 'Permisos y ajustes', desc: 'Permisos por perfil y por usuario', ver: puedeAdminCompleto, ir: () => setVistaAdmin('permisos') },
+              { key: 'auditoria', Icon: History, titulo: 'Auditoría', desc: 'Historial de cambios', ver: puedeAdminCompleto, ir: () => setVistaAdmin('auditoria') },
+              { key: 'activos', Icon: Image, titulo: 'Logos e imágenes', desc: 'Activos visuales del club', ver: puedeAdminCompleto, ir: () => setVistaAdmin('activos') },
+            ],
+          },
+        ].map((g) => ({ ...g, items: g.items.filter((i) => i.ver) })).filter((g) => g.items.length);
+        return (
+          <div className="fade-in pn-panel">
+            {grupos.map((g) => (
+              <section key={g.titulo} className="pn-grupo" aria-label={g.titulo}>
+                <h3 className="pn-grupo-titulo">{g.titulo}</h3>
+                <div className="pn-items">
+                  {g.items.map(({ key, Icon, titulo, desc, badge, badgeTxt, ir }) => (
+                    <button key={key} type="button" className="pn-item" onClick={ir}>
+                      <span className="pn-icono" aria-hidden="true"><Icon size={20} /></span>
+                      <span className="pn-texto">
+                        <strong>{titulo}</strong>
+                        <small>{desc}</small>
+                      </span>
+                      {badge > 0 && <span className="pn-badge" title={`${badge} ${badgeTxt}`}>{badge}<small> {badgeTxt}</small></span>}
+                      <ChevronRight size={18} className="pn-flecha" aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        );
+      })()}
 
       {vistaAdmin === 'grupo_deportistas' && (
         <div className="fade-in">
@@ -2864,29 +3009,55 @@ function SuperAdminPanel({
       {vistaAdmin === 'usuarios' && (
         <div className="fade-in">
           <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
-          <h3 className="section-title">Gestión de Usuarios y Cuentas</h3>
-          <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
-            Deportistas (ficha deportiva) y Cuentas (login de apoderados, socios, staff y admins) viven en tablas distintas — separadas acá para no mezclar sus filtros y datos.
+          <div className="tesoreria-cabecera">
+            <h2>Usuarios y Cuentas</h2>
+            <button type="button" className="btn-electric tesoreria-btn-pago" onClick={() => setVistaUsuarios('registrar')}>
+              <Plus size={15} /> Registrar
+            </button>
+          </div>
+          <p className="uc-ayuda">
+            <b>Deportistas</b>: fichas deportivas. <b>Cuentas</b>: quienes ingresan a la app (apoderados, socios, staff y admins). Toca un nombre para ver su ficha completa.
           </p>
 
-          <div className="segment-control" style={{ gap: '6px', marginBottom: '15px' }}>
+          <div className="tesoreria-tabs-wrap"><div className="segment-control tesoreria-tabs" style={{ gap: '6px' }}>
             <button type="button" className={`segment-btn ${vistaUsuarios === 'deportistas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('deportistas')}>
-              <Users size={14} /> Deportistas ({jugadoresAdmin.length})
+              <Users size={14} /> Deportistas ({jugadoresAdminTodos.length})
             </button>
             <button type="button" className={`segment-btn ${vistaUsuarios === 'cuentas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('cuentas')}>
-              <User size={14} /> Cuentas ({cuentasAdmin.length})
+              <User size={14} /> Cuentas ({cuentasAdminTodas.length})
+            </button>
+            <button type="button" className={`segment-btn ${vistaUsuarios === 'vincular' ? 'active' : ''}`} onClick={() => setVistaUsuarios('vincular')}>
+              <Link2 size={14} /> Vincular apoderados
+              {jugadoresSinApoderado.filter(estaActivo).length > 0 && <span className="tesoreria-tab-badge">{jugadoresSinApoderado.filter(estaActivo).length}</span>}
+            </button>
+            <button type="button" className={`segment-btn ${vistaUsuarios === 'registrar' ? 'active' : ''}`} onClick={() => setVistaUsuarios('registrar')}>
+              <Plus size={14} /> Registrar nuevo
             </button>
             {/* Permisos individuales: antes solo en el engranaje (panel chico)
                 o escondidos en Sistema; ahora junto a las cuentas que afectan. */}
             <button type="button" className="segment-btn" onClick={() => setVistaAdmin('permisos')}>
               <ShieldCheck size={14} /> Permisos
             </button>
-          </div>
+          </div></div>
 
-          {vistaUsuarios === 'deportistas' ? (
+          {(vistaUsuarios === 'deportistas' || vistaUsuarios === 'cuentas') && (
+            <div className="filter-chips mb-15" role="group" aria-label="Estado">
+              {[
+                ['activos', 'Activos'],
+                ['inactivos', 'Inactivos / baja'],
+                ['todos', 'Todos'],
+              ].map(([valor, etiqueta]) => (
+                <button key={valor} type="button" className={`filter-chip ${filtroEstadoUsuarios === valor ? 'active' : ''}`} onClick={() => setFiltroEstadoUsuarios(valor)}>
+                  {etiqueta}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {vistaUsuarios === 'deportistas' && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <div className="admin-stat-pill verde"><span>Completos</span><h2>{jugadoresAdmin.length - jugadoresIncompletos.length}</h2></div>
+                <div className="admin-stat-pill verde"><span>Completos</span><h2>{jugadoresAdminTodos.length - jugadoresIncompletos.length}</h2></div>
                 <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletos</span><h2 style={{ color: '#b36200' }}>{jugadoresIncompletos.length}</h2></div>
                 <div className="admin-stat-pill rojo"><span>Sin apoderado</span><h2>{jugadoresSinApoderado.length}</h2></div>
               </div>
@@ -2927,9 +3098,9 @@ function SuperAdminPanel({
                 </div>
 
                 <div className="filter-chips" style={{ marginTop: '10px' }}>
-                  <button className={`filter-chip ${filtroApoderadoJugadores === 'todos' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('todos')}>Todos ({jugadoresAdmin.length})</button>
+                  <button className={`filter-chip ${filtroApoderadoJugadores === 'todos' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('todos')}>Todos ({jugadoresAdminTodos.length})</button>
                   <button className={`filter-chip ${filtroApoderadoJugadores === 'sin' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('sin')}>Sin apoderado ({jugadoresSinApoderado.length})</button>
-                  <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdmin.length - jugadoresSinApoderado.length})</button>
+                  <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdminTodos.length - jugadoresSinApoderado.length})</button>
                 </div>
 
                 <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
@@ -2940,12 +3111,13 @@ function SuperAdminPanel({
                 </div>
               </div>
             </>
-          ) : (
+          )}
+          {vistaUsuarios === 'cuentas' && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <div className="admin-stat-pill verde"><span>Completas</span><h2>{cuentasAdmin.length - cuentasIncompletas.length}</h2></div>
+                <div className="admin-stat-pill verde"><span>Completas</span><h2>{cuentasAdminTodas.length - cuentasIncompletas.length}</h2></div>
                 <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#b36200' }}>{cuentasIncompletas.length}</h2></div>
-                <div className="admin-stat-pill azul"><span>Total</span><h2>{cuentasAdmin.length}</h2></div>
+                <div className="admin-stat-pill azul"><span>Total</span><h2>{cuentasAdminTodas.length}</h2></div>
               </div>
 
               <div className="card">
@@ -2990,7 +3162,18 @@ function SuperAdminPanel({
             </>
           )}
 
-          {editandoTipo === 'cuenta' && cuentaAdminEdit && (
+          {vistaUsuarios === 'vincular' && (
+            <VincularApoderadosPanel
+              jugadores={jugadoresAdmin}
+              cuentas={cuentasAdmin}
+              onRecargar={recargarUsuariosAdmin}
+              onVerFicha={(j) => setFichaPersona({ tipo: 'jugador', raw: j })}
+            />
+          )}
+
+          {editandoTipo === 'cuenta' && cuentaAdminEdit && createPortal(
+            <div className="fp-fondo" role="presentation">
+            <div className="fp-ventana uc-editor" role="dialog" aria-modal="true" aria-label="Editar cuenta">
             <div ref={edicionCuentaRef} className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
               <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
 
@@ -3235,9 +3418,14 @@ function SuperAdminPanel({
                 </div>
               </div>
             </div>
+            </div>
+            </div>,
+            document.body
           )}
 
-          {editandoTipo === 'jugador' && jugadorAdminEdit && (
+          {editandoTipo === 'jugador' && jugadorAdminEdit && createPortal(
+            <div className="fp-fondo" role="presentation">
+            <div className="fp-ventana uc-editor" role="dialog" aria-modal="true" aria-label="Editar deportista">
             <div ref={edicionJugadorRef} className="card">
               <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
 
@@ -3288,6 +3476,7 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Beca</label><input className="form-input" value={jugadorAdminEdit.beca ? `${jugadorAdminEdit.beca}% — se edita desde Tesorería > Becas` : 'Sin beca — se asigna desde Tesorería > Becas'} disabled /></div>
                 <div className="form-group"><label>Valor mensualidad</label><input type="number" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} /></div>
                 <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.exento_mensualidad)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, exento_mensualidad: e.target.checked }))} /> Exento de mensualidad (no paga nada)</label>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.apoderado_socio)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; 2 hermanos $12.000 c/u)</label>
                 <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
                 <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.derechos_imagen)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
               </div>
@@ -3340,10 +3529,14 @@ function SuperAdminPanel({
                 )}
               </div>
             </div>
+            </div>
+            </div>,
+            document.body
           )}
 
+          {vistaUsuarios === 'registrar' && (
           <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
-            <h4 className="form-subtitle"><Plus size={16} /> Agregar Nuevo Registro</h4>
+            <h4 className="form-subtitle"><Plus size={16} /> Registrar nuevo</h4>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
               <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'cuenta' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'cuenta' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('cuenta')}>Cuenta</button>
               <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'jugador' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'jugador' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('jugador')}>Jugador</button>
@@ -3447,12 +3640,13 @@ function SuperAdminPanel({
               {guardandoUsuario ? 'Guardando...' : 'Guardar nuevo usuario'}
             </button>
           </div>
+          )}
         </div>
       )}
 
       {vistaAdmin === 'activos' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <h3 className="section-title">Activos Visuales</h3>
           <div className="card" style={{ borderLeft: '4px solid var(--verde-victoria)', marginBottom: '15px', borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle"><Image size={16} /> Subida de logos y activos visuales</h4>
@@ -4088,6 +4282,8 @@ function SuperAdminPanel({
                 onRegistrarPago={abrirPagoManualTesoreria}
                 onVerCuenta={verCuentaTesoreria}
                 onAvisar={(fila) => avisarMoroso(filaComoMoroso(fila))}
+                onRecordarEnApp={recordarEnApp}
+                ultimoRecordatorio={ultimoRecordatorio}
                 onNotificarTodos={(lista) => {
                   const conTelefono = lista.filter((f) => f.telefono).map(filaComoMoroso);
                   if (conTelefono.length === 0) {
@@ -4357,7 +4553,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'auditoria' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: 'var(--radius-lg)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
               <div>
@@ -4582,7 +4778,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'citaciones' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_deportistas')} label="Volver a Gestión Deportistas" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <h3 className="section-title">Citaciones</h3>
           <div className="segment-control mt-15" style={{ gap: '6px' }}>
             <button type="button" className={`segment-btn ${vistaCitaciones === 'crear' ? 'active' : ''}`} onClick={() => setVistaCitaciones('crear')}><UserPlus size={14} /> Creador de convocatorias</button>
@@ -5065,7 +5261,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'invitados' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_deportistas')} label="Volver a Gestión Deportistas" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <h3 className="section-title">Jugadores de Equipos Invitados</h3>
           <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle"><Plus size={16} /> Registrar jugador invitado</h4>
@@ -5146,7 +5342,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'reportes' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <ReportesPanel
             calcularReportes={calcularReportes}
             vistaReportes={vistaReportes}
@@ -5364,7 +5560,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'resultados' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_publicaciones')} label="Volver a Publicaciones y Equipos" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <h3 className="section-title"><Trophy size={18} style={{ marginRight: '8px', verticalAlign: 'middle' }} />Registrar Resultado de Partido</h3>
           <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '16px' }}>
             Ingresa el marcador final y el partido quedará publicado en el fixture del club.
@@ -5571,7 +5767,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'salud' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           {(() => {
             const reportes = calcularReportes();
             const scoreActual = calcularScoreDeCliente();
@@ -5656,6 +5852,22 @@ function SuperAdminPanel({
             // Recargar pagos
             window.location.reload();
           }}
+        />
+      )}
+
+      {fichaPersona && (
+        <FichaPersonaModal
+          persona={fichaPersona}
+          jugadores={jugadoresAdminTodos || []}
+          cuentas={cuentasAdminTodas || []}
+          pagos={pagosMensualidadesAdmin || []}
+          morosos={morososAdmin}
+          sociosMorosos={sociosMorosos}
+          puedeRegistrarPago={rolUsuario === 'super_admin'}
+          onCerrar={() => setFichaPersona(null)}
+          onAbrir={(otra) => setFichaPersona(otra)}
+          onEditar={(p) => { setFichaPersona(null); iniciarEdicion(p); }}
+          onRegistrarPago={(objetivo) => { setFichaPersona(null); abrirPagoManualTesoreria(objetivo); }}
         />
       )}
 

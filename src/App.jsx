@@ -29,6 +29,9 @@ import { hoyLocalISO, partesFechaCalendario } from './utils/fechas';
 import { resumirAbonosMes } from './utils/abonosMes';
 import useIntervaloVisible from './utils/useIntervaloVisible';
 import useModalAccesible from './utils/useModalAccesible';
+import { soloActivos } from './utils/estadoActivo';
+import PagoRapidoMuro from './components/PagoRapidoMuro';
+import { mesesANumeros, resumirDeudaFamilia } from './utils/deudaFamilia';
 import PrimerIngresoModal from './components/PrimerIngresoModal';
 import { VERSION_AVISO } from './legal/avisoPrivacidad';
 import {
@@ -262,6 +265,14 @@ function App() {
   // propia selección de meses en la grilla "Mensualidad Deportista" (antes
   // era un arreglo plano compartido entre todas las tarjetas de pupilo).
   const [mesesSeleccionados, setMesesSeleccionados] = useState({});
+  // Meses de cuota socio a dejar marcados al abrir Mi Cuenta desde el Muro.
+  const [mesesSocioIniciales, setMesesSocioIniciales] = useState([]);
+  // La preselección vale solo para esa visita a Mi Cuenta.
+  const [pantallaPreseleccion, setPantallaPreseleccion] = useState(pantallaActiva);
+  if (pantallaPreseleccion !== pantallaActiva) {
+    setPantallaPreseleccion(pantallaActiva);
+    if (pantallaActiva !== 'perfil' && mesesSocioIniciales.length) setMesesSocioIniciales([]);
+  }
   const [tipoPago, setTipoPago] = useState('completo'); 
   const [montoAbono, setMontoAbono] = useState('');
   const [comprobanteSubido, setComprobanteSubido] = useState(false);
@@ -591,7 +602,10 @@ function App() {
   // 3. LÓGICA BASE Y EFECTOS
   // ==========================================
 
-  const construirMorososDesdePagos = (pagos = [], jugadores = [], cuentas = []) => {
+  const construirMorososDesdePagos = (pagos = [], jugadoresTodos = [], cuentas = []) => {
+    // Inactivos/baja no deben ni aparecer como deudores ni contar como
+    // hermanos para la tarifa familiar.
+    const jugadores = soloActivos(jugadoresTodos);
     const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
     const normalizarCorreo = (correo = '') => String(correo || '').trim().toLowerCase();
     const cuentaPorCorreo = new Map();
@@ -745,7 +759,11 @@ function App() {
         pupilosFamilia,
         // Hijo(s) de socio: tarifa rebajada si la cuenta del apoderado es
         // socia (es_socio), cualquiera sea su perfil.
-        esSocioApoderado: Boolean(cuentaFamilia?.es_socio) || ['socio', 'socio_apoderado', 'socio-apoderado'].includes(perfilPrincipalFamilia),
+        // o si la ficha marca "pupilo de socio" (la mayoría de las fichas no
+        // está vinculada a la cuenta del apoderado).
+        esSocioApoderado: Boolean(cuentaFamilia?.es_socio)
+          || ['socio', 'socio_apoderado', 'socio-apoderado'].includes(perfilPrincipalFamilia)
+          || pupilosFamilia.some((p) => Boolean(p.apoderado_socio)),
         montoAcordado: Number(cuentaFamilia?.monto_mensual_override || 0),
       });
       cuotaReferencialPorFamilia.set(key, cuotaReferencial);
@@ -858,7 +876,8 @@ function App() {
   // fetchear esos valores, y setUtmVigente()/setUtmHistorico() no actualizan
   // la closure hasta el próximo render — leerlos por closure habría usado
   // siempre el valor de UTM de la carga ANTERIOR, no la recién fetcheada.
-  const construirSociosMorosos = (pagos = [], cuentas = [], utmVigenteParam = utmVigente, utmHistoricoParam = utmHistorico) => {
+  const construirSociosMorosos = (pagos = [], cuentasTodas = [], utmVigenteParam = utmVigente, utmHistoricoParam = utmHistorico) => {
+    const cuentas = soloActivos(cuentasTodas);
     const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
     const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
     const NOMBRES_MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -1522,11 +1541,12 @@ function App() {
   const getHeaderTitle = () => {
     if(!rolUsuario) return "Portal Oficial";
     switch(pantallaActiva) {
-      case 'comunicaciones': return "Muro Social";
-      case 'academia': return "Academia Club";
-      case 'perfil': return (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? "Validación Tesorería" : "Mi Cuenta";
-      case 'jugador': return "Pase Digital";
-      case 'asistencia_staff': return "Control Asistencia";
+      // Mismo nombre que el botón del menú inferior, para saber dónde se está.
+      case 'comunicaciones': return "Muro";
+      case 'academia': return "Academia";
+      case 'perfil': return (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? "Tesorería" : "Mi Cuenta";
+      case 'jugador': return esPerfilFamiliarNav ? "Pupilos" : (rolUsuario === 'jugador' ? "Mi ficha" : "Fichas deportivas");
+      case 'asistencia_staff': return "Asistencia";
       case 'scoreboard_live': return "Mesa FIBA Live";
       case 'torneos': return "Torneos y Tabla de Posiciones";
       case 'kiosco': return "Kiosco POS";
@@ -2942,7 +2962,9 @@ function App() {
   // sin tener que esperar a un refetch completo de jugadoresAdmin — ver
   // actualizarJugadorEnMemoria más abajo.
 
-  const pupilosDisponiblesBase = (jugadoresAdmin || []).map((j, idx) => mapearJugadorAPupilo(j, idx));
+  // Inactivos/baja no aparecen en listados operativos (ver utils/estadoActivo).
+  const jugadoresActivos = soloActivos(jugadoresAdmin);
+  const pupilosDisponiblesBase = jugadoresActivos.map((j, idx) => mapearJugadorAPupilo(j, idx));
 
   // Tras un PUT exitoso a /api/jugadores/:rut (apoderado o admin editando un
   // pupilo, o cambiando el diseño de marco de su tarjeta), el backend
@@ -3108,9 +3130,10 @@ function App() {
       case 'perfil':
         return { label: (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? 'Tesorería' : 'Mi Cuenta', Icon: CreditCard };
       case 'jugador':
-        return { label: esPerfilFamiliarNav ? 'Pupilos' : 'Jugador', Icon: User };
+        // "Jugador" no decía qué había adentro: son las fichas deportivas.
+        return { label: esPerfilFamiliarNav ? 'Pupilos' : (rolUsuario === 'jugador' ? 'Mi ficha' : 'Fichas'), Icon: User };
       case 'asistencia_staff':
-        return { label: 'Lista', Icon: Users };
+        return { label: 'Asistencia', Icon: Users };
       case 'scoreboard_live':
         return { label: 'Mesa', Icon: Monitor };
       case 'kiosco':
@@ -3440,54 +3463,24 @@ function App() {
                 partidos={partidosResumen}
               />
             )}
-            {esPerfilFamiliarNav && puedeVerPantalla('comunicaciones') && pantallaActiva === 'comunicaciones' && (
-              <div className="card mt-15" style={{ borderRadius: 'var(--radius-lg)', padding: '14px' }}>
-                <h4 style={{ margin: '2px 4px 10px 4px', fontSize: '12px', fontWeight: '900', color: 'var(--texto-heading)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                  Accesos rápidos
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
-                  {puedeVerPantalla('perfil') && (
-                    <button
-                      type="button"
-                      onClick={() => cambiarPantallaConLoader('perfil')}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      <CreditCard size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
-                      <div>
-                        <strong style={{ display: 'block', fontSize: '13px' }}>Mi Cuenta</strong>
-                        <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>Mensualidad y comprobantes</span>
-                      </div>
-                    </button>
-                  )}
-                  {puedeVerPantalla('jugador') && (
-                    <button
-                      type="button"
-                      onClick={() => cambiarPantallaConLoader('jugador')}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      <User size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
-                      <div>
-                        <strong style={{ display: 'block', fontSize: '13px' }}>Pupilos</strong>
-                        <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>Perfil y tarjeta de cada deportista</span>
-                      </div>
-                    </button>
-                  )}
-                  {puedeVerPantalla('academia') && (
-                    <button
-                      type="button"
-                      onClick={() => cambiarPantallaConLoader('academia')}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      <BookOpen size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
-                      <div>
-                        <strong style={{ display: 'block', fontSize: '13px' }}>Academia</strong>
-                        <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>Material y evaluaciones</span>
-                      </div>
-                    </button>
-                  )}
-                </div>
-              </div>
+            {(esPerfilFamiliarNav || rolUsuario === 'jugador') && puedeVerPantalla('perfil') && pantallaActiva === 'comunicaciones' && (
+              <PagoRapidoMuro
+                resumen={resumirDeudaFamilia({ pupilos: pupilosDisponibles, morosos: morososAdmin, sociosMorosos, cuentaPropia })}
+                onVerCuenta={() => cambiarPantallaConLoader('perfil')}
+                onPagar={(lineas) => {
+                  // Deja marcados los meses adeudados: en Mi Cuenta solo falta adjuntar el comprobante.
+                  setMesesSeleccionados(Object.fromEntries(
+                    lineas.filter((l) => l.tipo === 'pupilo').map((l) => [l.rut, mesesANumeros(l.meses)])
+                  ));
+                  setMesesSocioIniciales(mesesANumeros(lineas.find((l) => l.tipo === 'socio')?.meses || []));
+                  setTipoPago('completo');
+                  setComprobanteSubido(false);
+                  cambiarPantallaConLoader('perfil');
+                }}
+              />
             )}
+            {/* Los accesos rápidos (Mi Cuenta, Pupilos, Academia) se quitaron: repetían
+                el menú inferior y empujaban el Muro hacia abajo. */}
             {puedeVerPantalla('comunicaciones') && pantallaActiva === 'comunicaciones' && (
               <ComunicacionesPanel
                 rolUsuario={rolUsuario}
@@ -3535,7 +3528,7 @@ function App() {
                 pupiloActivo={pupiloActivo}
                 setPupiloActivo={setPupiloActivo}
                 pupilosDisponibles={pupilosDisponibles}
-                jugadoresAdmin={jugadoresAdmin}
+                jugadoresAdmin={jugadoresActivos}
                 rolUsuario={rolUsuario}
                 rutUsuarioAutenticado={rutUsuarioAutenticado}
                 usuarioAutenticado={usuarioAutenticado}
@@ -3597,6 +3590,7 @@ function App() {
                 onIrAPagoManual={irARegistrarPagoManual}
                 utmVigente={utmVigente}
                 utmHistorico={utmHistorico}
+                mesesSocioIniciales={mesesSocioIniciales}
               />
             )}
             {puedeVerPantalla('jugador') && pantallaActiva === 'jugador' && (
@@ -3616,7 +3610,7 @@ function App() {
                 setVistaStaff={setVistaStaff}
                 filtroRamaStaff={filtroRamaStaff}
                 setFiltroRamaStaff={setFiltroRamaStaff}
-                todosJugadores={jugadoresAdmin}
+                todosJugadores={jugadoresActivos}
               />
             )}
             {puedeVerPantalla('scoreboard_live') && pantallaActiva === 'scoreboard_live' && (
@@ -3695,6 +3689,7 @@ function App() {
                 jugadoresAdmin={jugadoresAdmin}
                 guardarCuentaAdmin={guardarCuentaAdmin}
                 guardarJugadorAdmin={guardarJugadorAdmin}
+                recargarUsuariosAdmin={recargarUsuariosAdmin}
                 eliminarCuentaAdmin={eliminarCuentaAdmin}
                 eliminarJugadorAdmin={eliminarJugadorAdmin}
                 jugadoresVisitaAdmin={jugadoresVisitaAdmin}

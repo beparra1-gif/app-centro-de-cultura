@@ -53,6 +53,8 @@ export default function TesoreriaCuentasPanel({
   onVerCuenta,
   onAvisar,
   onNotificarTodos,
+  onRecordarEnApp,
+  ultimoRecordatorio = null,
 }) {
   const [texto, setTexto] = useState('');
   const [estado, setEstado] = useState('con_deuda');
@@ -131,12 +133,27 @@ export default function TesoreriaCuentasPanel({
 
       <div className="tc-barra-lista">
         <span>{filtradas.length} {filtradas.length === 1 ? 'resultado' : 'resultados'}</span>
-        {onNotificarTodos && filtradas.some((f) => f.deudaTotal > 0 && f.telefono) && (
-          <button type="button" className="btn-notificar" onClick={() => onNotificarTodos(filtradas.filter((f) => f.deudaTotal > 0))}>
-            <Bell size={13} /> Avisar a esta lista
-          </button>
-        )}
+        <div className="tc-barra-botones">
+          {onRecordarEnApp && filtradas.some((f) => f.deudaTotal > 0 && f.tipo === 'cuenta') && (
+            <button
+              type="button"
+              className="btn-notificar"
+              onClick={() => onRecordarEnApp(filtradas.filter((f) => f.deudaTotal > 0 && f.tipo === 'cuenta'))}
+            >
+              <Bell size={13} /> Recordar en la app
+            </button>
+          )}
+          {onNotificarTodos && filtradas.some((f) => f.deudaTotal > 0 && f.telefono) && (
+            <button type="button" className="btn-notificar" onClick={() => onNotificarTodos(filtradas.filter((f) => f.deudaTotal > 0))}>
+              <Phone size={13} /> WhatsApp a esta lista
+            </button>
+          )}
+        </div>
       </div>
+
+      {ultimoRecordatorio?.ultimoEnvio && (
+        <p className="tc-nota">Último recordatorio en la app: {new Date(ultimoRecordatorio.ultimoEnvio).toLocaleDateString('es-CL')} ({ultimoRecordatorio.enviados || 0} familias).</p>
+      )}
 
       {filtradas.length === 0 && (
         <p className="tc-vacio">

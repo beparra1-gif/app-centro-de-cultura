@@ -1588,6 +1588,12 @@ const ensureJugadoresExtendedColumns = async () => {
   await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS exento_mensualidad BOOLEAN DEFAULT false`);
   console.log('🎓 Columna exento_mensualidad de jugadores verificada');
 
+  // Hijo/pupilo de socio: tarifa rebajada ($15.000; 2 hijos $12.000 c/u)
+  // aunque la ficha no esté vinculada a la cuenta del apoderado (la mayoría
+  // de las fichas no lo están). Viene de "¿Es Socio Activo?" de la planilla.
+  await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS apoderado_socio BOOLEAN DEFAULT false`);
+  console.log('🤝 Columna apoderado_socio de jugadores verificada');
+
   // foto_jugador es la foto de perfil "oficial" del deportista, usada en
   // varias pantallas (avatar del header, Tesoreria, Tarjeta Oficial CCF).
   // foto_tarjeta_coleccion es una foto DISTINTA, solo para la tarjeta
@@ -5461,7 +5467,7 @@ const CAMPOS_JUGADOR_SOLO_ADMIN = [
   'rut_apoderado', 'correo_apoderado', 'correo_jugador', 'password_jugador', 'forzar_clave_jugador',
   'rama', 'categoria', 'numero_camiseta', 'fecha_ingreso', 'mes_inicio_cobro', 'beca', 'exento_mensualidad',
   'valor_mensualidad', 'matricula_pagada', 'polera_entregada', 'poleron_entregado',
-  'estado', 'estado_deportivo', 'fecha_inicio_baja', 'fecha_fin_baja', 'xp_puntos',
+  'estado', 'estado_deportivo', 'fecha_inicio_baja', 'fecha_fin_baja', 'xp_puntos', 'apoderado_socio',
 ];
 
 // El apoderado dueño (rut_apoderado registrado) puede editar el perfil de su propio
@@ -5562,6 +5568,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
         rut_apoderado = COALESCE($42, rut_apoderado),
         diseno_marco = COALESCE($43, diseno_marco),
         exento_mensualidad = COALESCE($44, exento_mensualidad),
+        apoderado_socio = COALESCE($46, apoderado_socio),
         updated_at = NOW()
       WHERE rut_jugador = $45
       RETURNING *`,
@@ -5611,6 +5618,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
         diseno_marco ?? null,
         exento_mensualidad ?? null,
         req.params.rut,
+        typeof req.body?.apoderado_socio === 'boolean' ? req.body.apoderado_socio : null,
       ]
     );
 
@@ -6527,13 +6535,25 @@ const leerPlanillaPagos = async (urlPlanilla) => {
     const url = gid
       ? `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`
       : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(hoja)}`;
-    try {
+    // Un reintento: Google a veces corta una de las lecturas simultáneas.
+    const intentar = async () => {
       const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
       const texto = await r.text();
       if (!r.ok || esHtml(texto)) throw errorLectura(hoja);
       return texto;
+    };
+    try {
+      try {
+        return await intentar();
+      } catch {
+        await new Promise((resolver) => { setTimeout(resolver, 1500); });
+        return await intentar();
+      }
     } catch (error) {
-      if (opcional) return '';
+      if (opcional) {
+        console.warn(`[IMPORTAR-PLANILLA] No se pudo leer la hoja opcional "${hoja}" (${gid ? `gid ${gid}` : 'sin gid'}): ${error.message}`);
+        return '';
+      }
       throw error.status ? error : errorLectura(hoja);
     }
   };
@@ -6546,7 +6566,7 @@ const leerPlanillaPagos = async (urlPlanilla) => {
 const construirPlanImportacionPagos = async (urlPlanilla) => {
   const { csvDeportistas, csvSocios, csvBase } = await leerPlanillaPagos(urlPlanilla);
   const [jugadores, cuentas, pagos, utm] = await Promise.all([
-    pool.query('SELECT rut_jugador, nombres, apellido_paterno, rut_apoderado, correo_apoderado, valor_mensualidad, beca, exento_mensualidad FROM jugadores'),
+    pool.query('SELECT rut_jugador, nombres, apellido_paterno, rut_apoderado, correo_apoderado, valor_mensualidad, beca, exento_mensualidad, apoderado_socio FROM jugadores'),
     pool.query('SELECT rut, nombres, apellido_paterno, correo, es_socio, monto_mensual_base, utm_valor_referencia, monto_mensual_override FROM cuentas'),
     pool.query('SELECT id, rut_jugador, rut_pagos, concepto_pago, meses_correspondientes, monto_total_pagado, estado_pago, comprobante_url, notas_tesoreria FROM pagos_mensualidades'),
     pool.query('SELECT mes, valor FROM utm_mensual WHERE anio = 2026'),
@@ -6564,22 +6584,35 @@ const construirPlanImportacionPagos = async (urlPlanilla) => {
 
 // Aplica un plan en UNA transacción: fichas nuevas → pagos → (opcional)
 // borrar duplicados. Quien llama debe tener tomado isSheetsSyncRunning.
-const aplicarPlanImportacionPagos = async (plan, { borrarDuplicados }) => {
+const aplicarPlanImportacionPagos = async (plan, { borrarDuplicados, actualizarFichas = false }) => {
   const client = await pool.connect();
   let creados = 0;
+  let actualizadas = 0;
   let borrados = 0;
   try {
     await client.query('BEGIN');
     for (const { ficha } of plan.crearDeportistas || []) {
       const r = await client.query(
         `INSERT INTO jugadores (rut_jugador, nombres, apellido_paterno, apellido_materno, fecha_nacimiento, rama, categoria,
-                                correo_apoderado, fecha_ingreso, estado)
-         SELECT $1::varchar, $2, $3, $4, $5::date, $6, $7, $8, $9::date, 'ACTIVO'
+                                correo_apoderado, fecha_ingreso, estado, apoderado_socio)
+         SELECT $1::varchar, $2, $3, $4, $5::date, $6, $7, $8, $9::date, 'ACTIVO', $10
          WHERE NOT EXISTS (SELECT 1 FROM jugadores WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = REPLACE(UPPER($1::varchar), '-', ''))`,
         [ficha.rut_jugador, ficha.nombres, ficha.apellido_paterno, ficha.apellido_materno, ficha.fecha_nacimiento,
-          ficha.rama, ficha.categoria, ficha.correo_apoderado, ficha.fecha_ingreso]
+          ficha.rama, ficha.categoria, ficha.correo_apoderado, ficha.fecha_ingreso, Boolean(ficha.apoderado_socio)]
       );
       creados += r.rowCount;
+    }
+    if (actualizarFichas) {
+      for (const { rut, cambios } of plan.actualizarFichas || []) {
+        const r = await client.query(
+          `UPDATE jugadores SET apoderado_socio = COALESCE($2, apoderado_socio),
+                                correo_apoderado = CASE WHEN COALESCE(TRIM(correo_apoderado), '') = '' THEN COALESCE($3, correo_apoderado) ELSE correo_apoderado END,
+                                updated_at = NOW()
+           WHERE rut_jugador = $1`,
+          [rut, cambios.apoderado_socio ?? null, cambios.correo_apoderado ?? null]
+        );
+        actualizadas += r.rowCount;
+      }
     }
     for (const item of plan.agregar) {
       const p = item.pago;
@@ -6601,10 +6634,10 @@ const aplicarPlanImportacionPagos = async (plan, { borrarDuplicados }) => {
   }
   // Reescribe ya las pestañas de BASE_CCF (antes de soltar el bloqueo de la
   // importación automática, que re-insertaría por id lo borrado).
-  if (creados) sheetsSyncManager.enqueueTable('jugadores');
+  if (creados || actualizadas) sheetsSyncManager.enqueueTable('jugadores');
   sheetsSyncManager.enqueueTable('pagos_mensualidades');
   await sheetsSyncManager.flush().catch((e) => console.error('[IMPORTAR-PLANILLA] flush Sheets:', e.message));
-  return { creados, agregados: plan.agregar.length, borrados };
+  return { creados, actualizadas, agregados: plan.agregar.length, borrados };
 };
 
 // Configuración persistente (tabla clave/valor; ver migrations/init.js).
@@ -6710,12 +6743,12 @@ app.post('/api/pagos-mensualidades/importar-planilla', authenticate, requireRole
     const plan = await construirPlanImportacionPagos(req.body?.url);
     // Lo que se aplica debe ser lo que el admin revisó.
     const esperado = req.body?.resumen || {};
-    const cambio = ['crearDeportistas', 'agregarDeportistas', 'agregarSocios', 'duplicadosBorrar']
+    const cambio = ['crearDeportistas', 'actualizarFichas', 'agregarDeportistas', 'agregarSocios', 'duplicadosBorrar']
       .some((k) => Number(esperado[k] || 0) !== Number(plan.resumen[k] || 0));
     if (cambio) {
       return res.status(409).json({ error: 'Los datos cambiaron desde que revisaste la planilla. Vuelve a revisarla antes de aplicar.', resumen: plan.resumen });
     }
-    const aplicado = await aplicarPlanImportacionPagos(plan, { borrarDuplicados: true });
+    const aplicado = await aplicarPlanImportacionPagos(plan, { borrarDuplicados: true, actualizarFichas: true });
     console.log(`[IMPORTAR-PLANILLA] ${aplicado.creados} deportistas creados, ${aplicado.agregados} pagos agregados, ${aplicado.borrados} duplicados borrados (por ${req.actor?.rut}).`);
     return res.json({ ok: true, ...aplicado, resumen: plan.resumen });
   } catch (err) {
@@ -6836,6 +6869,10 @@ app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'v
         ].filter(Boolean).join(' · ') || null,
       ]
     );
+    // Una familia subió un comprobante: avisar a Tesorería (admins) para que
+    // lo valide pronto. Un aviso por familia cada 15 min aunque el
+    // comprobante cubra varios meses (se crea un pago por mes).
+    if (!esStaffOAdminPago) void avisarComprobanteATesoreria(req.actor, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[POST /api/pagos-mensualidades]', err);
@@ -7225,6 +7262,37 @@ const formatearFechaCitacion = (valor) => {
   const fecha = valor instanceof Date ? valor : new Date(valor);
   if (Number.isNaN(fecha.getTime())) return String(valor);
   return fecha.toISOString().slice(0, 10);
+};
+
+const avisarComprobanteATesoreria = async (actor, pago) => {
+  try {
+    const quien = (await pool.query('SELECT nombres, apellido_paterno FROM cuentas WHERE id = $1', [actor?.id])).rows[0];
+    const nombre = `${quien?.nombres || ''} ${quien?.apellido_paterno || ''}`.trim() || actor?.rut || 'Una familia';
+    const admins = (await pool.query(
+      `SELECT rut FROM cuentas
+       WHERE LOWER(COALESCE(rol, '')) IN ('admin', 'super_admin', 'superadmin')
+         AND LOWER(COALESCE(estado, 'activo')) NOT IN ('inactivo', 'baja')`
+    )).rows;
+    for (const { rut } of admins) {
+      const reciente = await pool.query(
+        `SELECT 1 FROM notificaciones_app
+         WHERE rut_destinatario = $1 AND tipo = 'pago' AND referencia_tipo = 'comprobante'
+           AND titulo = $2 AND creado_en > NOW() - INTERVAL '15 minutes' LIMIT 1`,
+        [rut, `Comprobante de ${nombre}`]
+      );
+      if (reciente.rows.length) continue;
+      await crearNotificacionApp({
+        rut,
+        tipo: 'pago',
+        titulo: `Comprobante de ${nombre}`,
+        cuerpo: `Subió un comprobante (${pago?.concepto_pago || 'Mensualidad'}, ${pago?.meses_correspondientes || ''}). Revísalo en Tesorería → Validar pagos.`,
+        referenciaTipo: 'comprobante',
+        referenciaId: pago?.id || null,
+      });
+    }
+  } catch (error) {
+    console.error('[AVISO-COMPROBANTE]', error.message);
+  }
 };
 
 // Crea una fila de notificación in-app para un RUT destinatario. No lanza:
@@ -7911,6 +7979,65 @@ app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireApode
 });
 
 // GET: notificaciones in-app del actor autenticado.
+// Recordatorio de pago dentro de la app (Tesorería → Por cobrar). La deuda
+// la calcula el frontend (mismos números que Por cobrar); aquí solo se
+// valida que cada RUT sea una cuenta activa y se evita repetir el mismo día.
+app.post('/api/notificaciones/recordatorio-pagos', authenticate, requireAnyModule('validacion_pagos', 'admin_dashboard'), async (req, res) => {
+  const avisos = Array.isArray(req.body?.avisos) ? req.body.avisos.slice(0, 600) : [];
+  try {
+    const activas = new Set((await pool.query(
+      `SELECT REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') AS rut FROM cuentas
+       WHERE LOWER(COALESCE(estado, 'activo')) NOT IN ('inactivo', 'baja')`
+    )).rows.map((r) => r.rut));
+    let enviados = 0;
+    let omitidos = 0;
+    for (const aviso of avisos) {
+      const rut = String(aviso?.rut || '').trim();
+      const rutNorm = rut.replace(/[.\s-]/g, '').toUpperCase();
+      if (!rutNorm || !activas.has(rutNorm)) { omitidos += 1; continue; }
+      const hoy = await pool.query(
+        `SELECT 1 FROM notificaciones_app WHERE REPLACE(REPLACE(UPPER(rut_destinatario), '.', ''), '-', '') = $1
+           AND tipo = 'pago' AND referencia_tipo = 'recordatorio' AND creado_en::date = CURRENT_DATE LIMIT 1`,
+        [rutNorm]
+      );
+      if (hoy.rows.length) { omitidos += 1; continue; }
+      await crearNotificacionApp({
+        rut,
+        tipo: 'pago',
+        titulo: 'Recordatorio de pago',
+        cuerpo: String(aviso?.cuerpo || 'Tienes cuotas pendientes. Sube tu comprobante desde el Muro.').slice(0, 600),
+        referenciaTipo: 'recordatorio',
+        referenciaId: null,
+      });
+      enviados += 1;
+    }
+    await guardarConfigRecordatorio({ ultimoEnvio: new Date().toISOString(), enviados, por: req.actor?.rut || null }).catch(() => {});
+    res.json({ enviados, omitidos });
+  } catch (err) {
+    console.error('[POST /api/notificaciones/recordatorio-pagos]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/notificaciones/recordatorio-pagos', authenticate, requireAnyModule('validacion_pagos', 'admin_dashboard'), async (req, res) => {
+  try {
+    await asegurarTablaConfiguracion();
+    const r = await pool.query("SELECT valor FROM configuracion_sistema WHERE clave = 'recordatorio_pagos'");
+    res.json(r.rows[0]?.valor || {});
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const guardarConfigRecordatorio = async (valor) => {
+  await asegurarTablaConfiguracion();
+  await pool.query(
+    `INSERT INTO configuracion_sistema (clave, valor, updated_at) VALUES ('recordatorio_pagos', $1, NOW())
+     ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
+    [JSON.stringify(valor)]
+  );
+};
+
 app.get('/api/notificaciones', authenticate, async (req, res) => {
   try {
     const result = await pool.query(

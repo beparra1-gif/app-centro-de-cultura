@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Camera, Check, ChevronDown, ChevronUp, Clock, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
+import { AlertTriangle, Camera, Check, ChevronDown, ChevronUp, Clock, FileText, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
+import { armarCertificado, generarPdfCertificado } from '../utils/certificadoPagos';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from '../utils/beca';
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
@@ -115,6 +116,8 @@ function PerfilTesoreriaPanel({
   // Si se pasa el setter, la cuenta activa queda controlada por el padre.
   cuentaActivaAdmin,
   setCuentaActivaAdmin,
+  // Meses de cuota socio a dejar marcados al abrir (desde el Muro).
+  mesesSocioIniciales = [],
   utmVigente,
   utmHistorico,
 }) {
@@ -136,7 +139,7 @@ function PerfilTesoreriaPanel({
   // grilla de Mensualidad Deportista, con selección independiente por
   // pupilo; la de Cuota Socio es independiente para que el socio/apoderado
   // pueda pagar solo una, solo la otra, o ambas.
-  const [mesesSocioSeleccionados, setMesesSocioSeleccionados] = useState([]);
+  const [mesesSocioSeleccionados, setMesesSocioSeleccionados] = useState(() => mesesSocioIniciales);
 
   const esVistaAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
 
@@ -284,7 +287,8 @@ function PerfilTesoreriaPanel({
     }
     : null;
   const mesesAtraso = Number(morosoActivo?.mesesDeuda || 0);
-  const estadoCuenta = mesesAtraso > 0 ? 'Moroso' : 'Al Día';
+  // "Moroso" era duro para las familias: se muestra "Con deuda".
+  const estadoCuenta = mesesAtraso > 0 ? 'Con deuda' : 'Al Día';
 
   const getMesNumero = (texto = '') => {
     const token = String(texto || '')
@@ -427,7 +431,8 @@ function PerfilTesoreriaPanel({
   const montoAcordadoFamilia = Number(cuentaActual?.monto_mensual_override || 0);
   const { cuotaDeportistas, cuotaReferencial: cuotaDeportistaReferencial } = calcularCuotaDeportistasFamilia({
     pupilosFamilia: pupilosActivos,
-    esSocioApoderado: esSocio,
+    // Hijo de socio: cuenta socia o ficha marcada "pupilo de socio".
+    esSocioApoderado: esSocio || pupilosActivos.some((p) => Boolean(p.apoderado_socio)),
     montoAcordado: montoAcordadoFamilia,
   });
   const cuotaSocioAplicada = esSocio ? cuotaSocio : 0;
@@ -774,7 +779,7 @@ function PerfilTesoreriaPanel({
           <div>
             <span style={{ fontSize: 'var(--texto-min)', color: 'rgba(255,255,255,0.6)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mensualidad / Perfil</span>
             <h3 className="status-titular" style={{ color: 'white' }}>{titular}</h3>
-            <span className="status-rol">{esSocio ? 'Socio Activo Club Cultura Física' : 'Apoderado Base'}</span>
+            <span className="status-rol">{esSocio ? 'Socio activo del club' : (pupilosActivos.length ? 'Apoderado' : 'Cuenta')}</span>
             {esSocio && (
               <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700', display: 'block', marginTop: '5px' }}>
                 UTM referencia ({fechaCorteTexto}): ${utmActual.toLocaleString('es-CL')} · Cuota socio (0,3 UTM): ${cuotaSocio.toLocaleString('es-CL')}
@@ -825,7 +830,7 @@ function PerfilTesoreriaPanel({
         </div>
       )}
 
-      {estadoCuenta === 'Moroso' && (
+      {estadoCuenta === 'Con deuda' && (
         <div className="card fade-in mt-15 compact-debt-summary" style={{ borderLeft: '4px solid var(--rojo-alerta)', background: 'linear-gradient(180deg, rgba(255,59,48,0.08), rgba(255,59,48,0.02))', borderRadius: 'var(--radius-lg)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'center' }}>
             <div>
@@ -860,7 +865,28 @@ function PerfilTesoreriaPanel({
         </div>
       )}
 
-      <h3 className="section-title mt-20">Panel de Pagos 2026</h3>
+      <div className="ptp-titulo-pagos">
+        <h3 className="section-title mt-20">Panel de Pagos 2026</h3>
+        <button
+          type="button"
+          className="btn-secondary tc-btn"
+          onClick={async () => {
+            try {
+              await generarPdfCertificado(armarCertificado({
+                titular: { nombre: titular, rut: cuentaActual?.rut || pupilosActivos[0]?.rut || '', esSocio, cuenta: cuentaActual || {} },
+                pupilos: pupilosActivos,
+                pagos: pagosMensualidadesAdmin || [],
+                morosos: morososAdmin || [],
+                sociosMorosos: sociosMorosos || [],
+              }));
+            } catch (error) {
+              showToast({ message: `No se pudo generar el certificado: ${error.message}`, type: 'error' });
+            }
+          }}
+        >
+          <FileText size={14} /> Certificado de pagos (PDF)
+        </button>
+      </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         <button

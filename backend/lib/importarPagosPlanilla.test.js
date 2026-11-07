@@ -15,7 +15,7 @@ const dv = (cuerpo) => {
   return r === 11 ? '0' : r === 10 ? 'K' : String(r);
 };
 const NUEVO = `99700103${dv(99700103)}`;
-const filaDep = (rut, nombre, mes, monto, estado = 'VALIDADO') => `"","","${nombre}","${rut}","${mes}","wsap","${estado}","${monto}","",""`;
+const filaDep = (rut, nombre, mes, monto, estado = 'VALIDADO', obs = '') => `"","","${nombre}","${rut}","${mes}","wsap","${estado}","${monto}","${obs}",""`;
 const filaSoc = (rut, nombre, mes, monto, rut2 = '') => `"","${nombre}","${rut}","${mes}","wsap","${rut2}","VALIDADO","${monto}",""`;
 
 const jugadores = [
@@ -44,7 +44,7 @@ const pagos = [
 ];
 
 const csvDeportistas = [CAB_DEP,
-  filaDep('997001011', 'HIJO PRUEBA', 'Enero', '25000'),
+  filaDep('997001011', 'HIJO PRUEBA', 'Enero', '25000', 'VALIDADO', 'SOCIO'),
   filaDep('997001011', 'HIJO PRUEBA', 'Abril', '25000'),
   filaDep('997001011', 'HIJO PRUEBA', 'mayo', '25000'),
   filaDep('997001011', 'HIJO PRUEBA', 'mayo', '25000'),
@@ -115,10 +115,31 @@ describe('planificarImportacion', () => {
       correo_apoderado: 'socia@test.local',
       // Sin "MES AÑO INGRESO": el primer mes que pagó según la planilla.
       fecha_ingreso: '2026-03-01',
+      apoderado_socio: false,
     });
     // Sus pagos se vinculan a quien paga (por el correo del apoderado).
     const pago = plan.agregar.find((a) => a.rut === `99700103-${dv(99700103)}`).pago;
     expect(pago.rut_pagos).toBe('99.700.201-2');
+  });
+
+  it('marca pupilo de socio según la planilla, con su motivo (solo fichas existentes sin la marca)', () => {
+    expect(plan.resumen.actualizarFichas).toBe(1);
+    expect(plan.actualizarFichas[0]).toMatchObject({ rut: '99700101-1', cambios: { apoderado_socio: true } });
+    expect(plan.actualizarFichas[0].motivo).toMatch(/observación "socio"/);
+    const sinCambios = planificarImportacion({
+      csvDeportistas, csvSocios, csvBase, cuentas, pagos,
+      jugadores: jugadores.map((j) => ({ ...j, apoderado_socio: true })),
+    });
+    expect(sinCambios.resumen.actualizarFichas).toBe(0);
+  });
+
+  it('crea también a los de Base Principal sin pagos, cobrando desde el mes actual', () => {
+    const SOLO_BASE = `99700104${dv(99700104)}`;
+    const base = [csvBase, filaBase({ 3: 'PEDRO SIN PAGOS', 4: SOLO_BASE, 5: '1/2/2015', 17: 'Masculina', 19: 'U-11' })].join(String.fromCharCode(10));
+    const r = planificarImportacion({ csvDeportistas, csvSocios, csvBase: base, jugadores, cuentas, pagos, hoy: new Date(2026, 10, 7) });
+    const ficha = r.crearDeportistas.find((c) => c.rut === `99700104-${dv(99700104)}`);
+    expect(ficha.ficha).toMatchObject({ nombres: 'Pedro', apellido_paterno: 'Sin', apellido_materno: 'Pagos', fecha_ingreso: '2026-11-01', categoria: 'SUB-11' });
+    expect(r.resumen.crearDeportistas).toBe(2);
   });
 
   it('avisa filas repetidas en la planilla', () => {

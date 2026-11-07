@@ -81,14 +81,14 @@ export default function ImportarPagosPlanilla({ onAplicado }) {
     const r = plan.resumen;
     const confirmado = await confirmAction({
       title: 'Aplicar importación de pagos',
-      message: `Se crearán ${r.crearDeportistas || 0} fichas de deportistas, se agregarán ${r.agregarDeportistas + r.agregarSocios} pagos (${r.agregarDeportistas} de deportistas y ${r.agregarSocios} de socios) como APROBADOS y se borrarán ${r.duplicadosBorrar} pagos duplicados importados. Los pagos registrados desde la app no se tocan. ¿Continuar?`,
+      message: `Se crearán ${r.crearDeportistas || 0} fichas de deportistas, se completarán ${r.actualizarFichas || 0} fichas existentes (pupilo de socio / correo del apoderado), se agregarán ${r.agregarDeportistas + r.agregarSocios} pagos (${r.agregarDeportistas} de deportistas y ${r.agregarSocios} de socios) como APROBADOS y se borrarán ${r.duplicadosBorrar} pagos duplicados importados. Los pagos registrados desde la app no se tocan. ¿Continuar?`,
       confirmText: 'Aplicar',
     });
     if (!confirmado) return;
     setCargando(true);
     try {
       const res = await api.pagosMensualidadesAPI.aplicarImportacionPlanilla({ url: url.trim(), resumen: r });
-      showToast({ message: `Listo: ${res.creados} deportistas creados, ${res.agregados} pagos agregados y ${res.borrados} duplicados borrados.`, type: 'success' });
+      showToast({ message: `Listo: ${res.creados} deportistas creados, ${res.actualizadas || 0} fichas completadas, ${res.agregados} pagos agregados y ${res.borrados} duplicados borrados.`, type: 'success' });
       setPlan(null);
       await onAplicado?.();
     } catch (error) {
@@ -120,7 +120,7 @@ export default function ImportarPagosPlanilla({ onAplicado }) {
   };
 
   const r = plan?.resumen;
-  const hayCambios = r && ((r.crearDeportistas || 0) + r.agregarDeportistas + r.agregarSocios + r.duplicadosBorrar) > 0;
+  const hayCambios = r && ((r.crearDeportistas || 0) + (r.actualizarFichas || 0) + r.agregarDeportistas + r.agregarSocios + r.duplicadosBorrar) > 0;
 
   return (
     <section className="ip-card">
@@ -163,6 +163,7 @@ export default function ImportarPagosPlanilla({ onAplicado }) {
             <>
               <div className="ip-resumen">
                 <div><span>Deportistas nuevos</span><strong>{r.crearDeportistas || 0}</strong></div>
+                <div><span>Fichas a completar</span><strong>{r.actualizarFichas || 0}</strong></div>
                 <div><span>Pagos deportistas</span><strong>{r.agregarDeportistas}</strong></div>
                 <div><span>Pagos socios</span><strong>{r.agregarSocios}</strong></div>
                 <div><span>Ya estaban</span><strong>{r.yaEstaban}</strong></div>
@@ -176,6 +177,11 @@ export default function ImportarPagosPlanilla({ onAplicado }) {
                 items={plan.crearDeportistas}
                 abierta
                 render={(c) => <><b>{c.nombre}</b> · {c.rut} · {c.fechaNacimiento ? `nac. ${c.fechaNacimiento.split('-').reverse().join('-')}` : 'sin fecha de nacimiento'} · {[c.rama, c.categoria].filter(Boolean).join(' ')}</>}
+              />
+              <Lista
+                titulo="Fichas que se completan (solo al aplicar a mano)"
+                items={plan.actualizarFichas}
+                render={(f) => <><b>{f.nombre}</b> · {f.rut} — {f.motivo}</>}
               />
               <Lista
                 titulo="Pagos a agregar"

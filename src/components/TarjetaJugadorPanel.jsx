@@ -889,7 +889,7 @@ function TarjetaJugadorPanel({
             <div className="history-summary-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
                 <div>
-                  <strong style={{ fontSize: '16px', fontWeight: '900' }}>Resumen del jugador</strong>
+                  <strong style={{ fontSize: '16px', fontWeight: '900' }}>{pupiloActivo?.nombre ? `Resumen de ${String(pupiloActivo.nombre).split(' ').slice(0, 2).join(' ')}` : 'Resumen del jugador'}</strong>
                 </div>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '900', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>
                   <Trophy size={14} /> Nivel {nivelActualNumero}
