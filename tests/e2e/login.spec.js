@@ -44,8 +44,10 @@ test('login y navegación básica a Panel y Muro', async ({ page }) => {
   const panelNav = page.locator('.nav-item', { hasText: 'Panel' });
   await expect(panelNav).toBeVisible({ timeout: 15000 });
   await panelNav.click();
-  await expect(page.getByText('Resumen')).toBeVisible();
+  // El Panel es una lista agrupada con cada destino a un toque.
+  await expect(page.getByRole('button', { name: /Tesorería/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Resumen del club/ })).toBeVisible();
 
   await page.locator('.nav-item', { hasText: 'Muro' }).click();
-  await expect(page.getByText('Muro Social')).toBeVisible();
+  await expect(page.locator('.nav-item.active', { hasText: 'Muro' })).toBeVisible();
 });

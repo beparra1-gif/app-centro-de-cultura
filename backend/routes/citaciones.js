@@ -529,7 +529,6 @@ router.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireAp
   }
 });
 
-// GET: notificaciones in-app del actor autenticado.
 router.get('/api/notificaciones', authenticate, async (req, res) => {
   try {
     const result = await pool.query(

@@ -122,7 +122,7 @@ const CAMPOS_JUGADOR_SOLO_ADMIN = [
   'rut_apoderado', 'correo_apoderado', 'correo_jugador', 'password_jugador', 'forzar_clave_jugador',
   'rama', 'categoria', 'numero_camiseta', 'fecha_ingreso', 'mes_inicio_cobro', 'beca', 'exento_mensualidad',
   'valor_mensualidad', 'matricula_pagada', 'polera_entregada', 'poleron_entregado',
-  'estado', 'estado_deportivo', 'fecha_inicio_baja', 'fecha_fin_baja', 'xp_puntos',
+  'estado', 'estado_deportivo', 'fecha_inicio_baja', 'fecha_fin_baja', 'xp_puntos', 'apoderado_socio',
 ];
 
 // El apoderado dueño (rut_apoderado registrado) puede editar el perfil de su propio
@@ -223,6 +223,7 @@ router.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule
         rut_apoderado = COALESCE($42, rut_apoderado),
         diseno_marco = COALESCE($43, diseno_marco),
         exento_mensualidad = COALESCE($44, exento_mensualidad),
+        apoderado_socio = COALESCE($46, apoderado_socio),
         updated_at = NOW()
       WHERE rut_jugador = $45
       RETURNING *`,
@@ -272,6 +273,7 @@ router.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule
         diseno_marco ?? null,
         exento_mensualidad ?? null,
         req.params.rut,
+        typeof req.body?.apoderado_socio === 'boolean' ? req.body.apoderado_socio : null,
       ]
     );
 

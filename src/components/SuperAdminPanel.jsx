@@ -3,11 +3,13 @@ import { createPortal } from 'react-dom';
 import {
   Activity,
   AlertTriangle,
+  BarChart3,
   Bell,
   Check,
   CheckSquare,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   Eye,
   EyeOff,
   FileText,
@@ -18,7 +20,6 @@ import {
   Lock,
   Megaphone,
   Pencil,
-  Phone,
   Plus,
   QrCode,
   Search,
@@ -41,12 +42,22 @@ import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
 import PagoForm from './PagoForm';
 import PerfilTesoreriaPanel from './PerfilTesoreriaPanel';
+import TesoreriaCuentasPanel from './TesoreriaCuentasPanel';
+import RevisionClasificacionPagos from './RevisionClasificacionPagos';
+import ImportarPagosPlanilla from './ImportarPagosPlanilla';
+import InformeDeudaPanel from './InformeDeudaPanel';
+import TarifasPanel from './TarifasPanel';
+import RespaldosPanel from './RespaldosPanel';
+import FichaPersonaModal from './FichaPersonaModal';
+import VincularApoderadosPanel from './VincularApoderadosPanel';
+import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
+import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
 import QrScanner from './QrScanner';
 import ResultadosCards from './ResultadosCards';
-import { colorTipo } from '../utils/appHelpers';
 import { calcularResumenCitacion } from '../utils/citaciones';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { mapearJugadorAPupilo } from '../utils/pupiloMapper';
+import { estaActivo, soloActivos } from '../utils/estadoActivo';
 import { CATEGORIAS_POR_RAMA } from '../utils/categoriasDeportivas';
 import ReportesPanel from './ReportesPanel';
 import SaludAlertasPanel from './SaludAlertasPanel';
@@ -99,8 +110,6 @@ function SuperAdminPanel({
   vistaAdmin,
   setVistaAdmin,
   generarAlertas,
-  filtroMorosos,
-  setFiltroMorosos,
   pagosPendientesAdmin,
   setPagosPendientesAdmin,
   logAuditoria,
@@ -125,16 +134,17 @@ function SuperAdminPanel({
   calcularScoreDeCliente,
   comunicaciones,
   setComunicaciones,
-  cuentasAdmin,
+  cuentasAdmin: cuentasAdminTodas,
   matrixPermisos,
   togglePermiso,
   cuentasConCambiosPendientes,
   guardandoCuentaId,
   onGuardarCuenta,
   rolesBaseInfo,
-  jugadoresAdmin,
+  jugadoresAdmin: jugadoresAdminTodos,
   jugadoresVisitaAdmin,
   guardarCuentaAdmin,
+  recargarUsuariosAdmin,
   guardarJugadorAdmin,
   eliminarCuentaAdmin,
   eliminarJugadorAdmin,
@@ -143,6 +153,7 @@ function SuperAdminPanel({
   morososAdmin,
   sociosMorosos,
   pagosMensualidadesAdmin,
+  recargarPagosMensualidades,
   onSheetsSyncComplete,
   onCancelEdit,
   onPartidosChanged,
@@ -159,6 +170,11 @@ function SuperAdminPanel({
   void setNominaCita;
 
   const rolActual = normalizarRol(usuarioAutenticado?.rol || usuarioAutenticado?.perfil_principal || '');
+  // Inactivos/baja fuera de todos los listados operativos (Tesorería,
+  // citaciones, becas, estadísticas...). Usuarios y Cuentas y la ficha usan
+  // las listas completas (…Todos/…Todas), desde ahí se reactivan.
+  const jugadoresAdmin = useMemo(() => soloActivos(jugadoresAdminTodos), [jugadoresAdminTodos]);
+  const cuentasAdmin = useMemo(() => soloActivos(cuentasAdminTodas), [cuentasAdminTodas]);
   const esStaff = rolActual === 'staff';
   const esAdmin = rolActual === 'admin';
   const esSuperAdmin = rolActual === 'super_admin';
@@ -307,7 +323,6 @@ function SuperAdminPanel({
   }, [pagosMensualidadesAdmin, sociosMorosos, morososAdmin]);
 
   const [mesRecaudacionActivo, setMesRecaudacionActivo] = useState(null);
-  const [busquedaSociosMorosos, setBusquedaSociosMorosos] = useState('');
 
   // La recaudación en $ va oculta por defecto (el club pidió no mostrar
   // montos a simple vista) — se revela con este toggle, junto a filtros
@@ -353,90 +368,6 @@ function SuperAdminPanel({
     ? recaudacionMensual.find((f) => f.mes === filtroMesResumen)
     : null;
 
-  const sociosMorososFiltrados = (sociosMorosos || []).filter((s) => {
-    if (filtroMesResumen !== 'todos' && !(s.mesesMorosos || []).includes(filtroMesResumen)) return false;
-    const q = busquedaSociosMorosos.trim().toLowerCase();
-    if (!q) return true;
-    return String(s.nombre || '').toLowerCase().includes(q);
-  });
-
-  const construirMensajeRecordatorioSocio = (s) => (
-    `Hola ${String(s.nombre || '').trim().split(' ')[0] || s.nombre}, te recordamos que tienes ${s.mesesDeuda} ${s.mesesDeuda === 1 ? 'mes' : 'meses'} de cuota de socio pendiente ($${s.montoDeuda.toLocaleString('es-CL')}) en el Centro de Cultura Física. Por favor regulariza tu pago a la brevedad.\n\n*Centro de Cultura Física*`
-  );
-
-  const avisarSocioMoroso = async (s) => {
-    if (!s.telefono) {
-      showToast({ message: `${s.nombre} no tiene teléfono registrado en su cuenta.`, type: 'error' });
-      return;
-    }
-    await enviarPorWhatsApp(s.telefono, construirMensajeRecordatorioSocio(s), 'pago');
-    showToast({ message: `WhatsApp abierto para ${s.nombre} · ${s.telefono}`, type: 'success' });
-  };
-
-  const [busquedaMorosos, setBusquedaMorosos] = useState('');
-  const [filtroRamaMorosos, setFiltroRamaMorosos] = useState('todas');
-  const [filtroCategoriaMorosos, setFiltroCategoriaMorosos] = useState('todas');
-
-  // Opciones de los dropdown de rama/categoría: solo las que de verdad tienen
-  // algún moroso, no el universo completo de ramas/categorías del club.
-  const ramasMorosos = [...new Set((morososAdmin || []).map((m) => m.rama).filter(Boolean))].sort();
-  const categoriasMorosos = [...new Set((morososAdmin || []).map((m) => m.categoria).filter(Boolean))].sort();
-
-  const morososFiltrados = (filtroMorosos === 'todos'
-    ? (morososAdmin || [])
-    : filtroMorosos === 'socios'
-      ? (morososAdmin || []).filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado')
-      : (morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado')
-  ).filter((m) => {
-    if (filtroRamaMorosos !== 'todas' && m.rama !== filtroRamaMorosos) return false;
-    if (filtroCategoriaMorosos !== 'todas' && m.categoria !== filtroCategoriaMorosos) return false;
-    if (filtroMesResumen !== 'todos' && !(m.mesesMorosos || []).includes(filtroMesResumen)) return false;
-    const q = busquedaMorosos.trim().toLowerCase();
-    if (!q) return true;
-    if (String(m.nombre || '').toLowerCase().includes(q)) return true;
-    return (m.pupilos || []).some((p) => String(p || '').toLowerCase().includes(q));
-  });
-
-  // "Pagados": el complemento de morososAdmin — deportistas cuyo rut no
-  // aparece en la lista de morosos. Reusa el mismo lookup de cuenta que
-  // construirMorososDesdePagos (App.jsx) para poder mostrar el mismo aviso
-  // de "sin apoderado asignado" también acá, no solo en morosos.
-  const [vistaEstatusPagos, setVistaEstatusPagos] = useState('morosos');
-  const normalizarRutLocal = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
-  const rutsMorososSet = useMemo(() => new Set((morososAdmin || []).map((m) => normalizarRutLocal(m.rut))), [morososAdmin]);
-  const deportistasAlDiaLista = useMemo(() => {
-    const cuentaPorRut = new Map();
-    const cuentaPorCorreo = new Map();
-    (cuentasAdmin || []).forEach((c) => {
-      if (c.rut) cuentaPorRut.set(normalizarRutLocal(c.rut), c);
-      if (c.correo) cuentaPorCorreo.set(String(c.correo).trim().toLowerCase(), c);
-    });
-    return (jugadoresAdmin || [])
-      .filter((j) => !rutsMorososSet.has(normalizarRutLocal(j.rut_jugador)))
-      .map((j) => {
-        const cuenta = cuentaPorRut.get(normalizarRutLocal(j.rut_apoderado || ''))
-          || cuentaPorCorreo.get(String(j.correo_apoderado || '').trim().toLowerCase());
-        const telefonoCuenta = String(cuenta?.telefono || '').trim();
-        return {
-          id: normalizarRutLocal(j.rut_jugador) || j.rut_jugador,
-          nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim() || `Jugador ${j.rut_jugador || ''}`,
-          rama: j.rama || '',
-          categoria: j.categoria || '',
-          sinApoderado: !cuenta,
-          telefono: telefonoCuenta ? `${String(cuenta?.prefijo_tel || '+56').trim()}${telefonoCuenta}` : '',
-          correo: j.correo_apoderado || '',
-        };
-      });
-  }, [jugadoresAdmin, cuentasAdmin, rutsMorososSet]);
-
-  const pagadosFiltrados = deportistasAlDiaLista.filter((p) => {
-    if (filtroRamaMorosos !== 'todas' && p.rama !== filtroRamaMorosos) return false;
-    if (filtroCategoriaMorosos !== 'todas' && p.categoria !== filtroCategoriaMorosos) return false;
-    const q = busquedaMorosos.trim().toLowerCase();
-    if (!q) return true;
-    return String(p.nombre || '').toLowerCase().includes(q);
-  });
-
   const construirMensajeRecordatorioMoroso = (m) => {
     const primerNombre = String(m.nombre || '').trim().split(' ')[0] || m.nombre;
     return `Hola ${primerNombre}, te recordamos que tienes ${m.mesesDeuda} ${m.mesesDeuda === 1 ? 'mes' : 'meses'} de mensualidad pendiente ($${m.montoDeuda.toLocaleString('es-CL')}) en el Centro de Cultura Física. Por favor regulariza tu pago a la brevedad.\n\n*Centro de Cultura Física*`;
@@ -462,16 +393,8 @@ function SuperAdminPanel({
   // check y no perder el lugar si lo interrumpen).
   const [mostrarModalNotificarTodos, setMostrarModalNotificarTodos] = useState(false);
   const [avisadosEnLote, setAvisadosEnLote] = useState(new Set());
-
-  const abrirModalNotificarTodos = () => {
-    const conTelefono = morososFiltrados.filter((m) => m.telefono);
-    if (conTelefono.length === 0) {
-      showToast({ message: 'Ningún deudor de esta lista tiene teléfono registrado.', type: 'error' });
-      return;
-    }
-    setAvisadosEnLote(new Set());
-    setMostrarModalNotificarTodos(true);
-  };
+  // Personas a avisar en el modal (las filas con deuda de "Por cobrar").
+  const [listaAvisoLote, setListaAvisoLote] = useState([]);
 
   const avisarMorosoEnLote = async (m) => {
     await avisarMoroso(m);
@@ -486,6 +409,7 @@ function SuperAdminPanel({
   const [filtroUsuariosTexto, setFiltroUsuariosTexto] = useState('');
   const [filtroCuentasTexto, setFiltroCuentasTexto] = useState('');
   const [filtroTipoPerfil, setFiltroTipoPerfil] = useState('todos');
+  const [filtroEstadoUsuarios, setFiltroEstadoUsuarios] = useState('activos');
   const [filtroRamaJugadores, setFiltroRamaJugadores] = useState('todas');
   const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState('todas');
   const [filtroApoderadoJugadores, setFiltroApoderadoJugadores] = useState('todos');
@@ -751,8 +675,8 @@ function SuperAdminPanel({
   // pendiente. Se resetea al abrir "Nuevo Pago" normal o al editar.
   const [pagoManualAutoAprobar, setPagoManualAutoAprobar] = useState(false);
   // Quién quedó preseleccionado al abrir "Pago manual" desde una fila de
-  // moroso en Resumen (ver sociosMorososFiltrados/morososFiltrados más
-  // abajo) — null cuando se abre vacío desde el botón general de Pagos.
+  // deudor en Tesorería → Por cobrar (abrirPagoManualTesoreria) — null
+  // cuando se abre vacío desde "Registrar pago".
   const [pagoManualObjetivo, setPagoManualObjetivo] = useState(null);
   const [paginaPagosMigrados, setPaginaPagosMigrados] = useState(1);
   const [itemsPorPaginaPagos] = useState(15);
@@ -859,7 +783,7 @@ function SuperAdminPanel({
 
   const ETIQUETA_ESTADO_BECA = {
     vigente: { texto: 'Vigente', bg: 'rgba(52,199,89,0.12)', color: 'var(--verde-victoria)' },
-    por_vencer: { texto: 'Por vencer', bg: 'rgba(255,149,0,0.12)', color: '#b36200' },
+    por_vencer: { texto: 'Por vencer', bg: 'rgba(255,149,0,0.12)', color: '#8A4B00' },
     vencida: { texto: 'Vencida', bg: 'rgba(255,59,48,0.12)', color: 'var(--rojo-alerta)' },
   };
   const ORDEN_ESTADO_BECA = { vencida: 0, por_vencer: 1, vigente: 2 };
@@ -1062,8 +986,88 @@ function SuperAdminPanel({
     [pagosPendientesAdmin]
   );
 
+  // ===== Tesorería: pestañas (Por cobrar / Validar pagos / Resumen) =====
+  // Antes era una sola página larguísima (bandeja, panorama, recaudación,
+  // socios morosos, morosos por deportista y la cuenta de una familia, todo
+  // seguido) y cada persona aparecía repartida en varias listas.
+  const [seccionTesoreria, setSeccionTesoreria] = useState('cobrar');
+  // Pagos de deportistas guardados por error como cuota de socio (ver
+  // utils/pagosMalClasificados): se revisan en "Validar pagos".
+  const pagosMalClasificados = useMemo(
+    () => (puedeAdminCompleto
+      ? detectarPagosMalClasificados({ pagos: pagosMensualidadesAdmin, jugadores: jugadoresAdmin, cuentas: cuentasAdmin })
+      : []),
+    [puedeAdminCompleto, pagosMensualidadesAdmin, jugadoresAdmin, cuentasAdmin]
+  );
+  const totalPorValidar = pagosPendientesReales.length + pagosMigradosPendientes.length + pagosMalClasificados.length;
+  const cuentasQuePagan = useMemo(
+    () => construirCuentasQuePagan({ cuentas: cuentasAdmin, jugadores: jugadoresAdmin, morosos: morososAdmin, sociosMorosos }),
+    [cuentasAdmin, jugadoresAdmin, morososAdmin, sociosMorosos]
+  );
+  const [cuentaTesoreriaAdmin, setCuentaTesoreriaAdmin] = useState(null);
+  const cuentaFamiliaTesoreriaRef = useRef(null);
+  const verCuentaTesoreria = (fila) => {
+    if (fila.cuenta) {
+      setCuentaTesoreriaAdmin(fila.cuenta);
+      setPupiloTesoreriaAdmin(null);
+    } else {
+      const rut = normalizarRutTesoreria(fila.rut);
+      setCuentaTesoreriaAdmin(null);
+      setPupiloTesoreriaAdmin(pupilosParaBusquedaTesoreria.find((p) => normalizarRutTesoreria(p.rut) === rut) || null);
+    }
+    setMesesSeleccionadosTesoreria({});
+    requestAnimationFrame(() => cuentaFamiliaTesoreriaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+  // objetivo: { modoPago: 'socio' | 'deportista', rut } o null (formulario vacío).
+  const abrirPagoManualTesoreria = (objetivo) => {
+    setPagoEditandoId(null);
+    setPagoManualAutoAprobar(true);
+    setPagoManualObjetivo(objetivo || null);
+    setMostrarFormularioPago(true);
+  };
+  // Recordatorio de pago en la app (notificación con "Ir a" → Mi Cuenta).
+  const [ultimoRecordatorio, setUltimoRecordatorio] = useState(null);
+  useEffect(() => {
+    if (vistaAdmin !== 'pagos' || !puedeAdminCompleto) return undefined;
+    let activo = true;
+    api.notificacionesAppAPI.ultimoRecordatorioPagos().then((r) => { if (activo) setUltimoRecordatorio(r); }).catch(() => {});
+    return () => { activo = false; };
+  }, [vistaAdmin, puedeAdminCompleto]);
+  const recordarEnApp = async (lista) => {
+    const pesosTxt = (n) => `$${Math.round(n).toLocaleString('es-CL')}`;
+    const confirmado = await confirmAction({
+      title: `Recordar a ${lista.length} ${lista.length === 1 ? 'familia' : 'familias'}`,
+      message: 'Cada una recibe una notificación en la app con lo que debe y un acceso para subir el comprobante. No se repite a quien ya recibió uno hoy.',
+      confirmText: 'Enviar recordatorios',
+    });
+    if (!confirmado) return;
+    const avisos = lista.map((f) => ({
+      rut: f.rut,
+      cuerpo: `Tienes ${pesosTxt(f.deudaTotal)} pendiente (${[
+        f.socio?.deuda > 0 ? `cuota de socio: ${f.socio.mesesMorosos.join(', ')}` : null,
+        ...f.pupilos.filter((p) => p.deuda > 0).map((p) => `${p.nombre}: ${p.mesesMorosos.join(', ')}`),
+      ].filter(Boolean).join('; ')}). Sube tu comprobante desde el Muro.`,
+    }));
+    try {
+      const r = await api.notificacionesAppAPI.enviarRecordatorioPagos(avisos);
+      showToast({ message: `Recordatorio enviado a ${r.enviados} ${r.enviados === 1 ? 'familia' : 'familias'}${r.omitidos ? ` (${r.omitidos} omitidas: ya avisadas hoy o sin cuenta activa)` : ''}.`, type: 'success' });
+      setUltimoRecordatorio({ ultimoEnvio: new Date().toISOString(), enviados: r.enviados });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudieron enviar los recordatorios.', type: 'error' });
+    }
+  };
+
+  // Forma que esperan avisarMoroso/construirMensajeRecordatorioMoroso.
+  const filaComoMoroso = (fila) => ({
+    id: fila.id,
+    nombre: fila.nombre,
+    telefono: fila.telefono,
+    mesesDeuda: fila.mesesDeudaTotal,
+    montoDeuda: fila.deudaTotal,
+  });
+
   const jugadoresIncompletos = useMemo(() => {
-    return (jugadoresAdmin || []).filter((j) => {
+    return (jugadoresAdminTodos || []).filter((j) => {
       const rut = String(j.rut_jugador || '').trim();
       const rutValido = rut ? api.validarRutChileno(rut) : false;
       return (
@@ -1077,7 +1081,7 @@ function SuperAdminPanel({
   }, [jugadoresAdmin]);
 
   const jugadoresSinApoderado = useMemo(() => {
-    return (jugadoresAdmin || []).filter((j) => (
+    return (jugadoresAdminTodos || []).filter((j) => (
       !String(j.rut_apoderado || '').trim() && !String(j.correo_apoderado || '').trim()
     ));
   }, [jugadoresAdmin]);
@@ -1199,7 +1203,7 @@ function SuperAdminPanel({
   ), [ausenciasActivasCitacion]);
 
   const jugadorasCitacion = useMemo(() => {
-    const base = (jugadoresAdmin || []).filter((j) => (j.estado || 'ACTIVO').toUpperCase() !== 'BAJA' && !rutsConAusenciaActiva.has(String(j.rut_jugador || '').trim()));
+    const base = (jugadoresAdmin || []).filter((j) => estaActivo(j) && !rutsConAusenciaActiva.has(String(j.rut_jugador || '').trim()));
     const categoriasPermitidas = new Set(
       [citaCategoria, ...categoriasExtraCitacion]
         .map((c) => String(c || '').trim().toLowerCase())
@@ -1219,7 +1223,7 @@ function SuperAdminPanel({
   const cuposCitados = Object.values(seleccionCitacion).filter(Boolean).length;
 
   const listadoUsuarios = useMemo(() => {
-    const cuentas = (cuentasAdmin || []).map((c) => ({
+    const cuentas = (cuentasAdminTodas || []).map((c) => ({
       id: `cuenta-${c.id}`,
       tipo: 'cuenta',
       perfil: (() => {
@@ -1233,7 +1237,7 @@ function SuperAdminPanel({
       raw: c,
     }));
 
-    const jugadores = (jugadoresAdmin || []).map((j) => ({
+    const jugadores = (jugadoresAdminTodos || []).map((j) => ({
       id: `jugador-${j.rut_jugador}`,
       tipo: 'jugador',
       perfil: 'jugador',
@@ -1245,13 +1249,15 @@ function SuperAdminPanel({
     }));
 
     return [...cuentas, ...jugadores];
-  }, [cuentasAdmin, jugadoresAdmin]);
+  }, [cuentasAdminTodas, jugadoresAdminTodos]);
 
   const deportistasFiltrados = useMemo(() => {
     const q = filtroUsuariosTexto.trim().toLowerCase();
     return listadoUsuarios
       .filter((u) => {
         if (u.tipo !== 'jugador') return false;
+        if (filtroEstadoUsuarios === 'activos' && !estaActivo(u.raw)) return false;
+        if (filtroEstadoUsuarios === 'inactivos' && estaActivo(u.raw)) return false;
         if (q && !u.busqueda.includes(q)) return false;
         if (filtroRamaJugadores !== 'todas' && u.rama !== filtroRamaJugadores.toLowerCase()) return false;
         if (filtroCategoriaJugadores !== 'todas' && u.categoria !== filtroCategoriaJugadores.toLowerCase()) return false;
@@ -1268,17 +1274,20 @@ function SuperAdminPanel({
     filtroCategoriaJugadores,
     filtroApoderadoJugadores,
     rutsJugadoresSinApoderado,
+    filtroEstadoUsuarios,
   ]);
 
   const cuentasUsuariosFiltradas = useMemo(() => {
     const q = filtroCuentasTexto.trim().toLowerCase();
     return listadoUsuarios.filter((u) => {
       if (u.tipo !== 'cuenta') return false;
+      if (filtroEstadoUsuarios === 'activos' && !estaActivo(u.raw)) return false;
+      if (filtroEstadoUsuarios === 'inactivos' && estaActivo(u.raw)) return false;
       if (filtroTipoPerfil !== 'todos' && u.perfil !== filtroTipoPerfil) return false;
       if (q && !u.busqueda.includes(q)) return false;
       return true;
     });
-  }, [listadoUsuarios, filtroCuentasTexto, filtroTipoPerfil]);
+  }, [listadoUsuarios, filtroCuentasTexto, filtroTipoPerfil, filtroEstadoUsuarios]);
 
   // Tarjeta compartida por Deportistas y Cuentas — misma estructura, evita
   // duplicar ~90 líneas de JSX entre las dos pestañas.
@@ -1306,8 +1315,10 @@ function SuperAdminPanel({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <strong style={{ fontSize: '14px' }}>{u.nombre}</strong>
-              <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: esIncompleta ? '#b36200' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
+              <button type="button" className="fp-nombre-link" onClick={() => setFichaPersona({ tipo: u.tipo, raw: u.raw })} title="Ver ficha completa">
+                {u.nombre}
+              </button>
+              <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: esIncompleta ? '#8A4B00' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
                 {esIncompleta ? 'Incompleta' : 'Completa'}
               </span>
               {sinApoderado && (
@@ -1315,6 +1326,7 @@ function SuperAdminPanel({
                   Sin apoderado
                 </span>
               )}
+              {!estaActivo(u.raw) && <span className="tc-perfil alerta">{String(u.raw.estado || 'Inactivo').toUpperCase()}</span>}
             </div>
             <div className="text-caption">
               {u.tipo === 'jugador'
@@ -1335,6 +1347,19 @@ function SuperAdminPanel({
                 {mostrandoAsignar ? 'Cancelar' : 'Asignar apoderado'}
               </button>
             )}
+            {u.tipo === 'cuenta' && (esAdmin || esSuperAdmin) && (
+              <select
+                className="form-input uc-perfil-rapido"
+                aria-label={`Perfil de ${u.nombre}`}
+                value={perfilBaseParaSelector(u.raw.rol || u.raw.perfil_principal)}
+                onChange={(e) => cambiarPerfilRapido(u.raw, e.target.value)}
+              >
+                {PERFIL_UNICO_OPTIONS.filter((o) => esSuperAdmin || o.value !== 'super_admin').map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            )}
+            <button type="button" className="btn-secondary" style={{ width: 'auto' }} onClick={() => setFichaPersona({ tipo: u.tipo, raw: u.raw })}>
+              <Eye size={13} /> Ver ficha
+            </button>
             <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
               Modificar
             </button>
@@ -1417,8 +1442,8 @@ function SuperAdminPanel({
     const correoCuenta = String(cuentaPupilosActiva.correo || '').trim().toLowerCase();
     if (!correoCuenta) return [];
 
-    return (jugadoresAdmin || []).filter((j) => String(j.correo_apoderado || '').trim().toLowerCase() === correoCuenta);
-  }, [cuentaPupilosActiva, jugadoresAdmin]);
+    return (jugadoresAdminTodos || []).filter((j) => String(j.correo_apoderado || '').trim().toLowerCase() === correoCuenta);
+  }, [cuentaPupilosActiva, jugadoresAdminTodos]);
 
   const jugadoresDisponiblesAsignacion = useMemo(() => {
     if (!cuentaPupilosActiva) return [];
@@ -1426,7 +1451,7 @@ function SuperAdminPanel({
     const q = String(filtroPupiloManual || '').trim().toLowerCase();
 
     return (jugadoresAdmin || []).filter((j) => {
-      if ((j.estado || 'ACTIVO').toUpperCase() === 'BAJA') return false;
+      if (!estaActivo(j)) return false;
       if (correoCuenta && String(j.correo_apoderado || '').trim().toLowerCase() === correoCuenta) return false;
 
       if (!q) return true;
@@ -1474,8 +1499,8 @@ function SuperAdminPanel({
     const correoApoderado = String(jugadorAdminEdit?.correo_apoderado || '').trim().toLowerCase();
     if (!correoApoderado) return null;
 
-    return (cuentasAdmin || []).find((cuenta) => String(cuenta.correo || '').trim().toLowerCase() === correoApoderado) || null;
-  }, [jugadorAdminEdit, cuentasAdmin]);
+    return (cuentasAdminTodas || []).find((cuenta) => String(cuenta.correo || '').trim().toLowerCase() === correoApoderado) || null;
+  }, [jugadorAdminEdit, cuentasAdminTodas]);
 
   // Cuenta PROPIA del deportista (login con su propio RUT, no la del
   // apoderado) — distinta de cuentaAsociadaJugadorEdit de arriba. Puede no
@@ -1484,8 +1509,8 @@ function SuperAdminPanel({
   const cuentaPropiaJugadorEdit = useMemo(() => {
     const rutJugador = normalizarRutUsuarios(jugadorAdminEdit?.rut_jugador || '');
     if (!rutJugador) return null;
-    return (cuentasAdmin || []).find((cuenta) => normalizarRutUsuarios(cuenta.rut || '') === rutJugador) || null;
-  }, [jugadorAdminEdit, cuentasAdmin]);
+    return (cuentasAdminTodas || []).find((cuenta) => normalizarRutUsuarios(cuenta.rut || '') === rutJugador) || null;
+  }, [jugadorAdminEdit, cuentasAdminTodas]);
 
   const esAutogestionable = Boolean(cuentaPropiaJugadorEdit?.permisos_override?.perfil);
   const [guardandoAutogestionable, setGuardandoAutogestionable] = useState(false);
@@ -1541,7 +1566,7 @@ function SuperAdminPanel({
             Rol base: {config.rol}
           </span>
           {config.esSuperAdmin && (
-            <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: 'var(--radius-pill)' }}>
+            <span style={{ fontSize: '11px', fontWeight: '800', color: '#8A4B00', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: 'var(--radius-pill)' }}>
               Super Admin mantiene acceso total
             </span>
           )}
@@ -1577,7 +1602,7 @@ function SuperAdminPanel({
                 <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '5px', lineHeight: '1.35' }}>
                   {modulo.descripcion}
                 </div>
-                <div style={{ fontSize: '11px', marginTop: '6px', fontWeight: '800', color: vienePorRol ? 'var(--azul-electrico)' : '#b36200' }}>
+                <div style={{ fontSize: '11px', marginTop: '6px', fontWeight: '800', color: vienePorRol ? 'var(--azul-electrico)' : '#8A4B00' }}>
                   {vienePorRol ? 'Incluido por rol base' : 'Override manual'}
                 </div>
               </button>
@@ -1668,6 +1693,9 @@ function SuperAdminPanel({
     }
   };
 
+  // Ficha completa (datos, vínculos y pagos) en una ventana aparte.
+  const [fichaPersona, setFichaPersona] = useState(null);
+
   const iniciarEdicion = (item) => {
     // Snapshot current matrixPermisos so we can restore on cancel.
     const snap = {};
@@ -1710,6 +1738,24 @@ function SuperAdminPanel({
     setNuevaClaveCuenta('');
     setMostrarNuevaClaveCuenta(false);
     if (typeof onCancelEdit === 'function') onCancelEdit(permisosSnapshotAntesEdicion);
+  };
+  useModalAccesible(Boolean(editandoTipo && (cuentaAdminEdit || jugadorAdminEdit)), cancelarEdicion);
+
+  // Cambio rápido de perfil desde la lista de cuentas.
+  const cambiarPerfilRapido = async (cuenta, nuevoPerfil) => {
+    const etiqueta = PERFIL_UNICO_OPTIONS.find((o) => o.value === nuevoPerfil)?.label || nuevoPerfil;
+    const confirmado = await confirmAction({
+      title: 'Cambiar perfil',
+      message: `¿Cambiar el perfil de ${`${cuenta.nombres || ''} ${cuenta.apellido_paterno || ''}`.trim() || cuenta.rut} a "${etiqueta}"? Sus permisos cambian de inmediato y deberá volver a ingresar.`,
+      confirmText: 'Cambiar perfil',
+    });
+    if (!confirmado) return;
+    try {
+      await guardarCuentaAdmin(construirCambioPerfilUnico(nuevoPerfil, nuevoPerfil === 'socio' && esSocioApoderadoStacked(cuenta.rol)), cuenta.id);
+      showToast({ message: `Perfil actualizado a ${etiqueta}.`, type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo cambiar el perfil.', type: 'error' });
+    }
   };
 
   const publicarAnuncio = async () => {
@@ -2819,15 +2865,83 @@ function SuperAdminPanel({
 
   return (
     <div className="admin-container fade-in">
-      {vistaAdmin === 'inicio' && (
-        <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px' }}>
-          {puedeAdminCompleto && renderTarjetaAdmin('inicio-resumen', Activity, 'Resumen', () => setVistaAdmin('dashboard'))}
-          {puedeAdminCompleto && renderTarjetaAdmin('inicio-usuarios', Users, 'Usuarios y Cuentas', () => setVistaAdmin('usuarios'))}
-          {puedeAdminCompleto && renderTarjetaAdmin('inicio-publicar', Megaphone, 'Publicar', () => setVistaAdmin('publicar'))}
-          {puedeAdminCompleto && renderTarjetaAdmin('inicio-tesoreria', CheckSquare, 'Tesorería', () => setVistaAdmin('pagos'))}
-          {(puedeAdminCompleto || puedeVerCitaciones) && renderTarjetaAdmin('inicio-deportistas', UserPlus, 'Gestión Deportistas', () => setVistaAdmin('grupo_deportistas'))}
-          {puedeAdminCompleto && renderTarjetaAdmin('inicio-sistema', Filter, 'Sistema', () => setVistaAdmin('grupo_sistema'))}
-          {(puedeAdminCompleto || puedeVerResultados) && renderTarjetaAdmin('inicio-publicaciones', Trophy, 'Publicaciones y Equipos', () => setVistaAdmin('grupo_publicaciones'))}
+      {vistaAdmin === 'inicio' && (() => {
+        // Panel en una sola lista agrupada: cada destino a un toque, con una
+        // descripción y lo que tiene pendiente (antes: 7 cuadros sin datos y
+        // un segundo nivel de cuadros dentro de cada grupo).
+        const sinApoderadoActivos = jugadoresSinApoderado.filter(estaActivo).length;
+        const grupos = [
+          {
+            titulo: 'Dinero',
+            items: [
+              { key: 'tesoreria', Icon: CheckSquare, titulo: 'Tesorería', desc: 'Por cobrar, validar pagos, informes y becas', badge: totalPorValidar, badgeTxt: 'por validar', ver: puedeAdminCompleto, ir: () => setVistaAdmin('pagos') },
+            ],
+          },
+          {
+            titulo: 'Personas',
+            items: [
+              { key: 'usuarios', Icon: Users, titulo: 'Usuarios y Cuentas', desc: 'Fichas, cuentas, perfiles y vincular apoderados', badge: sinApoderadoActivos, badgeTxt: 'sin apoderado', ver: puedeAdminCompleto, ir: () => setVistaAdmin('usuarios') },
+              { key: 'lista', Icon: Users, titulo: 'Pasar lista', desc: 'Asistencia a entrenamientos', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('asistencia_staff') },
+              { key: 'citaciones', Icon: UserPlus, titulo: 'Citaciones', desc: 'Convocatorias a partidos y torneos', ver: puedeAdminCompleto || puedeVerCitaciones, ir: () => setVistaAdmin('citaciones') },
+              { key: 'jugador', Icon: UserPlus, titulo: 'Fichas deportivas', desc: 'Perfil, tarjeta y evaluaciones de cada deportista', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('jugador') },
+              { key: 'invitados', Icon: Users, titulo: 'Invitados', desc: 'Visitas y jugadores de prueba', ver: puedeAdminCompleto, ir: () => setVistaAdmin('invitados') },
+            ],
+          },
+          {
+            titulo: 'Comunicación',
+            items: [
+              { key: 'publicar', Icon: Megaphone, titulo: 'Publicar en el Muro', desc: 'Avisos, noticias y encuestas', ver: puedeAdminCompleto, ir: () => setVistaAdmin('publicar') },
+            ],
+          },
+          {
+            titulo: 'Competencia',
+            items: [
+              { key: 'torneos', Icon: Trophy, titulo: 'Torneos', desc: 'Fixture, llaves y equipos', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('torneos') },
+              { key: 'resultados', Icon: Trophy, titulo: 'Resultados', desc: 'Marcadores de partidos', ver: puedeAdminCompleto || puedeVerResultados, ir: () => { setVistaAdmin('resultados'); cargarPartidosAdmin(); } },
+              { key: 'cancha', Icon: Image, titulo: 'Cancha y horarios', desc: 'Arriendos y horarios de entrenamiento', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('cancha_entrenamientos') },
+            ],
+          },
+          {
+            titulo: 'Sistema',
+            items: [
+              { key: 'resumen', Icon: Activity, titulo: 'Resumen del club', desc: 'Indicadores generales', ver: puedeAdminCompleto, ir: () => setVistaAdmin('dashboard') },
+              { key: 'reportes', Icon: FileText, titulo: 'Reportes de actividad', desc: 'Participación y uso de la app', ver: puedeAdminCompleto, ir: () => setVistaAdmin('reportes') },
+              { key: 'salud', Icon: Stethoscope, titulo: 'Salud', desc: 'Alertas médicas y fichas de salud', ver: puedeAdminCompleto, ir: () => { setVistaAdmin('salud'); generarAlertas(); } },
+              { key: 'ajustes', Icon: ShieldCheck, titulo: 'Permisos y ajustes', desc: 'Permisos por perfil y por usuario', ver: puedeAdminCompleto, ir: () => setVistaAdmin('permisos') },
+              { key: 'auditoria', Icon: History, titulo: 'Auditoría', desc: 'Historial de cambios', ver: puedeAdminCompleto, ir: () => setVistaAdmin('auditoria') },
+              { key: 'activos', Icon: Image, titulo: 'Logos e imágenes', desc: 'Activos visuales del club', ver: puedeAdminCompleto, ir: () => setVistaAdmin('activos') },
+              { key: 'respaldos', Icon: History, titulo: 'Respaldos', desc: 'Copias de seguridad y limpieza de copias antiguas', ver: esSuperAdmin, ir: () => setVistaAdmin('respaldos') },
+            ],
+          },
+        ].map((g) => ({ ...g, items: g.items.filter((i) => i.ver) })).filter((g) => g.items.length);
+        return (
+          <div className="fade-in pn-panel">
+            {grupos.map((g) => (
+              <section key={g.titulo} className="pn-grupo" aria-label={g.titulo}>
+                <h3 className="pn-grupo-titulo">{g.titulo}</h3>
+                <div className="pn-items">
+                  {g.items.map(({ key, Icon, titulo, desc, badge, badgeTxt, ir }) => (
+                    <button key={key} type="button" className="pn-item" onClick={ir}>
+                      <span className="pn-icono" aria-hidden="true"><Icon size={20} /></span>
+                      <span className="pn-texto">
+                        <strong>{titulo}</strong>
+                        <small>{desc}</small>
+                      </span>
+                      {badge > 0 && <span className="pn-badge" title={`${badge} ${badgeTxt}`}>{badge}<small> {badgeTxt}</small></span>}
+                      <ChevronRight size={18} className="pn-flecha" aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        );
+      })()}
+
+      {vistaAdmin === 'respaldos' && esSuperAdmin && (
+        <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
+          <RespaldosPanel />
         </div>
       )}
 
@@ -2878,7 +2992,7 @@ function SuperAdminPanel({
           <div className="caja-triple-grid mb-15">
             <div className="admin-stat-pill azul"><span>Total Cuentas</span><h2>{personasStats.totalCuentas}</h2></div>
             <div className="admin-stat-pill azul"><span>Total Deportistas</span><h2>{personasStats.totalDeportistas}</h2></div>
-            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Fichas Incompletas</span><h2 style={{ color: '#b36200' }}>{personasStats.cuentasIncompletas}</h2></div>
+            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Fichas Incompletas</span><h2 style={{ color: '#8A4B00' }}>{personasStats.cuentasIncompletas}</h2></div>
           </div>
           <div className="caja-triple-grid mb-20">
             <div className="admin-stat-pill rojo"><span>Deportistas sin Apoderado</span><h2>{personasStats.deportistasSinApoderado}</h2></div>
@@ -2905,30 +3019,56 @@ function SuperAdminPanel({
       {vistaAdmin === 'usuarios' && (
         <div className="fade-in">
           <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
-          <h3 className="section-title">Gestión de Usuarios y Cuentas</h3>
-          <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
-            Deportistas (ficha deportiva) y Cuentas (login de apoderados, socios, staff y admins) viven en tablas distintas — separadas acá para no mezclar sus filtros y datos.
+          <div className="tesoreria-cabecera">
+            <h2>Usuarios y Cuentas</h2>
+            <button type="button" className="btn-electric tesoreria-btn-pago" onClick={() => setVistaUsuarios('registrar')}>
+              <Plus size={15} /> Registrar
+            </button>
+          </div>
+          <p className="uc-ayuda">
+            <b>Deportistas</b>: fichas deportivas. <b>Cuentas</b>: quienes ingresan a la app (apoderados, socios, staff y admins). Toca un nombre para ver su ficha completa.
           </p>
 
-          <div className="segment-control" style={{ gap: '6px', marginBottom: '15px' }}>
+          <div className="tesoreria-tabs-wrap"><div className="segment-control tesoreria-tabs" style={{ gap: '6px' }}>
             <button type="button" className={`segment-btn ${vistaUsuarios === 'deportistas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('deportistas')}>
-              <Users size={14} /> Deportistas ({jugadoresAdmin.length})
+              <Users size={14} /> Deportistas ({jugadoresAdminTodos.length})
             </button>
             <button type="button" className={`segment-btn ${vistaUsuarios === 'cuentas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('cuentas')}>
-              <User size={14} /> Cuentas ({cuentasAdmin.length})
+              <User size={14} /> Cuentas ({cuentasAdminTodas.length})
+            </button>
+            <button type="button" className={`segment-btn ${vistaUsuarios === 'vincular' ? 'active' : ''}`} onClick={() => setVistaUsuarios('vincular')}>
+              <Link2 size={14} /> Vincular apoderados
+              {jugadoresSinApoderado.filter(estaActivo).length > 0 && <span className="tesoreria-tab-badge">{jugadoresSinApoderado.filter(estaActivo).length}</span>}
+            </button>
+            <button type="button" className={`segment-btn ${vistaUsuarios === 'registrar' ? 'active' : ''}`} onClick={() => setVistaUsuarios('registrar')}>
+              <Plus size={14} /> Registrar nuevo
             </button>
             {/* Permisos individuales: antes solo en el engranaje (panel chico)
                 o escondidos en Sistema; ahora junto a las cuentas que afectan. */}
             <button type="button" className="segment-btn" onClick={() => setVistaAdmin('permisos')}>
               <ShieldCheck size={14} /> Permisos
             </button>
-          </div>
+          </div></div>
 
-          {vistaUsuarios === 'deportistas' ? (
+          {(vistaUsuarios === 'deportistas' || vistaUsuarios === 'cuentas') && (
+            <div className="filter-chips mb-15" role="group" aria-label="Estado">
+              {[
+                ['activos', 'Activos'],
+                ['inactivos', 'Inactivos / baja'],
+                ['todos', 'Todos'],
+              ].map(([valor, etiqueta]) => (
+                <button key={valor} type="button" className={`filter-chip ${filtroEstadoUsuarios === valor ? 'active' : ''}`} onClick={() => setFiltroEstadoUsuarios(valor)}>
+                  {etiqueta}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {vistaUsuarios === 'deportistas' && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <div className="admin-stat-pill verde"><span>Completos</span><h2>{jugadoresAdmin.length - jugadoresIncompletos.length}</h2></div>
-                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletos</span><h2 style={{ color: '#b36200' }}>{jugadoresIncompletos.length}</h2></div>
+                <div className="admin-stat-pill verde"><span>Completos</span><h2>{jugadoresAdminTodos.length - jugadoresIncompletos.length}</h2></div>
+                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletos</span><h2 style={{ color: '#8A4B00' }}>{jugadoresIncompletos.length}</h2></div>
                 <div className="admin-stat-pill rojo"><span>Sin apoderado</span><h2>{jugadoresSinApoderado.length}</h2></div>
               </div>
 
@@ -2968,9 +3108,9 @@ function SuperAdminPanel({
                 </div>
 
                 <div className="filter-chips" style={{ marginTop: '10px' }}>
-                  <button className={`filter-chip ${filtroApoderadoJugadores === 'todos' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('todos')}>Todos ({jugadoresAdmin.length})</button>
+                  <button className={`filter-chip ${filtroApoderadoJugadores === 'todos' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('todos')}>Todos ({jugadoresAdminTodos.length})</button>
                   <button className={`filter-chip ${filtroApoderadoJugadores === 'sin' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('sin')}>Sin apoderado ({jugadoresSinApoderado.length})</button>
-                  <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdmin.length - jugadoresSinApoderado.length})</button>
+                  <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdminTodos.length - jugadoresSinApoderado.length})</button>
                 </div>
 
                 <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
@@ -2981,12 +3121,13 @@ function SuperAdminPanel({
                 </div>
               </div>
             </>
-          ) : (
+          )}
+          {vistaUsuarios === 'cuentas' && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <div className="admin-stat-pill verde"><span>Completas</span><h2>{cuentasAdmin.length - cuentasIncompletas.length}</h2></div>
-                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#b36200' }}>{cuentasIncompletas.length}</h2></div>
-                <div className="admin-stat-pill azul"><span>Total</span><h2>{cuentasAdmin.length}</h2></div>
+                <div className="admin-stat-pill verde"><span>Completas</span><h2>{cuentasAdminTodas.length - cuentasIncompletas.length}</h2></div>
+                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#8A4B00' }}>{cuentasIncompletas.length}</h2></div>
+                <div className="admin-stat-pill azul"><span>Total</span><h2>{cuentasAdminTodas.length}</h2></div>
               </div>
 
               <div className="card">
@@ -3031,9 +3172,25 @@ function SuperAdminPanel({
             </>
           )}
 
-          {editandoTipo === 'cuenta' && cuentaAdminEdit && (
+          {vistaUsuarios === 'vincular' && (
+            <VincularApoderadosPanel
+              jugadores={jugadoresAdmin}
+              cuentas={cuentasAdmin}
+              onRecargar={recargarUsuariosAdmin}
+              onVerFicha={(j) => setFichaPersona({ tipo: 'jugador', raw: j })}
+            />
+          )}
+
+          {editandoTipo === 'cuenta' && cuentaAdminEdit && createPortal(
+            <div className="fp-fondo" role="presentation">
+            <div className="fp-ventana uc-editor" role="dialog" aria-modal="true" aria-label="Editar cuenta">
             <div ref={edicionCuentaRef} className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
-              <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
+<div className="uc-editor-titulo">
+                <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
+                <button type="button" className="btn-secondary tc-btn" onClick={() => setFichaPersona({ tipo: 'cuenta', raw: cuentaAdminEdit, pestana: 'pagos' })}>
+                  Ver pagos
+                </button>
+              </div>
 
               {(esAdmin || esSuperAdmin) && (
                 <div style={{ marginBottom: '16px', padding: '14px', borderRadius: 'var(--radius-md)', background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.18)' }}>
@@ -3192,7 +3349,7 @@ function SuperAdminPanel({
                 </p>
 
                 {!String(cuentaPupilosActiva?.correo || '').trim() && (
-                  <div style={{ fontSize: '12px', color: '#b36200', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12px', color: '#8A4B00', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', marginBottom: '10px' }}>
                     Guarda un correo válido en la cuenta antes de asignar pupilos.
                   </div>
                 )}
@@ -3276,11 +3433,21 @@ function SuperAdminPanel({
                 </div>
               </div>
             </div>
+            </div>
+            </div>,
+            document.body
           )}
 
-          {editandoTipo === 'jugador' && jugadorAdminEdit && (
+          {editandoTipo === 'jugador' && jugadorAdminEdit && createPortal(
+            <div className="fp-fondo" role="presentation">
+            <div className="fp-ventana uc-editor" role="dialog" aria-modal="true" aria-label="Editar deportista">
             <div ref={edicionJugadorRef} className="card">
-              <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
+<div className="uc-editor-titulo">
+                <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
+                <button type="button" className="btn-secondary tc-btn" onClick={() => setFichaPersona({ tipo: 'jugador', raw: jugadorAdminEdit, pestana: 'pagos' })}>
+                  Ver pagos
+                </button>
+              </div>
 
               <h5 className="sub-caja-title">Identidad y vínculo</h5>
               <div className="grid-auto-220">
@@ -3329,6 +3496,7 @@ function SuperAdminPanel({
                 <div className="form-group"><label>Beca</label><input className="form-input" value={jugadorAdminEdit.beca ? `${jugadorAdminEdit.beca}% — se edita desde Tesorería > Becas` : 'Sin beca — se asigna desde Tesorería > Becas'} disabled /></div>
                 <div className="form-group"><label>Valor mensualidad</label><input type="number" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} /></div>
                 <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.exento_mensualidad)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, exento_mensualidad: e.target.checked }))} /> Exento de mensualidad (no paga nada)</label>
+                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.apoderado_socio)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; 2 hermanos $12.000 c/u)</label>
                 <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
                 <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.derechos_imagen)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
               </div>
@@ -3381,10 +3549,14 @@ function SuperAdminPanel({
                 )}
               </div>
             </div>
+            </div>
+            </div>,
+            document.body
           )}
 
+          {vistaUsuarios === 'registrar' && (
           <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
-            <h4 className="form-subtitle"><Plus size={16} /> Agregar Nuevo Registro</h4>
+            <h4 className="form-subtitle"><Plus size={16} /> Registrar nuevo</h4>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
               <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'cuenta' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'cuenta' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('cuenta')}>Cuenta</button>
               <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'jugador' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'jugador' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('jugador')}>Jugador</button>
@@ -3488,12 +3660,13 @@ function SuperAdminPanel({
               {guardandoUsuario ? 'Guardando...' : 'Guardar nuevo usuario'}
             </button>
           </div>
+          )}
         </div>
       )}
 
       {vistaAdmin === 'activos' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <h3 className="section-title">Activos Visuales</h3>
           <div className="card" style={{ borderLeft: '4px solid var(--verde-victoria)', marginBottom: '15px', borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle"><Image size={16} /> Subida de logos y activos visuales</h4>
@@ -3604,77 +3777,64 @@ function SuperAdminPanel({
       {vistaAdmin === 'pagos' && (
         <div className="fade-in">
           <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
-          <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', padding: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
-              <div className="form-group" style={{ marginBottom: 0, flex: '1 1 180px' }}>
-                <label style={{ fontSize: '11px' }}>Ver mes</label>
-                <select
-                  className="form-input"
-                  value={filtroMesResumen}
-                  onChange={(e) => { setFiltroMesResumen(e.target.value); setMesRecaudacionActivo(e.target.value === 'todos' ? null : e.target.value); }}
-                >
-                  <option value="todos">Todo el año {ANIO_RECAUDACION}</option>
-                  {NOMBRES_MESES_RECAUDACION.map((mes) => (
-                    <option key={`filtro-mes-${mes}`} value={mes}>{mes}</option>
-                  ))}
-                </select>
-              </div>
-              {filtroMesResumen !== 'todos' && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ width: 'auto', padding: '10px 14px' }}
-                  onClick={() => { setFiltroMesResumen('todos'); setMesRecaudacionActivo(null); }}
-                >
-                  <X size={14} /> Ver todo el año
-                </button>
-              )}
-            </div>
-            {filtroMesResumen !== 'todos' && (
-              <p style={{ fontSize: '11px', color: 'var(--texto-secundario)', margin: '8px 0 0', fontWeight: '700' }}>
-                Mostrando stats, recaudación y morosos solo de {filtroMesResumen}.
-              </p>
+          <div className="tesoreria-cabecera">
+            <h2>Tesorería</h2>
+            {rolUsuario === 'super_admin' && (
+              <button
+                type="button"
+                className="btn-electric tesoreria-btn-pago"
+                onClick={() => abrirPagoManualTesoreria(null)}
+              >
+                <Plus size={15} /> Registrar pago
+              </button>
             )}
           </div>
-
-          <h3 className="section-title mt-0">Bandeja de Validación</h3>
-
-          {rolUsuario === 'super_admin' && (
-            <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.25)', background: 'rgba(0,122,255,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <div>
-                  <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>Pago manual</h4>
-                  <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
-                    Elige un deportista o socio y registra un pago ya confirmado (mes o meses, pasados o futuros), sin pasar por la bandeja de validación. Solo superadmin.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMostrarFormularioPago(true);
-                    setPagoEditandoId(null);
-                    setPagoManualAutoAprobar(true);
-                  }}
-                  style={{
-                    padding: '10px 16px',
-                    background: 'var(--azul-electrico)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: 'var(--radius-sm)',
-                    fontWeight: '600',
-                    fontSize: '12px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <Plus size={14} /> Registrar pago manual
-                </button>
-              </div>
+          <div className="tesoreria-tabs-wrap">
+            <div className="segment-control tesoreria-tabs" role="tablist" aria-label="Secciones de Tesorería">
+              <button type="button" role="tab" aria-selected={seccionTesoreria === 'cobrar'} className={`segment-btn ${seccionTesoreria === 'cobrar' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('cobrar')}>
+                <Users size={14} /> Por cobrar
+              </button>
+              <button type="button" role="tab" aria-selected={seccionTesoreria === 'validar'} className={`segment-btn ${seccionTesoreria === 'validar' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('validar')}>
+                <CheckSquare size={14} /> Validar pagos
+                {totalPorValidar > 0 && <span className="tesoreria-tab-badge">{totalPorValidar}</span>}
+              </button>
+              <button type="button" role="tab" aria-selected={seccionTesoreria === 'resumen'} className={`segment-btn ${seccionTesoreria === 'resumen' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('resumen')}>
+                <BarChart3 size={14} /> Resumen
+              </button>
+              <button type="button" role="tab" aria-selected={seccionTesoreria === 'informes'} className={`segment-btn ${seccionTesoreria === 'informes' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('informes')}>
+                <FileText size={14} /> Informes
+              </button>
+              <button type="button" role="tab" aria-selected={seccionTesoreria === 'tarifas'} className={`segment-btn ${seccionTesoreria === 'tarifas' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('tarifas')}>
+                <CheckSquare size={14} /> Tarifas
+              </button>
+              <button type="button" role="tab" aria-selected={false} className="segment-btn" onClick={() => setVistaAdmin('becas')}>
+                🎓 Becas
+                {becasVencidasCount + becasPorVencerCount > 0 && <span className="tesoreria-tab-badge">{becasVencidasCount + becasPorVencerCount}</span>}
+              </button>
             </div>
+          </div>
+          {seccionTesoreria === 'validar' && (
+            <>
+          {rolUsuario === 'super_admin' && (
+            <ImportarPagosPlanilla
+              onAplicado={async () => {
+                if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades();
+                else window.location.reload();
+              }}
+            />
           )}
+          <RevisionClasificacionPagos
+            items={pagosMalClasificados}
+            autor={usuarioAutenticado?.nombre
+              || `${usuarioAutenticado?.nombres || ''} ${usuarioAutenticado?.apellido_paterno || ''}`.trim()
+              || usuarioAutenticado?.rut
+              || ''}
+            onActualizado={async () => {
+              if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades();
+              else window.location.reload();
+            }}
+          />
+          <h3 className="section-title mt-0">Bandeja de Validación</h3>
 
           {/* Pagos reales con comprobante */}
           <h4 className="form-subtitle" style={{ marginBottom: '8px' }}>
@@ -3755,7 +3915,7 @@ function SuperAdminPanel({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <div>
                 <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>
-                  <AlertTriangle size={14} style={{ marginRight: '6px', color: '#b36200', verticalAlign: 'middle' }} />
+                  <AlertTriangle size={14} style={{ marginRight: '6px', color: '#8A4B00', verticalAlign: 'middle' }} />
                   Pagos migrados pendientes de revisión ({pagosMigradosPendientes.length})
                 </h4>
                 <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
@@ -3820,7 +3980,7 @@ function SuperAdminPanel({
                                   {pago.meses_correspondientes || 'Sin mes'} · ${Number(pago.monto_total_pagado || 0).toLocaleString('es-CL')}
                                 </div>
                                 {notasVisibles && (
-                                  <div style={{ fontSize: '11px', color: '#b36200', marginTop: '4px', fontStyle: 'italic' }}>{notasVisibles}</div>
+                                  <div style={{ fontSize: '11px', color: '#8A4B00', marginTop: '4px', fontStyle: 'italic' }}>{notasVisibles}</div>
                                 )}
                               </div>
                               <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
@@ -3900,7 +4060,43 @@ function SuperAdminPanel({
               </>
             )}
           </div>
-
+            </>
+          )}
+          {seccionTesoreria === 'resumen' && (
+            <>
+          <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', padding: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+              <div className="form-group" style={{ marginBottom: 0, flex: '1 1 180px' }}>
+                <label style={{ fontSize: '11px' }}>Ver mes</label>
+                <select
+                  className="form-input"
+                  aria-label="Ver mes"
+                  value={filtroMesResumen}
+                  onChange={(e) => { setFiltroMesResumen(e.target.value); setMesRecaudacionActivo(e.target.value === 'todos' ? null : e.target.value); }}
+                >
+                  <option value="todos">Todo el año {ANIO_RECAUDACION}</option>
+                  {NOMBRES_MESES_RECAUDACION.map((mes) => (
+                    <option key={`filtro-mes-${mes}`} value={mes}>{mes}</option>
+                  ))}
+                </select>
+              </div>
+              {filtroMesResumen !== 'todos' && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ width: 'auto', padding: '10px 14px' }}
+                  onClick={() => { setFiltroMesResumen('todos'); setMesRecaudacionActivo(null); }}
+                >
+                  <X size={14} /> Ver todo el año
+                </button>
+              )}
+            </div>
+            {filtroMesResumen !== 'todos' && (
+              <p style={{ fontSize: '11px', color: 'var(--texto-secundario)', margin: '8px 0 0', fontWeight: '700' }}>
+                Mostrando stats, recaudación y morosos solo de {filtroMesResumen}.
+              </p>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setVistaAdmin('becas')}
@@ -3924,7 +4120,6 @@ function SuperAdminPanel({
               )}
             </div>
           </button>
-
           <h3 className="section-title">Panorama General{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
           <div className="caja-triple-grid mb-20">
             <div className="admin-stat-pill azul"><span>Socios Inscritos</span><h2>{af.totalSocios}</h2></div>
@@ -4083,268 +4278,58 @@ function SuperAdminPanel({
           </div>
           </>
           )}
-
-          <h3 className="section-title">Socios Morosos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
-          <div style={{ position: 'relative', marginBottom: '10px' }}>
-            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-            <input
-              type="text"
-              className="form-input"
-              style={{ paddingLeft: '34px', paddingRight: busquedaSociosMorosos ? '34px' : undefined }}
-              placeholder="Buscar socio..."
-              value={busquedaSociosMorosos}
-              onChange={(e) => setBusquedaSociosMorosos(e.target.value)}
-            />
-            {busquedaSociosMorosos && (
-              <button
-                type="button"
-                onClick={() => setBusquedaSociosMorosos('')}
-                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
-                aria-label="Limpiar búsqueda"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          {sociosMorososFiltrados.length === 0 && (
-            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
-              Sin socios morosos que coincidan con la búsqueda.
-            </p>
-          )}
-          {[...sociosMorososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map((s) => {
-            const gravedad = s.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : s.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
-            return (
-              <div key={s.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: 'var(--radius-lg)', background: 'rgba(255,255,255,0.72)' }}>
-                <div className="moroso-info">
-                  <span className="moroso-nombre">{s.nombre}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
-                    {s.telefono ? <><Phone size={11} /> {s.telefono}</> : <>{s.correo || 'Sin contacto'}</>}
-                  </span>
-                  {(s.mesesMorosos || []).length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                      {s.mesesMorosos.map((mes) => (
-                        <span key={`${s.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: 'var(--radius-pill)', padding: '2px 7px' }}>
-                          {mes}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="moroso-deuda">
-                  <span className="moroso-monto">${s.montoDeuda.toLocaleString('es-CL')}</span>
-                  <span className="moroso-meses" style={{ color: gravedad }}>{s.mesesDeuda} {s.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <button
-                    className="btn-notificar"
-                    onClick={() => avisarSocioMoroso(s)}
-                    disabled={!s.telefono}
-                    title={s.telefono ? `Enviar recordatorio por WhatsApp a ${s.telefono}` : 'Sin teléfono registrado en la cuenta'}
-                    style={!s.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                  >
-                    <Bell size={13} /> Avisar
-                  </button>
-                  {rolUsuario === 'super_admin' && (
-                    <button
-                      className="btn-notificar"
-                      style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }}
-                      onClick={() => {
-                        setMostrarFormularioPago(true);
-                        setPagoEditandoId(null);
-                        setPagoManualAutoAprobar(true);
-                        setPagoManualObjetivo({ modoPago: 'socio', rut: s.rut });
-                      }}
-                      title={`Registrar pago manual de ${s.nombre}`}
-                    >
-                      <Plus size={13} /> Pago manual
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', marginTop: '20px', flexWrap: 'wrap', gap: '10px' }}>
-            <h3 className="section-title" style={{ margin: 0 }}>Estatus de pagos{filtroMesResumen !== 'todos' ? ` — ${filtroMesResumen}` : ''}</h3>
-            {vistaEstatusPagos === 'morosos' && (
-              <button className="btn-notificar" style={{ background: 'var(--rojo-alerta)', color: 'white', borderColor: 'var(--rojo-alerta)', boxShadow: '0 4px 12px rgba(255,59,48,0.3)' }} onClick={abrirModalNotificarTodos}>
-                <Bell size={13} /> Notificar Todos
-              </button>
-            )}
-          </div>
-          <div className="filter-chips mb-15">
-            <button className={`filter-chip ${vistaEstatusPagos === 'morosos' ? 'active' : ''}`} onClick={() => setVistaEstatusPagos('morosos')}>
-              <AlertTriangle size={12} /> Morosos ({(morososAdmin || []).length})
-            </button>
-            <button className={`filter-chip ${vistaEstatusPagos === 'pagados' ? 'active' : ''}`} onClick={() => setVistaEstatusPagos('pagados')}>
-              <CheckSquare size={12} /> Pagados ({deportistasAlDiaLista.length})
-            </button>
-          </div>
-          <div style={{ position: 'relative', marginBottom: '10px' }}>
-            <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-            <input
-              type="text"
-              className="form-input"
-              style={{ paddingLeft: '34px', paddingRight: busquedaMorosos ? '34px' : undefined }}
-              placeholder="Buscar por socio, apoderado o deportista..."
-              value={busquedaMorosos}
-              onChange={(e) => setBusquedaMorosos(e.target.value)}
-            />
-            {busquedaMorosos && (
-              <button
-                type="button"
-                onClick={() => setBusquedaMorosos('')}
-                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--texto-secundario)', padding: '4px' }}
-                aria-label="Limpiar búsqueda"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          {vistaEstatusPagos === 'morosos' && (
-          <div className="filter-chips mb-15">
-            <button className={`filter-chip ${filtroMorosos === 'todos' ? 'active' : ''}`} onClick={() => setFiltroMorosos('todos')}>Todos ({(morososAdmin || []).length})</button>
-            <button className={`filter-chip ${filtroMorosos === 'socios' ? 'active' : ''}`} onClick={() => setFiltroMorosos('socios')}>Socios ({(morososAdmin || []).filter(m => m.tipo === 'socio' || m.tipo === 'socio-apoderado').length})</button>
-            <button className={`filter-chip ${filtroMorosos === 'apoderados' ? 'active' : ''}`} onClick={() => setFiltroMorosos('apoderados')}>Apoderados ({(morososAdmin || []).filter(m => m.tipo === 'apoderado' || m.tipo === 'socio-apoderado').length})</button>
-          </div>
-          )}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '15px' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: '11px' }}>Rama</label>
-              <select className="form-input" value={filtroRamaMorosos} onChange={(e) => setFiltroRamaMorosos(e.target.value)}>
-                <option value="todas">Todas</option>
-                {ramasMorosos.map((rama) => (
-                  <option key={`rama-moroso-${rama}`} value={rama}>{rama}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: '11px' }}>Categoría</label>
-              <select className="form-input" value={filtroCategoriaMorosos} onChange={(e) => setFiltroCategoriaMorosos(e.target.value)}>
-                <option value="todas">Todas</option>
-                {categoriasMorosos.map((categoria) => (
-                  <option key={`categoria-moroso-${categoria}`} value={categoria}>{categoria}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {vistaEstatusPagos === 'pagados' && (
-            <>
-              {pagadosFiltrados.length === 0 && (
-                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
-                  Sin deportistas al día que coincidan con la búsqueda.
-                </p>
-              )}
-              {[...pagadosFiltrados].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((p) => (
-                <div key={p.id} className="moroso-row" style={{ borderLeft: '4px solid var(--verde-victoria)', borderRadius: 'var(--radius-lg)', background: 'rgba(255,255,255,0.72)' }}>
-                  <div className="moroso-info">
-                    <span className="moroso-nombre">{p.nombre}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
-                      <span className="moroso-tipo-badge" style={{ background: 'rgba(52,199,89,0.12)', color: 'var(--verde-victoria)' }}>Al día</span>
-                      {p.sinApoderado && (
-                        <span className="moroso-tipo-badge" style={{ background: 'rgba(255,59,48,0.12)', color: 'var(--rojo-alerta)' }} title="El deportista no tiene ninguna cuenta vinculada por RUT ni correo del apoderado">
-                          <AlertTriangle size={10} style={{ marginRight: '3px', verticalAlign: '-1px' }} /> Sin apoderado asignado
-                        </span>
-                      )}
-                      {(p.rama || p.categoria) && (
-                        <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>
-                          {[p.rama, p.categoria].filter(Boolean).join(' · ')}
-                        </span>
-                      )}
-                    </div>
-                    <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
-                      {p.telefono ? <><Phone size={11} /> {p.telefono}</> : <>{p.correo || 'Sin contacto'}</>}
-                    </span>
-                  </div>
-                </div>
-              ))}
             </>
           )}
-          {vistaEstatusPagos === 'morosos' && (
-          <>
-          {morososFiltrados.length === 0 && (
-            <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textAlign: 'center', padding: '16px 0' }}>
-              Sin morosos que coincidan con la búsqueda.
-            </p>
-          )}
-          {[...morososFiltrados].sort((a, b) => b.mesesDeuda - a.mesesDeuda).map(m => {
-            const gravedad = m.mesesDeuda >= 3 ? 'var(--rojo-alerta)' : m.mesesDeuda === 2 ? '#FF9500' : '#DDAA00';
-            // El badge de "tipo" solo suma información cuando la familia SÍ es
-            // socia (afecta el monto de la cuota) — "apoderado" es el caso
-            // normal/mayoritario y no amerita marcarlo. La única alerta real
-            // acá es que falte el vínculo con una cuenta de apoderado.
-            const esFamiliaSocia = m.tipo === 'socio' || m.tipo === 'socio-apoderado';
-            const { bg, color } = colorTipo(m.tipo);
-            return (
-              <div key={m.id} className="moroso-row" style={{ borderLeft: `4px solid ${gravedad}`, borderRadius: 'var(--radius-lg)', background: 'rgba(255,255,255,0.72)' }}>
-                <div className="moroso-info">
-                  <span className="moroso-nombre">{m.nombre}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '5px', flexWrap: 'wrap' }}>
-                    {esFamiliaSocia && <span className="moroso-tipo-badge" style={{ background: bg, color }}>Socio</span>}
-                    {m.sinApoderado && (
-                      <span className="moroso-tipo-badge" style={{ background: 'rgba(255,59,48,0.12)', color: 'var(--rojo-alerta)' }} title="El deportista no tiene ninguna cuenta vinculada por RUT ni correo del apoderado">
-                        <AlertTriangle size={10} style={{ marginRight: '3px', verticalAlign: '-1px' }} /> Sin apoderado asignado
-                      </span>
-                    )}
-                    {(m.rama || m.categoria) && (
-                      <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.06)', color: 'var(--texto-secundario)', fontWeight: '800', padding: '2px 8px', borderRadius: 'var(--radius-pill)' }}>
-                        {[m.rama, m.categoria].filter(Boolean).join(' · ')}
-                      </span>
-                    )}
-                    {m.pupilos.length > 0 && <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '3px' }}><User size={11} /> {m.pupilos.join(' · ')}</span>}
-                  </div>
-                  <span style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '700' }}>
-                    {m.telefono ? <><Phone size={11} /> {m.telefono}</> : <>{m.correo || 'Sin contacto'}</>}
-                  </span>
-                  {(m.mesesMorosos || []).length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                      {m.mesesMorosos.map((mes) => (
-                        <span key={`${m.id}-${mes}`} style={{ fontSize: '10px', fontWeight: '800', color: gravedad, background: 'rgba(255,59,48,0.08)', border: `1px solid ${gravedad}`, borderRadius: 'var(--radius-pill)', padding: '2px 7px' }}>
-                          {mes}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="moroso-deuda">
-                  <span className="moroso-monto">${m.montoDeuda.toLocaleString('es-CL')}</span>
-                  <span className="moroso-meses" style={{ color: gravedad }}>{m.mesesDeuda} {m.mesesDeuda === 1 ? 'mes' : 'meses'}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <button
-                    className="btn-notificar"
-                    onClick={() => avisarMoroso(m)}
-                    disabled={!m.telefono}
-                    title={m.telefono ? `Enviar recordatorio por WhatsApp a ${m.telefono}` : 'Sin teléfono registrado en la cuenta'}
-                    style={!m.telefono ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                  >
-                    <Bell size={13} /> Avisar
-                  </button>
-                  {rolUsuario === 'super_admin' && (
-                    <button
-                      className="btn-notificar"
-                      style={{ background: 'var(--azul-electrico)', color: 'white', borderColor: 'var(--azul-electrico)' }}
-                      onClick={() => {
-                        setMostrarFormularioPago(true);
-                        setPagoEditandoId(null);
-                        setPagoManualAutoAprobar(true);
-                        setPagoManualObjetivo({ modoPago: 'deportista', rut: m.rut });
-                      }}
-                      title={`Registrar pago manual de ${m.nombre}`}
-                    >
-                      <Plus size={13} /> Pago manual
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-          </>
+          {seccionTesoreria === 'tarifas' && (
+            <TarifasPanel
+              puedeEditar={esAdmin || esSuperAdmin}
+              onGuardado={async () => { if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades(); }}
+            />
           )}
 
-          <h3 className="section-title mt-20">Cuenta de una familia puntual</h3>
-          <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
-            Busca a un deportista, socio o apoderado para ver su calendario de pagos, registrar un abono o descargar su historial — lo mismo que ve la familia en su propia cuenta.
+          {seccionTesoreria === 'informes' && (
+            <InformeDeudaPanel
+              jugadores={jugadoresAdmin}
+              cuentas={cuentasAdmin}
+              morosos={morososAdmin}
+              sociosMorosos={sociosMorosos}
+              pagos={pagosMensualidadesAdmin}
+            />
+          )}
+
+          {seccionTesoreria === 'cobrar' && (
+            <>
+              {pagosMalClasificados.length > 0 && (
+                <button type="button" className="tc-aviso-revision" onClick={() => setSeccionTesoreria('validar')}>
+                  <AlertTriangle size={16} color="var(--naranja-aviso)" />
+                  <span>
+                    Hay {pagosMalClasificados.length} {pagosMalClasificados.length === 1 ? 'pago de un deportista guardado' : 'pagos de deportistas guardados'} como cuota de socio: los montos por cobrar pueden estar mal hasta revisarlos. Revisar →
+                  </span>
+                </button>
+              )}
+              <TesoreriaCuentasPanel
+                filas={cuentasQuePagan}
+                puedeRegistrarPago={rolUsuario === 'super_admin'}
+                onRegistrarPago={abrirPagoManualTesoreria}
+                onVerCuenta={verCuentaTesoreria}
+                onAvisar={(fila) => avisarMoroso(filaComoMoroso(fila))}
+                onRecordarEnApp={recordarEnApp}
+                ultimoRecordatorio={ultimoRecordatorio}
+                onNotificarTodos={(lista) => {
+                  const conTelefono = lista.filter((f) => f.telefono).map(filaComoMoroso);
+                  if (conTelefono.length === 0) {
+                    showToast({ message: 'Nadie de esta lista tiene teléfono registrado.', type: 'error' });
+                    return;
+                  }
+                  setListaAvisoLote(conTelefono);
+                  setAvisadosEnLote(new Set());
+                  setMostrarModalNotificarTodos(true);
+                }}
+              />
+              <div ref={cuentaFamiliaTesoreriaRef} style={{ scrollMarginTop: '80px' }}>
+          <h3 className="section-title mt-20">Cuenta de la familia</h3>
+          <p style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
+            Toca “Ver cuenta” en la lista o busca aquí: verás la cuota de socio y la mensualidad de cada pupilo por separado, mes a mes, tal como la ve la familia.
           </p>
           <PerfilTesoreriaPanel
             pupiloActivo={pupiloTesoreriaAdmin}
@@ -4368,8 +4353,19 @@ function SuperAdminPanel({
             setPageViewMode={setPagoViewModeTesoreria}
             utmVigente={utmVigente}
             utmHistorico={utmHistorico}
-            onIrABecas={() => setVistaAdmin('becas')}
+            cuentaActivaAdmin={cuentaTesoreriaAdmin}
+            setCuentaActivaAdmin={setCuentaTesoreriaAdmin}
+            onIrAPagoManual={rolUsuario === 'super_admin' ? () => {
+              const cuenta = cuentaTesoreriaAdmin;
+              const pupilo = pupiloTesoreriaAdmin;
+              if (pupilo) abrirPagoManualTesoreria({ modoPago: 'deportista', rut: pupilo.rut });
+              else if (cuenta?.es_socio) abrirPagoManualTesoreria({ modoPago: 'socio', rut: cuenta.rut });
+              else abrirPagoManualTesoreria(null);
+            } : undefined}
           />
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -4389,7 +4385,7 @@ function SuperAdminPanel({
 
           <div className="caja-triple-grid mb-15">
             <div className="admin-stat-pill azul"><span>Total Becados</span><h2>{becasAdmin.length}</h2></div>
-            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span style={{ color: '#b36200' }}>Por Vencer</span><h2 style={{ color: '#b36200' }}>{becasPorVencerCount}</h2></div>
+            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span style={{ color: '#8A4B00' }}>Por Vencer</span><h2 style={{ color: '#8A4B00' }}>{becasPorVencerCount}</h2></div>
             <div className="admin-stat-pill rojo"><span>Vencidas</span><h2>{becasVencidasCount}</h2></div>
           </div>
 
@@ -4588,7 +4584,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'auditoria' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <div className="card mb-15" style={{ borderLeft: '4px solid var(--azul-electrico)', borderRadius: 'var(--radius-lg)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
               <div>
@@ -4716,8 +4712,8 @@ function SuperAdminPanel({
             {(cuentasIncompletas.length > 0 || jugadoresIncompletos.length > 0 || pagosConCorreccion.length > 0) && (
               <div className="card" style={{ marginTop: '12px', borderLeft: '4px solid #FF9500', borderRadius: 'var(--radius-lg)', background: 'rgba(255,149,0,0.08)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <AlertTriangle size={16} color="#b36200" />
-                  <strong style={{ color: '#b36200', fontSize: '13px' }}>Alertas de corrección pendientes</strong>
+                  <AlertTriangle size={16} color="#8A4B00" />
+                  <strong style={{ color: '#8A4B00', fontSize: '13px' }}>Alertas de corrección pendientes</strong>
                 </div>
                 <div style={{ fontSize: '12px', color: '#8a4f00', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span>Perfiles de cuentas incompletos: {cuentasIncompletas.length}</span>
@@ -4813,7 +4809,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'citaciones' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_deportistas')} label="Volver a Gestión Deportistas" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <h3 className="section-title">Citaciones</h3>
           <div className="segment-control mt-15" style={{ gap: '6px' }}>
             <button type="button" className={`segment-btn ${vistaCitaciones === 'crear' ? 'active' : ''}`} onClick={() => setVistaCitaciones('crear')}><UserPlus size={14} /> Creador de convocatorias</button>
@@ -5014,7 +5010,7 @@ function SuperAdminPanel({
 
                       {requiereAutorizacion && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(255,149,0,0.14)', color: '#b36200', border: '1px solid rgba(255,149,0,0.45)', borderRadius: 'var(--radius-pill)', padding: '4px 9px', fontSize: '11px', fontWeight: '800' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(255,149,0,0.14)', color: '#8A4B00', border: '1px solid rgba(255,149,0,0.45)', borderRadius: 'var(--radius-pill)', padding: '4px 9px', fontSize: '11px', fontWeight: '800' }}>
                             <AlertTriangle size={12} /> Moroso
                           </span>
                           {!autorizado ? (
@@ -5196,13 +5192,13 @@ function SuperAdminPanel({
                               )}
                             </div>
                             {conv.respuesta === 'no' && conv.respondido_automaticamente && (
-                              <div style={{ marginTop: '5px', fontSize: '11px', color: '#b36200', fontWeight: '800' }}>
+                              <div style={{ marginTop: '5px', fontSize: '11px', color: '#8A4B00', fontWeight: '800' }}>
                                 Automático: no respondió antes de la hora máxima de confirmación
                               </div>
                             )}
                             {esMorosoActual ? (
                               <div style={{ marginTop: '5px' }}>
-                                <div style={{ fontSize: '11px', color: '#b36200', fontWeight: '800' }}>
+                                <div style={{ fontSize: '11px', color: '#8A4B00', fontWeight: '800' }}>
                                   Moroso: requiere excepción · Estado: {
                                     conv.estado_excepcion === 'aprobada' ? 'aprobada'
                                       : conv.estado_excepcion === 'rechazada' ? 'rechazada'
@@ -5296,7 +5292,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'invitados' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_deportistas')} label="Volver a Gestión Deportistas" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <h3 className="section-title">Jugadores de Equipos Invitados</h3>
           <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle"><Plus size={16} /> Registrar jugador invitado</h4>
@@ -5377,7 +5373,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'reportes' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <ReportesPanel
             calcularReportes={calcularReportes}
             vistaReportes={vistaReportes}
@@ -5595,7 +5591,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'resultados' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_publicaciones')} label="Volver a Publicaciones y Equipos" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           <h3 className="section-title"><Trophy size={18} style={{ marginRight: '8px', verticalAlign: 'middle' }} />Registrar Resultado de Partido</h3>
           <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '16px' }}>
             Ingresa el marcador final y el partido quedará publicado en el fixture del club.
@@ -5802,7 +5798,7 @@ function SuperAdminPanel({
 
       {vistaAdmin === 'salud' && (
         <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('grupo_sistema')} label="Volver a Sistema" />
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
           {(() => {
             const reportes = calcularReportes();
             const scoreActual = calcularScoreDeCliente();
@@ -5890,6 +5886,24 @@ function SuperAdminPanel({
         />
       )}
 
+      {fichaPersona && (
+        <FichaPersonaModal
+          persona={fichaPersona}
+          jugadores={jugadoresAdminTodos || []}
+          cuentas={cuentasAdminTodas || []}
+          pagos={pagosMensualidadesAdmin || []}
+          morosos={morososAdmin}
+          sociosMorosos={sociosMorosos}
+          puedeRegistrarPago={rolUsuario === 'super_admin'}
+          puedeBorrarPagos={esAdmin || esSuperAdmin}
+          onPagosCambiados={async () => { if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades(); }}
+          onCerrar={() => setFichaPersona(null)}
+          onAbrir={(otra) => setFichaPersona(otra)}
+          onEditar={(p) => { setFichaPersona(null); iniciarEdicion(p); }}
+          onRegistrarPago={(objetivo) => { setFichaPersona(null); abrirPagoManualTesoreria(objetivo); }}
+        />
+      )}
+
       {mostrarModalNotificarTodos && createPortal(
         <div
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
@@ -5909,7 +5923,7 @@ function SuperAdminPanel({
               WhatsApp solo abre una conversación por vez — toca "Enviar" en cada fila para abrirle su recordatorio, ya escrito, listo para mandar.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {morososFiltrados.filter((m) => m.telefono).map((m) => {
+              {listaAvisoLote.filter((m) => m.telefono).map((m) => {
                 const yaAvisado = avisadosEnLote.has(m.id);
                 return (
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: yaAvisado ? 'rgba(52,199,89,0.08)' : 'var(--gris-fondo)', border: `1px solid ${yaAvisado ? 'rgba(52,199,89,0.3)' : 'var(--borde)'}` }}>
@@ -5934,7 +5948,7 @@ function SuperAdminPanel({
               })}
             </div>
             <p style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '14px', marginBottom: 0 }}>
-              {avisadosEnLote.size} de {morososFiltrados.filter((m) => m.telefono).length} enviados en esta ronda.
+              {avisadosEnLote.size} de {listaAvisoLote.length} enviados en esta ronda.
             </p>
           </div>
         </div>,

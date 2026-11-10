@@ -1,19 +1,28 @@
 // Rutas de administración: health, sincronización con Google Sheets, backups, calidad de datos, conflictos de RUT y auditoría.
 // Extraído de server.js sin cambios de comportamiento.
 const express = require('express');
+const { S3Client } = require('@aws-sdk/client-s3');
 const cron = require('node-cron');
 const { fetchSheetRows, runImportFromSheets } = require('../import-google-sheets');
-const { authenticate, requireModule } = require('../security/auth');
-const { pool, sheetsSyncManager, sheetsWebhookSyncManager } = require('../lib/db');
 const { correoDisponible } = require('../lib/correo');
+const { authenticate, requireRole, requireModule } = require('../security/auth');
+const { pool, sheetsSyncManager, sheetsWebhookSyncManager } = require('../lib/db');
 const { formatearRut } = require('../lib/rut');
 const { detectarCamposFaltantesCuenta } = require('../lib/cuentas');
-const { getBackupStatus, obtenerEstadoEjecucionBackup, runDatabaseBackup } = require('../lib/backup');
+const { estadoSincronizacionSheets } = require('../lib/sincronizacionSheets');
+const { aplicarRetencionSpaces, configRetencionSpaces, estadoBackup, getBackupConfig, getBackupStatus, getBackupStorageConfig, leerConfigRespaldos, runDatabaseBackup } = require('../lib/backup');
+const { asegurarTablaConfiguracion } = require('../lib/configuracion');
 
 const router = express.Router();
 
-let isSheetsSyncRunning = false;
-let lastSheetsSyncStatus = null;
+const crearClienteS3 = (storage) => new S3Client({
+  region: storage.region,
+  endpoint: storage.endpoint,
+  credentials: { accessKeyId: storage.accessKeyId, secretAccessKey: storage.secretAccessKey },
+  forcePathStyle: true,
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
+});
 
 const getSyncTokenFromRequest = (req) => {
   const headerToken = req.headers['x-sync-token'];
@@ -317,8 +326,8 @@ router.get('/api/admin/sync-sheets/status', (req, res) => {
   }
 
   return res.json({
-    running: isSheetsSyncRunning,
-    lastSync: lastSheetsSyncStatus,
+    running: estadoSincronizacionSheets.isSheetsSyncRunning,
+    lastSync: estadoSincronizacionSheets.lastSheetsSyncStatus,
   });
 });
 
@@ -353,8 +362,8 @@ router.get('/api/admin/ops-status', async (req, res) => {
         now: dbPing.rows[0]?.db_now || null,
       },
       sync: {
-        running: isSheetsSyncRunning,
-        lastSync: lastSheetsSyncStatus,
+        running: estadoSincronizacionSheets.isSheetsSyncRunning,
+        lastSync: estadoSincronizacionSheets.lastSheetsSyncStatus,
       },
       backup,
       pagosMensualidades: pagosSummary.rows[0] || null,
@@ -384,11 +393,71 @@ router.get('/api/admin/backup-status', (req, res) => {
 
   return res.json({
     ok: true,
-    running: obtenerEstadoEjecucionBackup().running,
-    lastRun: obtenerEstadoEjecucionBackup().lastRun,
+    running: estadoBackup.isBackupRunning,
+    lastRun: estadoBackup.lastBackupRunStatus,
     backup: getBackupStatus(),
     checkedAt: new Date().toISOString(),
   });
+});
+
+// ==========================================
+// RESPALDOS (Panel → Sistema → Respaldos, solo super admin)
+// ==========================================
+// Muestra el último respaldo, una simulación EN VIVO de la limpieza (lee el
+// bucket, no borra nada) y permite activar la limpieza o respaldar ahora,
+// sin entrar a DigitalOcean.
+router.get('/api/admin/respaldos', authenticate, requireRole('super_admin'), async (req, res) => {
+  const cfg = getBackupConfig();
+  const storage = getBackupStorageConfig();
+  const config = await leerConfigRespaldos();
+  let simulacion = null;
+  let errorSimulacion = null;
+  if (storage.uploadEnabled && storage.hasCoreConfig) {
+    try {
+      simulacion = await aplicarRetencionSpaces({ s3: crearClienteS3(storage), storage, soloSimular: true });
+    } catch (error) {
+      errorSimulacion = error.message;
+    }
+  }
+  res.json({
+    habilitado: cfg.enabled,
+    programacion: cfg.cronExpr,
+    almacenamiento: { subeASpaces: storage.uploadEnabled, configurado: storage.hasCoreConfig, bucket: storage.bucket || null },
+    retencion: {
+      activa: String(process.env.BACKUP_S3_RETENCION_APLICAR || 'false').toLowerCase() === 'true' || config.retencionAplicar === true,
+      desdePanel: config.retencionAplicar === true,
+      politica: { diarios: configRetencionSpaces().diarios, semanales: configRetencionSpaces().semanales, mensuales: configRetencionSpaces().mensuales },
+      actualizadoPor: config.actualizadoPor || null,
+      actualizado: config.actualizado || null,
+    },
+    simulacion,
+    errorSimulacion,
+    enCurso: estadoBackup.isBackupRunning,
+    ultimo: estadoBackup.lastBackupRunStatus,
+  });
+});
+
+router.put('/api/admin/respaldos', authenticate, requireRole('super_admin'), async (req, res) => {
+  if (typeof req.body?.retencionAplicar !== 'boolean') return res.status(400).json({ error: 'Falta retencionAplicar (true/false).' });
+  try {
+    await asegurarTablaConfiguracion();
+    await pool.query(
+      `INSERT INTO configuracion_sistema (clave, valor, actualizado_por, updated_at) VALUES ('respaldos', $1, $2, NOW())
+       ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado_por = EXCLUDED.actualizado_por, updated_at = NOW()`,
+      [JSON.stringify({ retencionAplicar: req.body.retencionAplicar }), req.actor?.rut || null]
+    );
+    console.log(`[RESPALDOS] Limpieza automática ${req.body.retencionAplicar ? 'ACTIVADA' : 'desactivada'} por ${req.actor?.rut}`);
+    res.json({ ok: true, retencionAplicar: req.body.retencionAplicar });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/admin/respaldos/ejecutar', authenticate, requireRole('super_admin'), async (req, res) => {
+  const result = await runDatabaseBackup({ trigger: `panel:${req.actor?.rut || 'super_admin'}` });
+  if (result.skipped) return res.status(409).json({ error: result.reason || 'No se pudo iniciar el respaldo.', ...result });
+  if (!result.ok) return res.status(500).json({ error: result.error || 'El respaldo falló.', ...result });
+  return res.json(result);
 });
 
 router.post('/api/admin/backup-run', async (req, res) => {
@@ -550,16 +619,16 @@ router.post('/api/admin/sync-sheets', async (req, res) => {
     return res.status(401).json({ error: 'Token invalido para sincronizar.' });
   }
 
-  if (isSheetsSyncRunning) {
+  if (estadoSincronizacionSheets.isSheetsSyncRunning) {
     return res.status(409).json({ error: 'Ya hay una sincronizacion en curso.' });
   }
 
-  isSheetsSyncRunning = true;
-  lastSheetsSyncStatus = {
+  estadoSincronizacionSheets.isSheetsSyncRunning = true;
+  estadoSincronizacionSheets.lastSheetsSyncStatus = {
     status: 'running',
     startedAt: new Date().toISOString(),
-    syncedAt: lastSheetsSyncStatus?.syncedAt || null,
-    totals: lastSheetsSyncStatus?.totals || null,
+    syncedAt: estadoSincronizacionSheets.lastSheetsSyncStatus?.syncedAt || null,
+    totals: estadoSincronizacionSheets.lastSheetsSyncStatus?.totals || null,
     mode: 'incremental',
   };
 
@@ -576,13 +645,13 @@ router.post('/api/admin/sync-sheets', async (req, res) => {
       { total: 0, importadas: 0, omitidas: 0, errores: 0 }
     );
 
-    lastSheetsSyncStatus = {
+    estadoSincronizacionSheets.lastSheetsSyncStatus = {
       status: 'success',
       sheetId: result.sheetId,
       totals,
       detail: result.summary,
       mode: 'incremental',
-      startedAt: lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
+      startedAt: estadoSincronizacionSheets.lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
       syncedAt: new Date().toISOString(),
     };
 
@@ -596,9 +665,9 @@ router.post('/api/admin/sync-sheets', async (req, res) => {
       syncedAt: new Date().toISOString(),
     });
   } catch (error) {
-    lastSheetsSyncStatus = {
+    estadoSincronizacionSheets.lastSheetsSyncStatus = {
       status: 'error',
-      startedAt: lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
+      startedAt: estadoSincronizacionSheets.lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
       syncedAt: new Date().toISOString(),
       error: error.message,
     };
@@ -607,7 +676,7 @@ router.post('/api/admin/sync-sheets', async (req, res) => {
       detail: error.message,
     });
   } finally {
-    isSheetsSyncRunning = false;
+    estadoSincronizacionSheets.isSheetsSyncRunning = false;
   }
 });
 
@@ -737,14 +806,14 @@ router.post('/api/admin/sync-sheets/webhook-flush', async (req, res) => {
 // (ver el middleware de auto-export más arriba, sheetsSyncManager.enqueueTable).
 cron.schedule('*/10 * * * *', async () => {
   if (!process.env.GOOGLE_SHEET_ID) return;
-  if (isSheetsSyncRunning) return;
+  if (estadoSincronizacionSheets.isSheetsSyncRunning) return;
 
-  isSheetsSyncRunning = true;
-  lastSheetsSyncStatus = {
+  estadoSincronizacionSheets.isSheetsSyncRunning = true;
+  estadoSincronizacionSheets.lastSheetsSyncStatus = {
     status: 'running',
     startedAt: new Date().toISOString(),
-    syncedAt: lastSheetsSyncStatus?.syncedAt || null,
-    totals: lastSheetsSyncStatus?.totals || null,
+    syncedAt: estadoSincronizacionSheets.lastSheetsSyncStatus?.syncedAt || null,
+    totals: estadoSincronizacionSheets.lastSheetsSyncStatus?.totals || null,
     mode: 'incremental-cron',
   };
 
@@ -761,13 +830,13 @@ cron.schedule('*/10 * * * *', async () => {
       { total: 0, importadas: 0, omitidas: 0, errores: 0 }
     );
 
-    lastSheetsSyncStatus = {
+    estadoSincronizacionSheets.lastSheetsSyncStatus = {
       status: 'success',
       sheetId: result.sheetId,
       totals,
       detail: result.summary,
       mode: 'incremental-cron',
-      startedAt: lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
+      startedAt: estadoSincronizacionSheets.lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
       syncedAt: new Date().toISOString(),
     };
 
@@ -775,15 +844,15 @@ cron.schedule('*/10 * * * *', async () => {
       console.log(`[CRON] Sincronización Google Sheets: ${totals.importadas} fila(s) nueva(s) importada(s).`);
     }
   } catch (err) {
-    lastSheetsSyncStatus = {
+    estadoSincronizacionSheets.lastSheetsSyncStatus = {
       status: 'error',
-      startedAt: lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
+      startedAt: estadoSincronizacionSheets.lastSheetsSyncStatus?.startedAt || new Date().toISOString(),
       syncedAt: new Date().toISOString(),
       error: err.message,
     };
     console.error('[CRON] Error sincronizando desde Google Sheets:', err.message);
   } finally {
-    isSheetsSyncRunning = false;
+    estadoSincronizacionSheets.isSheetsSyncRunning = false;
   }
 });
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Camera, Check, ChevronDown, ChevronUp, Clock, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
+import { AlertTriangle, Camera, Check, ChevronDown, ChevronUp, Clock, FileText, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
+import { armarCertificado, generarPdfCertificado } from '../utils/certificadoPagos';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from '../utils/beca';
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
@@ -111,6 +112,12 @@ function PerfilTesoreriaPanel({
   setPageViewMode,
   onIrAPagoManual,
   onIrABecas,
+  // Opcional (Tesorería admin): cuenta elegida desde la lista "Por cobrar".
+  // Si se pasa el setter, la cuenta activa queda controlada por el padre.
+  cuentaActivaAdmin,
+  setCuentaActivaAdmin,
+  // Meses de cuota socio a dejar marcados al abrir (desde el Muro).
+  mesesSocioIniciales = [],
   utmVigente,
   utmHistorico,
 }) {
@@ -124,12 +131,15 @@ function PerfilTesoreriaPanel({
   // Cuenta seleccionada directo (sin pasar por un jugador) — necesario para
   // poder revisar la Tesorería de un socio que no tiene ningún deportista
   // asociado, caso que "cuentaActual" antes no contemplaba en absoluto.
-  const [cuentaSocioActiva, setCuentaSocioActiva] = useState(null);
+  const [cuentaSocioActivaLocal, setCuentaSocioActivaLocal] = useState(null);
+  const cuentaControlada = typeof setCuentaActivaAdmin === 'function';
+  const cuentaSocioActiva = cuentaControlada ? (cuentaActivaAdmin || null) : cuentaSocioActivaLocal;
+  const setCuentaSocioActiva = cuentaControlada ? setCuentaActivaAdmin : setCuentaSocioActivaLocal;
   // mesesSeleccionados (prop, { [rutPupilo]: number[] }) representa la
   // grilla de Mensualidad Deportista, con selección independiente por
   // pupilo; la de Cuota Socio es independiente para que el socio/apoderado
   // pueda pagar solo una, solo la otra, o ambas.
-  const [mesesSocioSeleccionados, setMesesSocioSeleccionados] = useState([]);
+  const [mesesSocioSeleccionados, setMesesSocioSeleccionados] = useState(() => mesesSocioIniciales);
 
   const esVistaAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
 
@@ -218,8 +228,22 @@ function PerfilTesoreriaPanel({
       return Boolean(correoCuenta && correoApoderado && correoCuenta === correoApoderado);
     }) || null
     : null);
+  // Admin: al revisar una cuenta se ven TODOS sus pupilos (antes solo el
+  // deportista buscado: una socia con 2 hijos solo mostraba a uno). El
+  // vínculo es el mismo del backend: rut o correo del apoderado, o la cuenta
+  // propia del deportista que se autogestiona.
+  const pupilosDeCuentaAdmin = (esVistaAdmin && cuentaActual && Array.isArray(pupilosDisponibles))
+    ? pupilosDisponibles.filter((p) => {
+      const rutCuenta = normalizarRutCuenta(cuentaActual.rut || '');
+      const correoCuenta = String(cuentaActual.correo || '').trim().toLowerCase();
+      if (!rutCuenta) return false;
+      if (normalizarRutCuenta(p.rut_apoderado || '') === rutCuenta) return true;
+      if (normalizarRutCuenta(p.rut || '') === rutCuenta) return true;
+      return Boolean(correoCuenta && String(p.correo_apoderado || '').trim().toLowerCase() === correoCuenta);
+    })
+    : [];
   const pupilosActivos = esVistaAdmin
-    ? (pupiloActivo ? [pupiloActivo] : [])
+    ? (pupilosDeCuentaAdmin.length > 0 ? pupilosDeCuentaAdmin : (pupiloActivo ? [pupiloActivo] : []))
     : (Array.isArray(pupilosDisponibles) && pupilosDisponibles.length > 0
       ? pupilosDisponibles
       : (pupiloActivo ? [pupiloActivo] : []));
@@ -243,7 +267,6 @@ function PerfilTesoreriaPanel({
   // cuenta guardada con guión no disparaba el reparto de cuota socio+hijos.
   const perfilPrincipal = normalizarRol(cuentaActual?.perfil_principal || cuentaActual?.rol || '');
   const esSocio = Boolean(cuentaActual?.es_socio) || ['socio', 'socio_apoderado', 'directiva'].includes(perfilPrincipal);
-  const esSocioApoderado = perfilPrincipal === 'socio_apoderado';
 
   // Sin pupilo (socio revisado directo, sin deportistas) la deuda no vive en
   // morososAdmin (deuda de jugadores) sino en sociosMorosos (deuda de cuota
@@ -264,7 +287,8 @@ function PerfilTesoreriaPanel({
     }
     : null;
   const mesesAtraso = Number(morosoActivo?.mesesDeuda || 0);
-  const estadoCuenta = mesesAtraso > 0 ? 'Moroso' : 'Al Día';
+  // "Moroso" era duro para las familias: se muestra "Con deuda".
+  const estadoCuenta = mesesAtraso > 0 ? 'Con deuda' : 'Al Día';
 
   const getMesNumero = (texto = '') => {
     const token = String(texto || '')
@@ -407,7 +431,8 @@ function PerfilTesoreriaPanel({
   const montoAcordadoFamilia = Number(cuentaActual?.monto_mensual_override || 0);
   const { cuotaDeportistas, cuotaReferencial: cuotaDeportistaReferencial } = calcularCuotaDeportistasFamilia({
     pupilosFamilia: pupilosActivos,
-    esSocioApoderado,
+    // Hijo de socio: cuenta socia o ficha marcada "pupilo de socio".
+    esSocioApoderado: esSocio || pupilosActivos.some((p) => Boolean(p.apoderado_socio)),
     montoAcordado: montoAcordadoFamilia,
   });
   const cuotaSocioAplicada = esSocio ? cuotaSocio : 0;
@@ -418,7 +443,17 @@ function PerfilTesoreriaPanel({
   // propio (caso normal, viene de la hoja) se usa tal cual; si no, se reparte
   // en partes iguales la tarifa agregada (mismo criterio que "Cuota vigente").
   // Ver obtenerCuotaJugador en utils/beca — mismo cálculo que usa Morosos.
-  const obtenerCuotaMensualPupilo = (pupilo = {}) => obtenerCuotaJugador(pupilo, cuotaDeportistaReferencial);
+  // Con mes: la tarifa vigente ese mes (historial de tarifas); sin mes: la de hoy.
+  const parametrosFamiliaPagos = {
+    pupilosFamilia: pupilosActivos,
+    esSocioApoderado: esSocio || pupilosActivos.some((p) => Boolean(p.apoderado_socio)),
+    montoAcordado: montoAcordadoFamilia,
+  };
+  const obtenerCuotaMensualPupilo = (pupilo = {}, mes = null) => (
+    mes
+      ? obtenerCuotaJugador(pupilo, calcularCuotaDeportistasFamilia({ ...parametrosFamiliaPagos, mes }).cuotaReferencial, mes)
+      : obtenerCuotaJugador(pupilo, cuotaDeportistaReferencial)
+  );
 
   // Resumen de cada mes (abonado, faltante, estado) para la grilla, los
   // totales y la creación de pagos: el mes se completa sumando abonos.
@@ -434,7 +469,7 @@ function PerfilTesoreriaPanel({
     const pagosMes = pagosDePupilo(pupilo)
       .filter((pago) => monthFromPago(pago) === mesNumero)
       .map((pago) => ({ estado: pago.estado_pago, monto: pago.monto_total_pagado }));
-    const resumen = resumirAbonosMes(pagosMes, obtenerCuotaMensualPupilo(pupilo));
+    const resumen = resumirAbonosMes(pagosMes, obtenerCuotaMensualPupilo(pupilo, mesNumero));
     return {
       ...resumen,
       estado: resolverEstadoMes({
@@ -754,7 +789,7 @@ function PerfilTesoreriaPanel({
           <div>
             <span style={{ fontSize: 'var(--texto-min)', color: 'rgba(255,255,255,0.6)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mensualidad / Perfil</span>
             <h3 className="status-titular" style={{ color: 'white' }}>{titular}</h3>
-            <span className="status-rol">{esSocio ? 'Socio Activo Club Cultura Física' : 'Apoderado Base'}</span>
+            <span className="status-rol">{esSocio ? 'Socio activo del club' : (pupilosActivos.length ? 'Apoderado' : 'Cuenta')}</span>
             {esSocio && (
               <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700', display: 'block', marginTop: '5px' }}>
                 UTM referencia ({fechaCorteTexto}): ${utmActual.toLocaleString('es-CL')} · Cuota socio (0,3 UTM): ${cuotaSocio.toLocaleString('es-CL')}
@@ -805,7 +840,7 @@ function PerfilTesoreriaPanel({
         </div>
       )}
 
-      {estadoCuenta === 'Moroso' && (
+      {estadoCuenta === 'Con deuda' && (
         <div className="card fade-in mt-15 compact-debt-summary" style={{ borderLeft: '4px solid var(--rojo-alerta)', background: 'linear-gradient(180deg, rgba(255,59,48,0.08), rgba(255,59,48,0.02))', borderRadius: 'var(--radius-lg)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'center' }}>
             <div>
@@ -840,7 +875,28 @@ function PerfilTesoreriaPanel({
         </div>
       )}
 
-      <h3 className="section-title mt-20">Panel de Pagos 2026</h3>
+      <div className="ptp-titulo-pagos">
+        <h3 className="section-title mt-20">Panel de Pagos 2026</h3>
+        <button
+          type="button"
+          className="btn-secondary tc-btn"
+          onClick={async () => {
+            try {
+              await generarPdfCertificado(armarCertificado({
+                titular: { nombre: titular, rut: cuentaActual?.rut || pupilosActivos[0]?.rut || '', esSocio, cuenta: cuentaActual || {} },
+                pupilos: pupilosActivos,
+                pagos: pagosMensualidadesAdmin || [],
+                morosos: morososAdmin || [],
+                sociosMorosos: sociosMorosos || [],
+              }));
+            } catch (error) {
+              showToast({ message: `No se pudo generar el certificado: ${error.message}`, type: 'error' });
+            }
+          }}
+        >
+          <FileText size={14} /> Certificado de pagos (PDF)
+        </button>
+      </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         <button

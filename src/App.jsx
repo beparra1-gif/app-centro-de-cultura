@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
-import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from './utils/beca';
+import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador, setHistorialTarifas } from './utils/beca';
 import { mapearJugadorAPupilo, obtenerNumeroCamisetaJugador, obtenerAnioNacimientoJugador } from './utils/pupiloMapper';
 import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
 import ApiStatusBanner from './components/ApiStatusBanner';
@@ -29,6 +29,10 @@ import { hoyLocalISO, partesFechaCalendario } from './utils/fechas';
 import { resumirAbonosMes } from './utils/abonosMes';
 import useIntervaloVisible from './utils/useIntervaloVisible';
 import useModalAccesible from './utils/useModalAccesible';
+import { soloActivos } from './utils/estadoActivo';
+import { observarEtiquetas } from './utils/etiquetasAccesibles';
+import PagoRapidoMuro from './components/PagoRapidoMuro';
+import { mesesANumeros, resumirDeudaFamilia } from './utils/deudaFamilia';
 import PrimerIngresoModal from './components/PrimerIngresoModal';
 import { VERSION_AVISO } from './legal/avisoPrivacidad';
 import {
@@ -184,6 +188,8 @@ function App() {
   // que tenían en el primer render (closure obsoleta) si se leyeran directo.
   const cuentasAdminRef = useRef(cuentasAdmin);
   const jugadoresAdminRef = useRef(jugadoresAdmin);
+  // Nombres accesibles para campos y botones de ícono (ver utils/etiquetasAccesibles).
+  useEffect(() => observarEtiquetas(), []);
   useEffect(() => { cuentasAdminRef.current = cuentasAdmin; }, [cuentasAdmin]);
   useEffect(() => { jugadoresAdminRef.current = jugadoresAdmin; }, [jugadoresAdmin]);
   // Valor real de UTM (última consultada al backend, que a su vez la trae de
@@ -262,6 +268,14 @@ function App() {
   // propia selección de meses en la grilla "Mensualidad Deportista" (antes
   // era un arreglo plano compartido entre todas las tarjetas de pupilo).
   const [mesesSeleccionados, setMesesSeleccionados] = useState({});
+  // Meses de cuota socio a dejar marcados al abrir Mi Cuenta desde el Muro.
+  const [mesesSocioIniciales, setMesesSocioIniciales] = useState([]);
+  // La preselección vale solo para esa visita a Mi Cuenta.
+  const [pantallaPreseleccion, setPantallaPreseleccion] = useState(pantallaActiva);
+  if (pantallaPreseleccion !== pantallaActiva) {
+    setPantallaPreseleccion(pantallaActiva);
+    if (pantallaActiva !== 'perfil' && mesesSocioIniciales.length) setMesesSocioIniciales([]);
+  }
   const [tipoPago, setTipoPago] = useState('completo'); 
   const [montoAbono, setMontoAbono] = useState('');
   const [comprobanteSubido, setComprobanteSubido] = useState(false);
@@ -293,7 +307,6 @@ function App() {
 
   // --- ESTADOS: SUPER ADMIN (MODO DIOS) ---
   const [vistaAdmin, setVistaAdmin] = useState('inicio');
-  const [filtroMorosos, setFiltroMorosos] = useState('todos');
   const [logAuditoria, setLogAuditoria] = useState([]);
   const [jugadoresVisitaAdmin, setJugadoresVisitaAdmin] = useState([]);
   const [usuarioAutenticado, setUsuarioAutenticado] = useState(null);
@@ -592,7 +605,10 @@ function App() {
   // 3. LÓGICA BASE Y EFECTOS
   // ==========================================
 
-  const construirMorososDesdePagos = (pagos = [], jugadores = [], cuentas = []) => {
+  const construirMorososDesdePagos = (pagos = [], jugadoresTodos = [], cuentas = []) => {
+    // Inactivos/baja no deben ni aparecer como deudores ni contar como
+    // hermanos para la tarifa familiar.
+    const jugadores = soloActivos(jugadoresTodos);
     const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
     const normalizarCorreo = (correo = '') => String(correo || '').trim().toLowerCase();
     const cuentaPorCorreo = new Map();
@@ -742,12 +758,19 @@ function App() {
       const cuentaFamilia = cuentaPorRut.get(normalizarRutComparacion(primerJugador.rut_apoderado))
         || cuentaPorCorreo.get(normalizarCorreo(primerJugador.correo_apoderado));
       const perfilPrincipalFamilia = String(cuentaFamilia?.perfil_principal || cuentaFamilia?.rol || '').toLowerCase();
-      const { cuotaReferencial } = calcularCuotaDeportistasFamilia({
+      const parametrosFamilia = {
         pupilosFamilia,
-        esSocioApoderado: perfilPrincipalFamilia === 'socio_apoderado',
+        // Hijo(s) de socio: tarifa rebajada si la cuenta del apoderado es
+        // socia (es_socio), cualquiera sea su perfil.
+        // o si la ficha marca "pupilo de socio" (la mayoría de las fichas no
+        // está vinculada a la cuenta del apoderado).
+        esSocioApoderado: Boolean(cuentaFamilia?.es_socio)
+          || ['socio', 'socio_apoderado', 'socio-apoderado'].includes(perfilPrincipalFamilia)
+          || pupilosFamilia.some((p) => Boolean(p.apoderado_socio)),
         montoAcordado: Number(cuentaFamilia?.monto_mensual_override || 0),
-      });
-      cuotaReferencialPorFamilia.set(key, cuotaReferencial);
+      };
+      // Cuota referencial por MES (la tarifa puede cambiar durante el año).
+      cuotaReferencialPorFamilia.set(key, (mes) => calcularCuotaDeportistasFamilia({ ...parametrosFamilia, mes }).cuotaReferencial);
     });
 
     const morosos = [];
@@ -783,8 +806,8 @@ function App() {
       // propio, o a la tarifa referencial de su familia si no tiene
       // valor_mensualidad cargado (mismo cálculo que Tesorería, nunca el
       // número de meses mostrado como si fueran pesos).
-      const cuotaReferencialFamilia = cuotaReferencialPorFamilia.get(obtenerFamilyKey(jugador)) || 0;
-      const cuotaRef = obtenerCuotaJugador(jugador, cuotaReferencialFamilia);
+      const referencialDelMes = cuotaReferencialPorFamilia.get(obtenerFamilyKey(jugador)) || (() => 0);
+      const cuotaDelMes = (mes) => obtenerCuotaJugador(jugador, referencialDelMes(mes), mes);
 
       // mesesMorosos guarda los meses concretos (no solo el conteo), ya
       // acotado por inicioCobro — un jugador que ingresó en marzo nunca
@@ -792,12 +815,13 @@ function App() {
       const mesesMorososNums = [];
       let montoDeudaJugador = 0;
       let mesesConAbonoParcial = 0;
+      const mesesParcialesNums = [];
       for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
-        const resumen = resumirAbonosMes(pagosPorMes.get(mes) || [], cuotaRef);
+        const resumen = resumirAbonosMes(pagosPorMes.get(mes) || [], cuotaDelMes(mes));
         if (!resumen.completo) {
           mesesMorososNums.push(mes);
           montoDeudaJugador += resumen.faltante;
-          if (resumen.parcial) mesesConAbonoParcial += 1;
+          if (resumen.parcial) { mesesConAbonoParcial += 1; mesesParcialesNums.push(mes); }
         }
       }
       const mesesDeuda = mesesMorososNums.length;
@@ -832,6 +856,8 @@ function App() {
         // Suma de lo que FALTA de cada mes (descuenta abonos parciales).
         montoDeuda: montoDeudaJugador,
         mesesConAbonoParcial,
+        // Meses con abono que no completa la cuota (informe de deuda).
+        mesesParciales: mesesParcialesNums.map((n) => NOMBRES_MESES[n - 1]),
         contacto: telefono || jugador.correo_apoderado || 'Sin contacto',
         telefono,
         correo: jugador.correo_apoderado || '',
@@ -854,7 +880,8 @@ function App() {
   // fetchear esos valores, y setUtmVigente()/setUtmHistorico() no actualizan
   // la closure hasta el próximo render — leerlos por closure habría usado
   // siempre el valor de UTM de la carga ANTERIOR, no la recién fetcheada.
-  const construirSociosMorosos = (pagos = [], cuentas = [], utmVigenteParam = utmVigente, utmHistoricoParam = utmHistorico) => {
+  const construirSociosMorosos = (pagos = [], cuentasTodas = [], utmVigenteParam = utmVigente, utmHistoricoParam = utmHistorico) => {
+    const cuentas = soloActivos(cuentasTodas);
     const normalizarRutComparacion = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
     const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
     const NOMBRES_MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -985,11 +1012,13 @@ function App() {
       // Cada mes se completa con abonos hasta su propia cuota (UTM del mes).
       const mesesMorososNums = [];
       let montoDeudaSocio = 0;
+      const mesesParcialesNums = [];
       for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
         const resumen = resumirAbonosMes(pagosPorMes.get(mes) || [], obtenerCuotaSocioDelMes(mes));
         if (!resumen.completo) {
           mesesMorososNums.push(mes);
           montoDeudaSocio += resumen.faltante;
+          if (resumen.parcial) mesesParcialesNums.push(mes);
         }
       }
       const mesesDeuda = mesesMorososNums.length;
@@ -1007,6 +1036,7 @@ function App() {
         mesesDeuda,
         mesesMorosos: mesesMorososNums.map((n) => NOMBRES_MESES[n - 1]),
         montoDeuda: montoDeudaSocio,
+        mesesParciales: mesesParcialesNums.map((n) => NOMBRES_MESES[n - 1]),
         contacto: telefono || cuenta.correo || 'Sin contacto',
         telefono,
         correo: cuenta.correo || '',
@@ -1095,6 +1125,11 @@ function App() {
     // y cae al fallback [], lo que gatillaba el "else" de más abajo y borraba
     // el pupiloActivo recién armado con su nombre/club en iniciarSesionFinal.
     const esInvitadoActivo = (rolActivo ?? rolUsuario) === 'visita';
+    // Familias, deportistas, visitas y mesa nunca usan los datos de
+    // administración: antes cada inicio de sesión pedía 6 recursos solo-admin
+    // que el servidor rechazaba con 403 (carga inútil y errores en consola).
+    const sinDatosAdmin = ['apoderado', 'socio', 'socio_apoderado', 'jugador', 'visita', 'mesa']
+      .includes(normalizarRol(rolActivo ?? rolUsuario ?? ''));
 
     // Sin token (portada pública, antes de iniciar sesión) los endpoints
     // protegidos solo devolvían 401: 13 peticiones fallidas en cada visita a
@@ -1103,25 +1138,29 @@ function App() {
     const conSesion = (llamada) => (api.getAuthToken()
       ? llamada()
       : Promise.reject(Object.assign(new Error('Sin sesión'), { sinSesion: true })));
+    const soloAdmin = (llamada) => (sinDatosAdmin
+      ? Promise.reject(Object.assign(new Error('No corresponde a este perfil'), { sinSesion: true }))
+      : conSesion(llamada));
 
     try {
       const resultados = await Promise.allSettled([
         api.comunicacionesAPI.getAll(),
-        conSesion(() => api.whatsappAPI.getContactos()),
-        conSesion(() => api.cuentasAPI.getIncompletas()),
-        conSesion(() => api.cuentasAPI.getAll()),
+        soloAdmin(() => api.whatsappAPI.getContactos()),
+        soloAdmin(() => api.cuentasAPI.getIncompletas()),
+        soloAdmin(() => api.cuentasAPI.getAll()),
         conSesion(() => api.jugadoresAPI.getAll()),
-        conSesion(() => api.jugadoresVisitaAPI.getAll()),
+        soloAdmin(() => api.jugadoresVisitaAPI.getAll()),
         conSesion(() => api.pagosMensualidadesAPI.getAll()),
         api.partidosLiveAPI.getAll(),
-        conSesion(() => api.auditoriaAPI.getAll()),
+        soloAdmin(() => api.auditoriaAPI.getAll()),
         api.encuestasAPI.getAll(),
         conSesion(() => api.quizAPI.getAll()),
         conSesion(() => api.citacionesAPI.getAll()),
         conSesion(() => api.notificacionesAppAPI.getAll()),
         conSesion(() => api.utmAPI.getVigente()),
         conSesion(() => api.utmAPI.getHistorico(ANIO_OBJETIVO_TESORERIA)),
-        conSesion(() => api.becaAPI.getBecas()),
+        soloAdmin(() => api.becaAPI.getBecas()),
+        conSesion(() => api.configuracionAPI.getTarifas()),
       ]);
 
       const getResult = (index, fallback = []) => (
@@ -1130,6 +1169,8 @@ function App() {
           : fallback
       );
 
+      // Tarifas con historial (índice 16): antes de calcular cualquier deuda.
+      setHistorialTarifas(getResult(16, {})?.historial || null);
       const comunicacionesRes = getResult(0, []);
       const contactosRes = getResult(1, []);
       const cuentasIncompletasRes = getResult(2, []);
@@ -1515,11 +1556,12 @@ function App() {
   const getHeaderTitle = () => {
     if(!rolUsuario) return "Portal Oficial";
     switch(pantallaActiva) {
-      case 'comunicaciones': return "Muro Social";
-      case 'academia': return "Academia Club";
-      case 'perfil': return (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? "Validación Tesorería" : "Mi Cuenta";
-      case 'jugador': return "Pase Digital";
-      case 'asistencia_staff': return "Control Asistencia";
+      // Mismo nombre que el botón del menú inferior, para saber dónde se está.
+      case 'comunicaciones': return "Muro";
+      case 'academia': return "Academia";
+      case 'perfil': return (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? "Tesorería" : "Mi Cuenta";
+      case 'jugador': return esPerfilFamiliarNav ? "Pupilos" : (rolUsuario === 'jugador' ? "Mi ficha" : "Fichas deportivas");
+      case 'asistencia_staff': return "Asistencia";
       case 'scoreboard_live': return "Mesa FIBA Live";
       case 'torneos': return "Torneos y Tabla de Posiciones";
       case 'kiosco': return "Kiosco POS";
@@ -2935,7 +2977,9 @@ function App() {
   // sin tener que esperar a un refetch completo de jugadoresAdmin — ver
   // actualizarJugadorEnMemoria más abajo.
 
-  const pupilosDisponiblesBase = (jugadoresAdmin || []).map((j, idx) => mapearJugadorAPupilo(j, idx));
+  // Inactivos/baja no aparecen en listados operativos (ver utils/estadoActivo).
+  const jugadoresActivos = soloActivos(jugadoresAdmin);
+  const pupilosDisponiblesBase = jugadoresActivos.map((j, idx) => mapearJugadorAPupilo(j, idx));
 
   // Tras un PUT exitoso a /api/jugadores/:rut (apoderado o admin editando un
   // pupilo, o cambiando el diseño de marco de su tarjeta), el backend
@@ -3101,9 +3145,10 @@ function App() {
       case 'perfil':
         return { label: (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? 'Tesorería' : 'Mi Cuenta', Icon: CreditCard };
       case 'jugador':
-        return { label: esPerfilFamiliarNav ? 'Pupilos' : 'Jugador', Icon: User };
+        // "Jugador" no decía qué había adentro: son las fichas deportivas.
+        return { label: esPerfilFamiliarNav ? 'Pupilos' : (rolUsuario === 'jugador' ? 'Mi ficha' : 'Fichas'), Icon: User };
       case 'asistencia_staff':
-        return { label: 'Lista', Icon: Users };
+        return { label: 'Asistencia', Icon: Users };
       case 'scoreboard_live':
         return { label: 'Mesa', Icon: Monitor };
       case 'kiosco':
@@ -3188,7 +3233,7 @@ function App() {
         <div className="header-btn-zone right">
           {rolUsuario && (
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'flex-end', width: '100%', flexWrap: 'nowrap' }}>
-              <button ref={settingsButtonRef} className="btn-icon-header" onClick={toggleSettingsPanel} title="Configuración y Perfil">
+              <button ref={settingsButtonRef} type="button" className="btn-icon-header" onClick={toggleSettingsPanel} title="Configuración y Perfil" aria-label="Configuración y perfil">
                 <Settings size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
               </button>
               <button
@@ -3197,10 +3242,11 @@ function App() {
                 ref={notificationsButtonRef}
                 style={{position: 'relative'}}
                 onClick={toggleNotificationsPanel}
+                aria-label={`Notificaciones${notificaciones.filter((n) => !n.leida).length ? ` (${notificaciones.filter((n) => !n.leida).length} sin leer)` : ''}`}
               >
                 <Bell size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
                 {notificaciones.filter(n=>!n.leida).length > 0 && (
-                  <span style={{position: 'absolute', top: '-5px', right: '-5px', background: 'var(--rojo-alerta)', color: 'white', fontSize: '11px', fontWeight: '900', padding: '3px 6px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--azul-marino)'}}>
+                  <span style={{position: 'absolute', top: '-5px', right: '-5px', background: '#C62828', color: 'white', fontSize: '11px', fontWeight: '900', padding: '3px 6px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--azul-marino)'}}>
                     {notificaciones.filter(n=>!n.leida).length}
                   </span>
                 )}
@@ -3433,54 +3479,24 @@ function App() {
                 partidos={partidosResumen}
               />
             )}
-            {esPerfilFamiliarNav && puedeVerPantalla('comunicaciones') && pantallaActiva === 'comunicaciones' && (
-              <div className="card mt-15" style={{ borderRadius: 'var(--radius-lg)', padding: '14px' }}>
-                <h4 style={{ margin: '2px 4px 10px 4px', fontSize: '12px', fontWeight: '900', color: 'var(--texto-heading)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                  Accesos rápidos
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
-                  {puedeVerPantalla('perfil') && (
-                    <button
-                      type="button"
-                      onClick={() => cambiarPantallaConLoader('perfil')}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      <CreditCard size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
-                      <div>
-                        <strong style={{ display: 'block', fontSize: '13px' }}>Mi Cuenta</strong>
-                        <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>Mensualidad y comprobantes</span>
-                      </div>
-                    </button>
-                  )}
-                  {puedeVerPantalla('jugador') && (
-                    <button
-                      type="button"
-                      onClick={() => cambiarPantallaConLoader('jugador')}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      <User size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
-                      <div>
-                        <strong style={{ display: 'block', fontSize: '13px' }}>Pupilos</strong>
-                        <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>Perfil y tarjeta de cada deportista</span>
-                      </div>
-                    </button>
-                  )}
-                  {puedeVerPantalla('academia') && (
-                    <button
-                      type="button"
-                      onClick={() => cambiarPantallaConLoader('academia')}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px', borderRadius: 'var(--radius-md)', border: 'none', background: 'rgba(0,122,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      <BookOpen size={22} color="var(--azul-electrico)" strokeWidth={1.5} />
-                      <div>
-                        <strong style={{ display: 'block', fontSize: '13px' }}>Academia</strong>
-                        <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>Material y evaluaciones</span>
-                      </div>
-                    </button>
-                  )}
-                </div>
-              </div>
+            {(esPerfilFamiliarNav || rolUsuario === 'jugador') && puedeVerPantalla('perfil') && pantallaActiva === 'comunicaciones' && (
+              <PagoRapidoMuro
+                resumen={resumirDeudaFamilia({ pupilos: pupilosDisponibles, morosos: morososAdmin, sociosMorosos, cuentaPropia })}
+                onVerCuenta={() => cambiarPantallaConLoader('perfil')}
+                onPagar={(lineas) => {
+                  // Deja marcados los meses adeudados: en Mi Cuenta solo falta adjuntar el comprobante.
+                  setMesesSeleccionados(Object.fromEntries(
+                    lineas.filter((l) => l.tipo === 'pupilo').map((l) => [l.rut, mesesANumeros(l.meses)])
+                  ));
+                  setMesesSocioIniciales(mesesANumeros(lineas.find((l) => l.tipo === 'socio')?.meses || []));
+                  setTipoPago('completo');
+                  setComprobanteSubido(false);
+                  cambiarPantallaConLoader('perfil');
+                }}
+              />
             )}
+            {/* Los accesos rápidos (Mi Cuenta, Pupilos, Academia) se quitaron: repetían
+                el menú inferior y empujaban el Muro hacia abajo. */}
             {puedeVerPantalla('comunicaciones') && pantallaActiva === 'comunicaciones' && (
               <ComunicacionesPanel
                 rolUsuario={rolUsuario}
@@ -3528,7 +3544,7 @@ function App() {
                 pupiloActivo={pupiloActivo}
                 setPupiloActivo={setPupiloActivo}
                 pupilosDisponibles={pupilosDisponibles}
-                jugadoresAdmin={jugadoresAdmin}
+                jugadoresAdmin={jugadoresActivos}
                 rolUsuario={rolUsuario}
                 rutUsuarioAutenticado={rutUsuarioAutenticado}
                 usuarioAutenticado={usuarioAutenticado}
@@ -3590,6 +3606,7 @@ function App() {
                 onIrAPagoManual={irARegistrarPagoManual}
                 utmVigente={utmVigente}
                 utmHistorico={utmHistorico}
+                mesesSocioIniciales={mesesSocioIniciales}
               />
             )}
             {puedeVerPantalla('jugador') && pantallaActiva === 'jugador' && (
@@ -3609,7 +3626,7 @@ function App() {
                 setVistaStaff={setVistaStaff}
                 filtroRamaStaff={filtroRamaStaff}
                 setFiltroRamaStaff={setFiltroRamaStaff}
-                todosJugadores={jugadoresAdmin}
+                todosJugadores={jugadoresActivos}
               />
             )}
             {puedeVerPantalla('scoreboard_live') && pantallaActiva === 'scoreboard_live' && (
@@ -3654,8 +3671,6 @@ function App() {
                 vistaAdmin={vistaAdmin}
                 setVistaAdmin={setVistaAdmin}
                 generarAlertas={generarAlertas}
-                filtroMorosos={filtroMorosos}
-                setFiltroMorosos={setFiltroMorosos}
                 pagosPendientesAdmin={pagosPendientesAdmin}
                 setPagosPendientesAdmin={setPagosPendientesAdmin}
                 logAuditoria={logAuditoria}
@@ -3690,6 +3705,7 @@ function App() {
                 jugadoresAdmin={jugadoresAdmin}
                 guardarCuentaAdmin={guardarCuentaAdmin}
                 guardarJugadorAdmin={guardarJugadorAdmin}
+                recargarUsuariosAdmin={recargarUsuariosAdmin}
                 eliminarCuentaAdmin={eliminarCuentaAdmin}
                 eliminarJugadorAdmin={eliminarJugadorAdmin}
                 jugadoresVisitaAdmin={jugadoresVisitaAdmin}
@@ -3698,6 +3714,7 @@ function App() {
                 morososAdmin={morososAdmin}
                 sociosMorosos={sociosMorosos}
                 pagosMensualidadesAdmin={pagosMensualidadesAdmin}
+                recargarPagosMensualidades={recargarPagosMensualidades}
                 onSheetsSyncComplete={sincronizarDatosDesdeSheets}
                 onCancelEdit={restaurarPermisosAntesCancelacion}
                 onPartidosChanged={recargarPartidosResumen}
@@ -3744,7 +3761,12 @@ function App() {
                   type="button"
                   key={`nav-${modulo}`}
                   className={`nav-item ${pantallaActiva === modulo ? 'active' : ''}`}
-                  onClick={() => cambiarPantallaConLoader(modulo)}
+                  onClick={() => {
+                    // Tocar "Panel" estando dentro de una sección vuelve a su inicio
+                    // (antes se quedaba en la sección y no había forma de volver desde el menú).
+                    if (modulo === 'admin_dashboard' && pantallaActiva === 'admin_dashboard') setVistaAdmin('inicio');
+                    cambiarPantallaConLoader(modulo);
+                  }}
                 >
                   <Icon size={26} color={esBotonCuenta ? 'var(--azul-electrico)' : 'var(--gris-secundario)'} strokeWidth={esBotonCuenta ? 2 : 1.5} />
                   <span className="mt-5" style={esBotonCuenta ? { color: 'var(--azul-electrico)', fontWeight: '800' } : undefined}>{meta.label}</span>

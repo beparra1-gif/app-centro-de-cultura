@@ -816,6 +816,33 @@ export const utmAPI = {
 // ========== PAGOS MENSUALIDADES (FASE 1) ==========
 
 export const pagosMensualidadesAPI = {
+  // Importar pagos 2026 desde la planilla de Tesorería (solo super admin):
+  // revisar no cambia nada; aplicar recibe el resumen revisado.
+  revisarImportacionPlanilla: async (url) => {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/importar-planilla?url=${encodeURIComponent(url)}`);
+    return handleResponse(response);
+  },
+  obtenerImportacionAutomatica: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/importar-planilla/auto`);
+    return handleResponse(response);
+  },
+  guardarImportacionAutomatica: async ({ url, activo }) => {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/importar-planilla/auto`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, activo }),
+    });
+    return handleResponse(response);
+  },
+  aplicarImportacionPlanilla: async ({ url, resumen }) => {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/importar-planilla`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, resumen }),
+    });
+    return handleResponse(response);
+  },
+
   // Obtener todos
   getAll: async () => {
     const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades`);
@@ -839,6 +866,12 @@ export const pagosMensualidadesAPI = {
   },
 
   // Actualizar
+  // Solo admin/super admin (el backend lo exige).
+  eliminar: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/${id}`, { method: 'DELETE' });
+    return handleResponse(response);
+  },
+
   update: async (id, datos) => {
     const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/${id}`, {
       method: 'PUT',
@@ -985,7 +1018,47 @@ export const citacionesAPI = {
 
 // ========== NOTIFICACIONES APP (in-app, persistidas) ==========
 
+// Respaldos de la base (Panel → Sistema → Respaldos, solo super admin).
+export const respaldosAPI = {
+  estado: async () => handleResponse(await apiFetch(`${API_BASE_URL}/admin/respaldos`)),
+  configurar: async ({ retencionAplicar }) => handleResponse(await apiFetch(`${API_BASE_URL}/admin/respaldos`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ retencionAplicar }),
+  })),
+  ejecutar: async () => handleResponse(await apiFetch(`${API_BASE_URL}/admin/respaldos/ejecutar`, { method: 'POST' })),
+};
+
+// Tarifas de mensualidad con historial (Tesorería → Tarifas).
+export const configuracionAPI = {
+  getTarifas: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/configuracion/tarifas`);
+    return handleResponse(response);
+  },
+  guardarTarifas: async (historial) => {
+    const response = await apiFetch(`${API_BASE_URL}/configuracion/tarifas`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ historial }),
+    });
+    return handleResponse(response);
+  },
+};
+
 export const notificacionesAppAPI = {
+  // Recordatorio de pago en la app para las familias con deuda (Tesorería).
+  enviarRecordatorioPagos: async (avisos) => {
+    const response = await apiFetch(`${API_BASE_URL}/notificaciones/recordatorio-pagos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ avisos }),
+    });
+    return handleResponse(response);
+  },
+  ultimoRecordatorioPagos: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/notificaciones/recordatorio-pagos`);
+    return handleResponse(response);
+  },
   getAll: async () => {
     const response = await apiFetch(`${API_BASE_URL}/notificaciones`);
     return handleResponse(response);

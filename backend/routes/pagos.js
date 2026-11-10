@@ -1,12 +1,15 @@
 // Rutas de tesorería: pagos, pagos de mensualidades, UTM, becas, revisiones de beca y migración de pagos.
 // Extraído de server.js sin cambios de comportamiento.
 const express = require('express');
-const { authenticate, requireOwnerIdOrModule, requireModule, normalizarRutParaComparar, resolverPermisosDeActor, requireAnyModule } = require('../security/auth');
+const { authenticate, requireOwnerIdOrModule, requireModule, normalizarRutParaComparar, resolverPermisosDeActor, requireRole, requireAnyModule } = require('../security/auth');
 const { normalizarRol } = require('../security/accessControl');
 const { pool, sheetsSyncManager } = require('../lib/db');
 const { ROLES_JUGADORES_ACOTADOS, actorPuedeVerJugador, obtenerPupilosDeActor } = require('../lib/actores');
 const { obtenerUTMParaMes, obtenerUTMVigente } = require('../lib/utm');
+const { aplicarPlanImportacionPagos, construirPlanImportacionPagos, ejecutarImportacionAutomatica, guardarConfigImportacion, leerConfigImportacion } = require('../lib/importacionPagos');
+const { estadoSincronizacionSheets } = require('../lib/sincronizacionSheets');
 const { crearNotificacionApp } = require('../lib/notificaciones');
+const { asegurarTablaConfiguracion, leerConfigTarifas } = require('../lib/configuracion');
 
 const router = express.Router();
 
@@ -353,6 +356,69 @@ const obtenerPrimerMesCobrableJugador = (jugador = {}) => {
   return null;
 };
 
+router.get('/api/pagos-mensualidades/importar-planilla/auto', authenticate, requireRole('super_admin'), async (req, res) => {
+  try {
+    res.json(await leerConfigImportacion());
+  } catch (err) {
+    console.error('[GET importar-planilla/auto]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/api/pagos-mensualidades/importar-planilla/auto', authenticate, requireRole('super_admin'), async (req, res) => {
+  try {
+    const activo = Boolean(req.body?.activo);
+    const url = String(req.body?.url || '').trim();
+    if (activo) {
+      // Solo se activa con una planilla que se pueda leer y tenga las hojas esperadas.
+      await construirPlanImportacionPagos(url);
+    }
+    const config = await guardarConfigImportacion({ url, activo }, req.actor?.rut || null);
+    let ejecucion = null;
+    if (activo) ejecucion = await ejecutarImportacionAutomatica();
+    res.json({ ...config, ultimaEjecucion: ejecucion || config.ultimaEjecucion });
+  } catch (err) {
+    if (!err.status) console.error('[PUT importar-planilla/auto]', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.get('/api/pagos-mensualidades/importar-planilla', authenticate, requireRole('super_admin'), async (req, res) => {
+  try {
+    res.json(await construirPlanImportacionPagos(req.query.url));
+  } catch (err) {
+    if (!err.status) console.error('[GET /api/pagos-mensualidades/importar-planilla]', err);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.post('/api/pagos-mensualidades/importar-planilla', authenticate, requireRole('super_admin'), async (req, res) => {
+  // Mientras se aplica, se pausa la importación automática desde BASE_CCF
+  // (cron cada 10 min), que re-insertaría por id los duplicados borrados.
+  if (estadoSincronizacionSheets.isSheetsSyncRunning) {
+    return res.status(409).json({ error: 'Hay una sincronización con Google Sheets en curso. Intenta de nuevo en un minuto.' });
+  }
+  estadoSincronizacionSheets.isSheetsSyncRunning = true;
+  try {
+    const plan = await construirPlanImportacionPagos(req.body?.url);
+    // Lo que se aplica debe ser lo que el admin revisó.
+    const esperado = req.body?.resumen || {};
+    const cambio = ['crearDeportistas', 'actualizarFichas', 'agregarDeportistas', 'agregarSocios', 'duplicadosBorrar']
+      .some((k) => Number(esperado[k] || 0) !== Number(plan.resumen[k] || 0));
+    if (cambio) {
+      return res.status(409).json({ error: 'Los datos cambiaron desde que revisaste la planilla. Vuelve a revisarla antes de aplicar.', resumen: plan.resumen });
+    }
+    const aplicado = await aplicarPlanImportacionPagos(plan, { borrarDuplicados: true, actualizarFichas: true });
+    console.log(`[IMPORTAR-PLANILLA] ${aplicado.creados} deportistas creados, ${aplicado.agregados} pagos agregados, ${aplicado.borrados} duplicados borrados (por ${req.actor?.rut}).`);
+    return res.json({ ok: true, ...aplicado, resumen: plan.resumen });
+  } catch (err) {
+    if (!err.status) console.error('[POST /api/pagos-mensualidades/importar-planilla]', err);
+    return res.status(err.status || 500).json({ error: err.message });
+  } finally {
+    estadoSincronizacionSheets.isSheetsSyncRunning = false;
+  }
+});
+
 router.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'validacion_pagos', 'admin_dashboard'), async (req, res) => {
   const {
     rut_jugador,
@@ -454,11 +520,19 @@ router.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil',
         meses_correspondientes,
         monto_total_pagado,
         comprobante_url,
-        correccionesPago.length > 0
-          ? `Correccion requerida: ${correccionesPago.join(', ')}`
-          : null,
+        // Nota de Tesorería (p. ej. "Deuda condonada" o el detalle de un
+        // pago manual): antes se descartaba siempre. Solo staff/admin la
+        // puede escribir; una familia que sube un comprobante, no.
+        [
+          correccionesPago.length > 0 ? `Correccion requerida: ${correccionesPago.join(', ')}` : '',
+          esStaffOAdminPago ? String(req.body?.notas_tesoreria || '').trim().slice(0, 1000) : '',
+        ].filter(Boolean).join(' · ') || null,
       ]
     );
+    // Una familia subió un comprobante: avisar a Tesorería (admins) para que
+    // lo valide pronto. Un aviso por familia cada 15 min aunque el
+    // comprobante cubra varios meses (se crea un pago por mes).
+    if (!esStaffOAdminPago) void avisarComprobanteATesoreria(req.actor, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[POST /api/pagos-mensualidades]', err);
@@ -578,6 +652,77 @@ router.get('/api/pagos-mensualidades/:id', authenticate, async (req, res) => {
 });
 
 // PUT: Actualizar pago de mensualidad (edición completa)
+// ==========================================
+// TARIFAS DE MENSUALIDAD CON HISTORIAL (Tesorería → Tarifas)
+// ==========================================
+// Cada período rige desde un mes (YYYY-MM). Todas las cuentas autenticadas
+// la leen (la familia calcula su propia deuda); solo admin/super admin la
+// modifican.
+const CLAVES_TARIFA = ['uno', 'hermanos', 'hijoSocio', 'dosHijosSocio'];
+
+router.get('/api/configuracion/tarifas', authenticate, async (req, res) => {
+  try {
+    res.json(await leerConfigTarifas());
+  } catch (err) {
+    console.error('[GET /api/configuracion/tarifas]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/api/configuracion/tarifas', authenticate, requireRole('admin', 'super_admin'), async (req, res) => {
+  const entrada = Array.isArray(req.body?.historial) ? req.body.historial : [];
+  const historial = entrada.map((t) => ({
+    desde: String(t?.desde || '').trim(),
+    ...Object.fromEntries(CLAVES_TARIFA.map((k) => [k, Math.round(Number(t?.[k]))])),
+    nota: String(t?.nota || '').trim().slice(0, 200),
+  }));
+  const invalido = historial.find((t) => !/^\d{4}-(0[1-9]|1[0-2])$/.test(t.desde) || CLAVES_TARIFA.some((k) => !Number.isFinite(t[k]) || t[k] < 0 || t[k] > 1000000));
+  if (!historial.length || invalido) {
+    return res.status(400).json({ error: 'Cada tarifa necesita un mes de inicio (AAAA-MM) y montos válidos.' });
+  }
+  if (new Set(historial.map((t) => t.desde)).size !== historial.length) {
+    return res.status(400).json({ error: 'Hay dos tarifas que empiezan el mismo mes.' });
+  }
+  historial.sort((a, b) => a.desde.localeCompare(b.desde));
+  try {
+    await asegurarTablaConfiguracion();
+    await pool.query(
+      `INSERT INTO configuracion_sistema (clave, valor, actualizado_por, updated_at) VALUES ('tarifas_mensualidad', $1, $2, NOW())
+       ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado_por = EXCLUDED.actualizado_por, updated_at = NOW()`,
+      [JSON.stringify({ historial }), req.actor?.rut || null]
+    );
+    res.json(await leerConfigTarifas());
+  } catch (err) {
+    console.error('[PUT /api/configuracion/tarifas]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Borrar un pago (solo admin/super admin, desde la ficha). Pausa la
+// importación desde BASE_CCF y reescribe su pestaña de pagos antes de
+// soltarla: si no, la importación re-insertaría el pago por su id.
+router.delete('/api/pagos-mensualidades/:id', authenticate, requireRole('admin', 'super_admin'), async (req, res) => {
+  const id = Number.parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Pago no válido.' });
+  if (estadoSincronizacionSheets.isSheetsSyncRunning) {
+    return res.status(409).json({ error: 'Hay una sincronización con Google Sheets en curso. Intenta de nuevo en un minuto.' });
+  }
+  estadoSincronizacionSheets.isSheetsSyncRunning = true;
+  try {
+    const r = await pool.query('DELETE FROM pagos_mensualidades WHERE id = $1 RETURNING id, rut_jugador, rut_pagos, concepto_pago, meses_correspondientes, monto_total_pagado', [id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Pago no encontrado.' });
+    sheetsSyncManager.enqueueTable('pagos_mensualidades');
+    await sheetsSyncManager.flush().catch((e) => console.error('[DELETE pago] flush Sheets:', e.message));
+    console.log(`[DELETE pago] #${id} borrado por ${req.actor?.rut}`);
+    return res.json({ ok: true, borrado: r.rows[0] });
+  } catch (err) {
+    console.error('[DELETE /api/pagos-mensualidades/:id]', err);
+    return res.status(500).json({ error: err.message });
+  } finally {
+    estadoSincronizacionSheets.isSheetsSyncRunning = false;
+  }
+});
+
 router.put('/api/pagos-mensualidades/:id', authenticate, requireAnyModule('validacion_pagos', 'admin_dashboard'), async (req, res) => {
   const {
     rut_jugador,
@@ -800,6 +945,97 @@ router.post('/api/becas', authenticate, requireModule('validacion_pagos'), async
     client.release();
   }
 });
+
+const avisarComprobanteATesoreria = async (actor, pago) => {
+  try {
+    const quien = (await pool.query('SELECT nombres, apellido_paterno FROM cuentas WHERE id = $1', [actor?.id])).rows[0];
+    const nombre = `${quien?.nombres || ''} ${quien?.apellido_paterno || ''}`.trim() || actor?.rut || 'Una familia';
+    const admins = (await pool.query(
+      `SELECT rut FROM cuentas
+       WHERE LOWER(COALESCE(rol, '')) IN ('admin', 'super_admin', 'superadmin')
+         AND LOWER(COALESCE(estado, 'activo')) NOT IN ('inactivo', 'baja')`
+    )).rows;
+    for (const { rut } of admins) {
+      const reciente = await pool.query(
+        `SELECT 1 FROM notificaciones_app
+         WHERE rut_destinatario = $1 AND tipo = 'pago' AND referencia_tipo = 'comprobante'
+           AND titulo = $2 AND creado_en > NOW() - INTERVAL '15 minutes' LIMIT 1`,
+        [rut, `Comprobante de ${nombre}`]
+      );
+      if (reciente.rows.length) continue;
+      await crearNotificacionApp({
+        rut,
+        tipo: 'pago',
+        titulo: `Comprobante de ${nombre}`,
+        cuerpo: `Subió un comprobante (${pago?.concepto_pago || 'Mensualidad'}, ${pago?.meses_correspondientes || ''}). Revísalo en Tesorería → Validar pagos.`,
+        referenciaTipo: 'comprobante',
+        referenciaId: pago?.id || null,
+      });
+    }
+  } catch (error) {
+    console.error('[AVISO-COMPROBANTE]', error.message);
+  }
+};
+
+// GET: notificaciones in-app del actor autenticado.
+// Recordatorio de pago dentro de la app (Tesorería → Por cobrar). La deuda
+// la calcula el frontend (mismos números que Por cobrar); aquí solo se
+// valida que cada RUT sea una cuenta activa y se evita repetir el mismo día.
+router.post('/api/notificaciones/recordatorio-pagos', authenticate, requireAnyModule('validacion_pagos', 'admin_dashboard'), async (req, res) => {
+  const avisos = Array.isArray(req.body?.avisos) ? req.body.avisos.slice(0, 600) : [];
+  try {
+    const activas = new Set((await pool.query(
+      `SELECT REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') AS rut FROM cuentas
+       WHERE LOWER(COALESCE(estado, 'activo')) NOT IN ('inactivo', 'baja')`
+    )).rows.map((r) => r.rut));
+    let enviados = 0;
+    let omitidos = 0;
+    for (const aviso of avisos) {
+      const rut = String(aviso?.rut || '').trim();
+      const rutNorm = rut.replace(/[.\s-]/g, '').toUpperCase();
+      if (!rutNorm || !activas.has(rutNorm)) { omitidos += 1; continue; }
+      const hoy = await pool.query(
+        `SELECT 1 FROM notificaciones_app WHERE REPLACE(REPLACE(UPPER(rut_destinatario), '.', ''), '-', '') = $1
+           AND tipo = 'pago' AND referencia_tipo = 'recordatorio' AND creado_en::date = CURRENT_DATE LIMIT 1`,
+        [rutNorm]
+      );
+      if (hoy.rows.length) { omitidos += 1; continue; }
+      await crearNotificacionApp({
+        rut,
+        tipo: 'pago',
+        titulo: 'Recordatorio de pago',
+        cuerpo: String(aviso?.cuerpo || 'Tienes cuotas pendientes. Sube tu comprobante desde el Muro.').slice(0, 600),
+        referenciaTipo: 'recordatorio',
+        referenciaId: null,
+      });
+      enviados += 1;
+    }
+    await guardarConfigRecordatorio({ ultimoEnvio: new Date().toISOString(), enviados, por: req.actor?.rut || null }).catch(() => {});
+    res.json({ enviados, omitidos });
+  } catch (err) {
+    console.error('[POST /api/notificaciones/recordatorio-pagos]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/api/notificaciones/recordatorio-pagos', authenticate, requireAnyModule('validacion_pagos', 'admin_dashboard'), async (req, res) => {
+  try {
+    await asegurarTablaConfiguracion();
+    const r = await pool.query("SELECT valor FROM configuracion_sistema WHERE clave = 'recordatorio_pagos'");
+    res.json(r.rows[0]?.valor || {});
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const guardarConfigRecordatorio = async (valor) => {
+  await asegurarTablaConfiguracion();
+  await pool.query(
+    `INSERT INTO configuracion_sistema (clave, valor, updated_at) VALUES ('recordatorio_pagos', $1, NOW())
+     ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
+    [JSON.stringify(valor)]
+  );
+};
 
 // ==========================================
 // 22. ENDPOINTS: MIGRACIÓN PAGOS (FASE 2)

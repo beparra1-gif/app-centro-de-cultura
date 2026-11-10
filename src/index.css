@@ -6,11 +6,11 @@
    duplicados y en conflicto entre los dos archivos. */
 :root {
   --azul-marino: #0B1D3A; /* Elegante y profundo */
-  --azul-electrico: #007AFF; /* Azul brillante clásico de iOS */
+  --azul-electrico: #0A6CF0; /* Azul iOS, profundizado para contraste AA */
   --fondo-app: #F2F2F7; /* Gris extra claro típico de fondo en iPhone */
   --blanco-tarjeta: #FFFFFF;
   --texto-principal: #1C1C1E;
-  --texto-secundario: #8E8E93;
+  --texto-secundario: #636366;
 }
 
 /* Tipografía elegante y profesional (Estilo nativo Apple + Deportivo) */

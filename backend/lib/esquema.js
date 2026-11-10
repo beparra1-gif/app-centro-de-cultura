@@ -65,6 +65,12 @@ const ensureJugadoresExtendedColumns = async () => {
   await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS exento_mensualidad BOOLEAN DEFAULT false`);
   console.log('🎓 Columna exento_mensualidad de jugadores verificada');
 
+  // Hijo/pupilo de socio: tarifa rebajada ($15.000; 2 hijos $12.000 c/u)
+  // aunque la ficha no esté vinculada a la cuenta del apoderado (la mayoría
+  // de las fichas no lo están). Viene de "¿Es Socio Activo?" de la planilla.
+  await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS apoderado_socio BOOLEAN DEFAULT false`);
+  console.log('🤝 Columna apoderado_socio de jugadores verificada');
+
   // foto_jugador es la foto de perfil "oficial" del deportista, usada en
   // varias pantallas (avatar del header, Tesoreria, Tarjeta Oficial CCF).
   // foto_tarjeta_coleccion es una foto DISTINTA, solo para la tarjeta

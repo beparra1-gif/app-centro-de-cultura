@@ -10,12 +10,11 @@ const cron = require('node-cron');
 const { clasificarBackupsPorRetencion } = require('./retencionBackups');
 const { normalizeEnvValue, resolveRuntimePath, serializeError } = require('./util');
 const { pool } = require('./db');
+const { asegurarTablaConfiguracion } = require('./configuracion');
 
-let isBackupRunning = false;
-let lastBackupRunStatus = null;
+const estadoBackup = { isBackupRunning: false, lastBackupRunStatus: null };
 let backupCronTask = null;
 const execFileAsync = promisify(execFile);
-const obtenerEstadoEjecucionBackup = () => ({ running: isBackupRunning, lastRun: lastBackupRunStatus });
 
 const getBackupConfig = () => {
   const backupDir = resolveRuntimePath(String(process.env.BACKUP_DIR || 'backups'));
@@ -101,8 +100,21 @@ const configRetencionSpaces = () => {
   };
 };
 
-const aplicarRetencionSpaces = async ({ s3, storage }) => {
-  const cfg = configRetencionSpaces();
+const leerConfigRespaldos = async () => {
+  try {
+    await asegurarTablaConfiguracion();
+    const r = await pool.query("SELECT valor, actualizado_por, updated_at FROM configuracion_sistema WHERE clave = 'respaldos'");
+    return r.rows[0] ? { ...r.rows[0].valor, actualizadoPor: r.rows[0].actualizado_por, actualizado: r.rows[0].updated_at } : {};
+  } catch {
+    return {};
+  }
+};
+
+// soloSimular: calcula qué se borraría sin borrar nada (panel Respaldos).
+const aplicarRetencionSpaces = async ({ s3, storage, soloSimular = false }) => {
+  const cfgBase = configRetencionSpaces();
+  const desdePanel = (await leerConfigRespaldos()).retencionAplicar === true;
+  const cfg = { ...cfgBase, aplicar: !soloSimular && (cfgBase.aplicar || desdePanel) };
   const objetos = [];
   let token;
   do {
@@ -329,7 +341,7 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
     return { ok: false, skipped: true, reason: 'BACKUP_ENABLED=false' };
   }
 
-  if (isBackupRunning) {
+  if (estadoBackup.isBackupRunning) {
     return { ok: false, skipped: true, reason: 'Ya hay un backup en ejecución' };
   }
 
@@ -338,7 +350,7 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
     return { ok: false, skipped: true, reason: 'DATABASE_URL no configurada' };
   }
 
-  isBackupRunning = true;
+  estadoBackup.isBackupRunning = true;
   const startedAt = new Date().toISOString();
 
   try {
@@ -429,7 +441,7 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
     };
 
     writeBackupManifest({ manifestPath: cfg.manifestPath, payload: manifestPayload });
-    lastBackupRunStatus = {
+    estadoBackup.lastBackupRunStatus = {
       status: 'success',
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -461,7 +473,7 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
       // Si no puede escribir manifest, de todas formas devolvemos error.
     }
 
-    lastBackupRunStatus = {
+    estadoBackup.lastBackupRunStatus = {
       status: 'error',
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -476,7 +488,7 @@ const runDatabaseBackup = async ({ trigger = 'manual' } = {}) => {
       storage: failurePayload.storage,
     };
   } finally {
-    isBackupRunning = false;
+    estadoBackup.isBackupRunning = false;
   }
 };
 
@@ -649,7 +661,12 @@ const getBackupStatus = () => {
 
 module.exports = {
   getBackupStatus,
-  obtenerEstadoEjecucionBackup,
+  estadoBackup,
+  getBackupConfig,
+  getBackupStorageConfig,
+  configRetencionSpaces,
+  leerConfigRespaldos,
+  aplicarRetencionSpaces,
   runDatabaseBackup,
   scheduleAutomaticBackups,
 };

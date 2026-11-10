@@ -37,14 +37,15 @@ export function getColorUrgencia(urgencia) {
 
 export function getColorPorCategoria(categoria) {
   if (categoria === 'Bebida') return { border: '#4DD0E1', bg: '#E0F7FA', text: '#006064' };
-  if (categoria === 'Comida') return { border: '#FFB74D', bg: '#FFF3E0', text: '#E65100' };
+  // Texto más oscuro: #E65100 sobre #FFF3E0 medía 3,4:1 (WCAG pide 4,5:1).
+  if (categoria === 'Comida') return { border: '#FFB74D', bg: '#FFF3E0', text: '#9A3412' };
   if (categoria === 'Entradas') return { border: '#BA68C8', bg: '#F3E5F5', text: '#4A148C' };
   return { border: 'rgba(0,0,0,0.05)', bg: 'var(--blanco-tarjeta)', text: 'var(--texto-principal)' };
 }
 
 export function colorTipo(tipo) {
   if (tipo === 'socio') return { bg: 'rgba(0,122,255,0.1)', color: 'var(--azul-electrico)' };
-  if (tipo === 'apoderado') return { bg: 'rgba(255,149,0,0.12)', color: '#b36200' };
+  if (tipo === 'apoderado') return { bg: 'rgba(255,149,0,0.12)', color: '#8A4B00' };
   return { bg: 'rgba(110,50,200,0.12)', color: '#6E32C8' };
 }
 

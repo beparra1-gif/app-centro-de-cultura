@@ -818,7 +818,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
       ) : (
         <div className="staff-header-info mb-15 kiosco-header-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', padding: '16px 18px', borderRadius: 'var(--radius-lg)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)', border: '1px solid rgba(255,255,255,0.72)' }}>
           <div><h4 style={{ margin: '0 0 5px 0', color: 'var(--texto-heading)', fontSize: '15px' }}>Kiosco POS</h4><span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Lock size={12} /> Caja sin abrir</span></div>
-          <button className="btn-pill" style={{ background: '#FF9500', color: 'white' }} onClick={() => setVista('caja')}>Abrir Caja</button>
+          <button className="btn-pill" style={{ background: '#B45309', color: 'white' }} onClick={() => setVista('caja')}>Abrir Caja</button>
         </div>
       )}
 
@@ -1015,7 +1015,7 @@ function KioscoPanel({ nombreResponsable = '' }) {
                     <span className="kiosco-precio" style={{ color: colorCat.text }}>${Number(prod.precio).toLocaleString('es-CL')}</span>
                   </div>
                   {sinStock && <span className="badge-agotado-tag">SIN STOCK</span>}
-                  {isCritico && !sinStock && <span className="badge-critico-tag" style={{ position: 'absolute', top: 5, left: 5, background: '#FF9500', color: 'white', fontSize: '8px', padding: '2px 4px', borderRadius: 'var(--radius-pill)' }}>CRÍTICO</span>}
+                  {isCritico && !sinStock && <span className="badge-critico-tag" style={{ position: 'absolute', top: 5, left: 5, background: '#B45309', color: 'white', fontSize: '10px', padding: '2px 4px', borderRadius: 'var(--radius-pill)' }}>CRÍTICO</span>}
                 </button>
               );
             })}

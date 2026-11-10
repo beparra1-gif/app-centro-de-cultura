@@ -17,7 +17,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
   const esFemelina = (partido) => (partido.rama || '').toLowerCase().includes('femen');
   const colorBorde = (partido) => esFemelina(partido) ? '#ec4899' : '#3b82f6';
   const colorFondo = (partido) => esFemelina(partido) ? 'rgba(236, 72, 153, 0.08)' : 'rgba(59, 130, 246, 0.08)';
-  const colorBadge = (partido) => esFemelina(partido) ? '#ec4899' : '#3b82f6';
+  const colorBadge = (partido) => esFemelina(partido) ? '#BE185D' : '#1D4ED8';
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 560;
   
   // Colores monocromáticos para iconos
@@ -91,7 +91,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
               color: 'white',
               textTransform: 'uppercase',
               letterSpacing: '0.5px',
-              boxShadow: `0 4px 12px rgba(${colorBadge(partido) === '#ec4899' ? '236, 72, 153' : '59, 130, 246'}, 0.3)`
+              boxShadow: `0 4px 12px rgba(${colorBadge(partido) === '#BE185D' ? '190, 24, 93' : '29, 78, 216'}, 0.3)`
             }}>
               {partido.rama}
             </span>
@@ -139,7 +139,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
                   color: colorBadge(partido), 
                   fontFamily: "'Bungee', 'Inter Tight', monospace", 
                   lineHeight: '0.9',
-                  textShadow: `0 4px 12px rgba(${colorBadge(partido) === '#ec4899' ? '236, 72, 153' : '59, 130, 246'}, 0.3)`
+                  textShadow: `0 4px 12px rgba(${colorBadge(partido) === '#BE185D' ? '190, 24, 93' : '29, 78, 216'}, 0.3)`
                 }}>
                   {partido.miEquipo}
                 </div>
