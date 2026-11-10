@@ -66,6 +66,8 @@ import SaludAlertasPanel from './SaludAlertasPanel';
 import SaludDashboardPanel from './SaludDashboardPanel';
 import SaludTimelinePanel from './SaludTimelinePanel';
 import SettingsPanel from './SettingsPanel';
+import CampoCategoria from './CampoCategoria';
+import { categoriaEfectiva } from '../utils/categoriaPorEdad';
 import { absolutizarLogoUrl } from '../utils/logoResolver';
 import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
 import useModalAccesible from '../utils/useModalAccesible';
@@ -516,7 +518,7 @@ function SuperAdminPanel({
   // { codigo, nombre, rut, telefono, vigencia_horas } del último código de activación generado.
   const [codigoActivacion, setCodigoActivacion] = useState(null);
   useModalAccesible(Boolean(codigoActivacion), () => setCodigoActivacion(null));
-  const [tipoNuevoUsuario, setTipoNuevoUsuario] = useState('cuenta');
+  const [tipoNuevoUsuario, setTipoNuevoUsuario] = useState('jugador');
   const [guardandoUsuario, setGuardandoUsuario] = useState(false);
   const [eliminandoUsuarioId, setEliminandoUsuarioId] = useState('');
   const [citaRama, setCitaRama] = useState('todas');
@@ -630,7 +632,7 @@ function SuperAdminPanel({
     apellido_paterno: '',
     apellido_materno: '',
     rama: 'MASCULINA',
-    categoria: 'SUB-13',
+    categoria: '',
     estado: 'ACTIVO',
     foto_jugador: '',
   });
@@ -2026,7 +2028,7 @@ function SuperAdminPanel({
       }
 
       if (editandoTipo === 'jugador' && jugadorAdminEdit) {
-        await guardarJugadorAdmin(jugadorAdminEdit, jugadorAdminEdit.rut_original || jugadorAdminEdit.rut_jugador);
+        await guardarJugadorAdmin({ ...jugadorAdminEdit, categoria: categoriaEfectiva(jugadorAdminEdit) }, jugadorAdminEdit.rut_original || jugadorAdminEdit.rut_jugador);
         if (cuentaAsociadaJugadorEdit?.id) {
           // Persist ONLY the permission override diff for the linked account.
           // Do not send the full account object to avoid overwriting concurrent edits.
@@ -2132,7 +2134,9 @@ function SuperAdminPanel({
         });
         showToast({ message: 'Cuenta creada correctamente.', type: 'success' });
       } else {
-        await guardarJugadorAdmin(nuevoJugador);
+        const categoria = categoriaEfectiva(nuevoJugador);
+        if (!categoria) throw new Error('Ingresa la fecha de nacimiento o elige la categoría.');
+        await guardarJugadorAdmin({ ...nuevoJugador, categoria });
         setNuevoJugador({
           rut_jugador: '',
           correo_apoderado: '',
@@ -2140,7 +2144,7 @@ function SuperAdminPanel({
           apellido_paterno: '',
           apellido_materno: '',
           rama: 'MASCULINA',
-          categoria: 'SUB-13',
+          categoria: '',
           estado: 'ACTIVO',
           foto_jugador: '',
         });
@@ -3453,67 +3457,98 @@ function SuperAdminPanel({
                 <button type="button" className="fp-cerrar" onClick={cancelarEdicion} aria-label="Cerrar sin guardar"><X size={20} /></button>
               </div>
 
-              <h5 className="sub-caja-title">Identidad y vínculo</h5>
-              <div className="grid-auto-220">
-                <div className="form-group"><label>RUT Jugador</label><input className="form-input" value={jugadorAdminEdit.rut_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
-                <div className="form-group"><label>RUT Apoderado</label><input className="form-input" value={jugadorAdminEdit.rut_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_apoderado: e.target.value }))} /></div>
-                <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={jugadorAdminEdit.correo_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
-                <div className="form-group"><label>Parentesco apoderado</label><input className="form-input" value={jugadorAdminEdit.parentesco_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, parentesco_apoderado: e.target.value }))} /></div>
-                <div className="form-group"><label>Correo Jugador</label><input className="form-input" value={jugadorAdminEdit.correo_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_jugador: e.target.value }))} /></div>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.forzar_clave_jugador)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, forzar_clave_jugador: e.target.checked }))} /> Forzar cambio de clave</label>
-                <div className="form-group"><label>Nombres</label><input className="form-input" value={jugadorAdminEdit.nombres || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={jugadorAdminEdit.apellido_paterno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={jugadorAdminEdit.apellido_materno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
-                <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_nacimiento: e.target.value }))} /></div>
-                <div className="form-group"><label>Año de nacimiento</label><input type="number" className="form-input" value={jugadorAdminEdit.año_nacimiento || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, año_nacimiento: e.target.value }))} /></div>
-                <div className="form-group"><label>Colegio</label><input className="form-input" value={jugadorAdminEdit.colegio || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, colegio: e.target.value }))} /></div>
-              </div>
+              <fieldset className="uc-seccion">
+                <legend><User size={15} /> Datos personales</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>RUT</label><input className="form-input" value={jugadorAdminEdit.rut_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_jugador: e.target.value }))} placeholder="12.345.678-9" /></div>
+                  <div className="form-group"><label>Nombres</label><input className="form-input" value={jugadorAdminEdit.nombres || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                  <div className="form-group"><label>Apellido paterno</label><input className="form-input" value={jugadorAdminEdit.apellido_paterno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                  <div className="form-group"><label>Apellido materno</label><input className="form-input" value={jugadorAdminEdit.apellido_materno || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                  <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_nacimiento: e.target.value, categoria: categoriaEfectiva({ ...p, fecha_nacimiento: e.target.value }) }))} /></div>
+                  <div className="form-group"><label>Año de nacimiento (si no hay fecha)</label><input type="number" className="form-input" value={jugadorAdminEdit['año_nacimiento'] || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, 'año_nacimiento': e.target.value }))} /></div>
+                  <div className="form-group"><label>Colegio</label><input className="form-input" value={jugadorAdminEdit.colegio || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, colegio: e.target.value }))} /></div>
+                  <div className="form-group"><label>Correo del deportista</label><input className="form-input" value={jugadorAdminEdit.correo_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_jugador: e.target.value }))} inputMode="email" /></div>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.forzar_clave_jugador)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, forzar_clave_jugador: e.target.checked }))} /> Forzar cambio de clave</label>
+                </div>
+              </fieldset>
 
-              <h5 className="sub-caja-title mt-15">Deportivo</h5>
-              <div className="grid-auto-220">
-                <div className="form-group"><label>Rama</label><select className="form-input" value={jugadorAdminEdit.rama || 'MASCULINA'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
-                <div className="form-group"><label>Categoría</label><input className="form-input" value={jugadorAdminEdit.categoria || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, categoria: e.target.value }))} /></div>
-                <div className="form-group"><label>Posición de juego</label><input className="form-input" value={jugadorAdminEdit.posicion_de_juego || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, posicion_de_juego: e.target.value }))} /></div>
-                <div className="form-group"><label>Número camiseta</label><input type="number" className="form-input" value={jugadorAdminEdit.numero_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, numero_camiseta: e.target.value }))} /></div>
-                <div className="form-group"><label>Estatura</label><input className="form-input" value={jugadorAdminEdit.estatura || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estatura: e.target.value }))} /></div>
-                <div className="form-group"><label>Peso</label><input className="form-input" value={jugadorAdminEdit.peso || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, peso: e.target.value }))} /></div>
-                <div className="form-group"><label>Mano hábil</label><input className="form-input" value={jugadorAdminEdit.mano_habil || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mano_habil: e.target.value }))} /></div>
-                <div className="form-group"><label>Club anterior</label><input className="form-input" value={jugadorAdminEdit.club_anterior || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, club_anterior: e.target.value }))} /></div>
-                <div className="form-group"><label>Talla camiseta</label><input className="form-input" value={jugadorAdminEdit.talla_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, talla_camiseta: e.target.value }))} /></div>
-                <div className="form-group"><label>Talla short</label><input className="form-input" value={jugadorAdminEdit.talla_short || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, talla_short: e.target.value }))} /></div>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.polera_entregada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, polera_entregada: e.target.checked }))} /> Polera entregada</label>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.poleron_entregado)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, poleron_entregado: e.target.checked }))} /> Polerón entregado</label>
-                <div className="form-group"><label>Estado deportivo</label><input className="form-input" value={jugadorAdminEdit.estado_deportivo || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado_deportivo: e.target.value }))} placeholder="Activo" /></div>
-                <div className="form-group"><label>Fecha inicio baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_inicio_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_inicio_baja: e.target.value }))} /></div>
-                <div className="form-group"><label>Fecha fin baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_fin_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_fin_baja: e.target.value }))} /></div>
-                <div className="form-group"><label>XP puntos</label><input type="number" className="form-input" value={jugadorAdminEdit.xp_puntos || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, xp_puntos: e.target.value }))} /></div>
-                <div className="form-group"><label>Foto jugador (URL)</label><input className="form-input" value={jugadorAdminEdit.foto_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, foto_jugador: e.target.value }))} /></div>
-                <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'edit')} /></div>
-                <div className="form-group"><label>Estado</label><select className="form-input" value={jugadorAdminEdit.estado || 'ACTIVO'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option><option value="BAJA">Baja</option></select></div>
-              </div>
+              <fieldset className="uc-seccion">
+                <legend><Users size={15} /> Apoderado</legend>
+                <p className="uc-seccion-ayuda">Con el RUT o correo del apoderado la familia ve sus pagos y recibe avisos.</p>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>RUT apoderado</label><input className="form-input" value={jugadorAdminEdit.rut_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rut_apoderado: e.target.value }))} /></div>
+                  <div className="form-group"><label>Correo apoderado</label><input className="form-input" value={jugadorAdminEdit.correo_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, correo_apoderado: e.target.value }))} inputMode="email" /></div>
+                  <div className="form-group"><label>Parentesco</label><input className="form-input" value={jugadorAdminEdit.parentesco_apoderado || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, parentesco_apoderado: e.target.value }))} placeholder="Madre, padre, tutor…" /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Trophy size={15} /> Deportivo</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Rama</label><select className="form-input" value={jugadorAdminEdit.rama || 'MASCULINA'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
+                  <CampoCategoria id="categoria-edit" requerido={false} fechaNacimiento={jugadorAdminEdit.fecha_nacimiento} anioNacimiento={jugadorAdminEdit['año_nacimiento']} valor={jugadorAdminEdit.categoria} onCambiar={(categoria) => setJugadorAdminEdit((p) => ({ ...p, categoria }))} />
+                  <div className="form-group"><label>Posición de juego</label><input className="form-input" value={jugadorAdminEdit.posicion_de_juego || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, posicion_de_juego: e.target.value }))} /></div>
+                  <div className="form-group"><label>Número de camiseta</label><input type="number" className="form-input" value={jugadorAdminEdit.numero_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, numero_camiseta: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Activity size={15} /> Físico y tallas</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Estatura (cm)</label><input className="form-input" value={jugadorAdminEdit.estatura || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estatura: e.target.value }))} inputMode="decimal" /></div>
+                  <div className="form-group"><label>Peso (kg)</label><input className="form-input" value={jugadorAdminEdit.peso || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, peso: e.target.value }))} inputMode="decimal" /></div>
+                  <div className="form-group"><label>Mano hábil</label><input className="form-input" value={jugadorAdminEdit.mano_habil || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mano_habil: e.target.value }))} placeholder="Derecha / Izquierda" /></div>
+                  <div className="form-group"><label>Talla camiseta</label><input className="form-input" value={jugadorAdminEdit.talla_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, talla_camiseta: e.target.value }))} /></div>
+                  <div className="form-group"><label>Talla short</label><input className="form-input" value={jugadorAdminEdit.talla_short || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, talla_short: e.target.value }))} /></div>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.polera_entregada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, polera_entregada: e.target.checked }))} /> Polera entregada</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.poleron_entregado)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, poleron_entregado: e.target.checked }))} /> Polerón entregado</label>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Stethoscope size={15} /> Salud y emergencia</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Previsión</label><input className="form-input" value={jugadorAdminEdit.prevision || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, prevision: e.target.value }))} /></div>
+                  <div className="form-group"><label>Tipo de sangre</label><input className="form-input" value={jugadorAdminEdit.tipo_sangre || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, tipo_sangre: e.target.value }))} /></div>
+                  <div className="form-group"><label>Alergias</label><input className="form-input" value={jugadorAdminEdit.alergias || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, alergias: e.target.value }))} /></div>
+                  <div className="form-group"><label>Contacto de emergencia</label><input className="form-input" value={jugadorAdminEdit.nombre_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombre_emergencia: e.target.value }))} /></div>
+                  <div className="form-group"><label>Parentesco del contacto</label><input className="form-input" value={jugadorAdminEdit.parentesco_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, parentesco_emergencia: e.target.value }))} /></div>
+                  <div className="form-group"><label>Teléfono de emergencia</label><input type="tel" className="form-input" value={jugadorAdminEdit.num_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, num_emergencia: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><FileText size={15} /> Club y cobro</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Fecha de ingreso al club</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
+                  <div className="form-group"><label>Mes inicio cobro</label><input className="form-input" value={jugadorAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
+                  <div className="form-group"><label>Beca</label><input className="form-input" value={jugadorAdminEdit.beca ? `${jugadorAdminEdit.beca}% — se edita desde Tesorería > Becas` : 'Sin beca — se asigna desde Tesorería > Becas'} disabled /></div>
+                  <div className="form-group"><label>Valor mensualidad</label><input type="number" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} /></div>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.exento_mensualidad)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, exento_mensualidad: e.target.checked }))} /> Exento de mensualidad (no paga nada)</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.apoderado_socio)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; 2 hermanos $12.000 c/u)</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.derechos_imagen)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><History size={15} /> Estado deportivo y bajas</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Estado deportivo</label><input className="form-input" value={jugadorAdminEdit.estado_deportivo || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado_deportivo: e.target.value }))} placeholder="Activo" /></div>
+                  <div className="form-group"><label>Fecha inicio baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_inicio_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_inicio_baja: e.target.value }))} /></div>
+                  <div className="form-group"><label>Fecha fin baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_fin_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_fin_baja: e.target.value }))} /></div>
+                  <div className="form-group"><label>XP puntos</label><input type="number" className="form-input" value={jugadorAdminEdit.xp_puntos || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, xp_puntos: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Image size={15} /> Foto</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Foto (URL)</label><input className="form-input" value={jugadorAdminEdit.foto_jugador || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, foto_jugador: e.target.value }))} placeholder="Se completa al subir desde la galería" /></div>
+                  <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'edit')} /></div>
+                </div>
+              </fieldset>
               {subiendoFotoJugadorEdit && <p className="text-caption">Subiendo foto...</p>}
-
-              <h5 className="sub-caja-title mt-15">Administrativo</h5>
-              <div className="grid-auto-220">
-                <div className="form-group"><label>Fecha de ingreso</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
-                <div className="form-group"><label>Mes inicio cobro</label><input className="form-input" value={jugadorAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
-                <div className="form-group"><label>Beca</label><input className="form-input" value={jugadorAdminEdit.beca ? `${jugadorAdminEdit.beca}% — se edita desde Tesorería > Becas` : 'Sin beca — se asigna desde Tesorería > Becas'} disabled /></div>
-                <div className="form-group"><label>Valor mensualidad</label><input type="number" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} /></div>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.exento_mensualidad)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, exento_mensualidad: e.target.checked }))} /> Exento de mensualidad (no paga nada)</label>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.apoderado_socio)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; 2 hermanos $12.000 c/u)</label>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
-                <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.derechos_imagen)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
-              </div>
-
-              <h5 className="sub-caja-title mt-15">Salud y contacto de emergencia</h5>
-              <div className="grid-auto-220">
-                <div className="form-group"><label>Previsión</label><input className="form-input" value={jugadorAdminEdit.prevision || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, prevision: e.target.value }))} /></div>
-                <div className="form-group"><label>Tipo de sangre</label><input className="form-input" value={jugadorAdminEdit.tipo_sangre || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, tipo_sangre: e.target.value }))} /></div>
-                <div className="form-group"><label>Alergias</label><input className="form-input" value={jugadorAdminEdit.alergias || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, alergias: e.target.value }))} /></div>
-                <div className="form-group"><label>Nombre contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.nombre_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, nombre_emergencia: e.target.value }))} /></div>
-                <div className="form-group"><label>Parentesco contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.parentesco_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, parentesco_emergencia: e.target.value }))} /></div>
-                <div className="form-group"><label>Teléfono contacto emergencia</label><input className="form-input" value={jugadorAdminEdit.num_emergencia || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, num_emergencia: e.target.value }))} /></div>
-              </div>
 
               {renderPermisosCuenta({
                 cuenta: cuentaAsociadaJugadorEdit,
@@ -3561,64 +3596,147 @@ function SuperAdminPanel({
           {vistaUsuarios === 'registrar' && (
           <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
             <h4 className="form-subtitle"><Plus size={16} /> Registrar nuevo</h4>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'cuenta' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'cuenta' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('cuenta')}>Cuenta</button>
-              <button className="btn-secondary" style={{ background: tipoNuevoUsuario === 'jugador' ? 'var(--azul-electrico)' : undefined, color: tipoNuevoUsuario === 'jugador' ? 'white' : undefined }} onClick={() => setTipoNuevoUsuario('jugador')}>Jugador</button>
+            <div className="segment-control uc-tipo-registro" role="radiogroup" aria-label="Qué vas a registrar">
+              <button type="button" role="radio" aria-checked={tipoNuevoUsuario === 'jugador'} className={`segment-btn ${tipoNuevoUsuario === 'jugador' ? 'active' : ''}`} onClick={() => setTipoNuevoUsuario('jugador')}><Trophy size={14} /> Deportista</button>
+              <button type="button" role="radio" aria-checked={tipoNuevoUsuario === 'cuenta'} className={`segment-btn ${tipoNuevoUsuario === 'cuenta' ? 'active' : ''}`} onClick={() => setTipoNuevoUsuario('cuenta')}><User size={14} /> Cuenta (apoderado, socio, staff…)</button>
             </div>
+            <p className="uc-seccion-ayuda">{tipoNuevoUsuario === 'jugador' ? 'Ficha del deportista. Con la fecha de nacimiento la categoría se asigna sola.' : 'Persona que ingresa a la app con su RUT y clave.'}</p>
 
             {tipoNuevoUsuario === 'cuenta' ? (
-              <div className="grid-auto-220">
-                <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
-                <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
-                <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
-                <div className="form-group">
-                  <label>Perfil *</label>
-                  <select
-                    className="form-input"
-                    value={perfilBaseParaSelector(nuevaCuenta.rol || nuevaCuenta.perfil_principal)}
-                    onChange={(e) => actualizarNuevaCuenta(construirCambioPerfilUnico(e.target.value, esSocioApoderadoStacked(nuevaCuenta.rol)))}
-                  >
-                    {PERFIL_UNICO_OPTIONS.map((opt) => <option key={`perfil-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}
-                  </select>
-                </div>
-                {perfilBaseParaSelector(nuevaCuenta.rol || nuevaCuenta.perfil_principal) === 'socio' && (
-                  <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
-                    <label className="checkbox-label-row">
-                      <input
-                        type="checkbox"
-                        checked={esSocioApoderadoStacked(nuevaCuenta.rol)}
-                        onChange={(e) => actualizarNuevaCuenta(construirCambioPerfilUnico('socio', e.target.checked))}
-                      />
-                      También es apoderado (tiene hijos inscritos)
-                    </label>
+              <>
+              <fieldset className="uc-seccion">
+                <legend><ShieldCheck size={15} /> Acceso y perfil</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
+                  <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
+                  <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
+                  <div className="form-group">
+                    <label>Perfil *</label>
+                    <select
+                      className="form-input"
+                      value={perfilBaseParaSelector(nuevaCuenta.rol || nuevaCuenta.perfil_principal)}
+                      onChange={(e) => actualizarNuevaCuenta(construirCambioPerfilUnico(e.target.value, esSocioApoderadoStacked(nuevaCuenta.rol)))}
+                    >
+                      {PERFIL_UNICO_OPTIONS.map((opt) => <option key={`perfil-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}
+                    </select>
                   </div>
-                )}
-                <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={nuevaCuenta.cargo_directiva || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-new-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Nombres</label><input className="form-input" value={nuevaCuenta.nombres} onChange={(e) => setNuevaCuenta((p) => ({ ...p, nombres: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={nuevaCuenta.apellido_paterno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevaCuenta.apellido_materno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
-                <div className="form-group"><label>Teléfono</label><input className="form-input" value={nuevaCuenta.telefono} onChange={(e) => setNuevaCuenta((p) => ({ ...p, telefono: e.target.value }))} /></div>
-                <div className="form-group"><label>Dirección</label><input className="form-input" value={nuevaCuenta.direccion} onChange={(e) => setNuevaCuenta((p) => ({ ...p, direccion: e.target.value }))} /></div>
-                <div className="form-group"><label>Comuna</label><input className="form-input" value={nuevaCuenta.comuna} onChange={(e) => setNuevaCuenta((p) => ({ ...p, comuna: e.target.value }))} /></div>
-                <div className="form-group"><label>Valor UTM referencia (override opcional, se completa solo)</label><input type="number" min="1" className="form-input" value={nuevaCuenta.utm_valor_referencia || utmVigente?.valor || 68000} onChange={(e) => actualizarNuevaCuenta({ utm_valor_referencia: e.target.value })} /></div>
-                <div className="form-group"><label>Mensualidad base automática (0,3 UTM, se recalcula sola cada mes)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(nuevaCuenta) ? (Number(nuevaCuenta.monto_mensual_base) > 0 ? nuevaCuenta.monto_mensual_base : calcularMensualidadSocio(nuevaCuenta.utm_valor_referencia || utmVigente?.valor)) : 0} disabled /></div>
-                <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={nuevaCuenta.monto_mensual_override || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
-                <div className="form-group"><label>Fecha corte UTM (mes anterior)</label><input type="date" className="form-input" value={nuevaCuenta.fecha_corte_utm || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, fecha_corte_utm: e.target.value }))} /></div>
-                <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={nuevaCuenta.condiciones_pago || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, condiciones_pago: e.target.value }))}></textarea></div>
-              </div>
+                  {perfilBaseParaSelector(nuevaCuenta.rol || nuevaCuenta.perfil_principal) === 'socio' && (
+                    <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <label className="checkbox-label-row">
+                        <input
+                          type="checkbox"
+                          checked={esSocioApoderadoStacked(nuevaCuenta.rol)}
+                          onChange={(e) => actualizarNuevaCuenta(construirCambioPerfilUnico('socio', e.target.checked))}
+                        />
+                        También es apoderado (tiene hijos inscritos)
+                      </label>
+                    </div>
+                  )}
+                  <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={nuevaCuenta.cargo_directiva || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-new-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><User size={15} /> Datos personales</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Nombres</label><input className="form-input" value={nuevaCuenta.nombres} onChange={(e) => setNuevaCuenta((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                  <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={nuevaCuenta.apellido_paterno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                  <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevaCuenta.apellido_materno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                  <div className="form-group"><label>Teléfono</label><input className="form-input" value={nuevaCuenta.telefono} onChange={(e) => setNuevaCuenta((p) => ({ ...p, telefono: e.target.value }))} /></div>
+                  <div className="form-group"><label>Dirección</label><input className="form-input" value={nuevaCuenta.direccion} onChange={(e) => setNuevaCuenta((p) => ({ ...p, direccion: e.target.value }))} /></div>
+                  <div className="form-group"><label>Comuna</label><input className="form-input" value={nuevaCuenta.comuna} onChange={(e) => setNuevaCuenta((p) => ({ ...p, comuna: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><FileText size={15} /> Cuota de socio</legend>
+                <p className="uc-seccion-ayuda">Solo aplica a socios: 0,3 UTM al mes, se recalcula sola.</p>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Valor UTM referencia (override opcional, se completa solo)</label><input type="number" min="1" className="form-input" value={nuevaCuenta.utm_valor_referencia || utmVigente?.valor || 68000} onChange={(e) => actualizarNuevaCuenta({ utm_valor_referencia: e.target.value })} /></div>
+                  <div className="form-group"><label>Mensualidad base automática (0,3 UTM, se recalcula sola cada mes)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(nuevaCuenta) ? (Number(nuevaCuenta.monto_mensual_base) > 0 ? nuevaCuenta.monto_mensual_base : calcularMensualidadSocio(nuevaCuenta.utm_valor_referencia || utmVigente?.valor)) : 0} disabled /></div>
+                  <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={nuevaCuenta.monto_mensual_override || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
+                  <div className="form-group"><label>Fecha corte UTM (mes anterior)</label><input type="date" className="form-input" value={nuevaCuenta.fecha_corte_utm || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, fecha_corte_utm: e.target.value }))} /></div>
+                  <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={nuevaCuenta.condiciones_pago || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, condiciones_pago: e.target.value }))}></textarea></div>
+                </div>
+              </fieldset>
+              </>
             ) : (
-              <div className="grid-auto-220">
-                <div className="form-group"><label>RUT Jugador *</label><input className="form-input" value={nuevoJugador.rut_jugador} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_jugador: e.target.value }))} /></div>
-                <div className="form-group"><label>Correo Apoderado</label><input className="form-input" value={nuevoJugador.correo_apoderado} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_apoderado: e.target.value }))} /></div>
-                <div className="form-group"><label>Nombres *</label><input className="form-input" value={nuevoJugador.nombres} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombres: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Paterno *</label><input className="form-input" value={nuevoJugador.apellido_paterno} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
-                <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevoJugador.apellido_materno} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
-                <div className="form-group"><label>Rama *</label><select className="form-input" value={nuevoJugador.rama} onChange={(e) => setNuevoJugador((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
-                <div className="form-group"><label>Categoría *</label><input className="form-input" value={nuevoJugador.categoria} onChange={(e) => setNuevoJugador((p) => ({ ...p, categoria: e.target.value }))} /></div>
-                <div className="form-group"><label>Logo / imagen</label><input className="form-input" value={nuevoJugador.foto_jugador} onChange={(e) => setNuevoJugador((p) => ({ ...p, foto_jugador: e.target.value }))} placeholder="URL interna cargada desde galería" /></div>
-                <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'nuevo')} /></div>
-                <div className="form-group"><label>Estado</label><select className="form-input" value={nuevoJugador.estado} onChange={(e) => setNuevoJugador((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option></select></div>
-              </div>
+              <>
+              <fieldset className="uc-seccion">
+                <legend><User size={15} /> Datos personales</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevoJugador.rut_jugador || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_jugador: e.target.value }))} placeholder="12.345.678-9" /></div>
+                  <div className="form-group"><label>Nombres *</label><input className="form-input" value={nuevoJugador.nombres || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                  <div className="form-group"><label>Apellido paterno *</label><input className="form-input" value={nuevoJugador.apellido_paterno || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                  <div className="form-group"><label>Apellido materno</label><input className="form-input" value={nuevoJugador.apellido_materno || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                  <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(nuevoJugador.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setNuevoJugador((p) => ({ ...p, fecha_nacimiento: e.target.value, categoria: categoriaEfectiva({ ...p, fecha_nacimiento: e.target.value }) }))} /></div>
+                  <div className="form-group"><label>Colegio</label><input className="form-input" value={nuevoJugador.colegio || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, colegio: e.target.value }))} /></div>
+                  <div className="form-group"><label>Correo del deportista</label><input className="form-input" value={nuevoJugador.correo_jugador || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_jugador: e.target.value }))} inputMode="email" /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Users size={15} /> Apoderado</legend>
+                <p className="uc-seccion-ayuda">Con el RUT o correo del apoderado la familia ve sus pagos y recibe avisos.</p>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>RUT apoderado</label><input className="form-input" value={nuevoJugador.rut_apoderado || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_apoderado: e.target.value }))} /></div>
+                  <div className="form-group"><label>Correo apoderado</label><input className="form-input" value={nuevoJugador.correo_apoderado || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_apoderado: e.target.value }))} inputMode="email" /></div>
+                  <div className="form-group"><label>Parentesco</label><input className="form-input" value={nuevoJugador.parentesco_apoderado || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, parentesco_apoderado: e.target.value }))} placeholder="Madre, padre, tutor…" /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Trophy size={15} /> Deportivo</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Rama *</label><select className="form-input" value={nuevoJugador.rama || 'MASCULINA'} onChange={(e) => setNuevoJugador((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
+                  <CampoCategoria id="categoria-nuevo" requerido={true} fechaNacimiento={nuevoJugador.fecha_nacimiento} anioNacimiento={nuevoJugador['año_nacimiento']} valor={nuevoJugador.categoria} onCambiar={(categoria) => setNuevoJugador((p) => ({ ...p, categoria }))} />
+                  <div className="form-group"><label>Posición de juego</label><input className="form-input" value={nuevoJugador.posicion_de_juego || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, posicion_de_juego: e.target.value }))} /></div>
+                  <div className="form-group"><label>Número de camiseta</label><input type="number" className="form-input" value={nuevoJugador.numero_camiseta || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, numero_camiseta: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Activity size={15} /> Físico y tallas</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Estatura (cm)</label><input className="form-input" value={nuevoJugador.estatura || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, estatura: e.target.value }))} inputMode="decimal" /></div>
+                  <div className="form-group"><label>Peso (kg)</label><input className="form-input" value={nuevoJugador.peso || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, peso: e.target.value }))} inputMode="decimal" /></div>
+                  <div className="form-group"><label>Mano hábil</label><input className="form-input" value={nuevoJugador.mano_habil || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, mano_habil: e.target.value }))} placeholder="Derecha / Izquierda" /></div>
+                  <div className="form-group"><label>Talla camiseta</label><input className="form-input" value={nuevoJugador.talla_camiseta || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, talla_camiseta: e.target.value }))} /></div>
+                  <div className="form-group"><label>Talla short</label><input className="form-input" value={nuevoJugador.talla_short || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, talla_short: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Stethoscope size={15} /> Salud y emergencia</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Previsión</label><input className="form-input" value={nuevoJugador.prevision || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, prevision: e.target.value }))} /></div>
+                  <div className="form-group"><label>Tipo de sangre</label><input className="form-input" value={nuevoJugador.tipo_sangre || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, tipo_sangre: e.target.value }))} /></div>
+                  <div className="form-group"><label>Alergias</label><input className="form-input" value={nuevoJugador.alergias || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, alergias: e.target.value }))} /></div>
+                  <div className="form-group"><label>Contacto de emergencia</label><input className="form-input" value={nuevoJugador.nombre_emergencia || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombre_emergencia: e.target.value }))} /></div>
+                  <div className="form-group"><label>Parentesco del contacto</label><input className="form-input" value={nuevoJugador.parentesco_emergencia || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, parentesco_emergencia: e.target.value }))} /></div>
+                  <div className="form-group"><label>Teléfono de emergencia</label><input type="tel" className="form-input" value={nuevoJugador.num_emergencia || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, num_emergencia: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><FileText size={15} /> Club y cobro</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Fecha de ingreso al club</label><input type="date" className="form-input" value={String(nuevoJugador.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setNuevoJugador((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
+                  <div className="form-group"><label>Estado</label><select className="form-input" value={nuevoJugador.estado || 'ACTIVO'} onChange={(e) => setNuevoJugador((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option></select></div>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.apoderado_socio)} onChange={(e) => setNuevoJugador((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; 2 hermanos $12.000 c/u)</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.matricula_pagada)} onChange={(e) => setNuevoJugador((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.derechos_imagen)} onChange={(e) => setNuevoJugador((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Image size={15} /> Foto</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Foto (URL)</label><input className="form-input" value={nuevoJugador.foto_jugador || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, foto_jugador: e.target.value }))} placeholder="Se completa al subir desde la galería" /></div>
+                  <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'nuevo')} /></div>
+                </div>
+              </fieldset>
+              </>
             )}
 
             {subiendoFotoJugadorNuevo && <p className="text-caption">Subiendo foto...</p>}

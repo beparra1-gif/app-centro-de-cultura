@@ -1,4 +1,5 @@
 const express = require('express');
+const { asignarCategoriaPorEdad } = require('./lib/categoriaPorEdad');
 const { Pool } = require('pg');
 const cors = require('cors');
 const fs = require('fs');
@@ -5510,7 +5511,13 @@ app.get('/api/jugadores/:rut', authenticate, async (req, res) => {
 });
 
 // POST: Crear jugador
-app.post('/api/jugadores', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+const CAMPOS_JUGADOR_EXTRA_AL_CREAR = [
+  'fecha_nacimiento', 'año_nacimiento', 'colegio', 'correo_jugador', 'rut_apoderado', 'parentesco_apoderado',
+  'posicion_de_juego', 'numero_camiseta', 'estatura', 'peso', 'mano_habil', 'talla_camiseta', 'talla_short',
+  'prevision', 'tipo_sangre', 'alergias', 'nombre_emergencia', 'parentesco_emergencia', 'num_emergencia',
+  'fecha_ingreso', 'apoderado_socio', 'matricula_pagada', 'derechos_imagen',
+];
+app.post('/api/jugadores', authenticate, requireModule('admin_dashboard'), asignarCategoriaPorEdad, async (req, res) => {
   const {
     rut_jugador,
     nombres,
@@ -5529,6 +5536,18 @@ app.post('/api/jugadores', authenticate, requireModule('admin_dashboard'), async
     if (foto_jugador !== undefined && columnasJugadores.has('foto_jugador')) {
       columnas.push('foto_jugador');
       valores.push(foto_jugador);
+    }
+    // El registro por secciones envía la ficha completa (datos personales,
+    // físicos, salud, club). Solo se guardan columnas que existen y vienen con
+    // valor; '' se omite para no chocar con columnas DATE/numéricas.
+    for (const campo of CAMPOS_JUGADOR_EXTRA_AL_CREAR) {
+      const valor = req.body[campo];
+      if (valor === undefined || valor === null || valor === '' || !columnasJugadores.has(campo)) continue;
+      columnas.push(campo);
+      valores.push(valor);
+    }
+    if (req.body.estado && ['ACTIVO', 'INACTIVO'].includes(String(req.body.estado).toUpperCase())) {
+      valores[columnas.indexOf('estado')] = String(req.body.estado).toUpperCase();
     }
 
     const placeholders = columnas.map((_columna, indice) => `$${indice + 1}`).join(', ');
@@ -5555,7 +5574,7 @@ const CAMPOS_JUGADOR_SOLO_ADMIN = [
 // El apoderado dueño (rut_apoderado registrado) puede editar el perfil de su propio
 // pupilo (datos personales, salud, contacto, tallas); los campos administrativos
 // (categoría, mensualidad, beca, vínculo de cuenta, etc.) quedan reservados a admin.
-app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), stripFieldsUnlessModule(CAMPOS_JUGADOR_SOLO_ADMIN, 'admin_dashboard'), async (req, res) => {
+app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), stripFieldsUnlessModule(CAMPOS_JUGADOR_SOLO_ADMIN, 'admin_dashboard'), asignarCategoriaPorEdad, async (req, res) => {
   const {
     rut_apoderado,
     correo_apoderado,

@@ -4309,3 +4309,13 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 }
 /* Buscadores con botón propio de limpiar: sin la X nativa duplicada. */
 .tc-buscador input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+
+/* Formularios de deportista/cuenta por secciones */
+.uc-seccion { border: 1px solid var(--borde-suave); border-radius: var(--radius-md); padding: 12px 14px 4px; margin: 0 0 14px; min-width: 0; background: var(--blanco-tarjeta); }
+.uc-seccion legend { display: inline-flex; align-items: center; gap: 6px; padding: 0 6px; margin-left: -6px; font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.3px; color: var(--texto-heading); }
+.uc-seccion-ayuda { margin: 0 0 10px; font-size: 13px; color: var(--texto-secundario); }
+.uc-tipo-registro { margin-bottom: 8px; min-width: 0; width: 100%; }
+.uc-tipo-registro .segment-btn { flex: 1; white-space: normal; line-height: 1.2; min-height: var(--toque-min); padding: 8px 10px; font-size: 13px; }
+.cc-auto { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 800; background: var(--estado-pagado-fondo); border-color: var(--estado-pagado-borde); }
+.cc-auto-chip { font-size: 11px; font-weight: 900; text-transform: uppercase; color: var(--estado-pagado-texto); }
+@media (max-width: 600px) { .uc-seccion .grid-auto-220 { grid-template-columns: 1fr; gap: 6px; } }

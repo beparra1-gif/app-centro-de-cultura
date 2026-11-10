@@ -3,30 +3,39 @@ import { Save, X } from 'lucide-react';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import useModalAccesible from '../utils/useModalAccesible';
+import CampoCategoria from './CampoCategoria';
+import { categoriaPorNacimiento } from '../utils/categoriaPorEdad';
+
+const SECCIONES = [
+  ['personales', 'Datos personales'],
+  ['fisico', 'Físico y tallas'],
+  ['deportivo', 'Deportivo'],
+  ['salud', 'Salud, emergencia y autorizaciones'],
+];
 
 const CAMPOS_APODERADO = [
-  { campo: 'nombres', etiqueta: 'Nombres' },
-  { campo: 'apellido_paterno', etiqueta: 'Apellido paterno' },
-  { campo: 'apellido_materno', etiqueta: 'Apellido materno' },
-  { campo: 'fecha_nacimiento', etiqueta: 'Fecha de nacimiento', tipo: 'date' },
-  { campo: 'año_nacimiento', etiqueta: 'Año de nacimiento', tipo: 'number' },
-  { campo: 'colegio', etiqueta: 'Colegio' },
-  { campo: 'parentesco_apoderado', etiqueta: 'Parentesco del apoderado' },
-  { campo: 'posicion_de_juego', etiqueta: 'Posición de juego' },
-  { campo: 'estatura', etiqueta: 'Estatura' },
-  { campo: 'peso', etiqueta: 'Peso' },
-  { campo: 'mano_habil', etiqueta: 'Mano hábil' },
-  { campo: 'club_anterior', etiqueta: 'Club anterior' },
-  { campo: 'talla_camiseta', etiqueta: 'Talla camiseta' },
-  { campo: 'talla_short', etiqueta: 'Talla short' },
-  { campo: 'foto_jugador', etiqueta: 'Foto del jugador (URL)' },
-  { campo: 'prevision', etiqueta: 'Previsión' },
-  { campo: 'tipo_sangre', etiqueta: 'Tipo de sangre' },
-  { campo: 'alergias', etiqueta: 'Alergias' },
-  { campo: 'nombre_emergencia', etiqueta: 'Nombre contacto emergencia' },
-  { campo: 'parentesco_emergencia', etiqueta: 'Parentesco contacto emergencia' },
-  { campo: 'num_emergencia', etiqueta: 'Teléfono contacto emergencia' },
-  { campo: 'derechos_imagen', etiqueta: 'Autoriza derechos de imagen', tipo: 'checkbox' },
+  { seccion: 'personales', campo: 'nombres', etiqueta: 'Nombres' },
+  { seccion: 'personales', campo: 'apellido_paterno', etiqueta: 'Apellido paterno' },
+  { seccion: 'personales', campo: 'apellido_materno', etiqueta: 'Apellido materno' },
+  { seccion: 'personales', campo: 'fecha_nacimiento', etiqueta: 'Fecha de nacimiento', tipo: 'date' },
+  { seccion: 'personales', campo: 'año_nacimiento', etiqueta: 'Año de nacimiento (si no hay fecha)', tipo: 'number' },
+  { seccion: 'personales', campo: 'colegio', etiqueta: 'Colegio' },
+  { seccion: 'personales', campo: 'parentesco_apoderado', etiqueta: 'Parentesco del apoderado' },
+  { seccion: 'deportivo', campo: 'posicion_de_juego', etiqueta: 'Posición de juego' },
+  { seccion: 'fisico', campo: 'estatura', etiqueta: 'Estatura (cm)' },
+  { seccion: 'fisico', campo: 'peso', etiqueta: 'Peso (kg)' },
+  { seccion: 'fisico', campo: 'mano_habil', etiqueta: 'Mano hábil' },
+  { seccion: 'deportivo', campo: 'club_anterior', etiqueta: 'Club anterior' },
+  { seccion: 'fisico', campo: 'talla_camiseta', etiqueta: 'Talla camiseta' },
+  { seccion: 'fisico', campo: 'talla_short', etiqueta: 'Talla short' },
+  { seccion: 'deportivo', campo: 'foto_jugador', etiqueta: 'Foto del jugador (URL)' },
+  { seccion: 'salud', campo: 'prevision', etiqueta: 'Previsión' },
+  { seccion: 'salud', campo: 'tipo_sangre', etiqueta: 'Tipo de sangre' },
+  { seccion: 'salud', campo: 'alergias', etiqueta: 'Alergias' },
+  { seccion: 'salud', campo: 'nombre_emergencia', etiqueta: 'Nombre contacto emergencia' },
+  { seccion: 'salud', campo: 'parentesco_emergencia', etiqueta: 'Parentesco contacto emergencia' },
+  { seccion: 'salud', campo: 'num_emergencia', etiqueta: 'Teléfono contacto emergencia' },
+  { seccion: 'salud', campo: 'derechos_imagen', etiqueta: 'Autoriza derechos de imagen', tipo: 'checkbox' },
 ];
 
 // mes_inicio_cobro, beca, valor_mensualidad, exento_mensualidad y
@@ -100,6 +109,18 @@ function EditarJugadorModal({ jugador, esAdmin, onClose, onSaved }) {
   };
 
   const renderCampo = ({ campo, etiqueta, tipo }) => {
+    if (campo === 'categoria') {
+      return (
+        <CampoCategoria
+          key={campo}
+          id="categoria-pupilo"
+          fechaNacimiento={valores.fecha_nacimiento}
+          anioNacimiento={valores['año_nacimiento']}
+          valor={valores.categoria}
+          onCambiar={(v) => actualizarCampo('categoria', v)}
+        />
+      );
+    }
     if (tipo === 'checkbox') {
       return (
         <label key={campo} className="checkbox-label-row">
@@ -153,21 +174,32 @@ function EditarJugadorModal({ jugador, esAdmin, onClose, onSaved }) {
         <p style={{ margin: '4px 0 16px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
           {esAdmin
             ? 'Puedes editar todos los campos, incluyendo los administrativos.'
-            : 'Aquí puedes actualizar los datos personales, físicos y deportivos de tu jugador. Los datos administrativos (categoría, tesorería, vínculo de cuenta) los gestiona el club desde Gestión de Cuentas y Usuarios.'}
+            : 'Aquí puedes actualizar los datos personales, físicos y deportivos de tu jugador. La categoría se asigna sola con la fecha de nacimiento; los datos de tesorería y el vínculo de cuenta los gestiona el club.'}
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-          {CAMPOS_APODERADO.map((c) => renderCampo(c))}
-        </div>
+        {SECCIONES.map(([clave, titulo]) => (
+          <fieldset key={clave} className="uc-seccion">
+            <legend>{titulo}</legend>
+            {clave === 'deportivo' && !esAdmin && (
+              <p className="uc-seccion-ayuda">
+                Categoría: <b>{categoriaPorNacimiento(valores.fecha_nacimiento, { anioRespaldo: valores['año_nacimiento'] }) || jugador.categoria || 'sin asignar'}</b>
+                {categoriaPorNacimiento(valores.fecha_nacimiento, { anioRespaldo: valores['año_nacimiento'] }) ? ' (automática por año de nacimiento)' : ''}
+              </p>
+            )}
+            <div className="grid-auto-220">
+              {CAMPOS_APODERADO.filter((c) => c.seccion === clave).map((c) => renderCampo(c))}
+            </div>
+          </fieldset>
+        ))}
 
         {esAdmin && (
           <>
-            <h4 style={{ margin: '18px 0 10px', fontSize: '13px', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-              Datos administrativos
-            </h4>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-              {CAMPOS_SOLO_ADMIN.map((c) => renderCampo(c))}
-            </div>
+            <fieldset className="uc-seccion">
+              <legend>Datos administrativos</legend>
+              <div className="grid-auto-220">
+                {CAMPOS_SOLO_ADMIN.map((c) => renderCampo(c))}
+              </div>
+            </fieldset>
           </>
         )}
 
