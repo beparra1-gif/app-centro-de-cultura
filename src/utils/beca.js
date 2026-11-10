@@ -36,42 +36,85 @@ export const calcularCuotaFinal = (valorMensualidad, jugador = {}) => {
   return calcularCuotaConBeca(valorMensualidad, jugador);
 };
 
-// Tarifas del club (confirmadas 2026-11-07), por deportista:
-//  - un solo pupilo: $30.000
-//  - hermanos: $25.000 cada uno
-//  - hijo de socio: $15.000
-//  - 2 hijos de socio: $12.000 cada uno (desde el 3ro, tope familiar $24.000)
-// Un pupilo con valor_mensualidad propio (cargado a mano o desde la
-// planilla) usa ese valor: es una condición especial y gana sobre la regla.
-export const tarifaPorDeportista = (cantidadPupilos = 1, esSocio = false) => {
+// Tarifas del club por deportista, con HISTORIAL: cada período rige desde
+// un mes ("YYYY-MM") hasta que empieza el siguiente. La cuota de cada mes usa
+// la tarifa vigente ese mes (ej. la mensualidad subió de $25.000 a $30.000:
+// los meses anteriores pagados con $25.000 quedan completos, no parciales).
+// Se configura en Tesorería → Tarifas (GET/PUT /api/configuracion/tarifas).
+//  - uno: un solo pupilo · hermanos: c/u · hijoSocio: un hijo de socio ·
+//    dosHijosSocio: c/u con 2 (desde el 3ro, tope familiar = 2 × ese valor).
+export const TARIFAS_POR_DEFECTO = [
+  { desde: '2026-01', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 12000 },
+];
+const CLAVES_TARIFA = ['uno', 'hermanos', 'hijoSocio', 'dosHijosSocio'];
+let historialTarifas = TARIFAS_POR_DEFECTO;
+
+const normalizarHistorial = (historial) => {
+  const lista = (Array.isArray(historial) ? historial : [])
+    .filter((t) => /^\d{4}-\d{2}$/.test(String(t?.desde || '')) && CLAVES_TARIFA.every((k) => Number(t[k]) >= 0))
+    .map((t) => ({ ...t, ...Object.fromEntries(CLAVES_TARIFA.map((k) => [k, Number(t[k])])) }))
+    .sort((a, b) => a.desde.localeCompare(b.desde));
+  return lista.length ? lista : TARIFAS_POR_DEFECTO;
+};
+export const setHistorialTarifas = (historial) => { historialTarifas = normalizarHistorial(historial); };
+export const obtenerHistorialTarifas = () => historialTarifas;
+
+// mes: 1..12 del año del cobro (2026) o null = hoy.
+const claveMes = (mes = null, anio = 2026) => {
+  if (!mes) {
+    const hoy = new Date();
+    return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return `${anio}-${String(mes).padStart(2, '0')}`;
+};
+export const tarifaVigente = (mes = null, anio = 2026) => {
+  const clave = claveMes(mes, anio);
+  let vigente = historialTarifas[0];
+  historialTarifas.forEach((t) => { if (t.desde <= clave) vigente = t; });
+  return vigente;
+};
+const tarifaActual = () => historialTarifas[historialTarifas.length - 1];
+
+export const tarifaPorDeportista = (cantidadPupilos = 1, esSocio = false, mes = null) => {
+  const t = tarifaVigente(mes);
   const n = Math.max(1, Number(cantidadPupilos) || 1);
-  if (esSocio) return n === 1 ? 15000 : (n === 2 ? 12000 : Math.round(24000 / n));
-  return n === 1 ? 30000 : 25000;
+  if (esSocio) return n === 1 ? t.hijoSocio : (n === 2 ? t.dosHijosSocio : Math.round((t.dosHijosSocio * 2) / n));
+  return n === 1 ? t.uno : t.hermanos;
 };
 
 // Cuota de deportistas de UNA familia (todos los pupilos del mismo
-// apoderado). cuotaReferencial es la tarifa de un pupilo SIN valor propio:
-// la de la regla, o el monto acordado de la familia repartido. Antes, si un
-// hermano traía valor propio y el otro no, al segundo se le cobraba la mitad
-// del valor del primero; y el descuento de socio dependía del perfil
-// "socio_apoderado" en vez de que la cuenta fuera socia.
-export const calcularCuotaDeportistasFamilia = ({ pupilosFamilia = [], esSocioApoderado = false, montoAcordado = 0 } = {}) => {
+// apoderado) para un mes. cuotaReferencial es la tarifa de un pupilo SIN
+// valor propio: la de la regla vigente ese mes, o el monto acordado de la
+// familia repartido.
+export const calcularCuotaDeportistasFamilia = ({ pupilosFamilia = [], esSocioApoderado = false, montoAcordado = 0, mes = null } = {}) => {
   const cantidadPupilos = pupilosFamilia.length;
   if (cantidadPupilos <= 0) return { cuotaDeportistas: 0, cuotaReferencial: 0 };
 
   const cuotaReferencial = Number.isFinite(montoAcordado) && montoAcordado > 0
     ? Math.round(montoAcordado / cantidadPupilos)
-    : tarifaPorDeportista(cantidadPupilos, esSocioApoderado);
-  const cuotaDeportistas = pupilosFamilia.reduce((acc, p) => acc + obtenerCuotaJugador(p, cuotaReferencial), 0);
+    : tarifaPorDeportista(cantidadPupilos, esSocioApoderado, mes);
+  const cuotaDeportistas = pupilosFamilia.reduce((acc, p) => acc + obtenerCuotaJugador(p, cuotaReferencial, mes), 0);
   return { cuotaDeportistas: Math.round(cuotaDeportistas), cuotaReferencial };
 };
 
-// Cuota mensual real de UN pupilo dentro de su familia: si trae
-// valor_mensualidad propio se usa tal cual (con beca/exención aplicada); si
-// no, se reparte la tarifa referencial de la familia (ver
-// calcularCuotaDeportistasFamilia).
-export const obtenerCuotaJugador = (pupilo = {}, cuotaReferencial = 0) => {
+// Monto propio de un pupilo para un mes: si su valor_mensualidad coincide con
+// una tarifa estándar ACTUAL (ej. $30.000 = "uno"), en meses anteriores a un
+// cambio de tarifa se usa la tarifa estándar de ese mes (ej. $25.000). Un
+// monto especial que no coincide con ninguna tarifa se respeta siempre.
+const montoPropioDelMes = (monto, mes) => {
+  if (!mes) return monto;
+  const actual = tarifaActual();
+  const vigente = tarifaVigente(mes);
+  if (vigente === actual) return monto;
+  const clave = CLAVES_TARIFA.find((k) => actual[k] === monto);
+  return clave ? vigente[clave] : monto;
+};
+
+// Cuota mensual real de UN pupilo dentro de su familia: su valor_mensualidad
+// propio (ajustado al mes, ver arriba) o la tarifa referencial de la familia;
+// siempre con beca/exención aplicada.
+export const obtenerCuotaJugador = (pupilo = {}, cuotaReferencial = 0, mes = null) => {
   const monto = Number(pupilo?.valor_mensualidad || 0);
-  const base = Number.isFinite(monto) && monto > 0 ? monto : cuotaReferencial;
+  const base = Number.isFinite(monto) && monto > 0 ? montoPropioDelMes(monto, mes) : cuotaReferencial;
   return calcularCuotaFinal(base, pupilo);
 };

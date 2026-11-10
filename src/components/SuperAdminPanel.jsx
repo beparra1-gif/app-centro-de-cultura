@@ -46,6 +46,8 @@ import TesoreriaCuentasPanel from './TesoreriaCuentasPanel';
 import RevisionClasificacionPagos from './RevisionClasificacionPagos';
 import ImportarPagosPlanilla from './ImportarPagosPlanilla';
 import InformeDeudaPanel from './InformeDeudaPanel';
+import TarifasPanel from './TarifasPanel';
+import RespaldosPanel from './RespaldosPanel';
 import FichaPersonaModal from './FichaPersonaModal';
 import VincularApoderadosPanel from './VincularApoderadosPanel';
 import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
@@ -781,7 +783,7 @@ function SuperAdminPanel({
 
   const ETIQUETA_ESTADO_BECA = {
     vigente: { texto: 'Vigente', bg: 'rgba(52,199,89,0.12)', color: 'var(--verde-victoria)' },
-    por_vencer: { texto: 'Por vencer', bg: 'rgba(255,149,0,0.12)', color: '#b36200' },
+    por_vencer: { texto: 'Por vencer', bg: 'rgba(255,149,0,0.12)', color: '#8A4B00' },
     vencida: { texto: 'Vencida', bg: 'rgba(255,59,48,0.12)', color: 'var(--rojo-alerta)' },
   };
   const ORDEN_ESTADO_BECA = { vencida: 0, por_vencer: 1, vigente: 2 };
@@ -1316,7 +1318,7 @@ function SuperAdminPanel({
               <button type="button" className="fp-nombre-link" onClick={() => setFichaPersona({ tipo: u.tipo, raw: u.raw })} title="Ver ficha completa">
                 {u.nombre}
               </button>
-              <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: esIncompleta ? '#b36200' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
+              <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: esIncompleta ? '#8A4B00' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
                 {esIncompleta ? 'Incompleta' : 'Completa'}
               </span>
               {sinApoderado && (
@@ -1564,7 +1566,7 @@ function SuperAdminPanel({
             Rol base: {config.rol}
           </span>
           {config.esSuperAdmin && (
-            <span style={{ fontSize: '11px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: 'var(--radius-pill)' }}>
+            <span style={{ fontSize: '11px', fontWeight: '800', color: '#8A4B00', background: 'rgba(255,149,0,0.12)', padding: '5px 10px', borderRadius: 'var(--radius-pill)' }}>
               Super Admin mantiene acceso total
             </span>
           )}
@@ -1600,7 +1602,7 @@ function SuperAdminPanel({
                 <div style={{ fontSize: '11px', color: 'var(--texto-secundario)', marginTop: '5px', lineHeight: '1.35' }}>
                   {modulo.descripcion}
                 </div>
-                <div style={{ fontSize: '11px', marginTop: '6px', fontWeight: '800', color: vienePorRol ? 'var(--azul-electrico)' : '#b36200' }}>
+                <div style={{ fontSize: '11px', marginTop: '6px', fontWeight: '800', color: vienePorRol ? 'var(--azul-electrico)' : '#8A4B00' }}>
                   {vienePorRol ? 'Incluido por rol base' : 'Override manual'}
                 </div>
               </button>
@@ -2908,6 +2910,7 @@ function SuperAdminPanel({
               { key: 'ajustes', Icon: ShieldCheck, titulo: 'Permisos y ajustes', desc: 'Permisos por perfil y por usuario', ver: puedeAdminCompleto, ir: () => setVistaAdmin('permisos') },
               { key: 'auditoria', Icon: History, titulo: 'Auditoría', desc: 'Historial de cambios', ver: puedeAdminCompleto, ir: () => setVistaAdmin('auditoria') },
               { key: 'activos', Icon: Image, titulo: 'Logos e imágenes', desc: 'Activos visuales del club', ver: puedeAdminCompleto, ir: () => setVistaAdmin('activos') },
+              { key: 'respaldos', Icon: History, titulo: 'Respaldos', desc: 'Copias de seguridad y limpieza de copias antiguas', ver: esSuperAdmin, ir: () => setVistaAdmin('respaldos') },
             ],
           },
         ].map((g) => ({ ...g, items: g.items.filter((i) => i.ver) })).filter((g) => g.items.length);
@@ -2934,6 +2937,13 @@ function SuperAdminPanel({
           </div>
         );
       })()}
+
+      {vistaAdmin === 'respaldos' && esSuperAdmin && (
+        <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
+          <RespaldosPanel />
+        </div>
+      )}
 
       {vistaAdmin === 'grupo_deportistas' && (
         <div className="fade-in">
@@ -2982,7 +2992,7 @@ function SuperAdminPanel({
           <div className="caja-triple-grid mb-15">
             <div className="admin-stat-pill azul"><span>Total Cuentas</span><h2>{personasStats.totalCuentas}</h2></div>
             <div className="admin-stat-pill azul"><span>Total Deportistas</span><h2>{personasStats.totalDeportistas}</h2></div>
-            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Fichas Incompletas</span><h2 style={{ color: '#b36200' }}>{personasStats.cuentasIncompletas}</h2></div>
+            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Fichas Incompletas</span><h2 style={{ color: '#8A4B00' }}>{personasStats.cuentasIncompletas}</h2></div>
           </div>
           <div className="caja-triple-grid mb-20">
             <div className="admin-stat-pill rojo"><span>Deportistas sin Apoderado</span><h2>{personasStats.deportistasSinApoderado}</h2></div>
@@ -3058,7 +3068,7 @@ function SuperAdminPanel({
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
                 <div className="admin-stat-pill verde"><span>Completos</span><h2>{jugadoresAdminTodos.length - jugadoresIncompletos.length}</h2></div>
-                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletos</span><h2 style={{ color: '#b36200' }}>{jugadoresIncompletos.length}</h2></div>
+                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletos</span><h2 style={{ color: '#8A4B00' }}>{jugadoresIncompletos.length}</h2></div>
                 <div className="admin-stat-pill rojo"><span>Sin apoderado</span><h2>{jugadoresSinApoderado.length}</h2></div>
               </div>
 
@@ -3116,7 +3126,7 @@ function SuperAdminPanel({
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
                 <div className="admin-stat-pill verde"><span>Completas</span><h2>{cuentasAdminTodas.length - cuentasIncompletas.length}</h2></div>
-                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#b36200' }}>{cuentasIncompletas.length}</h2></div>
+                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#8A4B00' }}>{cuentasIncompletas.length}</h2></div>
                 <div className="admin-stat-pill azul"><span>Total</span><h2>{cuentasAdminTodas.length}</h2></div>
               </div>
 
@@ -3175,7 +3185,12 @@ function SuperAdminPanel({
             <div className="fp-fondo" role="presentation">
             <div className="fp-ventana uc-editor" role="dialog" aria-modal="true" aria-label="Editar cuenta">
             <div ref={edicionCuentaRef} className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
-              <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
+<div className="uc-editor-titulo">
+                <h4 className="form-subtitle">Editar Cuenta #{cuentaAdminEdit.id}</h4>
+                <button type="button" className="btn-secondary tc-btn" onClick={() => setFichaPersona({ tipo: 'cuenta', raw: cuentaAdminEdit, pestana: 'pagos' })}>
+                  Ver pagos
+                </button>
+              </div>
 
               {(esAdmin || esSuperAdmin) && (
                 <div style={{ marginBottom: '16px', padding: '14px', borderRadius: 'var(--radius-md)', background: 'rgba(0,122,255,0.06)', border: '1px solid rgba(0,122,255,0.18)' }}>
@@ -3334,7 +3349,7 @@ function SuperAdminPanel({
                 </p>
 
                 {!String(cuentaPupilosActiva?.correo || '').trim() && (
-                  <div style={{ fontSize: '12px', color: '#b36200', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12px', color: '#8A4B00', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', marginBottom: '10px' }}>
                     Guarda un correo válido en la cuenta antes de asignar pupilos.
                   </div>
                 )}
@@ -3427,7 +3442,12 @@ function SuperAdminPanel({
             <div className="fp-fondo" role="presentation">
             <div className="fp-ventana uc-editor" role="dialog" aria-modal="true" aria-label="Editar deportista">
             <div ref={edicionJugadorRef} className="card">
-              <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
+<div className="uc-editor-titulo">
+                <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
+                <button type="button" className="btn-secondary tc-btn" onClick={() => setFichaPersona({ tipo: 'jugador', raw: jugadorAdminEdit, pestana: 'pagos' })}>
+                  Ver pagos
+                </button>
+              </div>
 
               <h5 className="sub-caja-title">Identidad y vínculo</h5>
               <div className="grid-auto-220">
@@ -3784,7 +3804,10 @@ function SuperAdminPanel({
               <button type="button" role="tab" aria-selected={seccionTesoreria === 'informes'} className={`segment-btn ${seccionTesoreria === 'informes' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('informes')}>
                 <FileText size={14} /> Informes
               </button>
-              <button type="button" className="segment-btn" onClick={() => setVistaAdmin('becas')}>
+              <button type="button" role="tab" aria-selected={seccionTesoreria === 'tarifas'} className={`segment-btn ${seccionTesoreria === 'tarifas' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('tarifas')}>
+                <CheckSquare size={14} /> Tarifas
+              </button>
+              <button type="button" role="tab" aria-selected={false} className="segment-btn" onClick={() => setVistaAdmin('becas')}>
                 🎓 Becas
                 {becasVencidasCount + becasPorVencerCount > 0 && <span className="tesoreria-tab-badge">{becasVencidasCount + becasPorVencerCount}</span>}
               </button>
@@ -3892,7 +3915,7 @@ function SuperAdminPanel({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <div>
                 <h4 className="form-subtitle" style={{ marginBottom: '4px' }}>
-                  <AlertTriangle size={14} style={{ marginRight: '6px', color: '#b36200', verticalAlign: 'middle' }} />
+                  <AlertTriangle size={14} style={{ marginRight: '6px', color: '#8A4B00', verticalAlign: 'middle' }} />
                   Pagos migrados pendientes de revisión ({pagosMigradosPendientes.length})
                 </h4>
                 <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', margin: 0 }}>
@@ -3957,7 +3980,7 @@ function SuperAdminPanel({
                                   {pago.meses_correspondientes || 'Sin mes'} · ${Number(pago.monto_total_pagado || 0).toLocaleString('es-CL')}
                                 </div>
                                 {notasVisibles && (
-                                  <div style={{ fontSize: '11px', color: '#b36200', marginTop: '4px', fontStyle: 'italic' }}>{notasVisibles}</div>
+                                  <div style={{ fontSize: '11px', color: '#8A4B00', marginTop: '4px', fontStyle: 'italic' }}>{notasVisibles}</div>
                                 )}
                               </div>
                               <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
@@ -4047,6 +4070,7 @@ function SuperAdminPanel({
                 <label style={{ fontSize: '11px' }}>Ver mes</label>
                 <select
                   className="form-input"
+                  aria-label="Ver mes"
                   value={filtroMesResumen}
                   onChange={(e) => { setFiltroMesResumen(e.target.value); setMesRecaudacionActivo(e.target.value === 'todos' ? null : e.target.value); }}
                 >
@@ -4256,6 +4280,13 @@ function SuperAdminPanel({
           )}
             </>
           )}
+          {seccionTesoreria === 'tarifas' && (
+            <TarifasPanel
+              puedeEditar={esAdmin || esSuperAdmin}
+              onGuardado={async () => { if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades(); }}
+            />
+          )}
+
           {seccionTesoreria === 'informes' && (
             <InformeDeudaPanel
               jugadores={jugadoresAdmin}
@@ -4354,7 +4385,7 @@ function SuperAdminPanel({
 
           <div className="caja-triple-grid mb-15">
             <div className="admin-stat-pill azul"><span>Total Becados</span><h2>{becasAdmin.length}</h2></div>
-            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span style={{ color: '#b36200' }}>Por Vencer</span><h2 style={{ color: '#b36200' }}>{becasPorVencerCount}</h2></div>
+            <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span style={{ color: '#8A4B00' }}>Por Vencer</span><h2 style={{ color: '#8A4B00' }}>{becasPorVencerCount}</h2></div>
             <div className="admin-stat-pill rojo"><span>Vencidas</span><h2>{becasVencidasCount}</h2></div>
           </div>
 
@@ -4681,8 +4712,8 @@ function SuperAdminPanel({
             {(cuentasIncompletas.length > 0 || jugadoresIncompletos.length > 0 || pagosConCorreccion.length > 0) && (
               <div className="card" style={{ marginTop: '12px', borderLeft: '4px solid #FF9500', borderRadius: 'var(--radius-lg)', background: 'rgba(255,149,0,0.08)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <AlertTriangle size={16} color="#b36200" />
-                  <strong style={{ color: '#b36200', fontSize: '13px' }}>Alertas de corrección pendientes</strong>
+                  <AlertTriangle size={16} color="#8A4B00" />
+                  <strong style={{ color: '#8A4B00', fontSize: '13px' }}>Alertas de corrección pendientes</strong>
                 </div>
                 <div style={{ fontSize: '12px', color: '#8a4f00', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span>Perfiles de cuentas incompletos: {cuentasIncompletas.length}</span>
@@ -4979,7 +5010,7 @@ function SuperAdminPanel({
 
                       {requiereAutorizacion && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(255,149,0,0.14)', color: '#b36200', border: '1px solid rgba(255,149,0,0.45)', borderRadius: 'var(--radius-pill)', padding: '4px 9px', fontSize: '11px', fontWeight: '800' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(255,149,0,0.14)', color: '#8A4B00', border: '1px solid rgba(255,149,0,0.45)', borderRadius: 'var(--radius-pill)', padding: '4px 9px', fontSize: '11px', fontWeight: '800' }}>
                             <AlertTriangle size={12} /> Moroso
                           </span>
                           {!autorizado ? (
@@ -5161,13 +5192,13 @@ function SuperAdminPanel({
                               )}
                             </div>
                             {conv.respuesta === 'no' && conv.respondido_automaticamente && (
-                              <div style={{ marginTop: '5px', fontSize: '11px', color: '#b36200', fontWeight: '800' }}>
+                              <div style={{ marginTop: '5px', fontSize: '11px', color: '#8A4B00', fontWeight: '800' }}>
                                 Automático: no respondió antes de la hora máxima de confirmación
                               </div>
                             )}
                             {esMorosoActual ? (
                               <div style={{ marginTop: '5px' }}>
-                                <div style={{ fontSize: '11px', color: '#b36200', fontWeight: '800' }}>
+                                <div style={{ fontSize: '11px', color: '#8A4B00', fontWeight: '800' }}>
                                   Moroso: requiere excepción · Estado: {
                                     conv.estado_excepcion === 'aprobada' ? 'aprobada'
                                       : conv.estado_excepcion === 'rechazada' ? 'rechazada'
@@ -5864,6 +5895,8 @@ function SuperAdminPanel({
           morosos={morososAdmin}
           sociosMorosos={sociosMorosos}
           puedeRegistrarPago={rolUsuario === 'super_admin'}
+          puedeBorrarPagos={esAdmin || esSuperAdmin}
+          onPagosCambiados={async () => { if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades(); }}
           onCerrar={() => setFichaPersona(null)}
           onAbrir={(otra) => setFichaPersona(otra)}
           onEditar={(p) => { setFichaPersona(null); iniciarEdicion(p); }}

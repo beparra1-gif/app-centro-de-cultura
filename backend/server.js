@@ -163,8 +163,30 @@ const configRetencionSpaces = () => {
   };
 };
 
-const aplicarRetencionSpaces = async ({ s3, storage }) => {
-  const cfg = configRetencionSpaces();
+const leerConfigRespaldos = async () => {
+  try {
+    await asegurarTablaConfiguracion();
+    const r = await pool.query("SELECT valor, actualizado_por, updated_at FROM configuracion_sistema WHERE clave = 'respaldos'");
+    return r.rows[0] ? { ...r.rows[0].valor, actualizadoPor: r.rows[0].actualizado_por, actualizado: r.rows[0].updated_at } : {};
+  } catch {
+    return {};
+  }
+};
+
+const crearClienteS3 = (storage) => new S3Client({
+  region: storage.region,
+  endpoint: storage.endpoint,
+  credentials: { accessKeyId: storage.accessKeyId, secretAccessKey: storage.secretAccessKey },
+  forcePathStyle: true,
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
+});
+
+// soloSimular: calcula qué se borraría sin borrar nada (panel Respaldos).
+const aplicarRetencionSpaces = async ({ s3, storage, soloSimular = false }) => {
+  const cfgBase = configRetencionSpaces();
+  const desdePanel = (await leerConfigRespaldos()).retencionAplicar === true;
+  const cfg = { ...cfgBase, aplicar: !soloSimular && (cfgBase.aplicar || desdePanel) };
   const objetos = [];
   let token;
   do {
@@ -3258,6 +3280,66 @@ app.get('/api/admin/backup-status', (req, res) => {
     backup: getBackupStatus(),
     checkedAt: new Date().toISOString(),
   });
+});
+
+// ==========================================
+// RESPALDOS (Panel → Sistema → Respaldos, solo super admin)
+// ==========================================
+// Muestra el último respaldo, una simulación EN VIVO de la limpieza (lee el
+// bucket, no borra nada) y permite activar la limpieza o respaldar ahora,
+// sin entrar a DigitalOcean.
+app.get('/api/admin/respaldos', authenticate, requireRole('super_admin'), async (req, res) => {
+  const cfg = getBackupConfig();
+  const storage = getBackupStorageConfig();
+  const config = await leerConfigRespaldos();
+  let simulacion = null;
+  let errorSimulacion = null;
+  if (storage.uploadEnabled && storage.hasCoreConfig) {
+    try {
+      simulacion = await aplicarRetencionSpaces({ s3: crearClienteS3(storage), storage, soloSimular: true });
+    } catch (error) {
+      errorSimulacion = error.message;
+    }
+  }
+  res.json({
+    habilitado: cfg.enabled,
+    programacion: cfg.cronExpr,
+    almacenamiento: { subeASpaces: storage.uploadEnabled, configurado: storage.hasCoreConfig, bucket: storage.bucket || null },
+    retencion: {
+      activa: String(process.env.BACKUP_S3_RETENCION_APLICAR || 'false').toLowerCase() === 'true' || config.retencionAplicar === true,
+      desdePanel: config.retencionAplicar === true,
+      politica: { diarios: configRetencionSpaces().diarios, semanales: configRetencionSpaces().semanales, mensuales: configRetencionSpaces().mensuales },
+      actualizadoPor: config.actualizadoPor || null,
+      actualizado: config.actualizado || null,
+    },
+    simulacion,
+    errorSimulacion,
+    enCurso: isBackupRunning,
+    ultimo: lastBackupRunStatus,
+  });
+});
+
+app.put('/api/admin/respaldos', authenticate, requireRole('super_admin'), async (req, res) => {
+  if (typeof req.body?.retencionAplicar !== 'boolean') return res.status(400).json({ error: 'Falta retencionAplicar (true/false).' });
+  try {
+    await asegurarTablaConfiguracion();
+    await pool.query(
+      `INSERT INTO configuracion_sistema (clave, valor, actualizado_por, updated_at) VALUES ('respaldos', $1, $2, NOW())
+       ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado_por = EXCLUDED.actualizado_por, updated_at = NOW()`,
+      [JSON.stringify({ retencionAplicar: req.body.retencionAplicar }), req.actor?.rut || null]
+    );
+    console.log(`[RESPALDOS] Limpieza automática ${req.body.retencionAplicar ? 'ACTIVADA' : 'desactivada'} por ${req.actor?.rut}`);
+    res.json({ ok: true, retencionAplicar: req.body.retencionAplicar });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/respaldos/ejecutar', authenticate, requireRole('super_admin'), async (req, res) => {
+  const result = await runDatabaseBackup({ trigger: `panel:${req.actor?.rut || 'super_admin'}` });
+  if (result.skipped) return res.status(409).json({ error: result.reason || 'No se pudo iniciar el respaldo.', ...result });
+  if (!result.ok) return res.status(500).json({ error: result.error || 'El respaldo falló.', ...result });
+  return res.json(result);
 });
 
 app.post('/api/admin/backup-run', async (req, res) => {
@@ -6571,9 +6653,10 @@ const construirPlanImportacionPagos = async (urlPlanilla) => {
     pool.query('SELECT id, rut_jugador, rut_pagos, concepto_pago, meses_correspondientes, monto_total_pagado, estado_pago, comprobante_url, notas_tesoreria FROM pagos_mensualidades'),
     pool.query('SELECT mes, valor FROM utm_mensual WHERE anio = 2026'),
   ]);
+  const historialTarifas = (await leerConfigTarifas().catch(() => null))?.historial || null;
   try {
     return planificarImportacion({
-      csvDeportistas, csvSocios, csvBase,
+      csvDeportistas, csvSocios, csvBase, historialTarifas,
       jugadores: jugadores.rows, cuentas: cuentas.rows, pagos: pagos.rows,
       utmPorMes: Object.fromEntries(utm.rows.map((r) => [Number(r.mes), Number(r.valor)])),
     });
@@ -6992,6 +7075,82 @@ app.get('/api/pagos-mensualidades/:id', authenticate, async (req, res) => {
 });
 
 // PUT: Actualizar pago de mensualidad (edición completa)
+// ==========================================
+// TARIFAS DE MENSUALIDAD CON HISTORIAL (Tesorería → Tarifas)
+// ==========================================
+// Cada período rige desde un mes (YYYY-MM). Todas las cuentas autenticadas
+// la leen (la familia calcula su propia deuda); solo admin/super admin la
+// modifican.
+const CLAVES_TARIFA = ['uno', 'hermanos', 'hijoSocio', 'dosHijosSocio'];
+const leerConfigTarifas = async () => {
+  await asegurarTablaConfiguracion();
+  const r = await pool.query("SELECT valor, actualizado_por, updated_at FROM configuracion_sistema WHERE clave = 'tarifas_mensualidad'");
+  return r.rows[0] ? { ...r.rows[0].valor, actualizadoPor: r.rows[0].actualizado_por, actualizado: r.rows[0].updated_at } : { historial: null };
+};
+
+app.get('/api/configuracion/tarifas', authenticate, async (req, res) => {
+  try {
+    res.json(await leerConfigTarifas());
+  } catch (err) {
+    console.error('[GET /api/configuracion/tarifas]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/configuracion/tarifas', authenticate, requireRole('admin', 'super_admin'), async (req, res) => {
+  const entrada = Array.isArray(req.body?.historial) ? req.body.historial : [];
+  const historial = entrada.map((t) => ({
+    desde: String(t?.desde || '').trim(),
+    ...Object.fromEntries(CLAVES_TARIFA.map((k) => [k, Math.round(Number(t?.[k]))])),
+    nota: String(t?.nota || '').trim().slice(0, 200),
+  }));
+  const invalido = historial.find((t) => !/^\d{4}-(0[1-9]|1[0-2])$/.test(t.desde) || CLAVES_TARIFA.some((k) => !Number.isFinite(t[k]) || t[k] < 0 || t[k] > 1000000));
+  if (!historial.length || invalido) {
+    return res.status(400).json({ error: 'Cada tarifa necesita un mes de inicio (AAAA-MM) y montos válidos.' });
+  }
+  if (new Set(historial.map((t) => t.desde)).size !== historial.length) {
+    return res.status(400).json({ error: 'Hay dos tarifas que empiezan el mismo mes.' });
+  }
+  historial.sort((a, b) => a.desde.localeCompare(b.desde));
+  try {
+    await asegurarTablaConfiguracion();
+    await pool.query(
+      `INSERT INTO configuracion_sistema (clave, valor, actualizado_por, updated_at) VALUES ('tarifas_mensualidad', $1, $2, NOW())
+       ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, actualizado_por = EXCLUDED.actualizado_por, updated_at = NOW()`,
+      [JSON.stringify({ historial }), req.actor?.rut || null]
+    );
+    res.json(await leerConfigTarifas());
+  } catch (err) {
+    console.error('[PUT /api/configuracion/tarifas]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Borrar un pago (solo admin/super admin, desde la ficha). Pausa la
+// importación desde BASE_CCF y reescribe su pestaña de pagos antes de
+// soltarla: si no, la importación re-insertaría el pago por su id.
+app.delete('/api/pagos-mensualidades/:id', authenticate, requireRole('admin', 'super_admin'), async (req, res) => {
+  const id = Number.parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Pago no válido.' });
+  if (isSheetsSyncRunning) {
+    return res.status(409).json({ error: 'Hay una sincronización con Google Sheets en curso. Intenta de nuevo en un minuto.' });
+  }
+  isSheetsSyncRunning = true;
+  try {
+    const r = await pool.query('DELETE FROM pagos_mensualidades WHERE id = $1 RETURNING id, rut_jugador, rut_pagos, concepto_pago, meses_correspondientes, monto_total_pagado', [id]);
+    if (!r.rows.length) return res.status(404).json({ error: 'Pago no encontrado.' });
+    sheetsSyncManager.enqueueTable('pagos_mensualidades');
+    await sheetsSyncManager.flush().catch((e) => console.error('[DELETE pago] flush Sheets:', e.message));
+    console.log(`[DELETE pago] #${id} borrado por ${req.actor?.rut}`);
+    return res.json({ ok: true, borrado: r.rows[0] });
+  } catch (err) {
+    console.error('[DELETE /api/pagos-mensualidades/:id]', err);
+    return res.status(500).json({ error: err.message });
+  } finally {
+    isSheetsSyncRunning = false;
+  }
+});
+
 app.put('/api/pagos-mensualidades/:id', authenticate, requireAnyModule('validacion_pagos', 'admin_dashboard'), async (req, res) => {
   const {
     rut_jugador,

@@ -188,7 +188,7 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
         </div>
       </div>
 
-      <div className="id-scroll">
+      <div className="id-scroll" tabIndex={0} role="region" aria-label="Informe (se desplaza hacia los lados)">
         <div ref={informeRef} className="id-informe">
           <header className="id-cabecera">
             <div>

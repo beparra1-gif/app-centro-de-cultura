@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ExternalLink, Pencil, Plus, User, Users, X } from 'lucide-react';
+import { ExternalLink, Pencil, Plus, Trash2, User, Users, X } from 'lucide-react';
+import * as api from '../api/client';
+import { showToast } from '../utils/toast';
+import { confirmAction } from '../utils/confirmDialog';
 import useModalAccesible from '../utils/useModalAccesible';
 import { calcularCuotaDeportistasFamilia, obtenerCuotaJugador, obtenerPorcentajeBeca, noDebeMensualidad } from '../utils/beca';
 import { ETIQUETA_ESTADO, MESES_INFORME, construirInformeDeportistas, construirInformeSocios } from '../utils/informeDeuda';
@@ -63,13 +66,13 @@ function GrillaMeses({ titulo, fila }) {
   );
 }
 
-function TablaPagos({ pagos }) {
+function TablaPagos({ pagos, puedeBorrar = false, onBorrar }) {
   if (!pagos.length) return <p className="tc-vacio">Sin pagos registrados.</p>;
   return (
     <div className="fp-tabla-scroll">
       <table className="fp-tabla">
         <thead>
-          <tr><th>Mes</th><th>Concepto</th><th>Monto</th><th>Estado</th><th>Notas</th></tr>
+          <tr><th>Mes</th><th>Concepto</th><th>Monto</th><th>Estado</th><th>Notas</th>{puedeBorrar && <th aria-label="Acciones" />}</tr>
         </thead>
         <tbody>
           {pagos.map((p) => (
@@ -82,6 +85,13 @@ function TablaPagos({ pagos }) {
                 {p.notas_tesoreria || ''}
                 {p.comprobante_url && <> <a href={p.comprobante_url} target="_blank" rel="noreferrer">comprobante <ExternalLink size={11} /></a></>}
               </td>
+              {puedeBorrar && (
+                <td>
+                  <button type="button" className="fp-borrar" onClick={() => onBorrar(p)} aria-label={`Borrar pago de ${p.meses_correspondientes || 'sin mes'}`} title="Borrar este pago">
+                    <Trash2 size={14} />
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -93,8 +103,9 @@ function TablaPagos({ pagos }) {
 export default function FichaPersonaModal({
   persona, jugadores = [], cuentas = [], pagos = [], morosos = [], sociosMorosos = [],
   onCerrar, onAbrir, onEditar, onRegistrarPago, puedeRegistrarPago = false,
+  puedeBorrarPagos = false, onPagosCambiados,
 }) {
-  const [pestana, setPestana] = useState('datos');
+  const [pestana, setPestana] = useState(persona?.pestana || 'datos');
   useModalAccesible(Boolean(persona), onCerrar);
   const esJugador = persona?.tipo === 'jugador';
   const raw = useMemo(() => persona?.raw || {}, [persona]);
@@ -236,7 +247,25 @@ export default function FichaPersonaModal({
                 : filasMeses.map((g) => <GrillaMeses key={g.titulo} titulo={g.titulo} fila={g.fila} />)}
               {!esJugador && filasMeses.length === 0 && <p className="tc-vacio">Esta cuenta no paga cuotas (no es socia ni tiene pupilos).</p>}
               <h4 className="fp-subtitulo">Historial de pagos</h4>
-              <TablaPagos pagos={pagosPersona} />
+              <TablaPagos
+                pagos={pagosPersona}
+                puedeBorrar={puedeBorrarPagos}
+                onBorrar={async (p) => {
+                  const confirmado = await confirmAction({
+                    title: 'Borrar pago',
+                    message: `Se borrará el pago de ${p.meses_correspondientes || 'sin mes'} (${p.concepto_pago || 'Mensualidad'}, $${Math.round(Number(p.monto_total_pagado) || 0).toLocaleString('es-CL')}). Esta acción no se puede deshacer y queda registrada en la auditoría.`,
+                    confirmText: 'Borrar pago',
+                  });
+                  if (!confirmado) return;
+                  try {
+                    await api.pagosMensualidadesAPI.eliminar(p.id);
+                    showToast({ message: 'Pago borrado.', type: 'success' });
+                    await onPagosCambiados?.();
+                  } catch (error) {
+                    showToast({ message: error.message || 'No se pudo borrar el pago.', type: 'error' });
+                  }
+                }}
+              />
             </>
           )}
 

@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, Search, ClipboardList, Check, Pin, Lightbulb } from 'lucide-react';
 import * as api from '../api/client.js';
-import { calcularCuotaFinal } from '../utils/beca';
-import { resumirAbonosMes } from '../utils/abonosMes';
+import { calcularCuotaDeportistasFamilia, calcularCuotaFinal, obtenerCuotaJugador } from '../utils/beca';
+import { asignarAbonoEnOrden, resumirAbonosMes } from '../utils/abonosMes';
 import { confirmAction } from '../utils/confirmDialog';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -86,6 +86,11 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
   // como pago aprobado de $0 (= mes eximido, ver resumirAbonosMes) con nota
   // "Deuda condonada", para que se distinga de un pago real.
   const [condonar, setCondonar] = useState(false);
+  // Pago manual: "completo" = cada mes queda con su cuota (lo que falta);
+  // "monto" = se ingresa lo que realmente pagaron y se reparte en orden,
+  // completando primero el mes más antiguo (como un abono).
+  const [modoRegistro, setModoRegistro] = useState('completo');
+  const [montoPagadoTotal, setMontoPagadoTotal] = useState('');
 
   // Modo "socio": permite registrar la cuota de un socio que no tiene ningún
   // deportista asociado — hoy ese socio es invisible para el sistema de
@@ -142,8 +147,29 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
   // (rut_pagos = ella), su cuota de socio de ese mes aparecía pagada.
   const rutParaVerificarPagos = modoPago === 'socio' ? rutCuentaSocio : formData.rut_jugador;
   const cuentaSocioElegida = modoPago === 'socio' ? cuentas.find((c) => c.rut === rutCuentaSocio) : null;
+  const norm = normalizarRutPago;
+  const jugadorElegido = modoPago === 'deportista' ? jugadores.find((j) => j.rut_jugador === formData.rut_jugador) : null;
+  const familiaElegida = useMemo(() => {
+    if (!jugadorElegido) return [];
+    const rutApo = norm(jugadorElegido.rut_apoderado);
+    const correoApo = String(jugadorElegido.correo_apoderado || '').trim().toLowerCase();
+    const hermanos = jugadores.filter((j) => (rutApo && norm(j.rut_apoderado) === rutApo)
+      || (correoApo && String(j.correo_apoderado || '').trim().toLowerCase() === correoApo));
+    return hermanos.length ? hermanos : [jugadorElegido];
+  }, [jugadorElegido, jugadores, norm]);
+  const cuotaDeportistaDelMes = (mesNum) => {
+    if (!jugadorElegido) return valorMensualidad;
+    const esSocioFamilia = Boolean(apoderadoAsignado?.es_socio) || familiaElegida.some((j) => Boolean(j.apoderado_socio));
+    const { cuotaReferencial } = calcularCuotaDeportistasFamilia({
+      pupilosFamilia: familiaElegida,
+      esSocioApoderado: esSocioFamilia,
+      montoAcordado: Number(apoderadoAsignado?.monto_mensual_override || 0),
+      mes: mesNum,
+    });
+    return obtenerCuotaJugador(jugadorElegido, cuotaReferencial, mesNum);
+  };
   const cuotaSugeridaDelMes = (mesNum) => (
-    modoPago === 'socio' ? obtenerCuotaSocioSugeridaDelMes(mesNum, cuentaSocioElegida) : valorMensualidad
+    modoPago === 'socio' ? obtenerCuotaSocioSugeridaDelMes(mesNum, cuentaSocioElegida) : cuotaDeportistaDelMes(mesNum)
   );
   const estadoMeses = useMemo(() => {
     const rutNormalizado = normalizarRutPago(rutParaVerificarPagos);
@@ -176,7 +202,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
     return resultado;
     // cuotaSugeridaDelMes depende de modoPago/valorMensualidad/cuenta/UTM (ya en deps).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pagosExistentes, rutParaVerificarPagos, anioSeleccionado, modoPago, valorMensualidad, cuentaSocioElegida, utmHistorico, utmVigente, pago?.id]);
+  }, [pagosExistentes, rutParaVerificarPagos, anioSeleccionado, modoPago, valorMensualidad, cuentaSocioElegida, utmHistorico, utmVigente, pago?.id, familiaElegida, apoderadoAsignado]);
   // Monto sugerido al marcar un mes: lo que falta (cuota completa si no hay abonos).
   const montoSugeridoMes = (mesNum) => {
     const resumen = estadoMeses.get(mesNum);
@@ -305,6 +331,22 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
     }
   };
 
+  // Pago manual nuevo (super admin): se elige el modo en vez de tipear cada mes.
+  const usaModosRegistro = autoAprobar && !pago?.id && !condonar;
+  const ordenMeses = [...mesesSeleccionados].sort((a, b) => a - b);
+  const repartoMonto = modoRegistro === 'monto'
+    ? new Map(asignarAbonoEnOrden(Number(montoPagadoTotal) || 0, ordenMeses.map((idx) => ({ clave: idx, faltante: montoSugeridoMes(idx + 1) }))).map((a) => [a.clave, a.monto]))
+    : new Map();
+  // Lo que sobra de un monto mayor a lo adeudado queda en el último mes.
+  const totalAsignado = [...repartoMonto.values()].reduce((s, v) => s + v, 0);
+  const sobrante = Math.max(0, (Number(montoPagadoTotal) || 0) - totalAsignado);
+  const montoSegunModo = (idx) => {
+    if (modoRegistro === 'completo') return montoSugeridoMes(idx + 1);
+    const base = repartoMonto.get(idx) || 0;
+    return idx === ordenMeses[ordenMeses.length - 1] ? base + sobrante : base;
+  };
+  const totalSegunModo = ordenMeses.reduce((s, idx) => s + montoSegunModo(idx), 0);
+
   const handleArchivoChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -332,7 +374,10 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
       // $0 es válido a propósito (ej. un mes que el club decide dejar sin
       // cobro puntual) — lo que se rechaza es vacío/negativo/no numérico, mes
       // por mes cuando hay más de uno seleccionado.
-      for (const idx of mesesSeleccionados) {
+      if (usaModosRegistro && modoRegistro === 'monto' && !(Number(montoPagadoTotal) > 0)) {
+        throw new Error('Ingresa el monto pagado.');
+      }
+      for (const idx of (usaModosRegistro ? [] : mesesSeleccionados)) {
         const montoMes = mesesSeleccionados.length === 1 ? formData.monto_total_pagado : montosPorMes[idx];
         if (montoMes === '' || montoMes === undefined || !Number.isFinite(Number(montoMes)) || Number(montoMes) < 0) {
           throw new Error(`Ingresa un monto válido para ${MESES[idx]} (puede ser $0)`);
@@ -375,14 +420,14 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
         // que solo entienden un mes por registro, ven correctamente TODOS los
         // meses pagados y no solo el primero.
         const notaCondonacion = condonar ? `Deuda condonada${formData.notas_tesoreria ? ` · ${formData.notas_tesoreria}` : ''}` : null;
-        const pagosACrear = mesesSeleccionados.map((idx) => ({
+        const pagosACrear = mesesSeleccionados.filter((idx) => !usaModosRegistro || montoSegunModo(idx) > 0).map((idx) => ({
           rut_jugador: formData.rut_jugador,
           rut_pagos: rutPagosResuelto,
           correo_apoderado: formData.correo_apoderado,
           concepto_pago: formData.concepto_pago,
           cantidad_meses_pagados: 1,
           meses_correspondientes: `${MESES[idx]} ${anioSeleccionado}`,
-          monto_total_pagado: condonar ? 0 : Number(mesesSeleccionados.length === 1 ? formData.monto_total_pagado : montosPorMes[idx]),
+          monto_total_pagado: condonar ? 0 : (usaModosRegistro ? montoSegunModo(idx) : Number(mesesSeleccionados.length === 1 ? formData.monto_total_pagado : montosPorMes[idx])),
           comprobante_url: comprobanteUrlFinal,
           notas_tesoreria: notaCondonacion || formData.notas_tesoreria,
         }));
@@ -987,7 +1032,44 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
           {/* Monto pagado — un solo campo si es un mes, uno por mes si son varios
               (cada mes seleccionado queda como su propio registro al guardar,
               con su propio monto — ver handleSubmit). */}
-          {puedeContinuar && mesesSeleccionados.length === 1 && (
+          {usaModosRegistro && puedeContinuar && mesesSeleccionados.length > 0 && (
+            <div className="form-group pf-modos">
+              <div className="segment-control" role="radiogroup" aria-label="Cómo registrar el pago">
+                <button type="button" role="radio" aria-checked={modoRegistro === 'completo'} className={`segment-btn ${modoRegistro === 'completo' ? 'active' : ''}`} onClick={() => setModoRegistro('completo')}>
+                  Registrar pago
+                </button>
+                <button type="button" role="radio" aria-checked={modoRegistro === 'monto'} className={`segment-btn ${modoRegistro === 'monto' ? 'active' : ''}`} onClick={() => setModoRegistro('monto')}>
+                  Registrar monto pagado
+                </button>
+              </div>
+              {modoRegistro === 'monto' && (
+                <label className="pf-monto-total">
+                  Monto pagado ($)
+                  <input type="number" min="1" step="1" className="form-input" value={montoPagadoTotal} onChange={(e) => setMontoPagadoTotal(e.target.value)} placeholder="Ej: 45000" aria-label="Monto pagado" />
+                </label>
+              )}
+              <ul className="pf-reparto">
+                {ordenMeses.map((idx) => {
+                  const cuota = montoSugeridoMes(idx + 1);
+                  const monto = montoSegunModo(idx);
+                  return (
+                    <li key={idx}>
+                      <span>{MESES[idx]} {anioSeleccionado}</span>
+                      <span>{monto > 0 ? `$${monto.toLocaleString('es-CL')}` : '—'}{monto > 0 && monto < cuota ? ` (faltan $${(cuota - monto).toLocaleString('es-CL')})` : ''}</span>
+                    </li>
+                  );
+                })}
+                <li className="pf-reparto-total"><span>Total</span><span>${totalSegunModo.toLocaleString('es-CL')}</span></li>
+              </ul>
+              <small className="pf-ayuda">
+                {modoRegistro === 'completo'
+                  ? 'Cada mes queda pagado con su cuota (o con lo que le faltaba, si tenía abonos).'
+                  : 'El monto completa los meses en orden, del más antiguo al más nuevo; lo que no alcance queda como abono parcial.'}
+              </small>
+            </div>
+          )}
+
+          {!usaModosRegistro && puedeContinuar && mesesSeleccionados.length === 1 && (
             <div className="form-group">
               <label style={{ fontWeight: '600', fontSize: '13px' }}>Monto pagado ($) *</label>
               <input
@@ -1023,7 +1105,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
             </div>
           )}
 
-          {puedeContinuar && mesesSeleccionados.length > 1 && (
+          {!usaModosRegistro && !condonar && puedeContinuar && mesesSeleccionados.length > 1 && (
             <div className="form-group">
               <label style={{ fontWeight: '600', fontSize: '13px' }}>Monto pagado por mes ($) *</label>
               <div style={{

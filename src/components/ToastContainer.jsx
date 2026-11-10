@@ -36,7 +36,8 @@ function ToastContainer() {
         display: 'flex',
         flexDirection: 'column',
         gap: '10px',
-        zIndex: 1100,
+        // Los avisos deben verse aunque haya una ventana abierta (1200).
+        zIndex: 2100,
         pointerEvents: 'none',
       }}
     >

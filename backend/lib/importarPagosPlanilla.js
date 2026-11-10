@@ -137,19 +137,28 @@ const parsearGidsPlanilla = (html = '') => {
 // Tarifas del club por deportista (igual que src/utils/beca.js):
 // 1 pupilo $30.000 · hermanos $25.000 c/u · hijo de socio $15.000 ·
 // 2 hijos de socio $12.000 c/u (desde el 3ro, tope familiar $24.000).
-const tarifaPorDeportista = (cantidad = 1, esSocio = false) => {
+const TARIFAS_POR_DEFECTO = [{ desde: '2026-01', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 12000 }];
+// Tarifa vigente en un mes (historial configurable en Tesorería → Tarifas).
+const tarifaDelMes = (historial, mes) => {
+  const lista = Array.isArray(historial) && historial.length ? [...historial].sort((a, b) => String(a.desde).localeCompare(String(b.desde))) : TARIFAS_POR_DEFECTO;
+  const clave = `${ANIO}-${String(mes || 1).padStart(2, '0')}`;
+  let vigente = lista[0];
+  lista.forEach((t) => { if (String(t.desde) <= clave) vigente = t; });
+  return vigente;
+};
+const tarifaPorDeportista = (cantidad = 1, esSocio = false, tarifa = TARIFAS_POR_DEFECTO[0]) => {
   const n = Math.max(1, Number(cantidad) || 1);
-  if (esSocio) return n === 1 ? 15000 : (n === 2 ? 12000 : Math.round(24000 / n));
-  return n === 1 ? 30000 : 25000;
+  if (esSocio) return n === 1 ? Number(tarifa.hijoSocio) : (n === 2 ? Number(tarifa.dosHijosSocio) : Math.round((Number(tarifa.dosHijosSocio) * 2) / n));
+  return n === 1 ? Number(tarifa.uno) : Number(tarifa.hermanos);
 };
 // Cuota de un deportista para filas sin monto (marcadas VALIDADO): su
 // valor_mensualidad propio o la tarifa de su familia, con beca/exención.
-const cuotaDeportista = (jugador = {}, { hermanos = 1, esSocio = false, montoAcordado = 0 } = {}) => {
+const cuotaDeportista = (jugador = {}, { hermanos = 1, esSocio = false, montoAcordado = 0, tarifa = TARIFAS_POR_DEFECTO[0] } = {}) => {
   if (jugador.exento_mensualidad) return 0;
   const beca = Math.min(100, Math.max(0, Number(jugador.beca) || 0));
   const propio = Number(jugador.valor_mensualidad) || 0;
   const base = propio > 0 ? propio
-    : (montoAcordado > 0 ? Math.round(montoAcordado / Math.max(1, hermanos)) : tarifaPorDeportista(hermanos, esSocio));
+    : (montoAcordado > 0 ? Math.round(montoAcordado / Math.max(1, hermanos)) : tarifaPorDeportista(hermanos, esSocio, tarifa));
   return Math.round(base * (1 - beca / 100));
 };
 // Cuota de socio del mes: monto fijo de la cuenta o 0,3 UTM de ese mes.
@@ -219,6 +228,7 @@ const validarEncabezados = (filas, tipo) => {
 
 const planificarImportacion = ({
   csvDeportistas = '', csvSocios = '', csvBase = '', jugadores = [], cuentas = [], pagos = [], utmPorMes = {}, hoy = new Date(),
+  historialTarifas = null,
 } = {}) => {
   const filasDeportistas = parsearCsv(csvDeportistas);
   const filasSocios = parsearCsv(csvSocios);
@@ -357,6 +367,7 @@ const planificarImportacion = ({
         const sinMonto = !elegido.montoTexto;
         const monto = sinMonto
           ? cuotaDeportista(jugador, {
+            tarifa: tarifaDelMes(historialTarifas, elegido.mes),
             hermanos: pagador ? (hermanosPorPagador.get(normalizarRut(pagador.rut)) || 1) : 1,
             esSocio: Boolean(pagador?.es_socio) || Boolean(jugador.apoderado_socio) || pistasSocio.has(elegido.rut),
             montoAcordado: Number(pagador?.monto_mensual_override) || 0,

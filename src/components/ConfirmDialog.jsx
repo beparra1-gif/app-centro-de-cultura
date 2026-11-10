@@ -40,7 +40,8 @@ function ConfirmDialog() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 1200,
+        // Siempre por encima de cualquier ventana (fichas, edición: 1200).
+        zIndex: 2000,
         padding: '20px',
       }}
       onClick={() => cerrar(false)}

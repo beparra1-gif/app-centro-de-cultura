@@ -866,6 +866,12 @@ export const pagosMensualidadesAPI = {
   },
 
   // Actualizar
+  // Solo admin/super admin (el backend lo exige).
+  eliminar: async (id) => {
+    const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/${id}`, { method: 'DELETE' });
+    return handleResponse(response);
+  },
+
   update: async (id, datos) => {
     const response = await apiFetch(`${API_BASE_URL}/pagos-mensualidades/${id}`, {
       method: 'PUT',
@@ -1011,6 +1017,33 @@ export const citacionesAPI = {
 };
 
 // ========== NOTIFICACIONES APP (in-app, persistidas) ==========
+
+// Respaldos de la base (Panel → Sistema → Respaldos, solo super admin).
+export const respaldosAPI = {
+  estado: async () => handleResponse(await apiFetch(`${API_BASE_URL}/admin/respaldos`)),
+  configurar: async ({ retencionAplicar }) => handleResponse(await apiFetch(`${API_BASE_URL}/admin/respaldos`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ retencionAplicar }),
+  })),
+  ejecutar: async () => handleResponse(await apiFetch(`${API_BASE_URL}/admin/respaldos/ejecutar`, { method: 'POST' })),
+};
+
+// Tarifas de mensualidad con historial (Tesorería → Tarifas).
+export const configuracionAPI = {
+  getTarifas: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/configuracion/tarifas`);
+    return handleResponse(response);
+  },
+  guardarTarifas: async (historial) => {
+    const response = await apiFetch(`${API_BASE_URL}/configuracion/tarifas`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ historial }),
+    });
+    return handleResponse(response);
+  },
+};
 
 export const notificacionesAppAPI = {
   // Recordatorio de pago en la app para las familias con deuda (Tesorería).

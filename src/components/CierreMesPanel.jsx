@@ -93,7 +93,7 @@ export default function CierreMesPanel({ pagos = [], filasDeportistas = [], fila
           <ImageIcon size={13} /> {exportando ? 'Generando…' : 'Descargar imagen'}
         </button>
       </div>
-      <div className="id-scroll">
+      <div className="id-scroll" tabIndex={0} role="region" aria-label="Cierre de mes">
         <div ref={ref} className="id-informe cm-informe">
           <header className="id-cabecera">
             <div>

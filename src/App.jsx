@@ -15,7 +15,7 @@ import {
 } from 'recharts';
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
-import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from './utils/beca';
+import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador, setHistorialTarifas } from './utils/beca';
 import { mapearJugadorAPupilo, obtenerNumeroCamisetaJugador, obtenerAnioNacimientoJugador } from './utils/pupiloMapper';
 import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
 import ApiStatusBanner from './components/ApiStatusBanner';
@@ -30,6 +30,7 @@ import { resumirAbonosMes } from './utils/abonosMes';
 import useIntervaloVisible from './utils/useIntervaloVisible';
 import useModalAccesible from './utils/useModalAccesible';
 import { soloActivos } from './utils/estadoActivo';
+import { observarEtiquetas } from './utils/etiquetasAccesibles';
 import PagoRapidoMuro from './components/PagoRapidoMuro';
 import { mesesANumeros, resumirDeudaFamilia } from './utils/deudaFamilia';
 import PrimerIngresoModal from './components/PrimerIngresoModal';
@@ -187,6 +188,8 @@ function App() {
   // que tenían en el primer render (closure obsoleta) si se leyeran directo.
   const cuentasAdminRef = useRef(cuentasAdmin);
   const jugadoresAdminRef = useRef(jugadoresAdmin);
+  // Nombres accesibles para campos y botones de ícono (ver utils/etiquetasAccesibles).
+  useEffect(() => observarEtiquetas(), []);
   useEffect(() => { cuentasAdminRef.current = cuentasAdmin; }, [cuentasAdmin]);
   useEffect(() => { jugadoresAdminRef.current = jugadoresAdmin; }, [jugadoresAdmin]);
   // Valor real de UTM (última consultada al backend, que a su vez la trae de
@@ -755,7 +758,7 @@ function App() {
       const cuentaFamilia = cuentaPorRut.get(normalizarRutComparacion(primerJugador.rut_apoderado))
         || cuentaPorCorreo.get(normalizarCorreo(primerJugador.correo_apoderado));
       const perfilPrincipalFamilia = String(cuentaFamilia?.perfil_principal || cuentaFamilia?.rol || '').toLowerCase();
-      const { cuotaReferencial } = calcularCuotaDeportistasFamilia({
+      const parametrosFamilia = {
         pupilosFamilia,
         // Hijo(s) de socio: tarifa rebajada si la cuenta del apoderado es
         // socia (es_socio), cualquiera sea su perfil.
@@ -765,8 +768,9 @@ function App() {
           || ['socio', 'socio_apoderado', 'socio-apoderado'].includes(perfilPrincipalFamilia)
           || pupilosFamilia.some((p) => Boolean(p.apoderado_socio)),
         montoAcordado: Number(cuentaFamilia?.monto_mensual_override || 0),
-      });
-      cuotaReferencialPorFamilia.set(key, cuotaReferencial);
+      };
+      // Cuota referencial por MES (la tarifa puede cambiar durante el año).
+      cuotaReferencialPorFamilia.set(key, (mes) => calcularCuotaDeportistasFamilia({ ...parametrosFamilia, mes }).cuotaReferencial);
     });
 
     const morosos = [];
@@ -802,8 +806,8 @@ function App() {
       // propio, o a la tarifa referencial de su familia si no tiene
       // valor_mensualidad cargado (mismo cálculo que Tesorería, nunca el
       // número de meses mostrado como si fueran pesos).
-      const cuotaReferencialFamilia = cuotaReferencialPorFamilia.get(obtenerFamilyKey(jugador)) || 0;
-      const cuotaRef = obtenerCuotaJugador(jugador, cuotaReferencialFamilia);
+      const referencialDelMes = cuotaReferencialPorFamilia.get(obtenerFamilyKey(jugador)) || (() => 0);
+      const cuotaDelMes = (mes) => obtenerCuotaJugador(jugador, referencialDelMes(mes), mes);
 
       // mesesMorosos guarda los meses concretos (no solo el conteo), ya
       // acotado por inicioCobro — un jugador que ingresó en marzo nunca
@@ -813,7 +817,7 @@ function App() {
       let mesesConAbonoParcial = 0;
       const mesesParcialesNums = [];
       for (let mes = inicioCobro; mes <= limiteMesDeuda; mes += 1) {
-        const resumen = resumirAbonosMes(pagosPorMes.get(mes) || [], cuotaRef);
+        const resumen = resumirAbonosMes(pagosPorMes.get(mes) || [], cuotaDelMes(mes));
         if (!resumen.completo) {
           mesesMorososNums.push(mes);
           montoDeudaJugador += resumen.faltante;
@@ -1121,6 +1125,11 @@ function App() {
     // y cae al fallback [], lo que gatillaba el "else" de más abajo y borraba
     // el pupiloActivo recién armado con su nombre/club en iniciarSesionFinal.
     const esInvitadoActivo = (rolActivo ?? rolUsuario) === 'visita';
+    // Familias, deportistas, visitas y mesa nunca usan los datos de
+    // administración: antes cada inicio de sesión pedía 6 recursos solo-admin
+    // que el servidor rechazaba con 403 (carga inútil y errores en consola).
+    const sinDatosAdmin = ['apoderado', 'socio', 'socio_apoderado', 'jugador', 'visita', 'mesa']
+      .includes(normalizarRol(rolActivo ?? rolUsuario ?? ''));
 
     // Sin token (portada pública, antes de iniciar sesión) los endpoints
     // protegidos solo devolvían 401: 13 peticiones fallidas en cada visita a
@@ -1129,25 +1138,29 @@ function App() {
     const conSesion = (llamada) => (api.getAuthToken()
       ? llamada()
       : Promise.reject(Object.assign(new Error('Sin sesión'), { sinSesion: true })));
+    const soloAdmin = (llamada) => (sinDatosAdmin
+      ? Promise.reject(Object.assign(new Error('No corresponde a este perfil'), { sinSesion: true }))
+      : conSesion(llamada));
 
     try {
       const resultados = await Promise.allSettled([
         api.comunicacionesAPI.getAll(),
-        conSesion(() => api.whatsappAPI.getContactos()),
-        conSesion(() => api.cuentasAPI.getIncompletas()),
-        conSesion(() => api.cuentasAPI.getAll()),
+        soloAdmin(() => api.whatsappAPI.getContactos()),
+        soloAdmin(() => api.cuentasAPI.getIncompletas()),
+        soloAdmin(() => api.cuentasAPI.getAll()),
         conSesion(() => api.jugadoresAPI.getAll()),
-        conSesion(() => api.jugadoresVisitaAPI.getAll()),
+        soloAdmin(() => api.jugadoresVisitaAPI.getAll()),
         conSesion(() => api.pagosMensualidadesAPI.getAll()),
         api.partidosLiveAPI.getAll(),
-        conSesion(() => api.auditoriaAPI.getAll()),
+        soloAdmin(() => api.auditoriaAPI.getAll()),
         api.encuestasAPI.getAll(),
         conSesion(() => api.quizAPI.getAll()),
         conSesion(() => api.citacionesAPI.getAll()),
         conSesion(() => api.notificacionesAppAPI.getAll()),
         conSesion(() => api.utmAPI.getVigente()),
         conSesion(() => api.utmAPI.getHistorico(ANIO_OBJETIVO_TESORERIA)),
-        conSesion(() => api.becaAPI.getBecas()),
+        soloAdmin(() => api.becaAPI.getBecas()),
+        conSesion(() => api.configuracionAPI.getTarifas()),
       ]);
 
       const getResult = (index, fallback = []) => (
@@ -1156,6 +1169,8 @@ function App() {
           : fallback
       );
 
+      // Tarifas con historial (índice 16): antes de calcular cualquier deuda.
+      setHistorialTarifas(getResult(16, {})?.historial || null);
       const comunicacionesRes = getResult(0, []);
       const contactosRes = getResult(1, []);
       const cuentasIncompletasRes = getResult(2, []);
@@ -3218,7 +3233,7 @@ function App() {
         <div className="header-btn-zone right">
           {rolUsuario && (
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'flex-end', width: '100%', flexWrap: 'nowrap' }}>
-              <button ref={settingsButtonRef} className="btn-icon-header" onClick={toggleSettingsPanel} title="Configuración y Perfil">
+              <button ref={settingsButtonRef} type="button" className="btn-icon-header" onClick={toggleSettingsPanel} title="Configuración y Perfil" aria-label="Configuración y perfil">
                 <Settings size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
               </button>
               <button
@@ -3227,10 +3242,11 @@ function App() {
                 ref={notificationsButtonRef}
                 style={{position: 'relative'}}
                 onClick={toggleNotificationsPanel}
+                aria-label={`Notificaciones${notificaciones.filter((n) => !n.leida).length ? ` (${notificaciones.filter((n) => !n.leida).length} sin leer)` : ''}`}
               >
                 <Bell size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
                 {notificaciones.filter(n=>!n.leida).length > 0 && (
-                  <span style={{position: 'absolute', top: '-5px', right: '-5px', background: 'var(--rojo-alerta)', color: 'white', fontSize: '11px', fontWeight: '900', padding: '3px 6px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--azul-marino)'}}>
+                  <span style={{position: 'absolute', top: '-5px', right: '-5px', background: '#C62828', color: 'white', fontSize: '11px', fontWeight: '900', padding: '3px 6px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--azul-marino)'}}>
                     {notificaciones.filter(n=>!n.leida).length}
                   </span>
                 )}
@@ -3745,7 +3761,12 @@ function App() {
                   type="button"
                   key={`nav-${modulo}`}
                   className={`nav-item ${pantallaActiva === modulo ? 'active' : ''}`}
-                  onClick={() => cambiarPantallaConLoader(modulo)}
+                  onClick={() => {
+                    // Tocar "Panel" estando dentro de una sección vuelve a su inicio
+                    // (antes se quedaba en la sección y no había forma de volver desde el menú).
+                    if (modulo === 'admin_dashboard' && pantallaActiva === 'admin_dashboard') setVistaAdmin('inicio');
+                    cambiarPantallaConLoader(modulo);
+                  }}
                 >
                   <Icon size={26} color={esBotonCuenta ? 'var(--azul-electrico)' : 'var(--gris-secundario)'} strokeWidth={esBotonCuenta ? 2 : 1.5} />
                   <span className="mt-5" style={esBotonCuenta ? { color: 'var(--azul-electrico)', fontWeight: '800' } : undefined}>{meta.label}</span>

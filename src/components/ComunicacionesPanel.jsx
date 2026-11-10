@@ -269,7 +269,7 @@ function ComunicacionesPanel({
       <>
         <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: '700', color: 'var(--texto-principal)' }}>Selecciona una opción de asistencia</div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-          <button onClick={onConfirmar} className="btn-confirmar" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: 'var(--radius-md)', border: 'none', background: respuesta === 'si' ? '#15803d' : '#34C759', color: 'white', cursor: 'pointer', fontWeight: '700', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}><Check size={14} /> Sí asiste</button>
+          <button onClick={onConfirmar} className="btn-confirmar" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: 'var(--radius-md)', border: 'none', background: respuesta === 'si' ? '#14532d' : '#1A7F37', color: 'white', cursor: 'pointer', fontWeight: '700', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}><Check size={14} /> Sí asiste</button>
           <button onClick={() => setMostrandoRechazo((prev) => ({ ...prev, [clave]: true }))} className="btn-ausente" style={{ flex: 1, minWidth: '120px', padding: '10px', fontSize: '13px', borderRadius: 'var(--radius-md)', border: 'none', background: 'var(--rojo-alerta)', color: 'white', cursor: 'pointer', fontWeight: '700', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}><X size={14} /> No asiste</button>
         </div>
 
@@ -519,7 +519,7 @@ function ComunicacionesPanel({
               <div className="ios-rrss-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <LogoAvatar nombre={c.TITULO} logoUrl={c.logo_url || c.logoUrl} size={28} borderRadius="999px" />
-                  <span className="badge-tipo" style={{ background: c.urgencia === 'Crítica' ? '#8B0000' : c.urgencia === 'Alta' ? 'var(--rojo-alerta)' : c.urgencia === 'Media' ? '#FF9500' : '#34C759', color: 'white', padding: '5px 10px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--texto-min)', fontWeight: '800' }}>
+                  <span className="badge-tipo" style={{ background: c.urgencia === 'Crítica' ? '#8B0000' : c.urgencia === 'Alta' ? '#C62828' : c.urgencia === 'Media' ? '#B45309' : '#1A7F37', color: 'white', padding: '5px 10px', borderRadius: 'var(--radius-pill)', fontSize: 'var(--texto-min)', fontWeight: '800' }}>
                     {c.TIPO_COMUNICADO}
                   </span>
                   {c.rama !== 'General' && <span style={{ fontSize: 'var(--texto-min)', background: 'rgba(0,0,0,0.1)', padding: '2px 6px', borderRadius: '3px' }}>{c.rama}</span>}

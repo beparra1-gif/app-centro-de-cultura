@@ -443,7 +443,17 @@ function PerfilTesoreriaPanel({
   // propio (caso normal, viene de la hoja) se usa tal cual; si no, se reparte
   // en partes iguales la tarifa agregada (mismo criterio que "Cuota vigente").
   // Ver obtenerCuotaJugador en utils/beca — mismo cálculo que usa Morosos.
-  const obtenerCuotaMensualPupilo = (pupilo = {}) => obtenerCuotaJugador(pupilo, cuotaDeportistaReferencial);
+  // Con mes: la tarifa vigente ese mes (historial de tarifas); sin mes: la de hoy.
+  const parametrosFamiliaPagos = {
+    pupilosFamilia: pupilosActivos,
+    esSocioApoderado: esSocio || pupilosActivos.some((p) => Boolean(p.apoderado_socio)),
+    montoAcordado: montoAcordadoFamilia,
+  };
+  const obtenerCuotaMensualPupilo = (pupilo = {}, mes = null) => (
+    mes
+      ? obtenerCuotaJugador(pupilo, calcularCuotaDeportistasFamilia({ ...parametrosFamiliaPagos, mes }).cuotaReferencial, mes)
+      : obtenerCuotaJugador(pupilo, cuotaDeportistaReferencial)
+  );
 
   // Resumen de cada mes (abonado, faltante, estado) para la grilla, los
   // totales y la creación de pagos: el mes se completa sumando abonos.
@@ -459,7 +469,7 @@ function PerfilTesoreriaPanel({
     const pagosMes = pagosDePupilo(pupilo)
       .filter((pago) => monthFromPago(pago) === mesNumero)
       .map((pago) => ({ estado: pago.estado_pago, monto: pago.monto_total_pagado }));
-    const resumen = resumirAbonosMes(pagosMes, obtenerCuotaMensualPupilo(pupilo));
+    const resumen = resumirAbonosMes(pagosMes, obtenerCuotaMensualPupilo(pupilo, mesNumero));
     return {
       ...resumen,
       estado: resolverEstadoMes({

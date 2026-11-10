@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularCuotaDeportistasFamilia, calcularCuotaFinal, obtenerPorcentajeBeca, tarifaPorDeportista, tieneBecaCompleta } from './beca';
+import { TARIFAS_POR_DEFECTO, calcularCuotaDeportistasFamilia, calcularCuotaFinal, obtenerCuotaJugador, obtenerHistorialTarifas, obtenerPorcentajeBeca, setHistorialTarifas, tarifaPorDeportista, tieneBecaCompleta } from './beca';
 
 describe('obtenerPorcentajeBeca', () => {
   it('sin campo beca, da 0', () => {
@@ -67,5 +67,31 @@ describe('tarifas del club por familia', () => {
   });
   it('tarifaPorDeportista', () => {
     expect([tarifaPorDeportista(1), tarifaPorDeportista(3), tarifaPorDeportista(1, true), tarifaPorDeportista(2, true)]).toEqual([30000, 25000, 15000, 12000]);
+  });
+});
+
+describe('historial de tarifas', () => {
+  const historial = [
+    { desde: '2026-01', uno: 25000, hermanos: 20000, hijoSocio: 15000, dosHijosSocio: 12000 },
+    { desde: '2026-09', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 12000 },
+  ];
+  it('cada mes usa la tarifa vigente ese mes', () => {
+    setHistorialTarifas(historial);
+    expect(tarifaPorDeportista(1, false, 8)).toBe(25000);
+    expect(tarifaPorDeportista(1, false, 9)).toBe(30000);
+    expect(tarifaPorDeportista(2, false, 3)).toBe(20000);
+    setHistorialTarifas(null);
+  });
+  it('un monto propio igual a una tarifa actual sigue la tarifa del mes; uno especial se respeta', () => {
+    setHistorialTarifas(historial);
+    expect(obtenerCuotaJugador({ valor_mensualidad: 30000 }, 0, 5)).toBe(25000);
+    expect(obtenerCuotaJugador({ valor_mensualidad: 30000 }, 0, 10)).toBe(30000);
+    expect(obtenerCuotaJugador({ valor_mensualidad: 18000 }, 0, 5)).toBe(18000);
+    expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [{}, {}], mes: 4 }).cuotaReferencial).toBe(20000);
+    setHistorialTarifas(null);
+  });
+  it('sin historial válido vuelve a las tarifas por defecto', () => {
+    setHistorialTarifas([{ desde: 'mal' }]);
+    expect(obtenerHistorialTarifas()).toBe(TARIFAS_POR_DEFECTO);
   });
 });

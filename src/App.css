@@ -5,11 +5,15 @@
    ========================================= */
 :root {
   /* Paleta Corporativa Inmutable */
-  --azul-electrico: #007AFF;
-  --verde-victoria: #34C759;
-  --rojo-alerta: #FF3B30;
+  /* Contraste WCAG AA (4,5:1) con texto blanco encima o como texto sobre
+     blanco: los tonos iOS originales (#007AFF 4,0:1, #FF3B30 3,6:1,
+     #34C759 2,2:1, #6B7280 4,4:1 sobre gris) no llegaban. Mismo tono, más
+     profundo; el tema oscuro usa las versiones brillantes. */
+  --azul-electrico: #0A6CF0;
+  --verde-victoria: #1A7F37;
+  --rojo-alerta: #D92D20;
   --naranja-aviso: #FF9500;
-  --gris-secundario: #6B7280;
+  --gris-secundario: #555C68;
   --gris-fondo: #F3F4F6;
   --rama-femenina: #E03C9E;
   --rama-masculina: #00C7BE;
@@ -36,7 +40,7 @@
   --estado-parcial-texto: #0a58ca;
   --estado-parcial-borde: rgba(0, 122, 255, 0.45);
   --estado-futuro-fondo: #f1f4f8;
-  --estado-futuro-texto: #6b7280;
+  --estado-futuro-texto: #555C68;
   --estado-futuro-borde: #d5dbe4;
 
   /* Espaciados */
@@ -51,7 +55,8 @@
   --fondo-app: #F2F2F7;
   --blanco-tarjeta: #FFFFFF;
   --texto-principal: #1C1C1E;
-  --texto-secundario: #8E8E93;
+  /* #8E8E93 medía ~3:1 sobre el fondo claro (WCAG pide 4,5:1): #636366 ≈ 5,4:1. */
+  --texto-secundario: #636366;
   --azul-marino: #0B1D3A;
   --texto-heading: #0B1D3A;
   --borde-suave: rgba(0,0,0,0.06);
@@ -84,6 +89,10 @@
   --estado-futuro-fondo: rgba(255,255,255,0.06);
   --estado-futuro-texto: #9aa3b2;
   --estado-futuro-borde: rgba(255,255,255,0.14);
+  --azul-electrico: #409CFF;
+  --verde-victoria: #30D158;
+  --rojo-alerta: #FF6961;
+  --gris-secundario: #A1A1AA;
 }
 
 body { 
@@ -461,7 +470,8 @@ button,
 .btn-icon-header { 
   background: none; border: none; color: white; cursor: pointer; 
   display: flex; flex-direction: column; align-items: center; 
-  opacity: 0.85; transition: transform 0.2s, opacity 0.2s; 
+  /* Sin opacidad: atenuaba también el contador de notificaciones (3,7:1). */
+  opacity: 1; transition: transform 0.2s, opacity 0.2s; 
 }
 .btn-icon-header:hover { transform: scale(1.1); opacity: 1; }
 
@@ -820,7 +830,8 @@ button,
   font-weight: 900;
   cursor: pointer;
   color: #fff;
-  background: linear-gradient(180deg, #2f8cff 0%, var(--azul-electrico) 100%);
+  /* El degradé partía en #2f8cff (3,3:1 con texto blanco). */
+  background: linear-gradient(180deg, #1f7bf2 0%, #0a5fd6 100%);
   box-shadow: 0 8px 18px rgba(0,122,255,0.22);
   transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
 }
@@ -1018,7 +1029,7 @@ button,
 .info-citacion p { margin: 0 0 8px 0; font-size: 15px; color: var(--texto-principal); }
 
 .botones-asistencia { display: flex; gap: 15px; margin-top: 20px;}
-.btn-confirmar { flex: 1; background: var(--verde-victoria); color: white; border: none; padding: 16px; border-radius: 14px; font-weight: 900; font-size: 15px; cursor: pointer; box-shadow: 0 6px 20px rgba(52,199,89,0.3); transition: 0.2s;}
+.btn-confirmar { flex: 1; background: #1A7F37; color: white; border: none; padding: 16px; border-radius: 14px; font-weight: 900; font-size: 15px; cursor: pointer; box-shadow: 0 6px 20px rgba(52,199,89,0.3); transition: 0.2s;}
 .btn-confirmar:active { transform: scale(0.95); }
 .btn-ausente { flex: 1; background: var(--rojo-alerta); color: white; border: none; padding: 16px; border-radius: 14px; font-weight: 900; font-size: 15px; cursor: pointer; box-shadow: 0 6px 20px rgba(255,59,48,0.3); transition: 0.2s;}
 .btn-ausente:active { transform: scale(0.95); }
@@ -1070,7 +1081,7 @@ button,
 }
 
 .badge-femenina, .badge-rosa {
-  background-color: #ec4899;
+  background-color: #BE185D;
   box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
 }
 
@@ -4214,3 +4225,37 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .pn-badge small { font-weight: 700; font-size: 11px; }
 .pn-flecha { color: var(--texto-secundario); flex-shrink: 0; }
 @media (max-width: 420px) { .pn-badge small { display: none; } }
+
+/* Tesorería → Tarifas */
+.tf-lista { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.tf-fila { background: var(--blanco-tarjeta); border: 1px solid var(--borde-suave); border-radius: var(--radius-md); padding: 12px; }
+.tf-actual { border-color: var(--estado-pagado-borde); box-shadow: 0 0 0 2px var(--estado-pagado-fondo); }
+.tf-fila header { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.tf-fila label { display: flex; flex-direction: column; gap: 4px; font-size: var(--texto-min); font-weight: 800; color: var(--texto-secundario); }
+.tf-fila .form-input { margin: 0; min-height: var(--toque-min); }
+.tf-campos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+@media (max-width: 640px) { .tf-campos { grid-template-columns: 1fr 1fr; } }
+
+/* Pago manual: modo de registro */
+.pf-modos .segment-control { margin-bottom: 10px; }
+.pf-modos .segment-btn { flex: 1; padding: 10px; font-size: 13px; }
+.pf-monto-total { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 800; margin-bottom: 8px; }
+.pf-monto-total .form-input { margin: 0; font-size: 16px; font-weight: 800; }
+.pf-reparto { list-style: none; margin: 0; padding: 8px 10px; background: var(--gris-fondo); border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.pf-reparto li { display: flex; justify-content: space-between; gap: 8px; }
+.pf-reparto-total { border-top: 1px solid var(--borde-suave); padding-top: 4px; font-weight: 900; }
+.pf-ayuda { display: block; margin-top: 6px; font-size: 11px; color: var(--gris-secundario); }
+
+.fp-borrar { background: none; border: 1px solid var(--estado-pendiente-borde); color: var(--estado-pendiente-texto); border-radius: var(--radius-sm); padding: 6px 8px; min-width: 36px; min-height: 36px; cursor: pointer; }
+.fp-borrar:hover { background: var(--estado-pendiente-fondo); }
+.uc-editor-titulo { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Aviso de entorno local: texto oscuro sobre su fondo azul claro (antes 3,9:1). */
+.local-preview-banner strong, .local-preview-banner span { color: var(--azul-marino); }
+
+/* Panel → Sistema → Respaldos */
+.rs-kpis { margin-bottom: 14px; }
+.rs-card { background: var(--blanco-tarjeta); border: 1px solid var(--borde-suave); border-radius: var(--radius-md); padding: 14px; }
+.rs-card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 900; display: flex; align-items: center; gap: 6px; color: var(--texto-heading); }
+.rs-card p { margin: 0 0 8px; font-size: 13px; color: var(--texto-principal); }
+.rs-alerta { color: var(--estado-pendiente-texto); font-weight: 700; }
