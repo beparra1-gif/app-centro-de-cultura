@@ -3223,7 +3223,7 @@ function App() {
               <div className="home-header-brand">
                 <img src="/logos/Club-frase.png" alt="Club Centro de Cultura Física" className="home-header-club-mark" />
                 <span className="home-header-subtitle">{getHeaderTitle()}</span>
-                <span className="home-header-usuario" style={{ fontSize: 'var(--texto-min)', color: 'var(--gris-secundario)', fontWeight: '700', display: 'block', lineHeight: '1.3' }}>
+                <span className="home-header-usuario" style={{ fontSize: 'var(--texto-min)', color: 'rgba(255, 255, 255, 0.82)', fontWeight: '700', display: 'block', lineHeight: '1.3' }}>
                   {nombreUsuarioActivo}
                 </span>
               </div>

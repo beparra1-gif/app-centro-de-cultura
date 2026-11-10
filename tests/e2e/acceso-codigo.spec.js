@@ -7,11 +7,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { test, expect } from '@playwright/test';
-import { CUENTAS, PASSWORD_PRUEBA, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion } from './fixtures/cuentasPrueba.js';
+import { CUENTAS, PASSWORD_PRUEBA, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion, correoPrueba } from './fixtures/cuentasPrueba.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CARPETA_CORREOS = path.join(__dirname, '../../backend/.correos-dev');
-const API = 'http://localhost:3000/api';
+const API = process.env.E2E_API_URL || 'http://localhost:3000/api';
 const pool = crearPool();
 
 test.describe.configure({ mode: 'serial' });
@@ -51,7 +51,7 @@ test('olvidé mi contraseña: código al correo y nueva clave', async ({ page, r
   await expect(page.getByRole('heading', { name: 'Crea tu contraseña' })).toBeVisible();
   await expect(page.getByText(/e2\*+\w?@test\.local/).first()).toBeVisible();
 
-  const codigo = await ultimoCodigoPara('e2e.socio@test.local', desde);
+  const codigo = await ultimoCodigoPara(correoPrueba('socio'), desde);
   await page.getByLabel('Código de 6 dígitos').fill(codigo);
   await page.getByPlaceholder('Nueva contraseña (mín. 5)').fill('SocioNueva2026!');
   await page.getByPlaceholder('Repite la nueva contraseña').fill('SocioNueva2026!');
@@ -75,7 +75,7 @@ test('clave inicial 12345 con correo real: el login pide el código', async ({ p
   // No entra con 12345: pasa directo a ingresar el código ya enviado.
   await expect(page.getByRole('heading', { name: 'Crea tu contraseña' })).toBeVisible({ timeout: 10000 });
 
-  const codigo = await ultimoCodigoPara('e2e.apoderado@test.local', desde);
+  const codigo = await ultimoCodigoPara(correoPrueba('apoderado'), desde);
   await page.getByLabel('Código de 6 dígitos').fill(codigo);
   await page.getByPlaceholder('Nueva contraseña (mín. 5)').fill(PASSWORD_PRUEBA);
   await page.getByPlaceholder('Repite la nueva contraseña').fill(PASSWORD_PRUEBA);

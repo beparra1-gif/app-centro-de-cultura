@@ -610,7 +610,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                   style={{
                     width: '100%',
                     padding: '10px',
-                    paddingLeft: '32px',
+                    paddingLeft: '12px',
                     borderRadius: 'var(--radius-sm)',
                     border: '1px solid var(--borde)',
                     fontSize: '13px',
@@ -712,7 +712,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                   style={{
                     width: '100%',
                     padding: '10px',
-                    paddingLeft: '32px',
+                    paddingLeft: '12px',
                     borderRadius: 'var(--radius-sm)',
                     border: '1px solid var(--borde)',
                     fontSize: '13px',
@@ -1215,7 +1215,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
               <label htmlFor="archivo-input" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                 <Upload size={20} color="var(--gris-secundario)" strokeWidth={1.5} />
                 <span style={{ fontSize: '12px', fontWeight: '600' }}>
-                  {archivo ? archivo.name : 'Haz clic para seleccionar'}
+                  {archivo ? archivo.name : 'Toca para elegir una foto o PDF'}
                 </span>
               </label>
             </div>

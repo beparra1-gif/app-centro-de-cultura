@@ -19,6 +19,9 @@
   --rama-masculina: #00C7BE;
 
   /* Radios de borde */
+  /* Borde de campos de formulario (lo usan estilos en línea; antes no
+     existía y esos campos quedaban sin borde). */
+  --borde: rgba(60, 60, 67, 0.24);
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 22px;
@@ -50,8 +53,11 @@
   --space-lg: 20px;
 }
 
-/* TEMA CLARO (LIGHT MODE) */
-.ios-app-container[data-theme="light"] {
+/* TEMA CLARO (LIGHT MODE). También en body: las ventanas que se montan con
+   createPortal (pago manual, editores, ficha) quedan fuera del contenedor y
+   sin estos tokens perdían fondo y bordes de los campos. */
+.ios-app-container[data-theme="light"],
+body {
   --fondo-app: #F2F2F7;
   --blanco-tarjeta: #FFFFFF;
   --texto-principal: #1C1C1E;
@@ -4259,3 +4265,47 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .rs-card h3 { margin: 0 0 8px; font-size: 15px; font-weight: 900; display: flex; align-items: center; gap: 6px; color: var(--texto-heading); }
 .rs-card p { margin: 0 0 8px; font-size: 13px; color: var(--texto-principal); }
 .rs-alerta { color: var(--estado-pendiente-texto); font-weight: 700; }
+
+/* ==========================================
+   AJUSTES DE TELÉFONO (recorrido móvil nov-2026)
+   ========================================== */
+/* Editores de cuenta/deportista: título con cerrar fijo arriba y botones
+   Guardar/Cancelar fijos abajo, para no tener que bajar todo el formulario. */
+.uc-editor-titulo { position: sticky; top: 0; z-index: 2; background: var(--blanco-tarjeta); padding: 4px 0 8px; margin-bottom: 4px; }
+.uc-editor-titulo .form-subtitle { flex: 1; min-width: 0; margin: 0; }
+.uc-editor-titulo .fp-cerrar { margin-right: -8px; }
+.uc-editor-acciones { display: flex; gap: 8px; flex-wrap: wrap; position: sticky; bottom: 0; z-index: 2; background: var(--blanco-tarjeta); padding: 10px 0 4px; border-top: 1px solid var(--borde-suave); margin-top: 12px; }
+/* Campos dentro de ventanas blancas: borde visible (antes casi invisibles). */
+.fp-ventana .form-input { border-color: rgba(60, 60, 67, 0.22); }
+.uc-editor-acciones > button { width: auto; flex: 1 1 40%; min-height: var(--toque-min); padding: 10px 12px; margin: 0; }
+.uc-editor-acciones > .btn-electric { flex-basis: 55%; }
+/* Pago manual: los dos modos caben en el ancho del modal. */
+.pf-modos .segment-control { min-width: 0; width: 100%; }
+.pf-modos .segment-btn { white-space: normal; line-height: 1.2; min-height: var(--toque-min); }
+
+@media (max-width: 600px) {
+  /* Pestañas de Tesorería / Usuarios / Informes / Ficha: todas a la vista,
+     sin tener que deslizar de lado para descubrir las que quedan ocultas. */
+  .tesoreria-tabs-wrap { overflow: visible; }
+  .tesoreria-tabs, .id-tipo, .fp-pestanas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; min-width: 0; width: 100%; }
+  .id-tipo, .fp-pestanas { overflow: visible; }
+  .tesoreria-tabs .segment-btn, .id-tipo .segment-btn, .fp-pestanas .segment-btn { white-space: normal; line-height: 1.15; padding: 8px 4px; font-size: 12px; min-height: 44px; flex-direction: column; gap: 2px; text-align: center; }
+  .tesoreria-tabs .segment-btn svg { flex-shrink: 0; }
+  /* Ficha: datos en dos columnas (antes una sola, con mucho aire). */
+  .fp-datos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fp-fondo { padding: 0; align-items: stretch; }
+  .fp-ventana { max-height: 100dvh; height: 100dvh; border-radius: 0; }
+  .payment-overview-card .status-titular { font-size: 19px; line-height: 1.2; }
+}
+
+/* Pantallas táctiles: blancos de toque de al menos 40 px. */
+@media (pointer: coarse) {
+  .btn-icon-header { min-width: 40px; min-height: 40px; justify-content: center; }
+  .btn-app-update { min-height: 36px; }
+  .btn-notificar { min-height: 40px; }
+  .fp-nombre-link { min-height: 36px; display: inline-flex; align-items: center; }
+  .btn-circle { width: 40px; height: 40px; }
+  .tc-buscador-limpiar { min-width: 40px; }
+}
+/* Buscadores con botón propio de limpiar: sin la X nativa duplicada. */
+.tc-buscador input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Activity,
   AlertTriangle,
+  Banknote,
   BarChart3,
   Bell,
   Check,
@@ -13,6 +14,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  GraduationCap,
   Filter,
   History,
   Image,
@@ -3029,7 +3031,7 @@ function SuperAdminPanel({
             <b>Deportistas</b>: fichas deportivas. <b>Cuentas</b>: quienes ingresan a la app (apoderados, socios, staff y admins). Toca un nombre para ver su ficha completa.
           </p>
 
-          <div className="tesoreria-tabs-wrap"><div className="segment-control tesoreria-tabs" style={{ gap: '6px' }}>
+          <div className="tesoreria-tabs-wrap"><div className="segment-control tesoreria-tabs" role="group" aria-label="Secciones de Usuarios y Cuentas" style={{ gap: '6px' }}>
             <button type="button" className={`segment-btn ${vistaUsuarios === 'deportistas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('deportistas')}>
               <Users size={14} /> Deportistas ({jugadoresAdminTodos.length})
             </button>
@@ -3190,6 +3192,7 @@ function SuperAdminPanel({
                 <button type="button" className="btn-secondary tc-btn" onClick={() => setFichaPersona({ tipo: 'cuenta', raw: cuentaAdminEdit, pestana: 'pagos' })}>
                   Ver pagos
                 </button>
+                <button type="button" className="fp-cerrar" onClick={cancelarEdicion} aria-label="Cerrar sin guardar"><X size={20} /></button>
               </div>
 
               {(esAdmin || esSuperAdmin) && (
@@ -3327,7 +3330,7 @@ function SuperAdminPanel({
                 titulo: 'Permisos y accesos de la cuenta',
               })}
 
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div className="uc-editor-acciones">
                 <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
                 <button className="btn-secondary" onClick={cancelarEdicion}>Cancelar</button>
                 {esSuperAdmin && (
@@ -3447,6 +3450,7 @@ function SuperAdminPanel({
                 <button type="button" className="btn-secondary tc-btn" onClick={() => setFichaPersona({ tipo: 'jugador', raw: jugadorAdminEdit, pestana: 'pagos' })}>
                   Ver pagos
                 </button>
+                <button type="button" className="fp-cerrar" onClick={cancelarEdicion} aria-label="Cerrar sin guardar"><X size={20} /></button>
               </div>
 
               <h5 className="sub-caja-title">Identidad y vínculo</h5>
@@ -3534,7 +3538,7 @@ function SuperAdminPanel({
                 </label>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div className="uc-editor-acciones">
                 <button className="btn-electric" onClick={guardarEdicionActual} disabled={guardandoUsuario}>Guardar cambios</button>
                 <button className="btn-secondary" onClick={cancelarEdicion}>Cancelar</button>
                 {esSuperAdmin && (
@@ -3805,10 +3809,10 @@ function SuperAdminPanel({
                 <FileText size={14} /> Informes
               </button>
               <button type="button" role="tab" aria-selected={seccionTesoreria === 'tarifas'} className={`segment-btn ${seccionTesoreria === 'tarifas' ? 'active' : ''}`} onClick={() => setSeccionTesoreria('tarifas')}>
-                <CheckSquare size={14} /> Tarifas
+                <Banknote size={14} /> Tarifas
               </button>
               <button type="button" role="tab" aria-selected={false} className="segment-btn" onClick={() => setVistaAdmin('becas')}>
-                🎓 Becas
+                <GraduationCap size={14} /> Becas
                 {becasVencidasCount + becasPorVencerCount > 0 && <span className="tesoreria-tab-badge">{becasVencidasCount + becasPorVencerCount}</span>}
               </button>
             </div>

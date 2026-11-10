@@ -26,16 +26,20 @@ const dv = (cuerpo) => {
   return r === 11 ? '0' : r === 10 ? 'K' : String(r);
 };
 const rut = (cuerpo) => `${cuerpo}-${dv(cuerpo)}`;
+// E2E_RUT_BASE permite correr un segundo entorno de pruebas en paralelo
+// (otro rango de RUT y de correos) sin pisar las cuentas del primero.
+const BASE = Number(process.env.E2E_RUT_BASE) || 99700000;
+export const correoPrueba = (clave) => (BASE === 99700000 ? `e2e.${clave}@test.local` : `e2e${BASE}.${clave}@test.local`);
 
 export const CUENTAS = {
-  super_admin: { rut: rut(99700001), nombres: 'E2E SuperAdmin', rol: 'super_admin' },
-  admin: { rut: rut(99700002), nombres: 'E2E Admin', rol: 'admin' },
-  staff: { rut: rut(99700003), nombres: 'E2E Staff', rol: 'staff' },
-  apoderado: { rut: rut(99700004), nombres: 'E2E Apoderado', rol: 'apoderado' },
-  socio: { rut: rut(99700005), nombres: 'E2E Socio', rol: 'socio' },
-  jugador: { rut: rut(99700006), nombres: 'E2E Jugador', rol: 'jugador' },
-  mesa: { rut: rut(99700007), nombres: 'E2E Mesa', rol: 'mesa' },
-  socio_apoderado: { rut: rut(99700008), nombres: 'E2E SocioApoderado', rol: 'socio_apoderado' },
+  super_admin: { rut: rut(BASE + 1), nombres: 'E2E SuperAdmin', rol: 'super_admin' },
+  admin: { rut: rut(BASE + 2), nombres: 'E2E Admin', rol: 'admin' },
+  staff: { rut: rut(BASE + 3), nombres: 'E2E Staff', rol: 'staff' },
+  apoderado: { rut: rut(BASE + 4), nombres: 'E2E Apoderado', rol: 'apoderado' },
+  socio: { rut: rut(BASE + 5), nombres: 'E2E Socio', rol: 'socio' },
+  jugador: { rut: rut(BASE + 6), nombres: 'E2E Jugador', rol: 'jugador' },
+  mesa: { rut: rut(BASE + 7), nombres: 'E2E Mesa', rol: 'mesa' },
+  socio_apoderado: { rut: rut(BASE + 8), nombres: 'E2E SocioApoderado', rol: 'socio_apoderado' },
 };
 
 // Cuentas que pagan cuota de socio (es_socio = true).
@@ -43,11 +47,11 @@ const ROLES_SOCIOS = ['socio', 'socio_apoderado'];
 
 export const JUGADORES = {
   // Pupilo del apoderado de prueba.
-  pupilo: { rut: rut(99700010), nombres: 'E2E Pupilo', apellido: 'Prueba', rama: 'MASCULINA', categoria: 'SUB-13', fecha_nacimiento: '2013-03-15' },
+  pupilo: { rut: rut(BASE + 10), nombres: 'E2E Pupilo', apellido: 'Prueba', rama: 'MASCULINA', categoria: 'SUB-13', fecha_nacimiento: '2013-03-15' },
   // Ficha propia de la cuenta "jugador" (mismo RUT), mayor de 13.
   propio: { rut: CUENTAS.jugador.rut, nombres: 'E2E Jugador', apellido: 'Prueba', rama: 'FEMENINA', categoria: 'SUB-17 / SUB-18', fecha_nacimiento: '2009-06-01' },
   // Hijo del socio+apoderado: la familia paga cuota de socio Y mensualidad.
-  hijoSocio: { rut: rut(99700011), nombres: 'E2E HijoSocio', apellido: 'Prueba', rama: 'MASCULINA', categoria: 'SUB-15', fecha_nacimiento: '2011-08-20', apoderado: 'socio_apoderado' },
+  hijoSocio: { rut: rut(BASE + 11), nombres: 'E2E HijoSocio', apellido: 'Prueba', rama: 'MASCULINA', categoria: 'SUB-15', fecha_nacimiento: '2011-08-20', apoderado: 'socio_apoderado' },
 };
 
 const todosLosRuts = () => [...Object.values(CUENTAS).map((c) => c.rut), JUGADORES.pupilo.rut, JUGADORES.hijoSocio.rut];
@@ -69,7 +73,8 @@ export const limpiarDatosPrueba = async (pool) => {
   const ruts = todosLosRuts();
   await pool.query('DELETE FROM pagos_mensualidades WHERE rut_jugador = ANY($1) OR rut_pagos = ANY($1)', [ruts]);
   await pool.query('DELETE FROM notificaciones_app WHERE rut_destinatario = ANY($1)', [ruts]);
-  await pool.query("DELETE FROM logo_assets WHERE filename LIKE 'comprobante-99700%' OR filename LIKE 'perfil-99700%'");
+  const prefijo = String(BASE).slice(0, 6);
+  await pool.query('DELETE FROM logo_assets WHERE filename LIKE $1 OR filename LIKE $2', [`comprobante-${prefijo}%`, `perfil-${prefijo}%`]);
   await pool.query(`DELETE FROM codigos_acceso WHERE cuenta_id IN (SELECT id FROM cuentas WHERE rut = ANY($1))`, [ruts]).catch(() => {});
   await pool.query(`DELETE FROM consentimientos_datos WHERE cuenta_id IN (SELECT id FROM cuentas WHERE rut = ANY($1))`, [ruts]).catch(() => {});
   await pool.query('DELETE FROM jugadores WHERE rut_jugador = ANY($1)', [ruts]);
@@ -84,7 +89,7 @@ export const crearDatosPrueba = async (pool) => {
       `INSERT INTO cuentas (correo, rut, password, nombres, apellido_paterno, telefono, direccion, comuna,
                             rol, perfil_principal, estado, forzar_clave, requiere_foto_perfil, es_socio, fecha_ingreso_socio, consentimiento_version)
        VALUES ($1, $2, $3, $4, 'Prueba', '+56900000000', 'Calle Falsa 123', 'Santiago', $5, $5, 'activo', false, false, $6, $7, $8)`,
-      [`e2e.${clave}@test.local`, c.rut, hash, c.nombres, c.rol,
+      [correoPrueba(clave), c.rut, hash, c.nombres, c.rol,
         ROLES_SOCIOS.includes(clave), ROLES_SOCIOS.includes(clave) ? '2026-01-01' : null,
         // Aviso de datos ya aceptado: las pruebas que no son del primer ingreso
         // no deben quedar bloqueadas por PrimerIngresoModal.
@@ -98,7 +103,7 @@ export const crearDatosPrueba = async (pool) => {
        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVO', $7, $8, $9)`,
       [j.rut, j.nombres, j.apellido, j.rama, j.categoria, j.fecha_nacimiento,
         j.apoderado ? CUENTAS[j.apoderado].rut : (j === JUGADORES.pupilo ? CUENTAS.apoderado.rut : null),
-        j.apoderado ? `e2e.${j.apoderado}@test.local` : (j === JUGADORES.pupilo ? 'e2e.apoderado@test.local' : null),
+        j.apoderado ? correoPrueba(j.apoderado) : (j === JUGADORES.pupilo ? correoPrueba('apoderado') : null),
         j.fecha_ingreso || '2025-12-15']
     );
   }

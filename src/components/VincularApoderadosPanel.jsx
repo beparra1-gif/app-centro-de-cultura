@@ -67,7 +67,7 @@ export default function VincularApoderadosPanel({ jugadores = [], cuentas = [], 
         </p>
         {seguras.length > 0 && (
           <button type="button" className="btn-electric tc-btn" disabled={Boolean(guardando)} onClick={vincularSeguras}>
-            <Check size={14} /> Vincular {seguras.length} sugerencias seguras
+            <Check size={14} /> Vincular {seguras.length === 1 ? '1 sugerencia segura' : `${seguras.length} sugerencias seguras`}
           </button>
         )}
       </div>

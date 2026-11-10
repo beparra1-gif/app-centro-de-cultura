@@ -45,6 +45,6 @@ test('cambiar contraseña desde Configuración (antes era un botón "Próximamen
   await page.getByPlaceholder('Repite la nueva contraseña').fill('NuevaE2e2026!');
   await page.getByRole('button', { name: 'Guardar nueva contraseña' }).click();
   await expect(page.getByText('Contraseña actualizada.')).toBeVisible({ timeout: 10000 });
-  const login = await request.post('http://localhost:3000/api/auth/login', { data: { rut: CUENTAS.socio.rut, password: 'NuevaE2e2026!' } });
+  const login = await request.post(`${process.env.E2E_API_URL || 'http://localhost:3000/api'}/auth/login`, { data: { rut: CUENTAS.socio.rut, password: 'NuevaE2e2026!' } });
   expect(login.status()).toBe(200);
 });

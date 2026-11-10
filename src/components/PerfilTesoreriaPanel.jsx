@@ -787,11 +787,11 @@ function PerfilTesoreriaPanel({
       <div className="status-account-card payment-overview-card mt-15" style={{ borderRadius: 'var(--radius-lg)', boxShadow: '0 16px 34px rgba(15,23,42,0.10)' }}>
         <div className="status-header">
           <div>
-            <span style={{ fontSize: 'var(--texto-min)', color: 'rgba(255,255,255,0.6)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mensualidad / Perfil</span>
+            <span style={{ fontSize: 'var(--texto-min)', color: 'rgba(255,255,255,0.78)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mensualidad / Perfil</span>
             <h3 className="status-titular" style={{ color: 'white' }}>{titular}</h3>
             <span className="status-rol">{esSocio ? 'Socio activo del club' : (pupilosActivos.length ? 'Apoderado' : 'Cuenta')}</span>
             {esSocio && (
-              <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700', display: 'block', marginTop: '5px' }}>
+              <span style={{ fontSize: 'var(--texto-min)', color: 'rgba(255,255,255,0.8)', fontWeight: '700', display: 'block', marginTop: '5px' }}>
                 UTM referencia ({fechaCorteTexto}): ${utmActual.toLocaleString('es-CL')} · Cuota socio (0,3 UTM): ${cuotaSocio.toLocaleString('es-CL')}
                 {cuotaDeportistas > 0 && (
                   <> + ${cuotaDeportistas.toLocaleString('es-CL')} por deportistas a cargo = <strong style={{ color: 'white' }}>${tarifaRedondeada.toLocaleString('es-CL')}/mes</strong></>
@@ -1010,7 +1010,7 @@ function PerfilTesoreriaPanel({
                 <button
                   type="button"
                   onClick={() => setMostrarDetalleCuotaSocio((v) => !v)}
-                  style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: 'var(--azul-electrico)' }}
+                  style={{ marginTop: '4px', minHeight: '40px', display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '13px', fontWeight: '700', color: 'var(--azul-electrico)' }}
                 >
                   {mostrarDetalleCuotaSocio ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   {mostrarDetalleCuotaSocio ? 'Ocultar cuota de otros meses' : 'Ver cuota de otros meses'}

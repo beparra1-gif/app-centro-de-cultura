@@ -88,9 +88,9 @@ test('borrar un pago desde la ficha (admin)', async ({ page }) => {
 });
 
 test('una familia no puede borrar pagos (403)', async ({ request }) => {
-  const login = await request.post('http://localhost:3000/api/auth/login', { data: { rut: CUENTAS.apoderado.rut, password: 'E2eRoles2026!' } });
+  const login = await request.post(`${process.env.E2E_API_URL || 'http://localhost:3000/api'}/auth/login`, { data: { rut: CUENTAS.apoderado.rut, password: 'E2eRoles2026!' } });
   const { token } = await login.json();
   const { rows: [p] } = await pool.query('SELECT id FROM pagos_mensualidades WHERE rut_jugador = $1 LIMIT 1', [JUGADORES.pupilo.rut]);
-  const r = await request.delete(`http://localhost:3000/api/pagos-mensualidades/${p.id}`, { headers: { Authorization: `Bearer ${token}` } });
+  const r = await request.delete(`${process.env.E2E_API_URL || 'http://localhost:3000/api'}/pagos-mensualidades/${p.id}`, { headers: { Authorization: `Bearer ${token}` } });
   expect(r.status()).toBe(403);
 });

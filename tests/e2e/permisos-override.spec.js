@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test';
 import { CUENTAS, PASSWORD_PRUEBA, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion } from './fixtures/cuentasPrueba.js';
 
 const pool = crearPool();
-const API = 'http://localhost:3000/api';
+const API = process.env.E2E_API_URL || 'http://localhost:3000/api';
 
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(120000);

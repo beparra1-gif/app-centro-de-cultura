@@ -906,7 +906,7 @@ function TarjetaJugadorPanel({
                     <button
                       type="button"
                       onClick={() => setMostrarDetalleAsistencia(true)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: '4px', fontSize: '11px', fontWeight: '800', color: 'rgba(255,255,255,0.85)', textDecoration: 'underline' }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px 0', minHeight: '32px', marginTop: '0', fontSize: '12px', fontWeight: '800', color: 'rgba(255,255,255,0.9)', textDecoration: 'underline' }}
                     >
                       Ver detalle
                     </button>

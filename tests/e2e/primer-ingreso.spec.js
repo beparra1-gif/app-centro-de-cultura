@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test';
 import { CUENTAS, JUGADORES, PASSWORD_PRUEBA, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion, ultimoCodigoPara } from './fixtures/cuentasPrueba.js';
 import { VERSION_AVISO } from '../../src/legal/avisoPrivacidad.js';
 
-const API = 'http://localhost:3000/api';
+const API = process.env.E2E_API_URL || 'http://localhost:3000/api';
 const pool = crearPool();
 
 test.describe.configure({ mode: 'serial' });
@@ -96,11 +96,11 @@ test('código de activación del club: admin lo genera y la cuenta sin correo lo
   const adminPage = await (await browser.newContext()).newPage();
   await iniciarSesion(adminPage, CUENTAS.super_admin.rut);
   const idMesa = (await pool.query('SELECT id FROM cuentas WHERE rut = $1', [CUENTAS.mesa.rut])).rows[0].id;
-  const respuesta = await adminPage.evaluate(async (id) => {
+  const respuesta = await adminPage.evaluate(async ({ id, api }) => {
     const sesion = JSON.parse(Object.entries(localStorage).find(([k]) => k.includes('sesion') || k.includes('session'))?.[1] || '{}');
-    const r = await fetch(`http://localhost:3000/api/admin/cuentas/${id}/codigo-activacion`, { method: 'POST', headers: { Authorization: `Bearer ${sesion.token}` } });
+    const r = await fetch(`${api}/admin/cuentas/${id}/codigo-activacion`, { method: 'POST', headers: { Authorization: `Bearer ${sesion.token}` } });
     return { status: r.status, body: await r.json() };
-  }, idMesa);
+  }, { id: idMesa, api: API });
   expect(respuesta.status).toBe(200);
   expect(respuesta.body.codigo).toMatch(/^\d{6}$/);
   expect(respuesta.body.vigencia_horas).toBe(48);
