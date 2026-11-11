@@ -1617,6 +1617,26 @@ const ensureJugadoresExtendedColumns = async () => {
   await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS apoderado_socio BOOLEAN DEFAULT false`);
   console.log('🤝 Columna apoderado_socio de jugadores verificada');
 
+  // Hermanos sin apoderado todavía: el admin los agrupa desde la ficha
+  // (Apoderado y hermanos) y la tarifa de hermanos los cuenta juntos.
+  await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS grupo_familiar TEXT`);
+
+  // Errores de la app reportados por los navegadores (pantalla "Algo salió
+  // mal" y errores no controlados): Panel → Sistema → Errores recientes.
+  await pool.query(`CREATE TABLE IF NOT EXISTS errores_app (
+      id SERIAL PRIMARY KEY,
+      creado_en TIMESTAMPTZ DEFAULT NOW(),
+      ultimo_en TIMESTAMPTZ DEFAULT NOW(),
+      veces INTEGER DEFAULT 1,
+      rut TEXT,
+      rol TEXT,
+      pantalla TEXT,
+      mensaje TEXT,
+      detalle TEXT,
+      url TEXT,
+      navegador TEXT
+    )`);
+
   // foto_jugador es la foto de perfil "oficial" del deportista, usada en
   // varias pantallas (avatar del header, Tesoreria, Tarjeta Oficial CCF).
   // foto_tarjeta_coleccion es una foto DISTINTA, solo para la tarjeta
@@ -3281,6 +3301,81 @@ app.get('/api/admin/backup-status', (req, res) => {
     backup: getBackupStatus(),
     checkedAt: new Date().toISOString(),
   });
+});
+
+// ==========================================
+// ERRORES DE LA APP (reportados por el navegador)
+// ==========================================
+// Antes un error en el celular de una familia solo se conocía si mandaban
+// captura. El frontend (ErrorBoundary + window.onerror) los envía aquí; el
+// mismo error (mensaje + pantalla) en la última hora suma "veces" en vez de
+// crear otra fila. Se guardan como máximo los 500 más recientes.
+const erroresAppRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados reportes.' },
+});
+const recortarTexto = (v, max) => String(v ?? '').replace(/Bearer\s+[\w.-]+/gi, 'Bearer ***').slice(0, max);
+
+app.post('/api/errores-app', erroresAppRateLimiter, authenticateOpcional, async (req, res) => {
+  try {
+    const mensaje = recortarTexto(req.body?.mensaje, 500).trim();
+    if (!mensaje) return res.status(400).json({ error: 'Falta el mensaje.' });
+    const pantalla = recortarTexto(req.body?.pantalla, 120);
+    const datos = [
+      req.actor?.rut || null,
+      req.actor?.rol || null,
+      pantalla,
+      mensaje,
+      recortarTexto(req.body?.detalle, 4000),
+      recortarTexto(req.body?.url, 300).replace(/[?#].*$/, ''),
+      recortarTexto(req.headers['user-agent'], 300),
+    ];
+    const repetido = await pool.query(
+      `UPDATE errores_app SET veces = veces + 1, ultimo_en = NOW(), rut = COALESCE($1, rut), rol = COALESCE($2, rol)
+       WHERE id = (SELECT id FROM errores_app WHERE mensaje = $4 AND pantalla = $3 AND ultimo_en > NOW() - INTERVAL '1 hour' ORDER BY id DESC LIMIT 1)
+       RETURNING id`,
+      datos.slice(0, 4)
+    );
+    if (repetido.rowCount === 0) {
+      await pool.query(
+        'INSERT INTO errores_app (rut, rol, pantalla, mensaje, detalle, url, navegador) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        datos
+      );
+      await pool.query('DELETE FROM errores_app WHERE id <= (SELECT id FROM errores_app ORDER BY id DESC OFFSET 500 LIMIT 1)');
+    }
+    res.status(204).end();
+  } catch (err) {
+    console.error('[POST /api/errores-app]', err.message);
+    res.status(500).json({ error: 'No se pudo registrar el error.' });
+  }
+});
+
+app.get('/api/admin/errores-app', authenticate, requireRole('admin', 'super_admin'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT e.id, e.creado_en, e.ultimo_en, e.veces, e.rut, e.rol, e.pantalla, e.mensaje, e.detalle, e.url, e.navegador,
+              NULLIF(TRIM(CONCAT(c.nombres, ' ', c.apellido_paterno)), '') AS nombre
+       FROM errores_app e
+       LEFT JOIN LATERAL (SELECT nombres, apellido_paterno FROM cuentas WHERE cuentas.rut = e.rut LIMIT 1) c ON true
+       ORDER BY e.ultimo_en DESC LIMIT 100`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('[GET /api/admin/errores-app]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/errores-app', authenticate, requireRole('admin', 'super_admin'), async (req, res) => {
+  try {
+    await pool.query('DELETE FROM errores_app');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ==========================================
@@ -5569,6 +5664,7 @@ const CAMPOS_JUGADOR_SOLO_ADMIN = [
   'rama', 'categoria', 'numero_camiseta', 'fecha_ingreso', 'mes_inicio_cobro', 'beca', 'exento_mensualidad',
   'valor_mensualidad', 'matricula_pagada', 'polera_entregada', 'poleron_entregado',
   'estado', 'estado_deportivo', 'fecha_inicio_baja', 'fecha_fin_baja', 'xp_puntos', 'apoderado_socio',
+  'grupo_familiar',
 ];
 
 // El apoderado dueño (rut_apoderado registrado) puede editar el perfil de su propio
@@ -5670,6 +5766,8 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
         diseno_marco = COALESCE($43, diseno_marco),
         exento_mensualidad = COALESCE($44, exento_mensualidad),
         apoderado_socio = COALESCE($46, apoderado_socio),
+        -- '' borra el grupo (quitar hermano); undefined lo deja igual.
+        grupo_familiar = CASE WHEN $47::text IS NULL THEN grupo_familiar ELSE NULLIF(TRIM($47::text), '') END,
         updated_at = NOW()
       WHERE rut_jugador = $45
       RETURNING *`,
@@ -5720,6 +5818,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
         exento_mensualidad ?? null,
         req.params.rut,
         typeof req.body?.apoderado_socio === 'boolean' ? req.body.apoderado_socio : null,
+        typeof req.body?.grupo_familiar === 'string' ? req.body.grupo_familiar.slice(0, 80) : null,
       ]
     );
 

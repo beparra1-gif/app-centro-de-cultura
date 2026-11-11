@@ -4155,6 +4155,57 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .fp-vinculos { display: flex; flex-direction: column; gap: 6px; }
 .fp-vinculo { display: flex; align-items: center; gap: 8px; text-align: left; width: 100%; padding: 10px 12px; min-height: var(--toque-min); border-radius: var(--radius-sm); border: 1px solid var(--borde-suave); background: var(--fondo-input); color: var(--texto-principal); font-weight: 800; font-size: 13px; cursor: pointer; font-family: inherit; }
 .fp-vinculo:hover { border-color: var(--azul-electrico); }
+/* Botón de acción dentro de un aviso (ej. "Deshacer" tras un pago). */
+.toast-accion { flex-shrink: 0; align-self: center; min-height: 32px; padding: 6px 12px; border-radius: var(--radius-pill); border: 1px solid var(--azul-electrico); background: transparent; color: var(--azul-electrico); font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
+.toast-accion:hover { background: rgba(0,122,255,0.08); }
+
+/* Vincular apoderados → Posibles hermanos */
+.ph-seccion { margin-bottom: 14px; border: 1px solid var(--borde-suave); border-radius: var(--radius-md); background: var(--blanco-tarjeta); }
+.ph-titulo { width: 100%; display: flex; align-items: center; gap: 8px; padding: 12px 14px; min-height: var(--toque-min); background: none; border: none; font-family: inherit; font-size: 14px; font-weight: 900; color: var(--texto-heading); cursor: pointer; text-align: left; }
+.ph-titulo svg:last-child { margin-left: auto; }
+.ph-lista { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.ph-grupo { flex-wrap: wrap; }
+.ph-nombres { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.ph-grupo small { display: block; font-size: 12px; color: var(--texto-secundario); margin-top: 2px; }
+.ph-botones { display: flex; gap: 6px; flex-wrap: wrap; }
+.ph-botones .tc-btn { width: auto; }
+
+/* Panel → Errores recientes */
+.ea-lista { display: flex; flex-direction: column; gap: 8px; }
+.ea-item { padding: 0; }
+.ea-cabecera { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; min-height: var(--toque-min); background: none; border: none; text-align: left; font-family: inherit; color: var(--texto-principal); cursor: pointer; }
+.ea-cabecera > svg { color: var(--naranja-texto, #8A4B00); flex-shrink: 0; }
+.ea-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ea-texto strong { font-size: 14px; word-break: break-word; }
+.ea-texto small { font-size: 12px; color: var(--texto-secundario); }
+.ea-detalle { margin: 0; padding: 12px 14px; border-top: 1px solid var(--borde-suave); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; color: var(--texto-principal); background: var(--fondo-input); border-radius: 0 0 var(--radius-md) var(--radius-md); }
+
+/* Panel → Cumpleaños del mes */
+.cm-cumples { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scroll-snap-type: x proximity; }
+.cm-cumple { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; min-height: var(--toque-min); max-width: 260px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--borde-suave); background: var(--blanco-tarjeta); color: var(--texto-principal); font-family: inherit; text-align: left; cursor: pointer; scroll-snap-align: start; }
+.cm-cumple.hoy { border-color: var(--azul-electrico); box-shadow: 0 0 0 2px rgba(0,122,255,0.18); }
+.cm-cumple.pasado { opacity: 0.7; }
+.cm-cumple-dia { width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; background: var(--fondo-input); font-weight: 900; font-size: 14px; }
+.cm-cumple.hoy .cm-cumple-dia { background: var(--azul-electrico); color: #fff; }
+.cm-cumple-texto { display: flex; flex-direction: column; min-width: 0; }
+.cm-cumple-texto strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm-cumple-texto small { font-size: 12px; color: var(--texto-secundario); white-space: nowrap; }
+
+/* "Ordenar por" compartido (informes, Tesorería, Usuarios y Cuentas). */
+.selector-orden { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.selector-orden select { flex: 1 1 190px; min-width: 0; width: auto; }
+.selector-orden .tc-btn { width: auto; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.id-orden { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+.id-orden .selector-orden { flex: 1 1 320px; }
+.id-agrupar { margin: 0; font-size: 13px; }
+.fp-hermano { display: flex; align-items: center; gap: 8px; }
+.fp-hermano .fp-vinculo { flex: 1; min-width: 0; }
+.fp-hermano .tc-btn { width: auto; flex-shrink: 0; }
+.fp-agregar-hermano { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.fp-agregar-hermano label { font-size: 12px; font-weight: 800; color: var(--texto-secundario); }
+.fp-agregar-hermano-fila { display: flex; gap: 8px; flex-wrap: wrap; }
+.fp-agregar-hermano-fila select { flex: 1 1 200px; min-width: 0; }
+.fp-agregar-hermano-fila .tc-btn { width: auto; }
 .fp-ayuda { font-size: var(--texto-min); color: var(--texto-secundario); margin: 0; }
 .fp-pie { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--borde-suave); }
 @media (max-width: 560px) {

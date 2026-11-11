@@ -81,8 +81,11 @@ test('pago manual de un hijo: queda como mensualidad del hijo, no como cuota de 
   await page.getByRole('button', { name: 'Registrar y Confirmar' }).click();
   // Confirmación explícita del pago manual (queda aprobado sin bandeja).
   await page.getByRole('dialog').getByRole('button', { name: 'Registrar y confirmar' }).click();
-  await expect(page.getByText('Pago registrado y confirmado.')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(/Cargo de pago listo: pago registrado y confirmado/).first()).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('Deportista seleccionado:')).toHaveCount(0, { timeout: 15000 });
+  // Sigue en Tesorería (antes recargaba la página entera y volvía al menú).
+  await expect(page.getByRole('tab', { name: /Por cobrar/ })).toBeVisible();
+  await expect(page.getByLabel('Buscar en Tesorería')).toHaveValue('e2e socioapoderado');
 
   const pagos = (await pool.query(
     'SELECT concepto_pago, rut_jugador, rut_pagos, estado_pago, meses_correspondientes FROM pagos_mensualidades WHERE rut_pagos = $1 OR rut_jugador = $2',
@@ -166,7 +169,7 @@ test('informe por categoría: filtra y descarga la imagen', async ({ page }, tes
   // HijoDos: marzo condonado en la prueba anterior.
   const filaHijo2 = tabla.locator('tr', { hasText: 'E2E HijoDos' });
   await expect(filaHijo2.locator('td.id-condonado')).toHaveCount(1);
-  await page.getByLabel('Categoría').selectOption('SUB-15');
+  await page.getByLabel('Categoría', { exact: true }).selectOption('SUB-15');
   await expect(tabla.locator('.id-grupo')).toHaveCount(1);
   const [descarga] = await Promise.all([
     page.waitForEvent('download'),

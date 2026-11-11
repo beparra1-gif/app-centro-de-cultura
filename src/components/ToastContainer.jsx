@@ -65,6 +65,18 @@ function ToastContainer() {
             <p style={{ margin: 0, fontSize: '13px', fontWeight: '600', color: 'var(--texto-principal)', lineHeight: '1.4', flex: 1 }}>
               {toast.message}
             </p>
+            {toast.accion && (
+              <button
+                type="button"
+                className="toast-accion"
+                onClick={() => {
+                  setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+                  toast.accion.onClick?.();
+                }}
+              >
+                {toast.accion.label}
+              </button>
+            )}
             <button
               onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
               aria-label="Cerrar aviso"

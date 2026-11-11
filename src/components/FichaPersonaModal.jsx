@@ -8,6 +8,7 @@ import useModalAccesible from '../utils/useModalAccesible';
 import { calcularCuotaDeportistasFamilia, obtenerCuotaJugador, obtenerPorcentajeBeca, noDebeMensualidad } from '../utils/beca';
 import { ETIQUETA_ESTADO, MESES_INFORME, construirInformeDeportistas, construirInformeSocios } from '../utils/informeDeuda';
 import { normalizarRol } from '../security/accessControl';
+import { hermanosDe, normGrupoFamiliar } from '../utils/hermanos';
 
 // Usuarios y Cuentas → "Ver ficha": ventana con todo lo de una persona
 // (deportista o cuenta): datos, vínculo apoderado ↔ pupilos (navegable) y
@@ -103,12 +104,20 @@ function TablaPagos({ pagos, puedeBorrar = false, onBorrar }) {
 export default function FichaPersonaModal({
   persona, jugadores = [], cuentas = [], pagos = [], morosos = [], sociosMorosos = [],
   onCerrar, onAbrir, onEditar, onRegistrarPago, puedeRegistrarPago = false,
-  puedeBorrarPagos = false, onPagosCambiados,
+  puedeBorrarPagos = false, onPagosCambiados, puedeEditarHermanos = false, onHermanosCambiados,
 }) {
   const [pestana, setPestana] = useState(persona?.pestana || 'datos');
   useModalAccesible(Boolean(persona), onCerrar);
   const esJugador = persona?.tipo === 'jugador';
-  const raw = useMemo(() => persona?.raw || {}, [persona]);
+  // Se toma la versión más reciente de la lista (tras agregar/quitar un
+  // hermano se recargan los jugadores y la ficha abierta debe reflejarlo).
+  const raw = useMemo(() => {
+    const base = persona?.raw || {};
+    if (persona?.tipo !== 'jugador') return base;
+    return jugadores.find((j) => norm(j.rut_jugador) === norm(base.rut_jugador)) || base;
+  }, [persona, jugadores]);
+  const [hermanoNuevo, setHermanoNuevo] = useState('');
+  const [guardandoHermano, setGuardandoHermano] = useState(false);
 
   // Vínculos: pagador/apoderado de un deportista y pupilos de una cuenta.
   const cuentaDe = useMemo(() => {
@@ -124,12 +133,69 @@ export default function FichaPersonaModal({
     || (correo(raw.correo).includes('@') && correo(j.correo_apoderado) === correo(raw.correo))
     || norm(j.rut_jugador) === norm(raw.rut)
   ))), [esJugador, jugadores, raw]);
-  const hermanos = esJugador
-    ? jugadores.filter((j) => j !== raw && (
-      (norm(raw.rut_apoderado) && norm(j.rut_apoderado) === norm(raw.rut_apoderado))
-      || (correo(raw.correo_apoderado).includes('@') && correo(j.correo_apoderado) === correo(raw.correo_apoderado))
-    ))
-    : [];
+  // Hermanos: mismo apoderado (RUT o correo) o marcados a mano con el mismo
+  // grupo_familiar (sirve para hermanos que aún no tienen apoderado).
+  const hermanos = useMemo(() => (esJugador ? hermanosDe(raw, jugadores) : []), [esJugador, raw, jugadores]);
+  const candidatosHermano = useMemo(() => {
+    if (!esJugador) return [];
+    const yaEstan = new Set([norm(raw.rut_jugador), ...hermanos.map((h) => norm(h.rut_jugador))]);
+    return jugadores
+      .filter((j) => norm(j.rut_jugador) && !yaEstan.has(norm(j.rut_jugador)))
+      .map((j) => {
+        const apellidos = `${j.apellido_paterno || ''} ${j.apellido_materno || ''}`.replace(/\s+/g, ' ').trim();
+        const etiqueta = [apellidos, j.nombres].filter(Boolean).join(', ') || j.rut_jugador;
+        return { j, etiqueta };
+      })
+      .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es'));
+  }, [esJugador, raw, hermanos, jugadores]);
+
+  const agregarHermano = async () => {
+    const otro = jugadores.find((j) => norm(j.rut_jugador) === norm(hermanoNuevo));
+    if (!otro) return;
+    const grupo = normGrupoFamiliar(raw.grupo_familiar) || normGrupoFamiliar(otro.grupo_familiar) || `fam-${norm(raw.rut_jugador)}`;
+    // Si el otro ya estaba en otro grupo, se trae a todo ese grupo.
+    const grupoOtro = normGrupoFamiliar(otro.grupo_familiar);
+    const aActualizar = [raw, otro, ...(grupoOtro && grupoOtro !== grupo ? jugadores.filter((j) => normGrupoFamiliar(j.grupo_familiar) === grupoOtro) : [])]
+      .filter((j, i, arr) => arr.findIndex((x) => norm(x.rut_jugador) === norm(j.rut_jugador)) === i)
+      .filter((j) => normGrupoFamiliar(j.grupo_familiar) !== grupo);
+    setGuardandoHermano(true);
+    try {
+      for (const j of aActualizar) {
+        await api.jugadoresAPI.update(j.rut_jugador, { grupo_familiar: grupo });
+      }
+      showToast({ message: `${otro.nombres || otro.rut_jugador} quedó como hermano/a de ${raw.nombres || raw.rut_jugador}.`, type: 'success' });
+      setHermanoNuevo('');
+      await onHermanosCambiados?.();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo guardar el hermano.', type: 'error' });
+    } finally {
+      setGuardandoHermano(false);
+    }
+  };
+
+  const quitarHermano = async (h) => {
+    const grupo = normGrupoFamiliar(h.grupo_familiar);
+    if (!grupo) return;
+    const confirmado = await confirmAction({
+      title: 'Quitar hermano',
+      message: `${h.nombres || h.rut_jugador} dejará de figurar como hermano/a marcado a mano. Si comparten apoderado, seguirán apareciendo juntos.`,
+      confirmText: 'Quitar',
+    });
+    if (!confirmado) return;
+    setGuardandoHermano(true);
+    try {
+      await api.jugadoresAPI.update(h.rut_jugador, { grupo_familiar: '' });
+      // Un grupo de una sola ficha no sirve: se limpia también.
+      const restantes = jugadores.filter((j) => norm(j.rut_jugador) !== norm(h.rut_jugador) && normGrupoFamiliar(j.grupo_familiar) === grupo);
+      if (restantes.length === 1) await api.jugadoresAPI.update(restantes[0].rut_jugador, { grupo_familiar: '' });
+      showToast({ message: 'Hermano quitado.', type: 'success' });
+      await onHermanosCambiados?.();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo quitar el hermano.', type: 'error' });
+    } finally {
+      setGuardandoHermano(false);
+    }
+  };
 
   // Cuota mensual con las tarifas del club (misma regla que Tesorería).
   const cuotaJugador = (j, familia, cuentaFamilia) => {
@@ -281,10 +347,33 @@ export default function FichaPersonaModal({
               )}
               <h4 className="fp-subtitulo">Hermanos</h4>
               {hermanos.length ? hermanos.map((h) => (
-                <button key={h.rut_jugador} type="button" className="fp-vinculo" onClick={() => onAbrir({ tipo: 'jugador', raw: h })}>
-                  <User size={15} /> {`${h.nombres || ''} ${h.apellido_paterno || ''}`.trim()} · {h.categoria || ''}
-                </button>
+                <div key={h.rut_jugador} className="fp-hermano">
+                  <button type="button" className="fp-vinculo" onClick={() => onAbrir({ tipo: 'jugador', raw: h })}>
+                    <User size={15} /> {`${h.nombres || ''} ${h.apellido_paterno || ''}`.trim()} · {h.categoria || ''}
+                  </button>
+                  {puedeEditarHermanos && normGrupoFamiliar(h.grupo_familiar) && normGrupoFamiliar(h.grupo_familiar) === normGrupoFamiliar(raw.grupo_familiar) && (
+                    <button type="button" className="btn-secondary tc-btn" disabled={guardandoHermano} onClick={() => quitarHermano(h)} aria-label={`Quitar a ${h.nombres || h.rut_jugador} como hermano`}>
+                      <X size={13} /> Quitar
+                    </button>
+                  )}
+                </div>
               )) : <p className="fp-ayuda">Sin hermanos vinculados.</p>}
+              {puedeEditarHermanos && (
+                <div className="fp-agregar-hermano">
+                  <label htmlFor="fp-hermano-nuevo">Agregar hermano/a (aunque aún no tenga apoderado)</label>
+                  <div className="fp-agregar-hermano-fila">
+                    <select id="fp-hermano-nuevo" className="form-input" value={hermanoNuevo} onChange={(e) => setHermanoNuevo(e.target.value)}>
+                      <option value="">Elegir deportista…</option>
+                      {candidatosHermano.map(({ j, etiqueta }) => (
+                        <option key={j.rut_jugador} value={j.rut_jugador}>{etiqueta} · {j.categoria || 'sin categoría'}</option>
+                      ))}
+                    </select>
+                    <button type="button" className="btn-electric tc-btn" disabled={!hermanoNuevo || guardandoHermano} onClick={agregarHermano}>
+                      <Plus size={14} /> {guardandoHermano ? 'Guardando…' : 'Agregar'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="fp-vinculos">

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Upload, Search, ClipboardList, Check, Pin, Lightbulb } from 'lucide-react';
 import * as api from '../api/client.js';
 import { calcularCuotaDeportistasFamilia, calcularCuotaFinal, obtenerCuotaJugador } from '../utils/beca';
+import { hermanosDe } from '../utils/hermanos';
 import { asignarAbonoEnOrden, resumirAbonosMes } from '../utils/abonosMes';
 import { confirmAction } from '../utils/confirmDialog';
 
@@ -147,16 +148,12 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
   // (rut_pagos = ella), su cuota de socio de ese mes aparecía pagada.
   const rutParaVerificarPagos = modoPago === 'socio' ? rutCuentaSocio : formData.rut_jugador;
   const cuentaSocioElegida = modoPago === 'socio' ? cuentas.find((c) => c.rut === rutCuentaSocio) : null;
-  const norm = normalizarRutPago;
   const jugadorElegido = modoPago === 'deportista' ? jugadores.find((j) => j.rut_jugador === formData.rut_jugador) : null;
   const familiaElegida = useMemo(() => {
     if (!jugadorElegido) return [];
-    const rutApo = norm(jugadorElegido.rut_apoderado);
-    const correoApo = String(jugadorElegido.correo_apoderado || '').trim().toLowerCase();
-    const hermanos = jugadores.filter((j) => (rutApo && norm(j.rut_apoderado) === rutApo)
-      || (correoApo && String(j.correo_apoderado || '').trim().toLowerCase() === correoApo));
-    return hermanos.length ? hermanos : [jugadorElegido];
-  }, [jugadorElegido, jugadores, norm]);
+    // Mismo criterio que Tesorería: apoderado, correo o grupo_familiar.
+    return [jugadorElegido, ...hermanosDe(jugadorElegido, jugadores)];
+  }, [jugadorElegido, jugadores]);
   const cuotaDeportistaDelMes = (mesNum) => {
     if (!jugadorElegido) return valorMensualidad;
     const esSocioFamilia = Boolean(apoderadoAsignado?.es_socio) || familiaElegida.some((j) => Boolean(j.apoderado_socio));
@@ -405,6 +402,9 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
         if (!comprobanteUrlFinal) throw new Error('No se pudo subir el comprobante. Intenta de nuevo.');
       }
 
+      let mensajeFinal = '';
+      // Pagos nuevos de este registro, para poder ofrecer "Deshacer".
+      const idsCreados = [];
       if (pago?.id) {
         // Actualizar (siempre un único registro existente)
         await api.pagosMensualidadesAPI.update(pago.id, {
@@ -412,7 +412,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
           rut_pagos: rutPagosResuelto,
           comprobante_url: comprobanteUrlFinal,
         });
-        setSuccess('Pago actualizado exitosamente');
+        mensajeFinal = 'Pago actualizado exitosamente';
       } else {
         // Crear: un registro POR CADA mes seleccionado, cada uno con su propio
         // monto y su propio mes en meses_correspondientes (nunca un rango de
@@ -451,23 +451,26 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
           for (const datosGuardar of pagosACrear) {
             const nuevoPago = await api.pagosMensualidadesAPI.create(datosGuardar);
             if (nuevoPago?.id) {
+              idsCreados.push(nuevoPago.id);
               await api.pagosMensualidadesAPI.validar(nuevoPago.id, 'aprobado');
             }
           }
-          setSuccess(condonar
+          mensajeFinal = condonar
             ? `Deuda condonada (${pagosACrear.length} ${pagosACrear.length === 1 ? 'mes' : 'meses'}).`
-            : (pagosACrear.length > 1 ? `${pagosACrear.length} meses registrados y confirmados.` : 'Pago registrado y confirmado.'));
+            : (pagosACrear.length > 1 ? `Cargo de pago listo: ${pagosACrear.length} meses registrados y confirmados.` : 'Cargo de pago listo: pago registrado y confirmado.');
         } else {
           for (const datosGuardar of pagosACrear) {
-            await api.pagosMensualidadesAPI.create(datosGuardar);
+            const nuevoPago = await api.pagosMensualidadesAPI.create(datosGuardar);
+            if (nuevoPago?.id) idsCreados.push(nuevoPago.id);
           }
-          setSuccess(pagosACrear.length > 1 ? `${pagosACrear.length} meses creados exitosamente` : 'Pago creado exitosamente');
+          mensajeFinal = pagosACrear.length > 1 ? `${pagosACrear.length} meses creados exitosamente` : 'Pago creado exitosamente';
         }
       }
 
+      setSuccess(mensajeFinal);
       setTimeout(() => {
-        onSave();
-      }, 1000);
+        onSave(mensajeFinal, idsCreados);
+      }, 900);
     } catch (err) {
       setError(err.message);
     } finally {

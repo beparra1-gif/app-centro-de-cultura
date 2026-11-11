@@ -916,6 +916,27 @@ const createSchema = async () => {
     // la cuenta del apoderado.
     await pool.query('ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS apoderado_socio BOOLEAN DEFAULT false');
 
+    // Hermanos marcados a mano aunque todavía no tengan apoderado asignado:
+    // fichas con el mismo grupo_familiar se tratan como una familia.
+    await pool.query('ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS grupo_familiar TEXT');
+
+    // Errores reportados por los navegadores (Panel → Errores recientes).
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS errores_app (
+      id SERIAL PRIMARY KEY,
+      creado_en TIMESTAMPTZ DEFAULT NOW(),
+      ultimo_en TIMESTAMPTZ DEFAULT NOW(),
+      veces INTEGER DEFAULT 1,
+      rut TEXT,
+      rol TEXT,
+      pantalla TEXT,
+      mensaje TEXT,
+      detalle TEXT,
+      url TEXT,
+      navegador TEXT
+    )
+    `);
+
     console.log('\n✅ ¡Esquema completo creado exitosamente!');
     process.exit(0);
   } catch (err) {

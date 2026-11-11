@@ -2,6 +2,9 @@ import { useMemo, useRef, useState } from 'react';
 import { Download, FileText, Image as ImageIcon, Search, X } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import CierreMesPanel from './CierreMesPanel';
+import SelectorOrden from './SelectorOrden';
+import usePreferenciaLocal, { esOrdenValido } from '../utils/usePreferenciaLocal';
+import { OPCIONES_ORDEN, ordenarPersonas } from '../utils/ordenarPersonas';
 import { hoyLocalISO } from '../utils/fechas';
 import {
   ANIO_INFORME, ETIQUETA_ESTADO, MESES_INFORME, agruparPorCategoria, construirInformeDeportistas, construirInformeSocios,
@@ -15,12 +18,15 @@ import {
 const pesos = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CL')}`;
 const SIMBOLO = { condonado: 'C', pagado: '✓', debe: '✕', parcial: '½', exento: 'B', 'no-aplica': '–', 'en-curso': '·', futuro: '' };
 const FILTROS_INICIALES = { texto: '', rama: 'todas', categoria: 'todas', estado: 'con_deuda', mes: 'todos' };
+const ORDEN_INICIAL = { orden: 'deuda', dir: 'desc' };
+const accesoFila = (f) => ({ nombre: f.nombres || f.nombre, apellido: f.apellido, fechaNacimiento: f.fechaNacimiento, categoria: f.categoria, deuda: f.montoDeuda });
 
-function FilaPersona({ f }) {
+function FilaPersona({ f, mostrarCategoria = false }) {
   return (
     <tr>
       <th scope="row" className="id-nombre">
         {f.nombre}
+        {mostrarCategoria && <span className="id-beca"> · {f.categoria}</span>}
         {f.beca > 0 && f.beca < 100 && <span className="id-beca"> beca {f.beca}%</span>}
       </th>
       {f.estados.map((e, i) => (
@@ -36,8 +42,19 @@ function FilaPersona({ f }) {
 
 export default function InformeDeudaPanel({ jugadores = [], cuentas = [], morosos = [], sociosMorosos = [], pagos = [] }) {
   const [tipo, setTipo] = useState('deportistas');
-  const [filtros, setFiltros] = useState(FILTROS_INICIALES);
+  // Filtros, orden y agrupación se recuerdan en este dispositivo (no la búsqueda).
+  const [filtrosGuardados, setFiltrosGuardados] = usePreferenciaLocal('informeDeuda.filtros', FILTROS_INICIALES, (v) => v && typeof v === 'object');
+  const [texto, setTexto] = useState('');
+  const filtros = useMemo(() => ({ ...FILTROS_INICIALES, ...filtrosGuardados, texto }), [filtrosGuardados, texto]);
+  const setFiltros = (cambio) => {
+    const nuevo = typeof cambio === 'function' ? cambio(filtros) : cambio;
+    const { texto: textoNuevo = '', ...resto } = nuevo;
+    setTexto(textoNuevo);
+    setFiltrosGuardados(resto);
+  };
   const [exportando, setExportando] = useState(false);
+  const [orden, setOrden] = usePreferenciaLocal('informeDeuda.orden', ORDEN_INICIAL, esOrdenValido(['deuda', 'apellido', 'nombre', 'nacimiento', 'edad', 'categoria']));
+  const [agrupar, setAgrupar] = usePreferenciaLocal('informeDeuda.agrupar', true, (v) => typeof v === 'boolean');
   const informeRef = useRef(null);
   const set = (clave) => (e) => setFiltros((f) => ({ ...f, [clave]: e.target.value }));
 
@@ -55,12 +72,15 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
     () => filtrarInforme(base, esDeportistas ? filtros : { ...filtros, rama: 'todas', categoria: 'todas' }),
     [base, filtros, esDeportistas]
   );
-  const grupos = useMemo(
-    () => (esDeportistas
-      ? agruparPorCategoria(filtradas)
-      : [{ categoria: 'Socios', filas: [...filtradas].sort((a, b) => (b.mesesDeuda - a.mesesDeuda) || a.nombre.localeCompare(b.nombre, 'es')) }]),
-    [filtradas, esDeportistas]
-  );
+  const agrupado = esDeportistas && agrupar;
+  const grupos = useMemo(() => {
+    if (agrupado) {
+      return agruparPorCategoria(filtradas).map((g) => ({ ...g, filas: ordenarPersonas(g.filas, orden, accesoFila) }));
+    }
+    return [{ categoria: esDeportistas ? 'Deportistas' : 'Socios', filas: ordenarPersonas(filtradas, orden, accesoFila) }];
+  }, [filtradas, esDeportistas, agrupado, orden]);
+  const opcionOrden = OPCIONES_ORDEN.find((o) => o.id === orden.orden);
+  const textoOrden = opcionOrden ? `Orden: ${opcionOrden.label} (${orden.dir === 'desc' ? opcionOrden.desc : opcionOrden.asc})` : '';
   const totales = {
     personas: filtradas.length,
     conDeuda: filtradas.filter((f) => f.mesesDeuda > 0).length,
@@ -75,6 +95,7 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
     filtros.mes !== 'todos' ? `Deben ${filtros.mes}` : null,
     filtros.texto.trim() ? `Búsqueda “${filtros.texto.trim()}”` : null,
   ].filter(Boolean).join(' · ') || 'Todos';
+  const descripcionCompleta = [descripcionFiltros, textoOrden].filter(Boolean).join(' · ');
   const nombreArchivo = `informe-deuda-${tipo}-${[filtros.rama, filtros.categoria].filter((v) => v !== 'todas' && esDeportistas).join('-') || 'todos'}-${hoyLocalISO()}`
     .toLowerCase().replace(/[^a-z0-9-]+/g, '-');
 
@@ -176,8 +197,21 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
         </select>
       </div>
 
+      <div className="id-orden">
+        <SelectorOrden
+          valor={orden}
+          onCambiar={setOrden}
+          opciones={esDeportistas ? undefined : ['deuda', 'apellido', 'nombre', 'nacimiento', 'edad']}
+        />
+        {esDeportistas && (
+          <label className="checkbox-label-row id-agrupar">
+            <input type="checkbox" checked={agrupar} onChange={(e) => setAgrupar(e.target.checked)} /> Agrupar por categoría
+          </label>
+        )}
+      </div>
+
       <div className="id-acciones">
-        <button type="button" className="btn-secondary tc-btn" onClick={() => setFiltros(FILTROS_INICIALES)}>Limpiar filtros</button>
+        <button type="button" className="btn-secondary tc-btn" onClick={() => { setFiltros(FILTROS_INICIALES); setOrden(ORDEN_INICIAL); setAgrupar(true); }}>Limpiar filtros</button>
         <div className="id-acciones-descarga">
           <button type="button" className="btn-secondary tc-btn" onClick={descargarCsv} disabled={filtradas.length === 0}>
             <FileText size={13} /> Excel (CSV)
@@ -193,7 +227,7 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
           <header className="id-cabecera">
             <div>
               <h3>Informe de deuda {ANIO_INFORME} — {esDeportistas ? 'Deportistas' : 'Socios'}</h3>
-              <p>{descripcionFiltros} · al {hoyLocalISO().split('-').reverse().join('-')}</p>
+              <p>{descripcionCompleta} · al {hoyLocalISO().split('-').reverse().join('-')}</p>
             </div>
             <div className="id-totales">
               <span><b>{totales.personas}</b> {totales.personas === 1 ? 'persona' : 'personas'}</span>
@@ -217,7 +251,7 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
               </thead>
               {grupos.map((g) => (
                 <tbody key={g.categoria}>
-                  {esDeportistas && (
+                  {agrupado && (
                     <tr className="id-grupo">
                       <th colSpan={MESES_INFORME.length + 1} scope="rowgroup">
                         {g.categoria} · {g.filas.length} {g.filas.length === 1 ? 'deportista' : 'deportistas'}{g.conDeuda ? ` · ${g.conDeuda} con deuda` : ''}
@@ -226,7 +260,7 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
                       <td className="id-num id-monto">{g.montoDeuda > 0 ? pesos(g.montoDeuda) : ''}</td>
                     </tr>
                   )}
-                  {g.filas.map((f) => <FilaPersona key={f.id} f={f} />)}
+                  {g.filas.map((f) => <FilaPersona key={f.id} f={f} mostrarCategoria={esDeportistas && !agrupado} />)}
                 </tbody>
               ))}
             </table>

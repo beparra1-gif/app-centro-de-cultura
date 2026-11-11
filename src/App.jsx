@@ -16,6 +16,8 @@ import {
 import * as api from './api/client';
 import { nextId } from './utils/runtimeId';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador, setHistorialTarifas } from './utils/beca';
+import { agruparFamilias } from './utils/hermanos';
+import { setPantallaParaErrores } from './utils/reportarError';
 import { mapearJugadorAPupilo, obtenerNumeroCamisetaJugador, obtenerAnioNacimientoJugador } from './utils/pupiloMapper';
 import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
 import ApiStatusBanner from './components/ApiStatusBanner';
@@ -307,6 +309,10 @@ function App() {
 
   // --- ESTADOS: SUPER ADMIN (MODO DIOS) ---
   const [vistaAdmin, setVistaAdmin] = useState('inicio');
+  // Pantalla actual para los reportes de error (Panel → Errores recientes).
+  useEffect(() => {
+    setPantallaParaErrores(pantallaActiva === 'admin_dashboard' ? `admin/${vistaAdmin}` : pantallaActiva);
+  }, [pantallaActiva, vistaAdmin]);
   const [logAuditoria, setLogAuditoria] = useState([]);
   const [jugadoresVisitaAdmin, setJugadoresVisitaAdmin] = useState([]);
   const [usuarioAutenticado, setUsuarioAutenticado] = useState(null);
@@ -737,12 +743,12 @@ function App() {
     // valor_mensualidad propio, la familia entera comparte la tarifa
     // referencial del club en vez de mostrar el número de meses como si
     // fueran pesos.
+    // Incluye hermanos marcados a mano (grupo_familiar) aunque todavía no
+    // tengan apoderado: ver src/utils/hermanos.js.
+    const familiasPorRut = agruparFamilias(jugadores);
     const obtenerFamilyKey = (jugador = {}) => {
-      const rutApoderado = normalizarRutComparacion(jugador.rut_apoderado || '');
-      if (rutApoderado) return `rut:${rutApoderado}`;
-      const correo = normalizarCorreo(jugador.correo_apoderado || '');
-      if (correo) return `correo:${correo}`;
-      return `jugador:${normalizarRutComparacion(jugador.rut_jugador || '')}`;
+      const rutJugador = normalizarRutComparacion(jugador.rut_jugador || '');
+      return familiasPorRut.get(rutJugador) || `jugador:${rutJugador}`;
     };
 
     const jugadoresPorFamilia = new Map();
@@ -754,9 +760,12 @@ function App() {
 
     const cuotaReferencialPorFamilia = new Map();
     jugadoresPorFamilia.forEach((pupilosFamilia, key) => {
-      const primerJugador = pupilosFamilia[0];
-      const cuentaFamilia = cuentaPorRut.get(normalizarRutComparacion(primerJugador.rut_apoderado))
-        || cuentaPorCorreo.get(normalizarCorreo(primerJugador.correo_apoderado));
+      // La cuenta de la familia: la del primer hermano que tenga apoderado
+      // vinculado (en un grupo_familiar puede haber hermanos aún sin él).
+      const cuentaFamilia = pupilosFamilia
+        .map((p) => cuentaPorRut.get(normalizarRutComparacion(p.rut_apoderado))
+          || cuentaPorCorreo.get(normalizarCorreo(p.correo_apoderado)))
+        .find(Boolean);
       const perfilPrincipalFamilia = String(cuentaFamilia?.perfil_principal || cuentaFamilia?.rol || '').toLowerCase();
       const parametrosFamilia = {
         pupilosFamilia,

@@ -4,13 +4,14 @@ import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
 import { sugerirApoderados } from '../utils/sugerirApoderados';
+import PosiblesHermanos from './PosiblesHermanos';
 
 // Usuarios y Cuentas → "Vincular apoderados": deportistas sin cuenta de
 // apoderado vinculada, con las cuentas más probables y el motivo. Se vincula
 // de a uno o todas las sugerencias seguras de una vez (con confirmación).
 
 const PASO = 25;
-const nombreCuenta = (c) => `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || c.correo || c.rut;
+const nombreCuenta = (c) => `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || c.correo || c.rut || 'Sin nombre';
 
 export default function VincularApoderadosPanel({ jugadores = [], cuentas = [], onRecargar, onVerFicha }) {
   const [texto, setTexto] = useState('');
@@ -60,6 +61,8 @@ export default function VincularApoderadosPanel({ jugadores = [], cuentas = [], 
 
   return (
     <div className="fade-in">
+      <PosiblesHermanos jugadores={jugadores} onRecargar={onRecargar} onVerFicha={onVerFicha} />
+
       <div className="va-cabecera">
         <p>
           <b>{pendientes.length}</b> deportistas no tienen cuenta de apoderado vinculada: su familia no ve sus pagos y no reciben avisos.

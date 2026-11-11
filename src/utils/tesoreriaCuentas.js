@@ -11,6 +11,7 @@
 // (construirSociosMorosos). Aquí solo se agrupan por quien paga.
 
 import { normalizarRol } from '../security/accessControl';
+import { agruparFamilias } from './hermanos';
 
 export const normalizarRutTesoreria = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 const normalizarCorreo = (correo = '') => String(correo || '').trim().toLowerCase();
@@ -68,6 +69,18 @@ export const construirCuentasQuePagan = ({ cuentas = [], jugadores = [], morosos
 
   const pupilosPorCuenta = new Map();
   const sinResponsable = [];
+  // Hermanos (mismo apoderado o grupo_familiar marcado a mano): si uno ya
+  // tiene la cuenta del apoderado vinculada, los demás se cobran a esa misma
+  // cuenta; si ninguno la tiene, se muestran juntos en una sola fila.
+  const familiaPorRut = agruparFamilias(jugadores || []);
+  const pagadorPorFamilia = new Map();
+  (jugadores || []).forEach((jugador) => {
+    const rutJugador = normalizarRutTesoreria(jugador?.rut_jugador);
+    const pagador = cuentaPorRut.get(normalizarRutTesoreria(jugador?.rut_apoderado))
+      || cuentaPorCorreo.get(normalizarCorreo(jugador?.correo_apoderado));
+    const familia = familiaPorRut.get(rutJugador);
+    if (pagador && familia && !pagadorPorFamilia.has(familia)) pagadorPorFamilia.set(familia, pagador);
+  });
   (jugadores || []).forEach((jugador) => {
     const rutJugador = normalizarRutTesoreria(jugador?.rut_jugador);
     if (!rutJugador) return;
@@ -85,8 +98,10 @@ export const construirCuentasQuePagan = ({ cuentas = [], jugadores = [], morosos
       mesesDeuda: Number(deuda?.mesesDeuda || 0),
       mesesMorosos: deuda?.mesesMorosos || [],
     };
-    const pagador = resolverPagadorDeJugador(jugador, { cuentaPorRut, cuentaPorCorreo });
+    const pagador = resolverPagadorDeJugador(jugador, { cuentaPorRut, cuentaPorCorreo })
+      || pagadorPorFamilia.get(familiaPorRut.get(rutJugador));
     if (!pagador) {
+      linea.familia = familiaPorRut.get(rutJugador) || `jugador:${rutJugador}`;
       sinResponsable.push(linea);
       return;
     }
@@ -153,25 +168,34 @@ export const construirCuentasQuePagan = ({ cuentas = [], jugadores = [], morosos
 
   // Deportistas sin ninguna cuenta que pague por ellos: se muestran igual
   // (su deuda existe) con la alerta de que falta vincular al responsable.
+  // Hermanos sin responsable: una sola fila por familia.
+  const sinResponsablePorFamilia = new Map();
   sinResponsable.forEach((linea) => {
+    if (!sinResponsablePorFamilia.has(linea.familia)) sinResponsablePorFamilia.set(linea.familia, []);
+    sinResponsablePorFamilia.get(linea.familia).push(linea);
+  });
+  sinResponsablePorFamilia.forEach((lineas) => {
+    const primera = lineas[0];
+    const esFamilia = lineas.length > 1;
+    const apellido = String(primera.jugador?.apellido_paterno || '').trim();
     filas.push({
-      id: `sin-responsable-${normalizarRutTesoreria(linea.rut)}`,
+      id: `sin-responsable-${normalizarRutTesoreria(primera.rut)}`,
       tipo: 'sin_responsable',
       cuenta: null,
-      rut: linea.rut,
-      nombre: linea.nombre,
+      rut: primera.rut,
+      nombre: esFamilia ? `Hermanos ${apellido || lineas.map((l) => l.nombre.split(' ')[0]).join(' y ')}`.trim() : primera.nombre,
       rol: '',
-      perfiles: ['Sin responsable de pago'],
+      perfiles: esFamilia ? ['Sin responsable de pago', `${lineas.length} hermanos`] : ['Sin responsable de pago'],
       esSocio: false,
       esApoderado: false,
       autogestionado: false,
       socio: null,
-      pupilos: [linea],
+      pupilos: lineas,
       telefono: '',
-      correo: linea.jugador?.correo_apoderado || '',
-      deudaTotal: linea.deuda,
-      mesesDeudaTotal: linea.mesesDeuda,
-      textoBusqueda: normalizarTexto([linea.nombre, linea.rut, linea.jugador?.correo_apoderado].join(' ')),
+      correo: lineas.map((l) => l.jugador?.correo_apoderado).find(Boolean) || '',
+      deudaTotal: lineas.reduce((acc, l) => acc + l.deuda, 0),
+      mesesDeudaTotal: lineas.reduce((acc, l) => acc + l.mesesDeuda, 0),
+      textoBusqueda: normalizarTexto(lineas.flatMap((l) => [l.nombre, l.rut, l.jugador?.correo_apoderado]).join(' ')),
     });
   });
 

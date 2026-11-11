@@ -5,8 +5,9 @@ let idCounter = 0;
 let listeners = [];
 
 // type: 'success' | 'error' | 'info' | 'warning'
-export const showToast = ({ message, type = 'info', duration = 4000 }) => {
-  const toast = { id: ++idCounter, message, type, duration };
+// accion (opcional): { label, onClick } — un botón en el aviso, ej. "Deshacer".
+export const showToast = ({ message, type = 'info', duration = 4000, accion = null }) => {
+  const toast = { id: ++idCounter, message, type, duration, accion };
   listeners.forEach((listener) => listener(toast));
   return toast.id;
 };

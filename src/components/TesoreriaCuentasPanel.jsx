@@ -1,4 +1,8 @@
 import { useMemo, useState } from 'react';
+import SelectorOrden from './SelectorOrden';
+import usePreferenciaLocal, { esOrdenValido } from '../utils/usePreferenciaLocal';
+import { ordenarPersonas } from '../utils/ordenarPersonas';
+import { ordenarCategorias } from '../utils/informeDeuda';
 import { Bell, ChevronDown, Eye, Phone, Plus, Search, User, Users, X } from 'lucide-react';
 import { filtrarCuentasQuePagan, resumirCuentasQuePagan } from '../utils/tesoreriaCuentas';
 
@@ -57,18 +61,30 @@ export default function TesoreriaCuentasPanel({
   ultimoRecordatorio = null,
 }) {
   const [texto, setTexto] = useState('');
-  const [estado, setEstado] = useState('con_deuda');
-  const [perfil, setPerfil] = useState('todos');
-  const [rama, setRama] = useState('todas');
+  // Se recuerdan en este dispositivo (la búsqueda no).
+  const [estado, setEstado] = usePreferenciaLocal('porCobrar.estado', 'con_deuda', (v) => typeof v === 'string');
+  const [perfil, setPerfil] = usePreferenciaLocal('porCobrar.perfil', 'todos', (v) => typeof v === 'string');
+  const [rama, setRama] = usePreferenciaLocal('porCobrar.rama', 'todas', (v) => typeof v === 'string');
   const [limite, setLimite] = useState(PASO_PAGINA);
+  const [orden, setOrden] = usePreferenciaLocal('porCobrar.orden', { orden: 'deuda', dir: 'desc' }, esOrdenValido(['deuda', 'apellido', 'nombre', 'categoria']));
 
   const ramas = useMemo(() => (
     [...new Set(filas.flatMap((f) => f.pupilos.map((p) => p.rama)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
   ), [filas]);
   const resumen = useMemo(() => resumirCuentasQuePagan(filas), [filas]);
   const filtradas = useMemo(
-    () => filtrarCuentasQuePagan(filas, { texto, estado, perfil, rama }),
-    [filas, texto, estado, perfil, rama]
+    () => ordenarPersonas(filtrarCuentasQuePagan(filas, { texto, estado, perfil, rama }), orden, (f) => {
+      const persona = f.cuenta || f.pupilos[0]?.jugador || {};
+      // Categoría de una familia: la menor de sus deportistas.
+      const categorias = f.pupilos.map((p) => p.categoria).filter(Boolean).sort(ordenarCategorias);
+      return {
+        nombre: persona.nombres || f.nombre,
+        apellido: `${persona.apellido_paterno || ''} ${persona.apellido_materno || ''}`.trim(),
+        categoria: categorias[0] || '',
+        deuda: f.deudaTotal,
+      };
+    }),
+    [filas, texto, estado, perfil, rama, orden]
   );
   const visibles = filtradas.slice(0, limite);
   const cambiar = (setter) => (valor) => { setter(valor); setLimite(PASO_PAGINA); };
@@ -123,6 +139,7 @@ export default function TesoreriaCuentasPanel({
             </button>
           ))}
         </div>
+        <SelectorOrden valor={orden} onCambiar={cambiar(setOrden)} opciones={['deuda', 'apellido', 'nombre', 'categoria']} />
         {ramas.length > 1 && (
           <select className="form-input tc-select-rama" value={rama} onChange={(e) => cambiar(setRama)(e.target.value)} aria-label="Rama">
             <option value="todas">Todas las ramas</option>

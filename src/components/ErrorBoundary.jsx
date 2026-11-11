@@ -1,5 +1,6 @@
 import { Component } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { reportarError } from '../utils/reportarError';
 
 // Sin esto, cualquier excepción no controlada durante un render (un dato real
 // con una forma inesperada, un campo null que no se validó, etc.) desmonta
@@ -20,6 +21,9 @@ class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('[ErrorBoundary] Error no controlado:', error, info?.componentStack);
+    // Queda en Panel → Sistema → Errores recientes (antes solo en la consola).
+    reportarError({ mensaje: error?.message || String(error), detalle: `${error?.stack || ''}
+--- componentes ---${info?.componentStack || ''}` });
   }
 
   render() {
@@ -41,6 +45,11 @@ class ErrorBoundary extends Component {
           <p style={{ margin: 0, maxWidth: '360px', fontSize: '13px', color: 'var(--texto-secundario, #6b7280)' }}>
             Ocurrió un error inesperado y esta pantalla no pudo terminar de cargar. Tus datos están a salvo — intenta recargar la página.
           </p>
+          {/* Detalle visible para poder reportarlo con una captura: en el
+              celular no hay consola donde mirarlo. */}
+          <code style={{ maxWidth: '360px', fontSize: '12px', color: 'var(--texto-secundario, #6b7280)', wordBreak: 'break-word' }}>
+            {String(this.state.error?.message || this.state.error).slice(0, 200)}
+          </code>
           <button
             type="button"
             className="btn-electric"

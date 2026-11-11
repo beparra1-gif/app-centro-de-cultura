@@ -66,7 +66,7 @@ test('Registrar monto pagado: $40.000 completa abril y abona $15.000 a mayo', as
   await expect(page.locator('.pf-reparto')).toContainText('$15.000 (faltan $10.000)');
   await page.getByRole('button', { name: 'Registrar y Confirmar' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Registrar y confirmar' }).click();
-  await expect(page.getByText(/meses registrados y confirmados/)).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(/meses registrados y confirmados/).first()).toBeVisible({ timeout: 15000 });
   const { rows } = await pool.query(
     "SELECT meses_correspondientes, monto_total_pagado FROM pagos_mensualidades WHERE rut_jugador = $1 AND meses_correspondientes ILIKE ANY (ARRAY['abril%', 'mayo%']) ORDER BY id",
     [JUGADORES.pupilo.rut]

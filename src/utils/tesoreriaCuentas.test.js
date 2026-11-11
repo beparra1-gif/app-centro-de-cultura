@@ -100,3 +100,31 @@ describe('resumirCuentasQuePagan', () => {
     expect(resumirCuentasQuePagan(filas)).toEqual({ total: 111500, socios: 21500, deportistas: 90000, conDeuda: 2 });
   });
 });
+
+describe('hermanos marcados a mano (grupo_familiar)', () => {
+  const base = [
+    { rut_jugador: '80.000.001-1', nombres: 'Ana', apellido_paterno: 'Rojas', grupo_familiar: 'fam-1' },
+    { rut_jugador: '80.000.002-2', nombres: 'Beto', apellido_paterno: 'Rojas', grupo_familiar: 'fam-1' },
+    { rut_jugador: '80.000.003-3', nombres: 'Solo', apellido_paterno: 'Suelto' },
+  ];
+  const deudas = [
+    { rut: '80.000.001-1', montoDeuda: 25000, mesesDeuda: 1 },
+    { rut: '80.000.002-2', montoDeuda: 50000, mesesDeuda: 2 },
+  ];
+
+  it('sin apoderado: una sola fila por familia con la deuda sumada', () => {
+    const r = construirCuentasQuePagan({ cuentas: [], jugadores: base, morosos: deudas });
+    const familia = r.find((f) => f.pupilos.length === 2);
+    expect(familia).toMatchObject({ tipo: 'sin_responsable', nombre: 'Hermanos Rojas', deudaTotal: 75000, mesesDeudaTotal: 3 });
+    expect(familia.perfiles).toEqual(['Sin responsable de pago', '2 hermanos']);
+    expect(r.filter((f) => f.tipo === 'sin_responsable')).toHaveLength(2);
+  });
+
+  it('si un hermano ya tiene apoderado, el otro se cobra a esa misma cuenta', () => {
+    const conApoderado = base.map((j, i) => (i === 0 ? { ...j, rut_apoderado: '11.111.111-1' } : j));
+    const r = construirCuentasQuePagan({ cuentas, jugadores: conApoderado, morosos: deudas });
+    const cata = r.find((f) => f.rut === '11.111.111-1');
+    expect(cata.pupilos.map((p) => p.nombre)).toEqual(['Ana Rojas', 'Beto Rojas']);
+    expect(r.some((f) => f.tipo === 'sin_responsable' && f.nombre.includes('Rojas'))).toBe(false);
+  });
+});

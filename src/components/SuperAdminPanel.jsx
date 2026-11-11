@@ -50,6 +50,8 @@ import ImportarPagosPlanilla from './ImportarPagosPlanilla';
 import InformeDeudaPanel from './InformeDeudaPanel';
 import TarifasPanel from './TarifasPanel';
 import RespaldosPanel from './RespaldosPanel';
+import ErroresAppPanel from './ErroresAppPanel';
+import CumpleanosMes from './CumpleanosMes';
 import FichaPersonaModal from './FichaPersonaModal';
 import VincularApoderadosPanel from './VincularApoderadosPanel';
 import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
@@ -71,6 +73,10 @@ import { categoriaEfectiva } from '../utils/categoriaPorEdad';
 import { absolutizarLogoUrl } from '../utils/logoResolver';
 import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
 import useModalAccesible from '../utils/useModalAccesible';
+import { hermanosDe } from '../utils/hermanos';
+import { ordenarPersonas } from '../utils/ordenarPersonas';
+import SelectorOrden from './SelectorOrden';
+import usePreferenciaLocal, { esOrdenValido } from '../utils/usePreferenciaLocal';
 
 // comprobante_url llega en 2 formatos: URL relativa del backend
 // (/api/logo-assets/file/...) para imágenes subidas como archivo, o un data
@@ -412,6 +418,22 @@ function SuperAdminPanel({
   const [vistaUsuarios, setVistaUsuarios] = useState('deportistas');
   const [filtroUsuariosTexto, setFiltroUsuariosTexto] = useState('');
   const [filtroCuentasTexto, setFiltroCuentasTexto] = useState('');
+  // Se recuerda en este dispositivo.
+  const [ordenUsuarios, setOrdenUsuarios] = usePreferenciaLocal('usuarios.orden', { orden: 'apellido', dir: 'asc' }, esOrdenValido(['deuda', 'apellido', 'nombre', 'nacimiento', 'edad', 'categoria']));
+  const [erroresRecientes, setErroresRecientes] = useState(0);
+  useEffect(() => {
+    if (vistaAdmin !== 'inicio' || !(esAdmin || esSuperAdmin)) return undefined;
+    let activo = true;
+    api.erroresAppAPI.listar()
+      .then((lista) => {
+        const desde = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        if (activo) setErroresRecientes((Array.isArray(lista) ? lista : []).filter((e) => new Date(e.ultimo_en).getTime() >= desde).length);
+      })
+      .catch(() => {});
+    return () => { activo = false; };
+  // esAdmin/esSuperAdmin se derivan del rol (estable durante la sesión).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vistaAdmin]);
   const [filtroTipoPerfil, setFiltroTipoPerfil] = useState('todos');
   const [filtroEstadoUsuarios, setFiltroEstadoUsuarios] = useState('activos');
   const [filtroRamaJugadores, setFiltroRamaJugadores] = useState('todas');
@@ -1165,8 +1187,15 @@ function SuperAdminPanel({
         rut_apoderado: cuenta.rut || null,
         correo_apoderado: cuenta.correo,
       }, jugador.rut_jugador);
+      // Hermanos marcados a mano (grupo_familiar) que aún no tienen
+      // apoderado: reciben el mismo, así la familia queda ordenada de una vez.
+      const hermanosSinApoderado = hermanosDe(jugador, jugadoresAdminTodos || [])
+        .filter((h) => !String(h.rut_apoderado || '').trim() && !String(h.correo_apoderado || '').includes('@'));
+      for (const h of hermanosSinApoderado) {
+        await guardarJugadorAdmin({ rut_jugador: h.rut_jugador, rut_apoderado: cuenta.rut || null, correo_apoderado: cuenta.correo }, h.rut_jugador);
+      }
       if (onSheetsSyncComplete) await onSheetsSyncComplete();
-      showToast({ message: `${cuenta.nombre} asignado como apoderado de ${jugador.nombres || jugador.rut_jugador}.`, type: 'success' });
+      showToast({ message: `${cuenta.nombre} asignado como apoderado de ${jugador.nombres || jugador.rut_jugador}${hermanosSinApoderado.length ? ` y ${hermanosSinApoderado.length === 1 ? 'su hermano/a' : `sus ${hermanosSinApoderado.length} hermanos`}` : ''}.`, type: 'success' });
       setAsignandoApoderadoRut(null);
       setCorreoApoderadoParaAsignar('');
     } catch (error) {
@@ -1255,9 +1284,17 @@ function SuperAdminPanel({
     return [...cuentas, ...jugadores];
   }, [cuentasAdminTodas, jugadoresAdminTodos]);
 
+  // Datos para "Ordenar por" (apellido, nombre, nacimiento, edad, categoría).
+  const accesoOrdenUsuario = (u) => ({
+    nombre: u.raw.nombres || u.nombre,
+    apellido: `${u.raw.apellido_paterno || ''} ${u.raw.apellido_materno || ''}`.trim(),
+    fechaNacimiento: u.raw.fecha_nacimiento || '',
+    categoria: u.raw.categoria || '',
+  });
+
   const deportistasFiltrados = useMemo(() => {
     const q = filtroUsuariosTexto.trim().toLowerCase();
-    return listadoUsuarios
+    const lista = listadoUsuarios
       .filter((u) => {
         if (u.tipo !== 'jugador') return false;
         if (filtroEstadoUsuarios === 'activos' && !estaActivo(u.raw)) return false;
@@ -1269,9 +1306,10 @@ function SuperAdminPanel({
         if (filtroApoderadoJugadores === 'sin' && !sinApoderado) return false;
         if (filtroApoderadoJugadores === 'con' && sinApoderado) return false;
         return true;
-      })
-      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+      });
+    return ordenarPersonas(lista, ordenUsuarios, accesoOrdenUsuario);
   }, [
+    ordenUsuarios,
     listadoUsuarios,
     filtroUsuariosTexto,
     filtroRamaJugadores,
@@ -1283,7 +1321,7 @@ function SuperAdminPanel({
 
   const cuentasUsuariosFiltradas = useMemo(() => {
     const q = filtroCuentasTexto.trim().toLowerCase();
-    return listadoUsuarios.filter((u) => {
+    const lista = listadoUsuarios.filter((u) => {
       if (u.tipo !== 'cuenta') return false;
       if (filtroEstadoUsuarios === 'activos' && !estaActivo(u.raw)) return false;
       if (filtroEstadoUsuarios === 'inactivos' && estaActivo(u.raw)) return false;
@@ -1291,7 +1329,8 @@ function SuperAdminPanel({
       if (q && !u.busqueda.includes(q)) return false;
       return true;
     });
-  }, [listadoUsuarios, filtroCuentasTexto, filtroTipoPerfil, filtroEstadoUsuarios]);
+    return ordenarPersonas(lista, ordenUsuarios, accesoOrdenUsuario);
+  }, [listadoUsuarios, filtroCuentasTexto, filtroTipoPerfil, filtroEstadoUsuarios, ordenUsuarios]);
 
   // Tarjeta compartida por Deportistas y Cuentas — misma estructura, evita
   // duplicar ~90 líneas de JSX entre las dos pestañas.
@@ -2916,12 +2955,26 @@ function SuperAdminPanel({
               { key: 'ajustes', Icon: ShieldCheck, titulo: 'Permisos y ajustes', desc: 'Permisos por perfil y por usuario', ver: puedeAdminCompleto, ir: () => setVistaAdmin('permisos') },
               { key: 'auditoria', Icon: History, titulo: 'Auditoría', desc: 'Historial de cambios', ver: puedeAdminCompleto, ir: () => setVistaAdmin('auditoria') },
               { key: 'activos', Icon: Image, titulo: 'Logos e imágenes', desc: 'Activos visuales del club', ver: puedeAdminCompleto, ir: () => setVistaAdmin('activos') },
+              { key: 'errores', Icon: AlertTriangle, titulo: 'Errores recientes', desc: 'Lo que falló en el teléfono o computador de alguien', badge: erroresRecientes, badgeTxt: 'esta semana', ver: esAdmin || esSuperAdmin, ir: () => setVistaAdmin('errores') },
               { key: 'respaldos', Icon: History, titulo: 'Respaldos', desc: 'Copias de seguridad y limpieza de copias antiguas', ver: esSuperAdmin, ir: () => setVistaAdmin('respaldos') },
             ],
           },
         ].map((g) => ({ ...g, items: g.items.filter((i) => i.ver) })).filter((g) => g.items.length);
         return (
           <div className="fade-in pn-panel">
+            {puedeAdminCompleto && (
+              <CumpleanosMes
+                jugadores={jugadoresAdminTodos || []}
+                cuentas={cuentasAdminTodas || []}
+                onVer={(c) => {
+                  const norm = (r) => String(r || '').replace(/[.\s-]/g, '').toUpperCase();
+                  const raw = c.tipo === 'jugador'
+                    ? (jugadoresAdminTodos || []).find((j) => norm(j.rut_jugador) === c.clave)
+                    : (cuentasAdminTodas || []).find((x) => norm(x.rut) === c.clave);
+                  if (raw) setFichaPersona({ tipo: c.tipo, raw });
+                }}
+              />
+            )}
             {grupos.map((g) => (
               <section key={g.titulo} className="pn-grupo" aria-label={g.titulo}>
                 <h3 className="pn-grupo-titulo">{g.titulo}</h3>
@@ -2943,6 +2996,13 @@ function SuperAdminPanel({
           </div>
         );
       })()}
+
+      {vistaAdmin === 'errores' && (esAdmin || esSuperAdmin) && (
+        <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
+          <ErroresAppPanel />
+        </div>
+      )}
 
       {vistaAdmin === 'respaldos' && esSuperAdmin && (
         <div className="fade-in">
@@ -3056,6 +3116,14 @@ function SuperAdminPanel({
             </button>
           </div></div>
 
+          {(vistaUsuarios === 'deportistas' || vistaUsuarios === 'cuentas') && (
+            <SelectorOrden
+              className="mb-10"
+              valor={ordenUsuarios}
+              onCambiar={setOrdenUsuarios}
+              opciones={vistaUsuarios === 'deportistas' ? ['apellido', 'nombre', 'nacimiento', 'edad', 'categoria'] : ['apellido', 'nombre', 'nacimiento', 'edad']}
+            />
+          )}
           {(vistaUsuarios === 'deportistas' || vistaUsuarios === 'cuentas') && (
             <div className="filter-chips mb-15" role="group" aria-label="Estado">
               {[
@@ -5998,12 +6066,38 @@ function SuperAdminPanel({
             setPagoManualAutoAprobar(false);
             setPagoManualObjetivo(null);
           }}
-          onSave={() => {
+          onSave={async (mensaje, idsCreados = []) => {
             setMostrarFormularioPago(false);
             setPagoEditandoId(null);
             setPagoManualObjetivo(null);
-            // Recargar pagos
-            window.location.reload();
+            setPagoManualAutoAprobar(false);
+            // Antes hacía window.location.reload(): la app volvía al menú
+            // principal y se perdía la pantalla de Tesorería. Ahora solo se
+            // recargan los pagos y se avisa, sin salir de donde se estaba.
+            // Pago manual recién aprobado: 10 s para deshacerlo si fue un error
+            // (antes había que ir a la ficha y borrarlo pago por pago).
+            showToast({
+              message: mensaje || 'Pago registrado.',
+              type: 'success',
+              duration: idsCreados.length ? 10000 : 4000,
+              accion: idsCreados.length ? {
+                label: 'Deshacer',
+                onClick: async () => {
+                  try {
+                    for (const id of idsCreados) await api.pagosMensualidadesAPI.eliminar(id);
+                    showToast({ message: idsCreados.length > 1 ? 'Pagos deshechos.' : 'Pago deshecho.', type: 'info' });
+                  } catch (error) {
+                    showToast({ message: error.message || 'No se pudo deshacer. Bórralo desde la ficha.', type: 'error' });
+                  }
+                  if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades().catch(() => {});
+                },
+              } : null,
+            });
+            try {
+              if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades();
+            } catch {
+              showToast({ message: 'El pago se guardó, pero no se pudo refrescar la lista. Actualiza la página.', type: 'error' });
+            }
           }}
         />
       )}
@@ -6019,6 +6113,8 @@ function SuperAdminPanel({
           puedeRegistrarPago={rolUsuario === 'super_admin'}
           puedeBorrarPagos={esAdmin || esSuperAdmin}
           onPagosCambiados={async () => { if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades(); }}
+          puedeEditarHermanos={esAdmin || esSuperAdmin}
+          onHermanosCambiados={async () => { await recargarUsuariosAdmin?.(); }}
           onCerrar={() => setFichaPersona(null)}
           onAbrir={(otra) => setFichaPersona(otra)}
           onEditar={(p) => { setFichaPersona(null); iniciarEdicion(p); }}

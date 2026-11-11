@@ -4,8 +4,10 @@ import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import { escucharErroresGlobales } from './utils/reportarError'
 
 registerSW({ immediate: true })
+escucharErroresGlobales()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

@@ -1029,6 +1029,24 @@ export const respaldosAPI = {
   ejecutar: async () => handleResponse(await apiFetch(`${API_BASE_URL}/admin/respaldos/ejecutar`, { method: 'POST' })),
 };
 
+// Errores de la app: el navegador los reporta (sin sesión también) y el
+// admin los ve en Panel → Sistema → Errores recientes.
+export const erroresAppAPI = {
+  reportar: async (datos) => {
+    try {
+      await apiFetch(`${API_BASE_URL}/errores-app`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos),
+      });
+    } catch {
+      // Reportar un error nunca debe provocar otro.
+    }
+  },
+  listar: async () => handleResponse(await apiFetch(`${API_BASE_URL}/admin/errores-app`)),
+  limpiar: async () => handleResponse(await apiFetch(`${API_BASE_URL}/admin/errores-app`, { method: 'DELETE' })),
+};
+
 // Tarifas de mensualidad con historial (Tesorería → Tarifas).
 export const configuracionAPI = {
   getTarifas: async () => {
