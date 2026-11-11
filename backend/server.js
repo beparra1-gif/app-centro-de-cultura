@@ -3304,6 +3304,55 @@ app.get('/api/admin/backup-status', (req, res) => {
 });
 
 // ==========================================
+// CUMPLEAÑOS DEL MES (widget del Muro)
+// ==========================================
+// Cualquier sesión del club lo ve. Solo datos mínimos: nombre, día,
+// categoría y foto — nunca año de nacimiento, edad, RUT ni contacto. El mes
+// lo manda el navegador (hora de Chile; el servidor corre en UTC).
+app.get('/api/cumpleanos', authenticate, async (req, res) => {
+  const mes = Number(req.query.mes);
+  if (!Number.isInteger(mes) || mes < 1 || mes > 12) return res.status(400).json({ error: 'Mes inválido.' });
+  const INACTIVOS = ['inactivo', 'inactiva', 'baja', 'retirado', 'retirada', 'suspendido', 'suspendida', 'eliminado'];
+  try {
+    const { rows } = await pool.query(
+      `SELECT 'jugador' AS tipo, REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') AS clave,
+              TRIM(CONCAT(nombres, ' ', apellido_paterno)) AS nombre,
+              EXTRACT(DAY FROM fecha_nacimiento)::int AS dia,
+              categoria, NULLIF(TRIM(foto_jugador), '') AS foto
+       FROM jugadores
+       WHERE fecha_nacimiento IS NOT NULL AND EXTRACT(MONTH FROM fecha_nacimiento) = $1
+         AND LOWER(TRIM(COALESCE(estado, ''))) <> ALL($2)
+       UNION ALL
+       SELECT 'cuenta', REPLACE(REPLACE(UPPER(c.rut), '.', ''), '-', ''),
+              TRIM(CONCAT(c.nombres, ' ', c.apellido_paterno)),
+              EXTRACT(DAY FROM c.fecha_nacimiento)::int,
+              NULL, NULLIF(TRIM(c.foto_perfil_url), '')
+       FROM cuentas c
+       WHERE c.fecha_nacimiento IS NOT NULL AND EXTRACT(MONTH FROM c.fecha_nacimiento) = $1
+         AND LOWER(TRIM(COALESCE(c.estado, ''))) <> ALL($2)
+         AND LOWER(COALESCE(c.rol, '')) NOT IN ('visita', 'mesa')`,
+      [mes, INACTIVOS]
+    );
+    // Una persona con ficha de deportista y cuenta propia aparece una vez
+    // (con la foto que tenga).
+    const porClave = new Map();
+    rows.forEach((r) => {
+      if (!r.clave || !r.nombre) return;
+      const previo = porClave.get(r.clave);
+      if (!previo) porClave.set(r.clave, r);
+      else if (!previo.foto && r.foto) previo.foto = r.foto;
+    });
+    const lista = [...porClave.values()]
+      .map(({ clave, ...resto }, i) => ({ id: `${resto.tipo}-${resto.dia}-${i}`, ...resto }))
+      .sort((a, b) => a.dia - b.dia || a.nombre.localeCompare(b.nombre, 'es'));
+    res.json(lista);
+  } catch (err) {
+    console.error('[GET /api/cumpleanos]', err.message);
+    res.status(500).json({ error: 'No se pudieron leer los cumpleaños.' });
+  }
+});
+
+// ==========================================
 // ERRORES DE LA APP (reportados por el navegador)
 // ==========================================
 // Antes un error en el celular de una familia solo se conocía si mandaban

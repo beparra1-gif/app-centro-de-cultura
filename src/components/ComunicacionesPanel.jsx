@@ -6,6 +6,7 @@ import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
 import MuroHorarioEntrenamientos from './MuroHorarioEntrenamientos';
+import MuroCumpleanos from './MuroCumpleanos';
 import { calcularResumenCitacion, puedeJugadorResponderPropiaCitacion } from '../utils/citaciones';
 import { esUrlImagen, esUrlYoutube, esUrlVimeo, esUrlVideoInterno, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
 
@@ -475,6 +476,8 @@ function ComunicacionesPanel({
       )}
 
       {mostrarFormComunicaciones && formularioComunicaciones}
+
+      <MuroCumpleanos />
 
       <MuroHorarioEntrenamientos />
 

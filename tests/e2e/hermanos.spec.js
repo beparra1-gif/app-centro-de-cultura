@@ -67,7 +67,7 @@ test('marcar y quitar hermanos sin apoderado', async ({ page }) => {
   expect(despues.every((j) => !j.grupo_familiar)).toBe(true);
 });
 
-test('al asignar apoderado a uno, el hermano marcado lo hereda', async ({ page }) => {
+test('al asignar apoderado a uno, pregunta antes de dárselo a sus hermanos', async ({ page }) => {
   await pool.query('UPDATE jugadores SET grupo_familiar = $1 WHERE rut_jugador = ANY($2)', ['fam-e2e', [A.rut, B.rut]]);
   await iniciarSesion(page, CUENTAS.super_admin.rut);
   await page.getByRole('button', { name: 'Usuarios y Cuentas' }).first().click();
@@ -77,6 +77,8 @@ test('al asignar apoderado a uno, el hermano marcado lo hereda', async ({ page }
   const valor = await select.locator('option', { hasText: 'E2E Apoderado' }).first().getAttribute('value');
   await select.selectOption(valor);
   await page.getByRole('button', { name: 'Confirmar asignación' }).click();
+  // Nunca se asigna solo: aparece la pregunta.
+  await page.getByRole('button', { name: 'Sí, a todos' }).click();
   await expect(page.getByText(/y su hermano\/a/).first()).toBeVisible({ timeout: 15000 });
   const filas = await grupos();
   expect(filas.every((j) => j.rut_apoderado === CUENTAS.apoderado.rut)).toBe(true);

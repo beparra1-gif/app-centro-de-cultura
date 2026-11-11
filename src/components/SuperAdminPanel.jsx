@@ -1187,10 +1187,17 @@ function SuperAdminPanel({
         rut_apoderado: cuenta.rut || null,
         correo_apoderado: cuenta.correo,
       }, jugador.rut_jugador);
-      // Hermanos marcados a mano (grupo_familiar) que aún no tienen
-      // apoderado: reciben el mismo, así la familia queda ordenada de una vez.
-      const hermanosSinApoderado = hermanosDe(jugador, jugadoresAdminTodos || [])
+      // Hermanos agrupados a mano (grupo_familiar) que aún no tienen
+      // apoderado: nunca se asigna solo; se pregunta y el admin decide.
+      const candidatosHermanos = hermanosDe(jugador, jugadoresAdminTodos || [])
         .filter((h) => !String(h.rut_apoderado || '').trim() && !String(h.correo_apoderado || '').includes('@'));
+      const tambienHermanos = candidatosHermanos.length > 0 && await confirmAction({
+        title: 'Asignar también a sus hermanos',
+        message: `${jugador.nombres || jugador.rut_jugador} está agrupado con ${candidatosHermanos.map((h) => h.nombres).join(', ')}, que no ${candidatosHermanos.length === 1 ? 'tiene' : 'tienen'} apoderado. ¿Asignar a ${cuenta.nombre} también como su apoderado?`,
+        confirmText: 'Sí, a todos',
+        cancelText: 'Solo a este deportista',
+      });
+      const hermanosSinApoderado = tambienHermanos ? candidatosHermanos : [];
       for (const h of hermanosSinApoderado) {
         await guardarJugadorAdmin({ rut_jugador: h.rut_jugador, rut_apoderado: cuenta.rut || null, correo_apoderado: cuenta.correo }, h.rut_jugador);
       }

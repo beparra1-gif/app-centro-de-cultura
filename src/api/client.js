@@ -1029,6 +1029,11 @@ export const respaldosAPI = {
   ejecutar: async () => handleResponse(await apiFetch(`${API_BASE_URL}/admin/respaldos/ejecutar`, { method: 'POST' })),
 };
 
+// Cumpleaños del mes (widget del Muro): nombre, día, categoría y foto.
+export const cumpleanosAPI = {
+  delMes: async (mes) => handleResponse(await apiFetch(`${API_BASE_URL}/cumpleanos?mes=${Number(mes)}`)),
+};
+
 // Errores de la app: el navegador los reporta (sin sesión también) y el
 // admin los ve en Panel → Sistema → Errores recientes.
 export const erroresAppAPI = {

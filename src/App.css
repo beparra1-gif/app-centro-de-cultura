@@ -4159,16 +4159,21 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .toast-accion { flex-shrink: 0; align-self: center; min-height: 32px; padding: 6px 12px; border-radius: var(--radius-pill); border: 1px solid var(--azul-electrico); background: transparent; color: var(--azul-electrico); font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
 .toast-accion:hover { background: rgba(0,122,255,0.08); }
 
-/* Vincular apoderados → Posibles hermanos */
+/* Vincular apoderados → Agrupar hermanos (manual) */
 .ph-seccion { margin-bottom: 14px; border: 1px solid var(--borde-suave); border-radius: var(--radius-md); background: var(--blanco-tarjeta); }
 .ph-titulo { width: 100%; display: flex; align-items: center; gap: 8px; padding: 12px 14px; min-height: var(--toque-min); background: none; border: none; font-family: inherit; font-size: 14px; font-weight: 900; color: var(--texto-heading); cursor: pointer; text-align: left; }
 .ph-titulo svg:last-child { margin-left: auto; }
 .ph-lista { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
-.ph-grupo { flex-wrap: wrap; }
-.ph-nombres { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-.ph-grupo small { display: block; font-size: 12px; color: var(--texto-secundario); margin-top: 2px; }
-.ph-botones { display: flex; gap: 6px; flex-wrap: wrap; }
-.ph-botones .tc-btn { width: auto; }
+.ph-grupos { display: flex; flex-direction: column; gap: 6px; }
+.ph-grupos small { display: block; font-size: 12px; color: var(--texto-secundario); }
+.ph-grupos .tc-btn { width: auto; }
+.ph-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ph-checks li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: var(--toque-min); border-bottom: 1px solid var(--borde-suave); }
+.ph-checks .checkbox-label-row { flex: 1 1 200px; margin: 0; font-size: 13px; }
+.ph-ver { font-size: 12px; }
+.ph-barra { position: sticky; bottom: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0 0; background: var(--blanco-tarjeta); }
+.ph-barra span { flex: 1; font-size: 13px; font-weight: 800; color: var(--texto-secundario); }
+.ph-barra .tc-btn { width: auto; }
 
 /* Panel → Errores recientes */
 .ea-lista { display: flex; flex-direction: column; gap: 8px; }
@@ -4179,6 +4184,28 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .ea-texto strong { font-size: 14px; word-break: break-word; }
 .ea-texto small { font-size: 12px; color: var(--texto-secundario); }
 .ea-detalle { margin: 0; padding: 12px 14px; border-top: 1px solid var(--borde-suave); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; color: var(--texto-principal); background: var(--fondo-input); border-radius: 0 0 var(--radius-md) var(--radius-md); }
+
+/* Muro → Cumpleaños del club */
+.mc-card { background: var(--blanco-tarjeta); border: 1px solid var(--borde-suave); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 15px; }
+.mc-cabecera { display: flex; align-items: center; gap: 8px; color: var(--texto-heading); }
+.mc-cabecera h3 { margin: 0; font-size: 16px; font-weight: 900; }
+.mc-cabecera svg { color: var(--azul-electrico); }
+.mc-foto { flex-shrink: 0; display: inline-grid; place-items: center; overflow: hidden; border-radius: 50%; background: linear-gradient(135deg, rgba(0,122,255,0.14), rgba(52,199,89,0.14)); color: var(--azul-electrico); font-weight: 900; border: 2px solid var(--blanco-tarjeta); box-shadow: 0 0 0 2px var(--borde-suave); }
+.mc-foto img { width: 100%; height: 100%; object-fit: cover; }
+.mc-hoy { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.mc-hoy-persona { display: flex; align-items: center; gap: 14px; padding: 12px; border-radius: var(--radius-md); background: linear-gradient(135deg, rgba(0,122,255,0.08), rgba(255,149,0,0.10)); }
+.mc-hoy-persona .mc-foto { box-shadow: 0 0 0 3px var(--azul-electrico); }
+.mc-hoy-persona div { display: flex; flex-direction: column; min-width: 0; }
+.mc-hoy-etiqueta { font-size: 12px; font-weight: 800; color: var(--azul-electrico); text-transform: uppercase; letter-spacing: 0.3px; }
+.mc-hoy-persona strong { font-size: 17px; color: var(--texto-principal); }
+.mc-hoy-persona small { font-size: 12px; color: var(--texto-secundario); }
+.mc-subtitulo { margin: 12px 0 6px; font-size: 12px; font-weight: 800; color: var(--texto-secundario); }
+.mc-tira { display: flex; gap: 12px; overflow-x: auto; padding: 2px 2px 6px; scroll-snap-type: x proximity; }
+.mc-persona { flex: 0 0 72px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; scroll-snap-align: start; }
+.mc-persona strong { font-size: 12px; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--texto-principal); }
+.mc-persona small { font-size: 12px; color: var(--texto-secundario); }
+.mc-persona.pasado { opacity: 0.6; }
+.mc-ver-todos { margin-top: 6px; display: inline-flex; align-items: center; gap: 4px; min-height: var(--toque-min); padding: 6px 4px; background: none; border: none; color: var(--azul-electrico); font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
 
 /* Panel → Cumpleaños del mes */
 .cm-cumples { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scroll-snap-type: x proximity; }

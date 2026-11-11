@@ -68,16 +68,18 @@ test('cumpleaños del mes en el Panel, con el de hoy destacado', async ({ page }
   await expect(page.getByRole('dialog').getByRole('heading', { name: /E2E MellizoA/ })).toBeVisible();
 });
 
-test('posibles hermanos: los sugiere y "Unir" los deja como familia', async ({ page }) => {
+test('agrupar hermanos a mano: nada se agrupa solo, el admin marca y agrupa', async ({ page }) => {
   await iniciarSesion(page, CUENTAS.super_admin.rut);
   await page.getByRole('button', { name: 'Usuarios y Cuentas' }).first().click();
   await page.getByRole('button', { name: /Vincular apoderados/ }).click();
-  const grupo = page.locator('.ph-grupo', { hasText: 'E2E MellizoA' });
-  await expect(grupo).toContainText('E2E MellizoB');
-  await expect(grupo).toContainText('mismos apellidos');
-  await expect(grupo).toContainText('mismo teléfono de emergencia');
-  await grupo.getByRole('button', { name: 'Unir como hermanos' }).click();
-  await expect(page.locator('.ph-grupo', { hasText: 'E2E MellizoA' })).toHaveCount(0, { timeout: 15000 });
+  // Mismos apellidos y teléfono, pero no hay sugerencias automáticas.
+  await expect(page.getByText(/Posibles hermanos/)).toHaveCount(0);
+  await page.getByRole('button', { name: /Agrupar hermanos sin apoderado/ }).click();
+  await page.getByLabel('Buscar para agrupar hermanos').fill('mellizo');
+  await page.getByRole('checkbox', { name: /E2E MellizoA/ }).check();
+  await page.getByRole('checkbox', { name: /E2E MellizoB/ }).check();
+  await page.getByRole('button', { name: 'Agrupar como hermanos' }).click();
+  await expect(page.locator('.ph-grupos', { hasText: 'Hermanos Gemelo' })).toBeVisible({ timeout: 15000 });
   const { rows } = await pool.query('SELECT DISTINCT grupo_familiar FROM jugadores WHERE rut_jugador = ANY($1)', [MELLIZOS.map((m) => m.rut)]);
   expect(rows).toHaveLength(1);
   expect(rows[0].grupo_familiar).toBeTruthy();
@@ -119,4 +121,18 @@ test('el orden elegido se recuerda al volver', async ({ page }) => {
   await page.reload();
   await page.getByRole('button', { name: 'Usuarios y Cuentas' }).first().click();
   await expect(page.getByLabel('Ordenar por')).toHaveValue('edad');
+});
+
+test('Muro: una familia ve los cumpleaños de hoy, con foto y sin año ni edad', async ({ page, request }) => {
+  await pool.query('UPDATE jugadores SET foto_jugador = $1 WHERE rut_jugador = $2', ['data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2210%22 height=%2210%22%3E%3Crect width=%2210%22 height=%2210%22 fill=%22red%22/%3E%3C/svg%3E', MELLIZOS[0].rut]);
+  await iniciarSesion(page, CUENTAS.apoderado.rut);
+  const card = page.getByRole('region', { name: 'Cumpleaños del club' });
+  const hoyA = card.locator('.mc-hoy-persona', { hasText: 'E2E MellizoA' });
+  await expect(hoyA).toBeVisible({ timeout: 30000 });
+  await expect(hoyA.locator('img')).toHaveCount(1);
+  await expect(card.locator('.mc-hoy-persona', { hasText: 'E2E MellizoB' }).locator('img')).toHaveCount(0);
+  await expect(card).not.toContainText('2014');
+
+  const sinSesion = await request.get('http://localhost:3000/api/cumpleanos?mes=1');
+  expect(sinSesion.status()).toBe(401);
 });

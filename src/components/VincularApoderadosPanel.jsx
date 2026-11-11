@@ -4,7 +4,7 @@ import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
 import { sugerirApoderados } from '../utils/sugerirApoderados';
-import PosiblesHermanos from './PosiblesHermanos';
+import AgruparHermanos from './AgruparHermanos';
 
 // Usuarios y Cuentas → "Vincular apoderados": deportistas sin cuenta de
 // apoderado vinculada, con las cuentas más probables y el motivo. Se vincula
@@ -61,7 +61,7 @@ export default function VincularApoderadosPanel({ jugadores = [], cuentas = [], 
 
   return (
     <div className="fade-in">
-      <PosiblesHermanos jugadores={jugadores} onRecargar={onRecargar} onVerFicha={onVerFicha} />
+      <AgruparHermanos jugadores={jugadores} cuentas={cuentas} onRecargar={onRecargar} onVerFicha={onVerFicha} />
 
       <div className="va-cabecera">
         <p>
