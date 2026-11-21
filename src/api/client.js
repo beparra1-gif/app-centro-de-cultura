@@ -664,6 +664,17 @@ export const adminAPI = {
 // ========== JUGADORES (FASE 1) ==========
 
 export const jugadoresAPI = {
+  // Importar jugadores + apoderados desde filas pegadas (solo super admin):
+  // sin aplicar solo revisa; con aplicar envía el resumen revisado.
+  importarPlanilla: async ({ texto, rama, aplicar = false, resumen }) => {
+    const response = await apiFetch(`${API_BASE_URL}/jugadores/importar-planilla`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texto, rama, aplicar, resumen }),
+    });
+    return handleResponse(response);
+  },
+
   // Obtener todos
   getAll: async () => {
     const response = await apiFetch(`${API_BASE_URL}/jugadores`);

@@ -40,6 +40,7 @@ const {
 const { normalizarRol, ROLES_BASE } = require('./security/accessControl');
 const { enviarCorreo, correoDisponible, enmascararCorreo, esCorreoReal } = require('./lib/correo');
 const { planificarImportacion, parsearGidsPlanilla } = require('./lib/importarPagosPlanilla');
+const { planificarImportacionJugadores } = require('./lib/importarJugadoresPlanilla');
 
 const app = express();
 let isSheetsSyncRunning = false;
@@ -7006,6 +7007,83 @@ app.post('/api/pagos-mensualidades/importar-planilla', authenticate, requireRole
     return res.status(err.status || 500).json({ error: err.message });
   } finally {
     isSheetsSyncRunning = false;
+  }
+});
+
+// ==========================================
+// IMPORTAR JUGADORES + APODERADOS DESDE FILAS PEGADAS (solo super admin)
+// ==========================================
+// { texto, rama } revisa (no cambia nada); con aplicar: true + el resumen
+// revisado, aplica el MISMO plan recalculado. Ver backend/lib/importarJugadoresPlanilla.js.
+app.post('/api/jugadores/importar-planilla', authenticate, requireRole('super_admin'), async (req, res) => {
+  const { texto = '', rama = null, aplicar = false, resumen = {} } = req.body || {};
+  if (!String(texto).trim()) return res.status(400).json({ error: 'Pega las filas de la planilla.' });
+  try {
+    const [jugadores, cuentas] = await Promise.all([
+      pool.query('SELECT rut_jugador, nombres, apellido_paterno, apellido_materno, fecha_nacimiento, fecha_ingreso, rut_apoderado, correo_apoderado FROM jugadores'),
+      pool.query('SELECT rut, nombres, apellido_paterno, apellido_materno, correo FROM cuentas'),
+    ]);
+    const plan = planificarImportacionJugadores({ texto, rama, jugadores: jugadores.rows, cuentas: cuentas.rows });
+    if (!aplicar) return res.json(plan);
+    if (['crear', 'completar', 'crearApoderados'].some((k) => Number(resumen[k] || 0) !== plan.resumen[k])) {
+      return res.status(409).json({ error: 'Los datos cambiaron desde que revisaste. Vuelve a revisar antes de aplicar.', resumen: plan.resumen });
+    }
+    const client = await pool.connect();
+    let apoderadosCreados = 0;
+    let creados = 0;
+    let completados = 0;
+    try {
+      await client.query('BEGIN');
+      // Apoderado sin cuenta: se crea sin clave (activa con el código del club)
+      // y con correo provisorio, como el resto de cuentas sin correo.
+      for (const { cuenta } of plan.apoderados.filter((a) => !a.existe)) {
+        const r = await client.query(
+          `INSERT INTO cuentas (correo, rut, nombres, apellido_paterno, apellido_materno, rol, perfil_principal, estado, forzar_clave)
+           SELECT $1, $2::varchar, $3, $4, $5, 'apoderado', 'apoderado', 'activo', true
+           WHERE NOT EXISTS (SELECT 1 FROM cuentas WHERE REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = REPLACE(UPPER($2::varchar), '-', ''))
+           ON CONFLICT DO NOTHING`,
+          [construirCorreoPlaceholderDesdeRut(cuenta.rut.replace('-', '')), cuenta.rut, cuenta.nombres || null, cuenta.apellido_paterno || null, cuenta.apellido_materno || null]
+        );
+        apoderadosCreados += r.rowCount;
+      }
+      for (const { ficha: f } of plan.crear) {
+        const r = await client.query(
+          `INSERT INTO jugadores (rut_jugador, nombres, apellido_paterno, apellido_materno, fecha_nacimiento, fecha_ingreso, rama, categoria, rut_apoderado, correo_apoderado, estado)
+           SELECT $1::varchar, $2, $3, $4, $5::date, $6::date, $7, $8, $9, $10, 'ACTIVO'
+           WHERE NOT EXISTS (SELECT 1 FROM jugadores WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = REPLACE(UPPER($1::varchar), '-', ''))`,
+          [f.rut_jugador, f.nombres, f.apellido_paterno, f.apellido_materno, f.fecha_nacimiento, f.fecha_ingreso, f.rama, f.categoria, f.rut_apoderado, f.correo_apoderado]
+        );
+        creados += r.rowCount;
+      }
+      // Solo campos vacíos (la condición se repite en SQL por si cambió algo).
+      for (const { rut, cambios: c } of plan.completar) {
+        const r = await client.query(
+          `UPDATE jugadores SET
+             fecha_nacimiento = COALESCE(fecha_nacimiento, $2::date),
+             fecha_ingreso = COALESCE(fecha_ingreso, $3::date),
+             rut_apoderado = CASE WHEN COALESCE(TRIM(rut_apoderado), '') = '' THEN COALESCE($4, rut_apoderado) ELSE rut_apoderado END,
+             correo_apoderado = CASE WHEN COALESCE(TRIM(correo_apoderado), '') = '' THEN COALESCE($5, correo_apoderado) ELSE correo_apoderado END,
+             updated_at = NOW()
+           WHERE rut_jugador = $1`,
+          [rut, c.fecha_nacimiento || null, c.fecha_ingreso || null, c.rut_apoderado || null, c.correo_apoderado || null]
+        );
+        completados += r.rowCount;
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (apoderadosCreados) sheetsSyncManager.enqueueTable('cuentas');
+    if (creados || completados) sheetsSyncManager.enqueueTable('jugadores');
+    await sheetsSyncManager.flush().catch((e) => console.error('[IMPORTAR-JUGADORES] flush Sheets:', e.message));
+    console.log(`[IMPORTAR-JUGADORES] ${creados} jugadores creados, ${completados} completados, ${apoderadosCreados} apoderados creados (por ${req.actor?.rut}).`);
+    return res.json({ ok: true, creados, completados, apoderadosCreados, resumen: plan.resumen });
+  } catch (err) {
+    console.error('[POST /api/jugadores/importar-planilla]', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 

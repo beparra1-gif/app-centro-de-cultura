@@ -54,6 +54,7 @@ import ErroresAppPanel from './ErroresAppPanel';
 import CumpleanosMes from './CumpleanosMes';
 import FichaPersonaModal from './FichaPersonaModal';
 import VincularApoderadosPanel from './VincularApoderadosPanel';
+import ImportarJugadoresPlanilla from './ImportarJugadoresPlanilla';
 import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
 import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
 import QrScanner from './QrScanner';
@@ -3253,6 +3254,9 @@ function SuperAdminPanel({
             </>
           )}
 
+          {vistaUsuarios === 'vincular' && esSuperAdmin && (
+            <ImportarJugadoresPlanilla onAplicado={recargarUsuariosAdmin} />
+          )}
           {vistaUsuarios === 'vincular' && (
             <VincularApoderadosPanel
               jugadores={jugadoresAdmin}
