@@ -1,5 +1,6 @@
 const express = require('express');
 const { asignarCategoriaPorEdad } = require('./lib/categoriaPorEdad');
+const { normalizarTelefonoChile, normalizarTelefonosBody } = require('./lib/telefonoChile');
 const { Pool } = require('pg');
 const cors = require('cors');
 const fs = require('fs');
@@ -887,6 +888,11 @@ app.use(compression());
 // (PagoForm.jsx no comprime ni limita el archivo antes de enviarlo).
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ limit: '15mb', extended: true }));
+// Teléfonos con la regla del club (+56 aparte, número de 9 dígitos) en toda
+// alta o edición de cuentas, deportistas y staff. Ver lib/telefonoChile.js.
+app.use(['/api/cuentas', '/api/jugadores', '/api/staff'], (req, res, next) => (
+  ['POST', 'PUT', 'PATCH'].includes(req.method) ? normalizarTelefonosBody(req, res, next) : next()
+));
 
 app.use((req, res, next) => {
   const shouldTrack = MUTATING_METHODS.has(String(req.method || '').toUpperCase());
@@ -1657,6 +1663,39 @@ const ensureJugadoresExtendedColumns = async () => {
   // (Usuarios y Cuentas → Altas y bajas). Ver registrarCambioEstado.
   await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS motivo_baja TEXT`);
   await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS motivo_baja TEXT`);
+  // Teléfonos ya guardados: misma regla que las escrituras nuevas (había
+  // fichas con el +56 duplicado). Idempotente: solo toca lo que cambia.
+  try {
+    let corregidos = 0;
+    const TABLAS_TELEFONO = [
+      ['cuentas', 'id', ['telefono', 'num_segundo_contacto']],
+      ['jugadores', 'rut_jugador', ['num_emergencia']],
+      ['staff', 'id_staff', ['telefono']],
+    ];
+    for (const [tabla, clave, campos] of TABLAS_TELEFONO) {
+      // Consulta directa (no obtenerColumnasTabla): su caché quedaría fija antes de otros ALTER del arranque.
+      const existentes = new Set((await pool.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`, [tabla]
+      )).rows.map((r) => r.column_name));
+      const cols = campos.filter((c) => existentes.has(c));
+      if (!cols.length || !existentes.has(clave)) continue;
+      const { rows } = await pool.query(`SELECT ${clave}, ${cols.join(', ')} FROM ${tabla}`);
+      for (const fila of rows) {
+        const cambios = cols.filter((c) => typeof fila[c] === 'string' && fila[c] !== normalizarTelefonoChile(fila[c]));
+        if (!cambios.length) continue;
+        await pool.query(
+          `UPDATE ${tabla} SET ${cambios.map((c, i) => `${c} = $${i + 1}`).join(', ')} WHERE ${clave} = $${cambios.length + 1}`,
+          [...cambios.map((c) => normalizarTelefonoChile(fila[c])), fila[clave]]
+        );
+        corregidos += 1;
+      }
+    }
+    const prefijos = await pool.query(`UPDATE cuentas SET prefijo_tel = '+56' WHERE COALESCE(TRIM(prefijo_tel), '') <> '+56'`);
+    console.log(`📞 Teléfonos normalizados: ${corregidos} fichas, ${prefijos.rowCount} prefijos`);
+  } catch (error) {
+    console.error('[TELEFONOS] No se pudieron normalizar:', error.message);
+  }
+
   // Rama en una sola forma (MASCULINA/FEMENINA/MIXTA): el Sheet y los
   // formularios la traían en mayúsculas y minúsculas mezcladas, y algunos
   // filtros las trataban como ramas distintas. Las escrituras nuevas ya
