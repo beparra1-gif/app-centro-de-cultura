@@ -63,7 +63,7 @@ import { calcularResumenCitacion } from '../utils/citaciones';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { mapearJugadorAPupilo } from '../utils/pupiloMapper';
 import { cambioDeEstado, estaActivo, soloActivos } from '../utils/estadoActivo';
-import { construirCsvCuentas, construirCsvDeportistas, descargarCsv } from '../utils/exportarDeportistas';
+import { descargarExcel, descargarPdf, listadoCuentas, listadoDeportistas } from '../utils/exportarDeportistas';
 import { CATEGORIAS_POR_RAMA } from '../utils/categoriasDeportivas';
 import ReportesPanel from './ReportesPanel';
 import SaludAlertasPanel from './SaludAlertasPanel';
@@ -1375,6 +1375,33 @@ function SuperAdminPanel({
       message: fallidos ? `${items.length - fallidos} actualizados, ${fallidos} con error (revisa la conexión y reintenta).` : `${items.length} actualizados.`,
       type: fallidos ? 'error' : 'success',
     });
+  };
+
+  const [exportandoListado, setExportandoListado] = useState('');
+  const ETIQUETA_FILTRO_ESTADO = { activos: 'Solo activos', inactivos: 'Solo inactivos / baja', todos: 'Activos e inactivos' };
+  const botonesExportar = ({ cantidad, archivo, armar, titulo, subtitulo }) => {
+    const exportar = async (formato) => {
+      setExportandoListado(formato);
+      try {
+        if (formato === 'excel') await descargarExcel(`${archivo}.xlsx`, armar(), titulo);
+        else await descargarPdf(`${archivo}.pdf`, armar(), titulo, subtitulo);
+      } catch (error) {
+        showToast({ message: `No se pudo exportar: ${error.message}`, type: 'error' });
+      } finally {
+        setExportandoListado('');
+      }
+    };
+    return (
+      <span className="uc-exportar" role="group" aria-label={`Exportar ${cantidad} en Excel o PDF`}>
+        <span className="uc-exportar-etiqueta"><FileText size={13} /> Exportar {cantidad}:</span>
+        <button type="button" className="btn-secondary tc-btn" disabled={!cantidad || Boolean(exportandoListado)} onClick={() => exportar('excel')}>
+          {exportandoListado === 'excel' ? 'Generando…' : 'Excel'}
+        </button>
+        <button type="button" className="btn-secondary tc-btn" disabled={!cantidad || Boolean(exportandoListado)} onClick={() => exportar('pdf')}>
+          {exportandoListado === 'pdf' ? 'Generando…' : 'PDF'}
+        </button>
+      </span>
+    );
   };
 
   const barraSeleccionUsuarios = (lista) => {
@@ -3281,18 +3308,13 @@ function SuperAdminPanel({
                   <button className={`filter-chip ${filtroApoderadoJugadores === 'todos' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('todos')}>Todos ({jugadoresAdminTodos.length})</button>
                   <button className={`filter-chip ${filtroApoderadoJugadores === 'sin' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('sin')}>Sin apoderado ({jugadoresSinApoderado.length})</button>
                   <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdminTodos.length - jugadoresSinApoderado.length})</button>
-                  <button
-                    type="button"
-                    className="btn-secondary tc-btn"
-                    disabled={deportistasFiltrados.length === 0}
-                    title="Descarga los deportistas filtrados (rama, categoría, estado) con su apoderado, para abrir en Excel"
-                    onClick={() => descargarCsv(
-                      `deportistas-${[filtroRamaJugadores, filtroCategoriaJugadores, filtroEstadoUsuarios].filter((f) => f !== 'todas' && f !== 'todos').join('-')}-${hoyLocalISO()}.csv`,
-                      construirCsvDeportistas(deportistasFiltrados.map((u) => u.raw), cuentasAdminTodas || []),
-                    )}
-                  >
-                    <FileText size={13} /> Exportar listado ({deportistasFiltrados.length})
-                  </button>
+                  {botonesExportar({
+                    cantidad: deportistasFiltrados.length,
+                    archivo: `deportistas-${[filtroRamaJugadores, filtroCategoriaJugadores, filtroEstadoUsuarios].filter((f) => f !== 'todas' && f !== 'todos').join('-')}-${hoyLocalISO()}`,
+                    armar: () => listadoDeportistas(deportistasFiltrados.map((u) => u.raw), cuentasAdminTodas || []),
+                    titulo: 'Deportistas y apoderados',
+                    subtitulo: [filtroRamaJugadores !== 'todas' && `Rama ${filtroRamaJugadores}`, filtroCategoriaJugadores !== 'todas' && `Categoría ${filtroCategoriaJugadores}`, ETIQUETA_FILTRO_ESTADO[filtroEstadoUsuarios]].filter(Boolean).join(' · '),
+                  })}
                 </div>
 
                 {barraSeleccionUsuarios(deportistasFiltrados)}
@@ -3346,18 +3368,13 @@ function SuperAdminPanel({
                 </div>
 
                 <div className="filter-chips" style={{ marginTop: '10px' }}>
-                  <button
-                    type="button"
-                    className="btn-secondary tc-btn"
-                    disabled={cuentasUsuariosFiltradas.length === 0}
-                    title="Descarga las cuentas filtradas con sus pupilos, para abrir en Excel"
-                    onClick={() => descargarCsv(
-                      `cuentas-${[filtroTipoPerfil, filtroEstadoUsuarios].filter((f) => f !== 'todos').join('-')}-${hoyLocalISO()}.csv`,
-                      construirCsvCuentas(cuentasUsuariosFiltradas.map((u) => u.raw), jugadoresAdminTodos || []),
-                    )}
-                  >
-                    <FileText size={13} /> Exportar listado ({cuentasUsuariosFiltradas.length})
-                  </button>
+                  {botonesExportar({
+                    cantidad: cuentasUsuariosFiltradas.length,
+                    archivo: `cuentas-${[filtroTipoPerfil, filtroEstadoUsuarios].filter((f) => f !== 'todos').join('-')}-${hoyLocalISO()}`,
+                    armar: () => listadoCuentas(cuentasUsuariosFiltradas.map((u) => u.raw), jugadoresAdminTodos || []),
+                    titulo: 'Cuentas y pupilos',
+                    subtitulo: [filtroTipoPerfil !== 'todos' && `Perfil ${filtroTipoPerfil}`, ETIQUETA_FILTRO_ESTADO[filtroEstadoUsuarios]].filter(Boolean).join(' · '),
+                  })}
                 </div>
                 {barraSeleccionUsuarios(cuentasUsuariosFiltradas)}
                 <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
