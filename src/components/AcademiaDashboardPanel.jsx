@@ -4,7 +4,8 @@ import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import SkeletonLoaderPanel from './SkeletonLoaderPanel';
 
-import { mismoTexto } from '../utils/texto';
+import { coincideAlguna, mismoTexto, unicosSinMayusculas } from '../utils/texto';
+import FiltroCategorias from './FiltroCategorias';
 const normalizarNombreCompleto = (item = {}) => (
   `${item.nombres || ''} ${item.apellido_paterno || ''} ${item.apellido_materno || ''}`.trim() || 'Deportista'
 );
@@ -15,9 +16,9 @@ const normalizarNombreCompleto = (item = {}) => (
 const filtrarContenidoPorRamaCategoria = (items = [], filtroRama, filtroCategoria) => (items || []).filter((item) => {
   const coincideRama = filtroRama === 'Todas' || mismoTexto(item.rama || 'General', filtroRama);
   if (!coincideRama) return false;
-  if (filtroCategoria === 'Todas') return true;
+  if (!filtroCategoria.length) return true;
   const categorias = Array.isArray(item.categorias_objetivo) ? item.categorias_objetivo : [];
-  return categorias.length === 0 || categorias.includes(filtroCategoria);
+  return categorias.length === 0 || categorias.some((c) => coincideAlguna(filtroCategoria, c));
 });
 
 function FiltroRamaCategoria({ jugadoresAdmin, filtroRama, setFiltroRama, filtroCategoria, setFiltroCategoria }) {
@@ -28,27 +29,23 @@ function FiltroRamaCategoria({ jugadoresAdmin, filtroRama, setFiltroRama, filtro
 
   const categoriasDisponibles = useMemo(() => {
     const base = (jugadoresAdmin || []).filter((j) => filtroRama === 'Todas' || mismoTexto(j.rama, filtroRama));
-    const set = new Set(base.map((j) => String(j.categoria || '').trim()).filter(Boolean));
-    return Array.from(set).sort();
+    return unicosSinMayusculas(base.map((j) => j.categoria)).sort();
   }, [jugadoresAdmin, filtroRama]);
 
   return (
     <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }} className="mb-15">
-      <select className="form-input" style={{ flex: 1, minWidth: '140px' }} value={filtroRama} onChange={(e) => { setFiltroRama(e.target.value); setFiltroCategoria('Todas'); }}>
+      <select className="form-input" style={{ flex: 1, minWidth: '140px' }} value={filtroRama} onChange={(e) => { setFiltroRama(e.target.value); setFiltroCategoria([]); }}>
         <option value="Todas">Todas las ramas</option>
         {ramasDisponibles.map((rama) => <option key={rama} value={rama}>{rama}</option>)}
       </select>
-      <select className="form-input" style={{ flex: 1, minWidth: '140px' }} value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
-        <option value="Todas">Todas las categorías</option>
-        {categoriasDisponibles.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-      </select>
+      <FiltroCategorias className="fc-flex" opciones={categoriasDisponibles} valor={filtroCategoria} onCambiar={setFiltroCategoria} />
     </div>
   );
 }
 
 function TabRanking({ jugadoresAdmin }) {
   const [filtroRama, setFiltroRama] = useState('Todas');
-  const [filtroCategoria, setFiltroCategoria] = useState('Todas');
+  const [filtroCategoria, setFiltroCategoria] = useState([]);
   const [ranking, setRanking] = useState([]);
   const [cargando, setCargando] = useState(false);
 
@@ -57,7 +54,7 @@ function TabRanking({ jugadoresAdmin }) {
     setCargando(true);
     api.academiaAPI.ranking({
       rama: filtroRama !== 'Todas' ? filtroRama : undefined,
-      categoria: filtroCategoria !== 'Todas' ? filtroCategoria : undefined,
+      categoria: filtroCategoria.length ? filtroCategoria.join(',') : undefined,
     })
       .then((datos) => { if (!cancelado) setRanking(Array.isArray(datos) ? datos : []); })
       .catch((error) => { if (!cancelado) showToast({ message: error.message || 'No se pudo cargar el ranking.', type: 'error' }); })
@@ -93,7 +90,7 @@ function TabRanking({ jugadoresAdmin }) {
 
 function TabQuizzes({ quizList, jugadoresAdmin }) {
   const [filtroRama, setFiltroRama] = useState('Todas');
-  const [filtroCategoria, setFiltroCategoria] = useState('Todas');
+  const [filtroCategoria, setFiltroCategoria] = useState([]);
   const [expandidoId, setExpandidoId] = useState(null);
   const [detalle, setDetalle] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -189,7 +186,7 @@ function TabQuizzes({ quizList, jugadoresAdmin }) {
 
 function TabMateriales({ materialesAcademia, jugadoresAdmin }) {
   const [filtroRama, setFiltroRama] = useState('Todas');
-  const [filtroCategoria, setFiltroCategoria] = useState('Todas');
+  const [filtroCategoria, setFiltroCategoria] = useState([]);
   const [expandidoId, setExpandidoId] = useState(null);
   const [detalle, setDetalle] = useState(null);
   const [cargando, setCargando] = useState(false);

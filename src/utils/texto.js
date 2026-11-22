@@ -12,3 +12,6 @@ export const unicosSinMayusculas = (valores = []) => {
   });
   return [...vistos.values()];
 };
+
+// Filtros de selección múltiple: [] = todas; si no, el valor debe ser alguno de los elegidos.
+export const coincideAlguna = (seleccion = [], valor) => !seleccion.length || seleccion.some((s) => mismoTexto(s, valor));

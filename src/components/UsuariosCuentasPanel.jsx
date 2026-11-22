@@ -15,6 +15,8 @@ import { hoyLocalISO } from '../utils/fechas';
 import { hermanosDe } from '../utils/hermanos';
 import { ordenarPersonas } from '../utils/ordenarPersonas';
 import usePreferenciaLocal, { esOrdenValido } from '../utils/usePreferenciaLocal';
+import FiltroCategorias from './FiltroCategorias';
+import { coincideAlguna } from '../utils/texto';
 
 // Vista "Usuarios y Cuentas" (Deportistas, Cuentas, Vincular, Altas y bajas,
 // Registrar), separada de SuperAdminPanel. Se monta siempre y solo se oculta
@@ -65,7 +67,7 @@ export default function UsuariosCuentasPanel({
   const [filtroTipoPerfil, setFiltroTipoPerfil] = useState('todos');
   const [filtroEstadoUsuarios, setFiltroEstadoUsuarios] = useState('activos');
   const [filtroRamaJugadores, setFiltroRamaJugadores] = useState('todas');
-  const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState('todas');
+  const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState([]);
   const [filtroApoderadoJugadores, setFiltroApoderadoJugadores] = useState('todos');
   const [asignandoApoderadoRut, setAsignandoApoderadoRut] = useState(null);
   const [correoApoderadoParaAsignar, setCorreoApoderadoParaAsignar] = useState('');
@@ -201,7 +203,7 @@ export default function UsuariosCuentasPanel({
         if (filtroEstadoUsuarios === 'inactivos' && estaActivo(u.raw)) return false;
         if (q && !u.busqueda.includes(q)) return false;
         if (filtroRamaJugadores !== 'todas' && u.rama !== filtroRamaJugadores.toLowerCase()) return false;
-        if (filtroCategoriaJugadores !== 'todas' && u.categoria !== filtroCategoriaJugadores.toLowerCase()) return false;
+        if (!coincideAlguna(filtroCategoriaJugadores, u.categoria)) return false;
         const sinApoderado = rutsJugadoresSinApoderado.has(String(u.raw.rut_jugador || ''));
         if (filtroApoderadoJugadores === 'sin' && !sinApoderado) return false;
         if (filtroApoderadoJugadores === 'con' && sinApoderado) return false;
@@ -604,12 +606,7 @@ export default function UsuariosCuentasPanel({
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>Categoría</label>
-                    <select className="form-input" value={filtroCategoriaJugadores} onChange={(e) => setFiltroCategoriaJugadores(e.target.value)}>
-                      <option value="todas">Todas</option>
-                      {categoriasUnicas.map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+                    <FiltroCategorias opciones={categoriasUnicas} valor={filtroCategoriaJugadores} onCambiar={setFiltroCategoriaJugadores} />
                   </div>
                 </div>
 
@@ -619,10 +616,10 @@ export default function UsuariosCuentasPanel({
                   <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdminTodos.length - jugadoresSinApoderado.length})</button>
                   {botonesExportar({
                     cantidad: deportistasFiltrados.length,
-                    archivo: `deportistas-${[filtroRamaJugadores, filtroCategoriaJugadores, filtroEstadoUsuarios].filter((f) => f !== 'todas' && f !== 'todos').join('-')}-${hoyLocalISO()}`,
+                    archivo: `deportistas-${[filtroRamaJugadores, ...filtroCategoriaJugadores, filtroEstadoUsuarios].filter((f) => f !== 'todas' && f !== 'todos').join('-')}-${hoyLocalISO()}`,
                     armar: () => listadoDeportistas(deportistasFiltrados.map((u) => u.raw), cuentasAdminTodas || []),
                     titulo: 'Deportistas y apoderados',
-                    subtitulo: [filtroRamaJugadores !== 'todas' && `Rama ${filtroRamaJugadores}`, filtroCategoriaJugadores !== 'todas' && `Categoría ${filtroCategoriaJugadores}`, ETIQUETA_FILTRO_ESTADO[filtroEstadoUsuarios]].filter(Boolean).join(' · '),
+                    subtitulo: [filtroRamaJugadores !== 'todas' && `Rama ${filtroRamaJugadores}`, filtroCategoriaJugadores.length > 0 && `Categoría ${filtroCategoriaJugadores.join(', ')}`, ETIQUETA_FILTRO_ESTADO[filtroEstadoUsuarios]].filter(Boolean).join(' · '),
                   })}
                   {(esAdmin || esSuperAdmin) && (
                     <button type="button" className="btn-secondary tc-btn" disabled={!deportistasFiltrados.length} onClick={() => setAvisoWsp({ titulo: `WhatsApp a apoderados (${deportistasFiltrados.length} deportistas)`, destinatarios: destinatariosApoderados(deportistasFiltrados) })}>

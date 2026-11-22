@@ -17,3 +17,12 @@ describe('rama sin distinguir mayúsculas', () => {
     expect(filtrarInforme(filas, { rama: 'MASCULINA', categoria: 'SUB-15' }).map((f) => f.nombre)).toEqual(['A']);
   });
 });
+
+describe('coincideAlguna', () => {
+  it('[] deja pasar todo; con elegidas compara sin mayúsculas', async () => {
+    const { coincideAlguna } = await import('./texto');
+    expect(coincideAlguna([], 'SUB-13')).toBe(true);
+    expect(coincideAlguna(['sub-13', 'SUB-15'], 'SUB-13')).toBe(true);
+    expect(coincideAlguna(['SUB-15'], 'SUB-13')).toBe(false);
+  });
+});

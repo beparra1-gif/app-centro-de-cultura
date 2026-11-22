@@ -8667,8 +8667,9 @@ app.get('/api/asistencia/sesiones', authenticate, requireAnyModule('citaciones',
       condiciones.push(`LOWER(TRIM(rama)) = LOWER(TRIM($${valores.length}))`);
     }
     if (categoria) {
-      valores.push(categoria);
-      condiciones.push(`LOWER(TRIM(categoria)) = LOWER(TRIM($${valores.length}))`);
+      // Una o varias categorías separadas por coma (filtro de selección múltiple).
+      valores.push(String(categoria).split(',').map((c) => c.trim().toLowerCase()).filter(Boolean));
+      condiciones.push(`LOWER(TRIM(categoria)) = ANY($${valores.length}::text[])`);
     }
     if (entrenador) {
       valores.push(`%${entrenador}%`);
@@ -9752,14 +9753,16 @@ app.get('/api/academia-material-interacciones/:comunicacionId', authenticate, re
 app.get('/api/academia/ranking', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
   try {
     const rama = String(req.query.rama || '').trim() || null;
-    const categoria = String(req.query.categoria || '').trim() || null;
+    // Una o varias categorías separadas por coma; null = todas.
+    const listaCategorias = String(req.query.categoria || '').split(',').map((c) => c.trim().toLowerCase()).filter(Boolean);
+    const categoria = listaCategorias.length ? listaCategorias : null;
     const result = await pool.query(
       `SELECT j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria,
               COALESCE(SUM(gp.puntos_obtenidos), 0) AS xp_total,
               COUNT(gp.id_logro) AS logros_totales
        FROM jugadores j
        LEFT JOIN gamificacion_puntos gp ON gp.rut_jugador = j.rut_jugador
-       WHERE ($1::text IS NULL OR LOWER(TRIM(j.rama)) = LOWER(TRIM($1))) AND ($2::text IS NULL OR LOWER(TRIM(j.categoria)) = LOWER(TRIM($2)))
+       WHERE ($1::text IS NULL OR LOWER(TRIM(j.rama)) = LOWER(TRIM($1))) AND ($2::text[] IS NULL OR LOWER(TRIM(j.categoria)) = ANY($2::text[]))
        GROUP BY j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria
        ORDER BY xp_total DESC, j.apellido_paterno ASC`,
       [rama, categoria]

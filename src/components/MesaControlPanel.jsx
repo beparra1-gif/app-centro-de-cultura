@@ -10,6 +10,7 @@ import LogoAvatar from './LogoAvatar';
 import LogoPicker from './LogoPicker';
 import MesaEstadisticasGlosario from './MesaEstadisticasGlosario';
 import { normalizarSlugLogo } from '../utils/logoResolver';
+import FiltroCategorias from './FiltroCategorias';
 
 const LIMITE_JUGADORES_POR_EQUIPO = 12;
 const MESA_SESSION_KEY = 'mesa_live_session_v2';
@@ -508,7 +509,7 @@ function MesaControlPanel({
   const [moduloMesa, setModuloMesa] = useState('prepartido');
   const [historialFiltroTexto, setHistorialFiltroTexto] = useState('');
   const [historialFiltroRama, setHistorialFiltroRama] = useState('Todas');
-  const [historialFiltroCategoria, setHistorialFiltroCategoria] = useState('Todas');
+  const [historialFiltroCategoria, setHistorialFiltroCategoria] = useState([]);
   const [tipoFichaTecnicaExport, setTipoFichaTecnicaExport] = useState('planilla_resumen_oficial');
   const [filtroRama, setFiltroRama] = useState('Todas');
   const [filtroCategoria, setFiltroCategoria] = useState('Todas');
@@ -768,7 +769,8 @@ function MesaControlPanel({
       if (guardada.filtroCategoria) setFiltroCategoria(guardada.filtroCategoria);
       if (typeof guardada.historialFiltroTexto === 'string') setHistorialFiltroTexto(guardada.historialFiltroTexto);
       if (guardada.historialFiltroRama) setHistorialFiltroRama(guardada.historialFiltroRama);
-      if (guardada.historialFiltroCategoria) setHistorialFiltroCategoria(guardada.historialFiltroCategoria);
+      // Antes se guardaba una sola categoría (texto); ahora una lista ([] = todas).
+      if (guardada.historialFiltroCategoria) setHistorialFiltroCategoria(Array.isArray(guardada.historialFiltroCategoria) ? guardada.historialFiltroCategoria : (guardada.historialFiltroCategoria === 'Todas' ? [] : [guardada.historialFiltroCategoria]));
       setCompetenciaNombre(guardada.competenciaNombre || '');
       setCompetenciaLogoUrl(guardada.competenciaLogoUrl || '');
       setCanchaSede(guardada.canchaSede || '');
@@ -2024,7 +2026,7 @@ function MesaControlPanel({
     const q = normalizarTexto(historialFiltroTexto).toLowerCase();
     return historialCombinado.filter((p) => {
       const okRama = historialFiltroRama === 'Todas' || coincideFiltro(p.filtros?.rama, historialFiltroRama);
-      const okCategoria = historialFiltroCategoria === 'Todas' || coincideFiltro(p.filtros?.categoria, historialFiltroCategoria);
+      const okCategoria = historialFiltroCategoria.length === 0 || historialFiltroCategoria.some((c) => coincideFiltro(p.filtros?.categoria, c));
       const texto = `${p.equipos?.local?.nombre || ''} ${p.equipos?.visita?.nombre || ''} ${p.filtros?.competicion || ''}`.toLowerCase();
       const okTexto = !q || texto.includes(q);
       return okRama && okCategoria && okTexto;
@@ -3555,12 +3557,10 @@ function MesaControlPanel({
               {opcionesRama.map((op) => <option key={`hr-${op}`} value={op}>{op}</option>)}
             </select>
           </label>
-          <label className="mesa-filter-item">
+          <div className="mesa-filter-item">
             <span>Categoría</span>
-            <select className="form-input" value={historialFiltroCategoria} onChange={(e) => setHistorialFiltroCategoria(e.target.value)}>
-              {opcionesCategoria.map((op) => <option key={`hc-${op}`} value={op}>{op}</option>)}
-            </select>
-          </label>
+            <FiltroCategorias opciones={opcionesCategoria.filter((op) => op !== 'Todas')} valor={historialFiltroCategoria} onCambiar={setHistorialFiltroCategoria} />
+          </div>
         </div>
         <div className="mesa-filtros-grid" style={{ marginTop: '10px' }}>
           <label className="mesa-filter-item">

@@ -4,7 +4,8 @@ import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Responsi
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 
-import { mismoTexto } from '../utils/texto';
+import { coincideAlguna, mismoTexto, unicosSinMayusculas } from '../utils/texto';
+import FiltroCategorias from './FiltroCategorias';
 const LATERALIDAD_OPCIONES = [
   { value: '', label: 'Sin evaluar' },
   { value: 'derecha', label: 'Derecha definida' },
@@ -32,7 +33,7 @@ function StaffEvaluacionPanel({
   onRutInicialConsumido,
 }) {
   const [filtroRama, setFiltroRama] = useState('Todas');
-  const [filtroCategoria, setFiltroCategoria] = useState('Todas');
+  const [filtroCategoria, setFiltroCategoria] = useState([]);
   const [rutJugadorSeleccionado, setRutJugadorSeleccionado] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [historialEvaluaciones, setHistorialEvaluaciones] = useState([]);
@@ -56,14 +57,13 @@ function StaffEvaluacionPanel({
 
   const categoriasDisponibles = useMemo(() => {
     const base = (jugadoresAdmin || []).filter((j) => filtroRama === 'Todas' || mismoTexto(j.rama, filtroRama));
-    const set = new Set(base.map((j) => String(j.categoria || '').trim()).filter(Boolean));
-    return Array.from(set).sort();
+    return unicosSinMayusculas(base.map((j) => j.categoria)).sort();
   }, [jugadoresAdmin, filtroRama]);
 
   const jugadoresFiltrados = useMemo(() => {
     return (jugadoresAdmin || []).filter((j) => {
       const coincideRama = filtroRama === 'Todas' || mismoTexto(j.rama, filtroRama);
-      const coincideCategoria = filtroCategoria === 'Todas' || mismoTexto(j.categoria, filtroCategoria);
+      const coincideCategoria = coincideAlguna(filtroCategoria, j.categoria);
       return coincideRama && coincideCategoria;
     });
   }, [jugadoresAdmin, filtroRama, filtroCategoria]);
@@ -172,19 +172,17 @@ function StaffEvaluacionPanel({
           <select
             className="form-input"
             value={filtroRama}
-            onChange={(e) => { setFiltroRama(e.target.value); setFiltroCategoria('Todas'); setRutJugadorSeleccionado(''); }}
+            onChange={(e) => { setFiltroRama(e.target.value); setFiltroCategoria([]); setRutJugadorSeleccionado(''); }}
           >
             <option value="Todas">Todas las ramas</option>
             {ramasDisponibles.map((rama) => <option key={rama} value={rama}>{rama}</option>)}
           </select>
-          <select
-            className="form-input"
-            value={filtroCategoria}
-            onChange={(e) => { setFiltroCategoria(e.target.value); setRutJugadorSeleccionado(''); }}
-          >
-            <option value="Todas">Todas las categorías</option>
-            {categoriasDisponibles.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-          </select>
+          <FiltroCategorias
+            className="fc-flex"
+            opciones={categoriasDisponibles}
+            valor={filtroCategoria}
+            onCambiar={(v) => { setFiltroCategoria(v); setRutJugadorSeleccionado(''); }}
+          />
         </div>
         <select
           className="form-input"

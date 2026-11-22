@@ -10,6 +10,8 @@ import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
 import QrScanner from './QrScanner';
 import { hoyLocalISO } from '../utils/fechas';
+import FiltroCategorias from './FiltroCategorias';
+import { unicosSinMayusculas } from '../utils/texto';
 
 const ESTADO_COLOR = {
   presente: { bg: 'var(--verde-victoria)', bgSoft: 'rgba(52,199,89,0.10)' },
@@ -167,7 +169,8 @@ function StaffAsistenciaPanel({
   }, []);
 
   const [filtroResumenRama, setFiltroResumenRama] = useState('todas');
-  const [filtroResumenCategoria, setFiltroResumenCategoria] = useState('');
+  const [filtroResumenCategoria, setFiltroResumenCategoria] = useState([]);
+  const categoriasResumen = useMemo(() => unicosSinMayusculas((todosJugadores || []).map((j) => j.categoria)).sort(), [todosJugadores]);
   const [filtroResumenProfesor, setFiltroResumenProfesor] = useState('');
   const [filtroResumenDesde, setFiltroResumenDesde] = useState('');
   const [filtroResumenHasta, setFiltroResumenHasta] = useState('');
@@ -363,7 +366,7 @@ function StaffAsistenciaPanel({
     try {
       const datos = await api.asistenciaAPI.getSesiones({
         rama: filtroResumenRama !== 'todas' ? filtroResumenRama : undefined,
-        categoria: filtroResumenCategoria || undefined,
+        categoria: filtroResumenCategoria.length ? filtroResumenCategoria.join(',') : undefined,
         entrenador: filtroResumenProfesor || undefined,
         desde: filtroResumenDesde || undefined,
         hasta: filtroResumenHasta || undefined,
@@ -665,7 +668,7 @@ function StaffAsistenciaPanel({
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Categoría</label>
-              <input className="form-input" placeholder="Ej: U15" value={filtroResumenCategoria} onChange={(e) => setFiltroResumenCategoria(e.target.value)} />
+              <FiltroCategorias opciones={categoriasResumen} valor={filtroResumenCategoria} onCambiar={setFiltroResumenCategoria} />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Profesor / entrenador</label>

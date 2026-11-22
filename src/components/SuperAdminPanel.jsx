@@ -74,8 +74,9 @@ import { absolutizarLogoUrl } from '../utils/logoResolver';
 import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
 import useModalAccesible from '../utils/useModalAccesible';
 
-import { mismoTexto } from '../utils/texto';
+import { coincideAlguna, mismoTexto, unicosSinMayusculas } from '../utils/texto';
 import { mensajeCodigoActivacion, telefonoParaWhatsApp } from '../utils/codigoActivacion';
+import FiltroCategorias from './FiltroCategorias';
 // comprobante_url llega en 2 formatos: URL relativa del backend
 // (/api/logo-assets/file/...) para imágenes subidas como archivo, o un data
 // URI base64 completo para PDF (ver convertirArchivoABase64 en
@@ -321,7 +322,7 @@ function SuperAdminPanel({
   // propios de rama/categoría para no depender de los de "Estatus de pagos".
   const [mostrarRecaudacion, setMostrarRecaudacion] = useState(false);
   const [filtroRamaRecaudacion, setFiltroRamaRecaudacion] = useState('todas');
-  const [filtroCategoriaRecaudacion, setFiltroCategoriaRecaudacion] = useState('todas');
+  const [filtroCategoriaRecaudacion, setFiltroCategoriaRecaudacion] = useState([]);
 
   // Deportistas agrupados por rama → categoría, para el panorama de
   // Tesorería (antes solo se veía un total plano de "Deportistas Inscritos").
@@ -348,7 +349,7 @@ function SuperAdminPanel({
   }, [jugadoresAdmin]);
 
   const ramasClub = [...new Set((jugadoresAdmin || []).map((j) => j.rama).filter(Boolean))].sort();
-  const categoriasClub = [...new Set((jugadoresAdmin || []).map((j) => j.categoria).filter(Boolean))].sort();
+  const categoriasClub = unicosSinMayusculas((jugadoresAdmin || []).map((j) => j.categoria)).sort();
 
   // Filtro de mes a nivel de todo Resumen: al elegir un mes, las stats de
   // arriba, la fila de recaudación y AMBAS listas de morosos (socios y
@@ -3883,10 +3884,7 @@ function SuperAdminPanel({
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label style={{ fontSize: '11px' }}>Categoría</label>
-              <select className="form-input" value={filtroCategoriaRecaudacion} onChange={(e) => setFiltroCategoriaRecaudacion(e.target.value)}>
-                <option value="todas">Todas</option>
-                {categoriasClub.map((categoria) => (<option key={`categoria-recaudacion-${categoria}`} value={categoria}>{categoria}</option>))}
-              </select>
+              <FiltroCategorias opciones={categoriasClub} valor={filtroCategoriaRecaudacion} onCambiar={setFiltroCategoriaRecaudacion} />
             </div>
           </div>
           <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
@@ -3895,12 +3893,12 @@ function SuperAdminPanel({
           <div className="card mb-20" style={{ borderRadius: 'var(--radius-lg)', padding: '8px' }}>
             {(filtroMesResumen === 'todos' ? recaudacionMensual : recaudacionMensual.filter((f) => f.mes === filtroMesResumen)).map((fila) => {
               const abierto = filtroMesResumen !== 'todos' || mesRecaudacionActivo === fila.mes;
-              const sociosDelMes = filtroRamaRecaudacion !== 'todas' || filtroCategoriaRecaudacion !== 'todas'
+              const sociosDelMes = filtroRamaRecaudacion !== 'todas' || filtroCategoriaRecaudacion.length > 0
                 ? []
                 : (sociosMorosos || []).filter((s) => (s.mesesMorosos || []).includes(fila.mes));
               const deportistasDelMes = (morososAdmin || []).filter((m) => (m.mesesMorosos || []).includes(fila.mes)
                 && (filtroRamaRecaudacion === 'todas' || mismoTexto(m.rama, filtroRamaRecaudacion))
-                && (filtroCategoriaRecaudacion === 'todas' || mismoTexto(m.categoria, filtroCategoriaRecaudacion)));
+                && coincideAlguna(filtroCategoriaRecaudacion, m.categoria));
               return (
                 <div key={fila.mes} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
                   <button

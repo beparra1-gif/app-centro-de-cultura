@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Search, User, X } from 'lucide-react';
+import FiltroCategorias from './FiltroCategorias';
+import { coincideAlguna } from '../utils/texto';
 
 const normalizarTexto = (texto = '') => String(texto || '')
   .trim()
@@ -12,7 +14,7 @@ const LISTA_VACIA = [];
 function BuscadorJugadorAdmin({ jugadores, pupiloActivo, onSeleccionar }) {
   const [busqueda, setBusqueda] = useState('');
   const [filtroRama, setFiltroRama] = useState('');
-  const [filtroCategoria, setFiltroCategoria] = useState('');
+  const [filtroCategoria, setFiltroCategoria] = useState([]);
 
   const lista = Array.isArray(jugadores) ? jugadores : LISTA_VACIA;
 
@@ -36,14 +38,14 @@ function BuscadorJugadorAdmin({ jugadores, pupiloActivo, onSeleccionar }) {
     return lista
       .filter((j) => {
         if (filtroRama && normalizarTexto(j.rama) !== normalizarTexto(filtroRama)) return false;
-        if (filtroCategoria && normalizarTexto(j.categoria) !== normalizarTexto(filtroCategoria)) return false;
+        if (!coincideAlguna(filtroCategoria, j.categoria)) return false;
         if (termino.length >= 2 && !normalizarTexto(j.nombre).includes(termino)) return false;
         return true;
       })
       .slice(0, 30);
   }, [lista, busqueda, filtroRama, filtroCategoria]);
 
-  const mostrarResultados = busqueda.trim().length >= 2 || filtroRama || filtroCategoria;
+  const mostrarResultados = busqueda.trim().length >= 2 || filtroRama || filtroCategoria.length > 0;
 
   return (
     <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', padding: '14px' }}>
@@ -77,10 +79,7 @@ function BuscadorJugadorAdmin({ jugadores, pupiloActivo, onSeleccionar }) {
           <option value="">Todas las ramas</option>
           {ramas.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
-        <select className="form-input" value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}>
-          <option value="">Todas las categorías</option>
-          {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <FiltroCategorias opciones={categorias} valor={filtroCategoria} onCambiar={setFiltroCategoria} />
       </div>
 
       {mostrarResultados && (

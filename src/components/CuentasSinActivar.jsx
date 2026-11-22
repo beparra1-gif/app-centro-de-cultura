@@ -3,8 +3,9 @@ import { Check, KeyRound } from 'lucide-react';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
 import { estaActivo } from '../utils/estadoActivo';
-import { mismoTexto, unicosSinMayusculas } from '../utils/texto';
+import { coincideAlguna, unicosSinMayusculas } from '../utils/texto';
 import { mensajeCodigoActivacion, telefonoParaWhatsApp } from '../utils/codigoActivacion';
+import FiltroCategorias from './FiltroCategorias';
 
 // Altas y bajas → "Cuentas sin activar": cuentas activas que aún no tienen
 // clave propia. Desde CLAVE_INICIAL_HASTA solo entran con un código del club,
@@ -20,7 +21,7 @@ const fechaCl = (t) => (/^\d{4}-\d{2}-\d{2}$/.test(String(t || '')) ? String(t).
 export default function CuentasSinActivar({ jugadores = [], cuentas = [] }) {
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(false);
-  const [categoria, setCategoria] = useState('todas');
+  const [categoria, setCategoria] = useState([]);
   const [soloApoderados, setSoloApoderados] = useState(true);
   const [codigos, setCodigos] = useState({});
   const [generando, setGenerando] = useState(null);
@@ -56,7 +57,7 @@ export default function CuentasSinActivar({ jugadores = [], cuentas = [] }) {
 
   const categorias = useMemo(() => unicosSinMayusculas(filas.flatMap((f) => f.pupilos.map((p) => p.categoria))).sort(), [filas]);
   const visibles = filas.filter((f) => (!soloApoderados || f.pupilos.length > 0)
-    && (categoria === 'todas' || f.pupilos.some((p) => mismoTexto(p.categoria, categoria))));
+    && (!categoria.length || f.pupilos.some((p) => coincideAlguna(categoria, p.categoria))));
 
   const generar = async (f) => {
     setGenerando(f.id);
@@ -81,10 +82,7 @@ export default function CuentasSinActivar({ jugadores = [], cuentas = [] }) {
         {' '}Envía los códigos por tandas: cada código sirve una vez y vence en 48 horas.
       </p>
       <div className="rp-acciones">
-        <select className="form-input rp-semanas" value={categoria} onChange={(e) => setCategoria(e.target.value)} aria-label="Categoría de los hijos">
-          <option value="todas">Todas las categorías</option>
-          {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <FiltroCategorias opciones={categorias} valor={categoria} onCambiar={setCategoria} etiqueta="Categorías de los hijos" />
         <label className="checkbox-label-row">
           <input type="checkbox" checked={soloApoderados} onChange={(e) => setSoloApoderados(e.target.checked)} /> Solo con hijos activos
         </label>

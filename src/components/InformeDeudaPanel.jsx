@@ -7,6 +7,7 @@ import usePreferenciaLocal, { esOrdenValido } from '../utils/usePreferenciaLocal
 import { OPCIONES_ORDEN, ordenarPersonas } from '../utils/ordenarPersonas';
 import { hoyLocalISO } from '../utils/fechas';
 import { mismoTexto, unicosSinMayusculas } from '../utils/texto';
+import FiltroCategorias from './FiltroCategorias';
 import {
   ANIO_INFORME, ETIQUETA_ESTADO, MESES_INFORME, agruparPorCategoria, construirInformeDeportistas, construirInformeSocios,
   filtrarInforme, ordenarCategorias,
@@ -18,7 +19,7 @@ import {
 
 const pesos = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-CL')}`;
 const SIMBOLO = { condonado: 'C', pagado: '✓', debe: '✕', parcial: '½', exento: 'B', 'no-aplica': '–', 'en-curso': '·', futuro: '' };
-const FILTROS_INICIALES = { texto: '', rama: 'todas', categoria: 'todas', estado: 'con_deuda', mes: 'todos' };
+const FILTROS_INICIALES = { texto: '', rama: 'todas', categoria: [], estado: 'con_deuda', mes: 'todos' };
 const ORDEN_INICIAL = { orden: 'deuda', dir: 'desc' };
 const accesoFila = (f) => ({ nombre: f.nombres || f.nombre, apellido: f.apellido, fechaNacimiento: f.fechaNacimiento, categoria: f.categoria, deuda: f.montoDeuda });
 
@@ -66,11 +67,11 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
 
   const ramas = useMemo(() => unicosSinMayusculas(filasDeportistas.map((f) => f.rama)).sort(), [filasDeportistas]);
   const categorias = useMemo(() => (
-    [...new Set(filasDeportistas.filter((f) => filtros.rama === 'todas' || mismoTexto(f.rama, filtros.rama)).map((f) => f.categoria))].sort(ordenarCategorias)
+    unicosSinMayusculas(filasDeportistas.filter((f) => filtros.rama === 'todas' || mismoTexto(f.rama, filtros.rama)).map((f) => f.categoria)).sort(ordenarCategorias)
   ), [filasDeportistas, filtros.rama]);
 
   const filtradas = useMemo(
-    () => filtrarInforme(base, esDeportistas ? filtros : { ...filtros, rama: 'todas', categoria: 'todas' }),
+    () => filtrarInforme(base, esDeportistas ? filtros : { ...filtros, rama: 'todas', categoria: [] }),
     [base, filtros, esDeportistas]
   );
   const agrupado = esDeportistas && agrupar;
@@ -91,13 +92,13 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
 
   const descripcionFiltros = [
     esDeportistas && filtros.rama !== 'todas' ? `Rama ${filtros.rama}` : null,
-    esDeportistas && filtros.categoria !== 'todas' ? `Categoría ${filtros.categoria}` : null,
+    esDeportistas && filtros.categoria.length ? `Categoría ${filtros.categoria.join(', ')}` : null,
     filtros.estado === 'con_deuda' ? 'Solo con deuda' : filtros.estado === 'al_dia' ? 'Solo al día' : null,
     filtros.mes !== 'todos' ? `Deben ${filtros.mes}` : null,
     filtros.texto.trim() ? `Búsqueda “${filtros.texto.trim()}”` : null,
   ].filter(Boolean).join(' · ') || 'Todos';
   const descripcionCompleta = [descripcionFiltros, textoOrden].filter(Boolean).join(' · ');
-  const nombreArchivo = `informe-deuda-${tipo}-${[filtros.rama, filtros.categoria].filter((v) => v !== 'todas' && esDeportistas).join('-') || 'todos'}-${hoyLocalISO()}`
+  const nombreArchivo = `informe-deuda-${tipo}-${[filtros.rama, ...filtros.categoria].filter((v) => v !== 'todas' && esDeportistas).join('-') || 'todos'}-${hoyLocalISO()}`
     .toLowerCase().replace(/[^a-z0-9-]+/g, '-');
 
   const descargar = (blob, extension) => {
@@ -177,14 +178,11 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
         </div>
         {esDeportistas && (
           <>
-            <select className="form-input" aria-label="Rama" value={filtros.rama} onChange={(e) => setFiltros((f) => ({ ...f, rama: e.target.value, categoria: 'todas' }))}>
+            <select className="form-input" aria-label="Rama" value={filtros.rama} onChange={(e) => setFiltros((f) => ({ ...f, rama: e.target.value, categoria: [] }))}>
               <option value="todas">Todas las ramas</option>
               {ramas.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
-            <select className="form-input" aria-label="Categoría" value={filtros.categoria} onChange={set('categoria')}>
-              <option value="todas">Todas las categorías</option>
-              {categorias.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <FiltroCategorias opciones={categorias} valor={filtros.categoria} onCambiar={(categoria) => setFiltros((f) => ({ ...f, categoria }))} />
           </>
         )}
         <select className="form-input" aria-label="Estado" value={filtros.estado} onChange={set('estado')}>
