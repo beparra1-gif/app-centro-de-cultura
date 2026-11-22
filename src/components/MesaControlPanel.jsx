@@ -1945,6 +1945,8 @@ function MesaControlPanel({
 
   useEffect(() => {
     recargarHistorialRemoto();
+  // Solo al cambiar los filtros: recargarHistorialRemoto se recrea en cada render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroRama, filtroCategoria, competenciaNombre, clubVisitaNombre, modoAnalisis]);
 
   const historialCombinado = useMemo(() => {

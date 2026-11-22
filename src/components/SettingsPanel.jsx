@@ -127,7 +127,7 @@ function SettingsPanel({
             </span>
           </span>
         </div>
-        <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+        <div tabIndex={0} role="region" aria-label="Cuentas" style={{ maxHeight: '300px', overflowY: 'auto' }}>
           {usuariosFiltrados.map(u => {
             // cuentasConCambiosPendientes es un Set armado con Object.keys()
             // (siempre strings) — a diferencia del acceso a propiedades de
@@ -207,7 +207,7 @@ function SettingsPanel({
             <p style={{ margin: '0 0 8px 0', fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>
               Solo referencia — para cambiar esto hay que modificar código. Para dar o quitar acceso a una persona puntual, usa la lista de arriba.
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '220px', overflowY: 'auto' }}>
+            <div tabIndex={0} role="region" aria-label="Módulos por perfil" style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '220px', overflowY: 'auto' }}>
               {rolesBaseInfo.map((r) => (
                 <div key={r.rol} style={{ padding: '8px 10px', borderRadius: 'var(--radius-md)', background: 'var(--fondo-card-sutil)', border: '1px solid var(--borde-suave)' }}>
                   <strong style={{ fontSize: 'var(--texto-min)', display: 'block', marginBottom: '4px' }}>{r.etiqueta}</strong>

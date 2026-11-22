@@ -11,6 +11,8 @@ import LogoAvatar from './LogoAvatar';
 import QrScanner from './QrScanner';
 import { hoyLocalISO } from '../utils/fechas';
 import FiltroCategorias from './FiltroCategorias';
+import { useJugadoresDeCategoriasAsignadas } from '../utils/categoriasStaff';
+import { SolicitudJugadorStaff } from './SolicitudesJugador';
 import { unicosSinMayusculas } from '../utils/texto';
 
 const ESTADO_COLOR = {
@@ -135,8 +137,9 @@ function StaffAsistenciaPanel({
   setVistaStaff,
   filtroRamaStaff,
   setFiltroRamaStaff,
-  todosJugadores,
+  todosJugadores: todosJugadoresClub,
 }) {
+  const todosJugadores = useJugadoresDeCategoriasAsignadas(usuarioAutenticado, todosJugadoresClub);
   const [fechaLista, setFechaLista] = useState(() => hoyLocalISO());
   const [horaInicio, setHoraInicio] = useState('18:00');
   const [horaFin, setHoraFin] = useState('19:30');
@@ -460,6 +463,7 @@ function StaffAsistenciaPanel({
         <button type="button" className={`segment-btn ${vistaStaff === 'asistencia' ? 'active' : ''}`} onClick={() => setVistaStaff('asistencia')}>Pasar Lista</button>
         <button type="button" className={`segment-btn ${vistaStaff === 'historial' ? 'active' : ''}`} onClick={irAHistorial}>Historial</button>
         <button type="button" className={`segment-btn ${vistaStaff === 'resumen' ? 'active' : ''}`} onClick={irAResumen}>Resumen</button>
+        <button type="button" className={`segment-btn ${vistaStaff === 'nuevo' ? 'active' : ''}`} onClick={() => setVistaStaff('nuevo')}>Nuevo deportista</button>
       </div>
 
       {vistaStaff === 'asistencia' && (
@@ -652,6 +656,8 @@ function StaffAsistenciaPanel({
           })}
         </div>
       )}
+
+      {vistaStaff === 'nuevo' && <SolicitudJugadorStaff />}
 
       {vistaStaff === 'resumen' && (
         <div className="card fade-in" style={{ borderRadius: 'var(--radius-lg)' }}>

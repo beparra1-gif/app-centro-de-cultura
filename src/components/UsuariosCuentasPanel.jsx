@@ -16,6 +16,7 @@ import { hermanosDe } from '../utils/hermanos';
 import { ordenarPersonas } from '../utils/ordenarPersonas';
 import usePreferenciaLocal, { esOrdenValido } from '../utils/usePreferenciaLocal';
 import FiltroCategorias from './FiltroCategorias';
+import { SolicitudesJugadorAdmin } from './SolicitudesJugador';
 import { coincideAlguna } from '../utils/texto';
 
 // Vista "Usuarios y Cuentas" (Deportistas, Cuentas, Vincular, Altas y bajas,
@@ -544,6 +545,8 @@ export default function UsuariosCuentasPanel({
               <ShieldCheck size={14} /> Permisos
             </button>
           </div></div>
+
+          {(esAdmin || esSuperAdmin) && <SolicitudesJugadorAdmin onAprobada={recargarUsuariosAdmin} />}
 
           {(vistaUsuarios === 'deportistas' || vistaUsuarios === 'cuentas') && (
             <SelectorOrden

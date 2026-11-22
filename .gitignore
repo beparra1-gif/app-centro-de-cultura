@@ -48,3 +48,6 @@ backend/.correos-dev/
 # Resultados de Playwright (capturas con datos locales)
 test-results/
 playwright-report/
+
+# Firmas y timbre del club para cargar en Admin → Certificados → Firmas y timbre (no se versionan).
+recursos-certificados/

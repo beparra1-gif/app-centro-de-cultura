@@ -107,13 +107,13 @@ function SelectorRamaCategoria({ form, setForm, toggleCategoria, categoriasDispo
     <>
       <div className="input-group mb-10">
         <label style={{ fontSize: '12px', fontWeight: '800' }}>Rama</label>
-        <select className="form-input mt-5" value={form.rama} onChange={(e) => setForm((prev) => ({ ...prev, rama: e.target.value }))}>
+        <select aria-label="Rama" className="form-input mt-5" value={form.rama} onChange={(e) => setForm((prev) => ({ ...prev, rama: e.target.value }))}>
           {RAMAS.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
       </div>
       <div className="input-group mb-10">
         <label style={{ fontSize: '12px', fontWeight: '800' }}>Categoría(s) destinatarias (vacío = todas)</label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+        <div role="group" aria-label="Categorías destinatarias" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
           {categoriasDisponibles.map((cat) => {
             const activa = form.categorias.includes(cat);
             return (
@@ -121,6 +121,7 @@ function SelectorRamaCategoria({ form, setForm, toggleCategoria, categoriasDispo
                 key={cat}
                 type="button"
                 className="filter-chip"
+                aria-pressed={activa}
                 style={{
                   border: '1px solid rgba(0,122,255,0.24)',
                   background: activa ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.08)',
@@ -326,11 +327,21 @@ function AcademiaPanel({
   // quiz existente, no solo el propio.
   const todoElQuiz = quizList || [];
 
-  if (!pupiloActivo) {
+  // El panel docente no depende de un pupilo; antes quedaba en "Cargando
+  // academia" para siempre si no había deportistas que mostrar.
+  if (!pupiloActivo && !esProfesor) {
+    if ((pupilosDisponibles || []).length === 0) {
+      return (
+        <div className="card mt-20 text-center" role="status">
+          <h4 style={{ marginTop: 0 }}>Aún no hay deportistas asociados a tu cuenta</h4>
+          <p className="text-muted" style={{ marginBottom: 0 }}>Cuando el club vincule a tu pupilo, aquí verás su material, desafíos y evaluaciones.</p>
+        </div>
+      );
+    }
     return <SkeletonLoaderPanel etiqueta="Cargando academia" />;
   }
 
-  const progresoNivel = calcularProgresoNivel(pupiloActivo.xp);
+  const progresoNivel = calcularProgresoNivel(pupiloActivo?.xp || 0);
 
   const handlePublicarMaterial = async () => {
     if (!materialForm.titulo.trim() || !materialForm.url.trim()) {
@@ -683,7 +694,7 @@ function AcademiaPanel({
           {origenMaterial === 'enlace' ? (
             <div className="input-group mb-10">
               <label style={{ fontSize: '12px', fontWeight: '800' }}>Tipo de material</label>
-              <select className="form-input mt-5" value={materialForm.tipo} onChange={(e) => setMaterialForm((prev) => ({ ...prev, tipo: e.target.value }))}>
+              <select aria-label="Tipo de material" className="form-input mt-5" value={materialForm.tipo} onChange={(e) => setMaterialForm((prev) => ({ ...prev, tipo: e.target.value }))}>
                 <option value="video">Video (YouTube / Vimeo / otro enlace)</option>
                 <option value="imagen">Imagen de pizarra</option>
                 <option value="documento">Documento</option>
@@ -692,19 +703,19 @@ function AcademiaPanel({
           ) : (
             <div className="input-group mb-10">
               <label style={{ fontSize: '12px', fontWeight: '800' }}>Archivo de video (máx. 25MB, para no recargar la app)</label>
-              <input type="file" accept="video/mp4,video/webm,video/quicktime" className="form-input mt-5" onChange={(e) => setArchivoVideo(e.target.files?.[0] || null)} />
+              <input aria-label="Archivo de video (máx. 25MB, para no recargar la app)" type="file" accept="video/mp4,video/webm,video/quicktime" className="form-input mt-5" onChange={(e) => setArchivoVideo(e.target.files?.[0] || null)} />
             </div>
           )}
 
           <div className="input-group mb-10">
             <label style={{ fontSize: '12px', fontWeight: '800' }}>Título</label>
-            <input className="form-input mt-5" value={materialForm.titulo} onChange={(e) => setMaterialForm((prev) => ({ ...prev, titulo: e.target.value }))} placeholder="Ej: Lecturas defensivas desde lado débil" />
+            <input aria-label="Título" className="form-input mt-5" value={materialForm.titulo} onChange={(e) => setMaterialForm((prev) => ({ ...prev, titulo: e.target.value }))} placeholder="Ej: Lecturas defensivas desde lado débil" />
           </div>
 
           {origenMaterial === 'enlace' && (
             <div className="input-group mb-15">
               <label style={{ fontSize: '12px', fontWeight: '800' }}>Enlace (YouTube, Vimeo, Drive, imagen o PDF)</label>
-              <input className="form-input mt-5" value={materialForm.url} onChange={(e) => setMaterialForm((prev) => ({ ...prev, url: e.target.value }))} placeholder="https://..." />
+              <input aria-label="Enlace (YouTube, Vimeo, Drive, imagen o PDF)" className="form-input mt-5" value={materialForm.url} onChange={(e) => setMaterialForm((prev) => ({ ...prev, url: e.target.value }))} placeholder="https://..." />
             </div>
           )}
 

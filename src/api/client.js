@@ -798,6 +798,58 @@ export const ausenciasAPI = {
   },
 };
 
+// ========== CERTIFICADOS DEL CLUB (apoderado solicita, admin emite) ==========
+
+const postJson = async (url, datos) => handleResponse(await apiFetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(datos || {}),
+}));
+
+export const certificadosAPI = {
+  listar: async (estado) => handleResponse(await apiFetch(`${API_BASE_URL}/certificados${estado ? `?estado=${encodeURIComponent(estado)}` : ''}`)),
+  solicitar: (datos) => postJson(`${API_BASE_URL}/certificados`, datos),
+  emitir: (id, cambios) => postJson(`${API_BASE_URL}/certificados/${id}/emitir`, cambios),
+  rechazar: (id, motivo) => postJson(`${API_BASE_URL}/certificados/${id}/rechazar`, { motivo }),
+  anular: (id, motivo) => postJson(`${API_BASE_URL}/certificados/${id}/anular`, { motivo }),
+  recursos: async (id) => handleResponse(await apiFetch(`${API_BASE_URL}/certificados/${id}/recursos`)),
+  verificar: async (codigo) => {
+    const response = await fetch(`${API_BASE_URL}/certificados/verificar/${encodeURIComponent(codigo)}`);
+    return response.json().catch(() => ({ valido: false, error: 'No se pudo verificar.' }));
+  },
+  estadoRecursos: async () => handleResponse(await apiFetch(`${API_BASE_URL}/certificados-recursos`)),
+  subirRecurso: async (clave, archivo) => {
+    const formData = new FormData();
+    formData.append('archivo', archivo);
+    return handleResponse(await apiFetch(`${API_BASE_URL}/certificados-recursos/${clave}`, { method: 'PUT', body: formData }));
+  },
+};
+
+// ========== SOLICITUDES DE INCORPORACIÓN (staff propone, admin aprueba) ==========
+
+export const solicitudesJugadorAPI = {
+  listar: async (estado) => {
+    const response = await apiFetch(`${API_BASE_URL}/solicitudes-jugador${estado ? `?estado=${encodeURIComponent(estado)}` : ''}`);
+    return handleResponse(response);
+  },
+  crear: async (datos) => {
+    const response = await apiFetch(`${API_BASE_URL}/solicitudes-jugador`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    });
+    return handleResponse(response);
+  },
+  resolver: async (id, { aprobar, motivo, datos }) => {
+    const response = await apiFetch(`${API_BASE_URL}/solicitudes-jugador/${id}/resolver`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aprobar, motivo, datos }),
+    });
+    return handleResponse(response);
+  },
+};
+
 // ========== UTM VIGENTE (para la cuota socio, 0.3 UTM) ==========
 
 export const utmAPI = {

@@ -81,6 +81,8 @@ function CalendarioGrilla({
   // tenga que duplicar este cálculo.
   useEffect(() => {
     if (onRangoVisibleChange) onRangoVisibleChange(rangoDesdeISO, rangoHastaISO);
+  // Solo al cambiar el rango: la función del padre cambia en cada render y repetiría la carga en bucle.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangoDesdeISO, rangoHastaISO]);
 
   const eventosPorFecha = useMemo(() => {

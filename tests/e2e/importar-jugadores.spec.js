@@ -49,8 +49,8 @@ test('revisar no cambia nada; aplicar crea 2 hermanos con un solo apoderado', as
 
   const j = (await pool.query("SELECT rut_jugador, rut_apoderado, categoria, rama, to_char(fecha_ingreso, 'YYYY-MM-DD') AS ingreso FROM jugadores WHERE rut_jugador = ANY($1) ORDER BY rut_jugador", [RUTS])).rows;
   expect(j).toEqual([
-    { rut_jugador: H1, rut_apoderado: APO, categoria: 'SUB-15', rama: 'Masculina', ingreso: '2026-02-01' },
-    { rut_jugador: H2, rut_apoderado: APO, categoria: 'SUB-13', rama: 'Masculina', ingreso: '2026-03-01' },
+    { rut_jugador: H1, rut_apoderado: APO, categoria: 'SUB-15', rama: 'MASCULINA', ingreso: '2026-02-01' },
+    { rut_jugador: H2, rut_apoderado: APO, categoria: 'SUB-13', rama: 'MASCULINA', ingreso: '2026-03-01' },
   ]);
   const c = (await pool.query('SELECT rol, password, forzar_clave, correo FROM cuentas WHERE rut = $1', [APO])).rows;
   expect(c).toHaveLength(1);

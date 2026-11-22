@@ -6,6 +6,7 @@ import * as api from '../api/client';
 
 import { coincideAlguna, mismoTexto, unicosSinMayusculas } from '../utils/texto';
 import FiltroCategorias from './FiltroCategorias';
+import { useJugadoresDeCategoriasAsignadas } from '../utils/categoriasStaff';
 const LATERALIDAD_OPCIONES = [
   { value: '', label: 'Sin evaluar' },
   { value: 'derecha', label: 'Derecha definida' },
@@ -17,7 +18,7 @@ const LATERALIDAD_OPCIONES = [
 const etiquetaLateralidad = (value) => (LATERALIDAD_OPCIONES.find((op) => op.value === value)?.label) || null;
 
 function StaffEvaluacionPanel({
-  jugadoresAdmin,
+  jugadoresAdmin: jugadoresAdminTodos,
   usuarioAutenticado,
   evalTiro,
   setEvalTiro,
@@ -32,6 +33,7 @@ function StaffEvaluacionPanel({
   rutInicial,
   onRutInicialConsumido,
 }) {
+  const jugadoresAdmin = useJugadoresDeCategoriasAsignadas(usuarioAutenticado, jugadoresAdminTodos);
   const [filtroRama, setFiltroRama] = useState('Todas');
   const [filtroCategoria, setFiltroCategoria] = useState([]);
   const [rutJugadorSeleccionado, setRutJugadorSeleccionado] = useState('');
@@ -171,6 +173,7 @@ function StaffEvaluacionPanel({
         <div style={{ display: 'flex', gap: '10px' }} className="mb-10">
           <select
             className="form-input"
+            aria-label="Rama"
             value={filtroRama}
             onChange={(e) => { setFiltroRama(e.target.value); setFiltroCategoria([]); setRutJugadorSeleccionado(''); }}
           >
@@ -186,6 +189,7 @@ function StaffEvaluacionPanel({
         </div>
         <select
           className="form-input"
+          aria-label="Jugador a evaluar"
           style={{ background: 'rgba(0,122,255,0.05)', borderColor: 'var(--azul-electrico)', color: 'var(--texto-heading)', fontWeight: '800' }}
           value={rutJugadorSeleccionado}
           onChange={(e) => seleccionarJugador(e.target.value)}
@@ -274,23 +278,23 @@ function StaffEvaluacionPanel({
           <h4 className="form-subtitle">Ajuste de Parámetros (Sliders)</h4>
           <div className="slider-group" style={{ marginBottom: '15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><label style={{ fontSize: '14px', fontWeight: '800' }}>Coordinación Motora Gruesa</label><span style={{ color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{evalCoordinacion}</span></div>
-            <input type="range" min="0" max="100" value={evalCoordinacion} onChange={(e) => setEvalCoordinacion(e.target.value)} style={{ width: '100%' }} />
+            <input aria-label="Coordinación Motora Gruesa" type="range" min="0" max="100" value={evalCoordinacion} onChange={(e) => setEvalCoordinacion(e.target.value)} style={{ width: '100%' }} />
           </div>
           <div className="slider-group" style={{ marginBottom: '15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><label style={{ fontSize: '14px', fontWeight: '800' }}>Coordinación Óculo-Manual</label><span style={{ color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{evalCoordinacionOcular}</span></div>
-            <input type="range" min="0" max="100" value={evalCoordinacionOcular} onChange={(e) => setEvalCoordinacionOcular(e.target.value)} style={{ width: '100%' }} />
+            <input aria-label="Coordinación Óculo-Manual" type="range" min="0" max="100" value={evalCoordinacionOcular} onChange={(e) => setEvalCoordinacionOcular(e.target.value)} style={{ width: '100%' }} />
           </div>
           <div className="slider-group" style={{ marginBottom: '15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><label style={{ fontSize: '14px', fontWeight: '800' }}>Equilibrio (Estático y Dinámico)</label><span style={{ color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{evalEquilibrio}</span></div>
-            <input type="range" min="0" max="100" value={evalEquilibrio} onChange={(e) => setEvalEquilibrio(e.target.value)} style={{ width: '100%' }} />
+            <input aria-label="Equilibrio (Estático y Dinámico)" type="range" min="0" max="100" value={evalEquilibrio} onChange={(e) => setEvalEquilibrio(e.target.value)} style={{ width: '100%' }} />
           </div>
           <div className="slider-group" style={{ marginBottom: '15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><label style={{ fontSize: '14px', fontWeight: '800' }}>Orientación Espacio-Temporal</label><span style={{ color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{evalOrientacion}</span></div>
-            <input type="range" min="0" max="100" value={evalOrientacion} onChange={(e) => setEvalOrientacion(e.target.value)} style={{ width: '100%' }} />
+            <input aria-label="Orientación Espacio-Temporal" type="range" min="0" max="100" value={evalOrientacion} onChange={(e) => setEvalOrientacion(e.target.value)} style={{ width: '100%' }} />
           </div>
           <div className="input-group">
             <label style={{ fontSize: '14px', fontWeight: '800', display: 'block', marginBottom: '8px' }}>Lateralidad</label>
-            <select className="form-input" value={lateralidad} onChange={(e) => setLateralidad(e.target.value)}>
+            <select aria-label="Lateralidad" className="form-input" value={lateralidad} onChange={(e) => setLateralidad(e.target.value)}>
               {LATERALIDAD_OPCIONES.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
             </select>
           </div>
@@ -300,19 +304,19 @@ function StaffEvaluacionPanel({
           <h4 className="form-subtitle">Ajuste de Parámetros (Sliders)</h4>
           <div className="slider-group" style={{ marginBottom: '15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><label style={{ fontSize: '14px', fontWeight: '800' }}>Tiro Exterior</label><span style={{ color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{evalTiro}</span></div>
-            <input type="range" min="0" max="100" value={evalTiro} onChange={(e) => setEvalTiro(e.target.value)} style={{ width: '100%' }} />
+            <input aria-label="Tiro Exterior" type="range" min="0" max="100" value={evalTiro} onChange={(e) => setEvalTiro(e.target.value)} style={{ width: '100%' }} />
           </div>
           <div className="slider-group" style={{ marginBottom: '15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><label style={{ fontSize: '14px', fontWeight: '800' }}>Defensa y Recuperación</label><span style={{ color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{evalDefensa}</span></div>
-            <input type="range" min="0" max="100" value={evalDefensa} onChange={(e) => setEvalDefensa(e.target.value)} style={{ width: '100%' }} />
+            <input aria-label="Defensa y Recuperación" type="range" min="0" max="100" value={evalDefensa} onChange={(e) => setEvalDefensa(e.target.value)} style={{ width: '100%' }} />
           </div>
           <div className="slider-group" style={{ marginBottom: '15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><label style={{ fontSize: '14px', fontWeight: '800' }}>Capacidad Física</label><span style={{ color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{evalFisico}</span></div>
-            <input type="range" min="0" max="100" value={evalFisico} onChange={(e) => setEvalFisico(e.target.value)} style={{ width: '100%' }} />
+            <input aria-label="Capacidad Física" type="range" min="0" max="100" value={evalFisico} onChange={(e) => setEvalFisico(e.target.value)} style={{ width: '100%' }} />
           </div>
           <div className="slider-group" style={{ marginBottom: '15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><label style={{ fontSize: '14px', fontWeight: '800' }}>Inteligencia Táctica</label><span style={{ color: 'var(--azul-electrico)', fontWeight: 'bold' }}>{evalTactico}</span></div>
-            <input type="range" min="0" max="100" value={evalTactico} onChange={(e) => setEvalTactico(e.target.value)} style={{ width: '100%' }} />
+            <input aria-label="Inteligencia Táctica" type="range" min="0" max="100" value={evalTactico} onChange={(e) => setEvalTactico(e.target.value)} style={{ width: '100%' }} />
           </div>
         </div>
       )}
@@ -322,11 +326,11 @@ function StaffEvaluacionPanel({
           <h4 className="form-subtitle"><FileText size={16} /> Notas de Evaluación Psicomotriz</h4>
           <div className="input-group mb-15">
             <label style={{ fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Observaciones</label>
-            <textarea className="form-input" rows="3" placeholder="Ej: Buena disociación de movimientos, le cuesta el salto a pies juntos con giro." value={notasPsicomotriz.observaciones} onChange={(e) => setNotasPsicomotriz({ ...notasPsicomotriz, observaciones: e.target.value })}></textarea>
+            <textarea aria-label="Observaciones" className="form-input" rows="3" placeholder="Ej: Buena disociación de movimientos, le cuesta el salto a pies juntos con giro." value={notasPsicomotriz.observaciones} onChange={(e) => setNotasPsicomotriz({ ...notasPsicomotriz, observaciones: e.target.value })}></textarea>
           </div>
           <div className="input-group mb-20">
             <label style={{ fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Recomendaciones / Plan de Trabajo</label>
-            <textarea className="form-input" rows="3" placeholder="Ej: Reforzar ejercicios de equilibrio dinámico sobre una pierna, circuitos de coordinación óculo-manual con balón." value={notasPsicomotriz.recomendaciones} onChange={(e) => setNotasPsicomotriz({ ...notasPsicomotriz, recomendaciones: e.target.value })}></textarea>
+            <textarea aria-label="Recomendaciones / Plan de Trabajo" className="form-input" rows="3" placeholder="Ej: Reforzar ejercicios de equilibrio dinámico sobre una pierna, circuitos de coordinación óculo-manual con balón." value={notasPsicomotriz.recomendaciones} onChange={(e) => setNotasPsicomotriz({ ...notasPsicomotriz, recomendaciones: e.target.value })}></textarea>
           </div>
 
           <button className="btn-electric" disabled={guardando || !jugadorSeleccionado} onClick={handleEmitirEvaluacion}>
@@ -338,15 +342,15 @@ function StaffEvaluacionPanel({
           <h4 className="form-subtitle"><FileText size={16} /> Notas de Evaluación (Apoderado)</h4>
           <div className="input-group mb-15">
             <label style={{ fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Fortaleza Principal Actual</label>
-            <input type="text" className="form-input" placeholder="Ej: Excelente visión de juego perimetral" value={notasEvaluacion.fortaleza} onChange={(e) => setNotasEvaluacion({ ...notasEvaluacion, fortaleza: e.target.value })} />
+            <input aria-label="Fortaleza Principal Actual" type="text" className="form-input" placeholder="Ej: Excelente visión de juego perimetral" value={notasEvaluacion.fortaleza} onChange={(e) => setNotasEvaluacion({ ...notasEvaluacion, fortaleza: e.target.value })} />
           </div>
           <div className="input-group mb-15">
             <label style={{ fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Aspecto Crítico a Mejorar</label>
-            <input type="text" className="form-input" placeholder="Ej: Transición defensiva lenta" value={notasEvaluacion.mejora} onChange={(e) => setNotasEvaluacion({ ...notasEvaluacion, mejora: e.target.value })} />
+            <input aria-label="Aspecto Crítico a Mejorar" type="text" className="form-input" placeholder="Ej: Transición defensiva lenta" value={notasEvaluacion.mejora} onChange={(e) => setNotasEvaluacion({ ...notasEvaluacion, mejora: e.target.value })} />
           </div>
           <div className="input-group mb-20">
             <label style={{ fontSize: '13px', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}>Metas Corto Plazo (1 Mes)</label>
-            <textarea className="form-input" rows="3" placeholder="Ej: Aumentar el % de tiros libres." value={notasEvaluacion.metas} onChange={(e) => setNotasEvaluacion({ ...notasEvaluacion, metas: e.target.value })}></textarea>
+            <textarea aria-label="Metas Corto Plazo (1 Mes)" className="form-input" rows="3" placeholder="Ej: Aumentar el % de tiros libres." value={notasEvaluacion.metas} onChange={(e) => setNotasEvaluacion({ ...notasEvaluacion, metas: e.target.value })}></textarea>
           </div>
 
           <button className="btn-electric" disabled={guardando || !jugadorSeleccionado} onClick={handleEmitirEvaluacion}>

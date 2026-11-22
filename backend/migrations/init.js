@@ -241,6 +241,54 @@ const createSchema = async () => {
     await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fecha_corte_utm DATE`);
     await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS permisos_override JSONB DEFAULT '{}'::jsonb`);
     await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS requiere_foto_perfil BOOLEAN DEFAULT false`);
+    await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS categorias_asignadas JSONB DEFAULT '[]'::jsonb`);
+    // Certificados del club (ver backend/lib/certificados.js).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS certificados (
+        id SERIAL PRIMARY KEY,
+        tipo VARCHAR(40) NOT NULL,
+        rut_jugador VARCHAR(20) NOT NULL,
+        estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+        motivo TEXT,
+        presentado_ante VARCHAR(255),
+        solicitado_por_id INT,
+        solicitado_por_rut VARCHAR(20),
+        solicitado_por_nombre VARCHAR(255),
+        folio VARCHAR(30) UNIQUE,
+        codigo_verificacion VARCHAR(20) UNIQUE,
+        datos JSONB,
+        vigencia_hasta DATE,
+        motivo_rechazo TEXT,
+        resuelto_por_rut VARCHAR(20),
+        emitido_at TIMESTAMP,
+        anulado_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS certificados_recursos (
+        clave VARCHAR(40) PRIMARY KEY,
+        mime_type VARCHAR(40) NOT NULL,
+        data BYTEA NOT NULL,
+        actualizado_por VARCHAR(20),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS solicitudes_jugador (
+        id SERIAL PRIMARY KEY,
+        rut_jugador VARCHAR(20) NOT NULL,
+        datos JSONB NOT NULL,
+        estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+        creado_por_id INT,
+        creado_por_rut VARCHAR(20),
+        creado_por_nombre VARCHAR(255),
+        resuelto_por_rut VARCHAR(20),
+        motivo_rechazo TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        resuelto_at TIMESTAMP
+      )
+    `);
     console.log('✅ Columnas extendidas de perfiles y mensualidad verificadas en cuentas');
 
     await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS logo_local_url VARCHAR(255)`);

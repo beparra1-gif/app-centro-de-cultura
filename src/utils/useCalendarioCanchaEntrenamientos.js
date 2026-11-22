@@ -44,6 +44,8 @@ export function useCalendarioCanchaEntrenamientos({ puedeCancha }) {
   useEffect(() => {
     if (!rango.desde || !rango.hasta) return;
     (async () => { await cargarRango(rango.desde, rango.hasta); })();
+  // Solo al cambiar rango o permiso: cargarRango se recrea en cada render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rango.desde, rango.hasta, puedeCancha]);
 
   const eventos = useMemo(() => {

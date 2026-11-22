@@ -1137,8 +1137,12 @@ function App() {
     // Familias, deportistas, visitas y mesa nunca usan los datos de
     // administración: antes cada inicio de sesión pedía 6 recursos solo-admin
     // que el servidor rechazaba con 403 (carga inútil y errores en consola).
-    const sinDatosAdmin = ['apoderado', 'socio', 'socio_apoderado', 'jugador', 'visita', 'mesa']
-      .includes(normalizarRol(rolActivo ?? rolUsuario ?? ''));
+    // Staff sin módulo Admin (el caso normal) tampoco: recibía 6 respuestas 403.
+    const rolCarga = normalizarRol(rolActivo ?? rolUsuario ?? '');
+    const sinDatosAdmin = ['apoderado', 'socio', 'socio_apoderado', 'jugador', 'visita', 'mesa'].includes(rolCarga)
+      || (rolCarga === 'staff' && !obtenerPermisosEfectivos({
+        rol: rolCarga, override: permisosPorUsuario[usuarioAutenticado?.id] || {},
+      }).admin_dashboard);
 
     // Sin token (portada pública, antes de iniciar sesión) los endpoints
     // protegidos solo devolvían 401: 13 peticiones fallidas en cada visita a
@@ -1487,6 +1491,11 @@ function App() {
         ? { pantalla: 'admin_dashboard', vistaAdmin: 'pagos' }
         : { pantalla: 'perfil' };
     }
+    if (tipo === 'certificado') {
+      return puedeVerPantalla('admin_dashboard')
+        ? { pantalla: 'admin_dashboard', vistaAdmin: 'certificados' }
+        : { pantalla: 'perfil' };
+    }
     if (tipo === 'beca') {
       return puedeVerPantalla('validacion_pagos')
         ? { pantalla: 'admin_dashboard', vistaAdmin: 'becas' }
@@ -1704,6 +1713,7 @@ function App() {
     } catch (error) {
       if (error?.code === 'USAR_CODIGO_CORREO') {
         setPassInput('');
+        // eslint-disable-next-line react-hooks/purity -- dentro del manejador de ingreso, no del render
         setCodigoCorreoPendiente({ destino: error.datos?.destino || '', solicitadoEn: Date.now() });
         showToast({ message: error.message, type: 'info' });
         return;
@@ -2411,11 +2421,15 @@ function App() {
     await cargarDatos({ manual: true });
   };
 
+  // Publicar/despublicar solo manda { id, activo }: sin esto se enviaba
+  // categorias_objetivo: [] y el contenido quedaba visible para todas las categorías.
+  const categoriasSiVienen = (categorias) => (Array.isArray(categorias) ? { categorias_objetivo: categorias } : {});
+
   // Edición/borrado para el panel "Mis Publicaciones" de Academia — mismo
   // patrón que los 4 handlers de arriba (llamar API, recargar datos).
   const actualizarMaterialAcademia = async ({ id, titulo, url, rama, categorias, activo }) => {
     await api.comunicacionesAPI.update(id, {
-      titulo, cuerpo_texto: url, rama, categorias_objetivo: Array.isArray(categorias) ? categorias : [], activo,
+      titulo, cuerpo_texto: url, rama, ...categoriasSiVienen(categorias), activo,
     });
     await cargarDatos({ manual: true });
   };
@@ -2427,7 +2441,7 @@ function App() {
 
   const actualizarVideoAcademia = async ({ id, titulo, rama, categorias, activo }) => {
     await api.academiaVideosAPI.actualizar(id, {
-      titulo, rama, categorias_objetivo: Array.isArray(categorias) ? categorias : [], activo,
+      titulo, rama, ...categoriasSiVienen(categorias), activo,
     });
     await cargarDatos({ manual: true });
   };
@@ -2439,7 +2453,7 @@ function App() {
 
   const actualizarPizarraAcademia = async ({ id, nombre_tactica, descripcion, rama, categorias, activo }) => {
     await api.academiaPizarrasAPI.actualizar(id, {
-      nombre_tactica, descripcion, rama, categorias_objetivo: Array.isArray(categorias) ? categorias : [], activo,
+      nombre_tactica, descripcion, rama, ...categoriasSiVienen(categorias), activo,
     });
     await cargarDatos({ manual: true });
   };
@@ -2452,7 +2466,7 @@ function App() {
   const actualizarQuizAcademia = async ({ id, titulo, pregunta, opciones, respuestaCorrecta, rama, categorias, activo }) => {
     await api.quizAPI.actualizar(id, {
       titulo, pregunta, opciones_json: opciones, respuesta_correcta: respuestaCorrecta,
-      rama, categorias_objetivo: Array.isArray(categorias) ? categorias : [], activo,
+      rama, ...categoriasSiVienen(categorias), activo,
     });
     await cargarDatos({ manual: true });
   };
@@ -3272,9 +3286,10 @@ function App() {
             background: 'rgba(0,122,255,0.08)',
             borderBottom: '1px solid rgba(0,122,255,0.15)',
             padding: '6px 16px',
-            fontSize: '11px',
+            // Texto principal (no azul sobre fondo azul): contraste AA en claro y oscuro.
+            fontSize: 'var(--texto-min)',
             fontWeight: '700',
-            color: 'var(--azul-electrico)',
+            color: 'var(--texto-principal)',
             textAlign: 'center',
           }}
         >
@@ -3452,7 +3467,8 @@ function App() {
       )}
 
       {/* RUTEADOR CENTRAL CON SKELETON LOADERS */}
-      <main className={`ios-main ${isAppLoading ? 'screen-loading' : 'screen-ready'}`}>
+      {/* main es la zona con scroll: tabIndex permite desplazarla con teclado aunque la pantalla no tenga botones. */}
+      <main tabIndex={0} className={`ios-main ${isAppLoading ? 'screen-loading' : 'screen-ready'}`}>
         {isAppLoading ? <SkeletonLoaderPanel /> : modoSimpleActivo ? (
           <ModoSimplePanel
             pupiloActivo={pupiloActivo}
@@ -3620,6 +3636,7 @@ function App() {
             )}
             {puedeVerPantalla('jugador') && pantallaActiva === 'jugador' && (
               <TarjetaJugadorPanel
+                usuarioAutenticado={usuarioAutenticado}
                 pupiloActivo={pupiloActivo}
                 setPupiloActivo={setPupiloActivo}
                 pupilosDisponibles={pupilosDisponibles}

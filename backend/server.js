@@ -1,6 +1,10 @@
 const express = require('express');
 const { asignarCategoriaPorEdad } = require('./lib/categoriaPorEdad');
 const { normalizarTelefonoChile, normalizarTelefonosBody } = require('./lib/telefonoChile');
+const {
+  TIPOS_CERTIFICADO, RECURSOS_CERTIFICADO, generarCodigoVerificacion, codigoValido, enmascararRut,
+  folioCertificado, sumarDias, limpiarExtraCertificado, faltaParaEmitir,
+} = require('./lib/certificados');
 const { Pool } = require('pg');
 const cors = require('cors');
 const fs = require('fs');
@@ -1886,6 +1890,8 @@ const ensureCuentasExtendedColumns = async () => {
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS fecha_corte_utm DATE`,
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS permisos_override JSONB DEFAULT '{}'::jsonb`,
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS requiere_foto_perfil BOOLEAN DEFAULT false`,
+    // Categorías a cargo de un staff ([] = todas). Solo las asigna un admin.
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS categorias_asignadas JSONB DEFAULT '[]'::jsonb`,
   ];
 
   for (const statement of ddl) {
@@ -2863,7 +2869,45 @@ const refirmarUrlsAcademiaVideo = async () => {
 
 // POST: sube un video corto y de paso crea la comunicación "Academia-Video"
 // que lo hace aparecer en el mismo listado que el material por enlace.
-app.post('/api/academia-videos', authenticate, requireRole('staff', 'admin', 'super_admin'), uploadVideoMemoria.single('archivo'), async (req, res) => {
+// Staff con categorías asignadas solo publica en Academia para ellas: sin
+// selección ("todas") el contenido se dirige a sus categorías, y elegir otra
+// categoría se rechaza. Acepta categorias_objetivo como arreglo o JSON (multipart).
+const academiaParaCategoriasDelStaff = ({ soloSiAcademia = false } = {}) => async (req, res, next) => {
+  try {
+    if (normalizarRol(req.actor?.rol) !== 'staff') return next();
+    if (soloSiAcademia) {
+      let tipo = req.body?.tipo;
+      if (tipo === undefined && req.params.id) {
+        tipo = (await pool.query('SELECT tipo FROM comunicaciones WHERE id = $1', [req.params.id])).rows[0]?.tipo;
+      }
+      if (!ACADEMIA_TIPOS_LOWER.has(String(tipo || '').toLowerCase())) return next();
+    }
+    const original = req.body?.categorias_objetivo;
+    // Una edición que no toca categorías (p. ej. publicar/despublicar) pasa tal cual.
+    if (original === undefined && req.params.id) return next();
+    const cuenta = (await pool.query('SELECT categorias_asignadas FROM cuentas WHERE id = $1', [req.actor.id])).rows[0];
+    const asignadas = (Array.isArray(cuenta?.categorias_asignadas) ? cuenta.categorias_asignadas : [])
+      .map((c) => String(c || '').trim()).filter(Boolean);
+    if (!asignadas.length) return next();
+    let lista = original;
+    if (typeof lista === 'string') {
+      try { lista = JSON.parse(lista || '[]'); } catch { lista = []; }
+    }
+    lista = (Array.isArray(lista) ? lista : []).map((c) => String(c || '').trim()).filter(Boolean);
+    const fuera = lista.filter((c) => !asignadas.some((a) => a.toLowerCase() === c.toLowerCase()));
+    if (fuera.length) {
+      return res.status(403).json({ error: `Solo puedes publicar para tus categorías (${asignadas.join(', ')}).` });
+    }
+    const final = lista.length ? lista : asignadas;
+    req.body.categorias_objetivo = typeof original === 'string' ? JSON.stringify(final) : final;
+    return next();
+  } catch (err) {
+    console.error('[academiaParaCategoriasDelStaff]', err);
+    return res.status(500).json({ error: 'No se pudieron verificar tus categorías.' });
+  }
+};
+
+app.post('/api/academia-videos', authenticate, requireRole('staff', 'admin', 'super_admin'), uploadVideoMemoria.single('archivo'), academiaParaCategoriasDelStaff(), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Debes seleccionar un archivo de video.' });
@@ -2955,7 +2999,7 @@ app.get('/api/academia-videos/file/:id', async (req, res) => {
 // PUT: actualiza metadata del video (título/publicado) y, si existe, sincroniza
 // la comunicación enlazada (título/rama/categoría/categorías/publicado). Para
 // reemplazar el archivo hay que borrar y volver a subir.
-app.put('/api/academia-videos/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+app.put('/api/academia-videos/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), academiaParaCategoriasDelStaff(), async (req, res) => {
   const { titulo, rama, categoria, categorias_objetivo, activo } = req.body;
   try {
     const existente = await pool.query('SELECT subido_por FROM academia_videos WHERE id = $1', [req.params.id]);
@@ -3046,7 +3090,7 @@ const uploadPizarraMemoria = multer({
 // dirigido a la rama/categoría de sus propios pupilos.
 app.get('/api/academia-pizarras', authenticate, requireAnyModule('academia'), async (req, res) => {
   try {
-    const esProfesor = ['staff', 'super_admin'].includes(normalizarRol(req.actor.rol));
+    const esProfesor = ['staff', 'admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
     const result = await pool.query(
       `SELECT id, nombre_tactica, descripcion, imagen_filename, rama, categorias_objetivo, creado_por, activo, created_at
        FROM academia_pizarras ORDER BY created_at DESC LIMIT 300`
@@ -3068,7 +3112,7 @@ app.get('/api/academia-pizarras', authenticate, requireAnyModule('academia'), as
   }
 });
 
-app.post('/api/academia-pizarras', authenticate, requireRole('staff', 'admin', 'super_admin'), uploadPizarraMemoria.single('archivo'), async (req, res) => {
+app.post('/api/academia-pizarras', authenticate, requireRole('staff', 'admin', 'super_admin'), uploadPizarraMemoria.single('archivo'), academiaParaCategoriasDelStaff(), async (req, res) => {
   try {
     const nombreTactica = String(req.body.nombre_tactica || '').trim();
     if (!nombreTactica) {
@@ -3128,7 +3172,7 @@ app.get('/api/academia-pizarras/imagen/:id', async (req, res) => {
 
 // PUT: solo metadata (nombre/descripción/rama/categorías/publicado). Para
 // cambiar la imagen capturada hay que borrar y crear de nuevo.
-app.put('/api/academia-pizarras/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+app.put('/api/academia-pizarras/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), academiaParaCategoriasDelStaff(), async (req, res) => {
   const { nombre_tactica, descripcion, rama, categorias_objetivo, activo } = req.body;
   try {
     const existente = await pool.query('SELECT creado_por FROM academia_pizarras WHERE id = $1', [req.params.id]);
@@ -3437,7 +3481,7 @@ app.get('/api/cumpleanos', authenticate, async (req, res) => {
       else if (!previo.foto && r.foto) previo.foto = r.foto;
     });
     const lista = [...porClave.values()]
-      .map(({ clave, ...resto }, i) => ({ id: `${resto.tipo}-${resto.dia}-${i}`, ...resto }))
+      .map(({ clave: _clave, ...resto }, i) => ({ id: `${resto.tipo}-${resto.dia}-${i}`, ...resto }))
       .sort((a, b) => a.dia - b.dia || a.nombre.localeCompare(b.nombre, 'es'));
     res.json(lista);
   } catch (err) {
@@ -4553,7 +4597,7 @@ const ACADEMIA_TIPOS_LOWER = new Set(['academia-video', 'academia-imagen', 'acad
 // rama/categoría de sus propios pupilos. Antes esta ruta era 100% pública y
 // sin filtrar — cualquiera con la URL veía todo, incluido material docente.
 const filtrarComunicacionesParaActor = async (filas, actor) => {
-  const esProfesor = actor && ['staff', 'super_admin'].includes(normalizarRol(actor.rol));
+  const esProfesor = actor && ['staff', 'admin', 'super_admin'].includes(normalizarRol(actor.rol));
   if (esProfesor) return filas;
 
   if (!actor) {
@@ -4611,7 +4655,7 @@ app.get('/api/comunicaciones/:id', authenticateOpcional, async (req, res) => {
 // nada ahí es específico de Academia). Devuelve solo la URL; crear la
 // comunicación en sí sigue el flujo normal de POST /api/comunicaciones,
 // igual que ya pasa con imagen (subir → pegar URL en cuerpo_texto → Publicar).
-app.post('/api/comunicaciones/video', authenticate, requireRole('staff', 'admin', 'super_admin'), uploadVideoMemoria.single('archivo'), async (req, res) => {
+app.post('/api/comunicaciones/video', authenticate, requireRole('staff', 'admin', 'super_admin'), uploadVideoMemoria.single('archivo'), academiaParaCategoriasDelStaff(), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Debes seleccionar un archivo de video.' });
@@ -4639,7 +4683,7 @@ app.post('/api/comunicaciones/video', authenticate, requireRole('staff', 'admin'
 // POST: Crear comunicación. requireRole (no requireModule('admin_dashboard'))
 // porque 'staff' publica material de Academia desde este mismo endpoint y no
 // tiene el módulo admin_dashboard — antes quedaba bloqueado con 403.
-app.post('/api/comunicaciones', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+app.post('/api/comunicaciones', authenticate, requireRole('staff', 'admin', 'super_admin'), academiaParaCategoriasDelStaff({ soloSiAcademia: true }), async (req, res) => {
   const {
     titulo, cuerpo_texto, tipo, rama, categoria, urgencia, solicita_asistencia,
     citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad,
@@ -4668,7 +4712,7 @@ app.post('/api/comunicaciones', authenticate, requireRole('staff', 'admin', 'sup
 // PUT: Actualizar comunicación. requireRole (no requireModule('admin_dashboard'))
 // para que 'staff' pueda editar SU material de Academia — solo lo puede tocar
 // quien lo creó (creado_por) o un admin/super_admin.
-app.put('/api/comunicaciones/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+app.put('/api/comunicaciones/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), academiaParaCategoriasDelStaff({ soloSiAcademia: true }), async (req, res) => {
   const { titulo, cuerpo_texto, urgencia, rama, categoria, categorias_objetivo, activo } = req.body;
   try {
     const existente = await pool.query('SELECT creado_por FROM comunicaciones WHERE id = $1', [req.params.id]);
@@ -5174,7 +5218,7 @@ const CAMPOS_CUENTA_SOLO_ADMIN = [
   // Ningún flujo de autoservicio los edita (el onboarding solo manda nombre,
   // teléfono, dirección y foto). password tampoco: el dueño cambia su clave
   // por /api/auth/change-password, que exige la clave actual.
-  'rut', 'correo', 'password', 'motivo_baja',
+  'rut', 'correo', 'password', 'motivo_baja', 'categorias_asignadas',
 ];
 
 app.put(
@@ -5222,6 +5266,7 @@ app.put(
     autorizacion_imagen,
     dia_pago_acordado,
     logo_url,
+    categorias_asignadas,
   } = req.body;
 
   if (rut && !validarRutChileno(rut)) {
@@ -5272,6 +5317,7 @@ app.put(
         estado = COALESCE($35, estado),
         autorizacion_imagen = COALESCE($36, autorizacion_imagen),
         dia_pago_acordado = COALESCE($37, dia_pago_acordado),
+        categorias_asignadas = COALESCE($39::jsonb, categorias_asignadas),
         updated_at = NOW()
       WHERE id = $38
       RETURNING *`,
@@ -5314,6 +5360,9 @@ app.put(
         autorizacion_imagen,
         dia_pago_acordado || null,
         req.params.id,
+        Array.isArray(categorias_asignadas)
+          ? JSON.stringify(categorias_asignadas.map((c) => String(c || '').trim()).filter(Boolean).slice(0, 50))
+          : null,
       ]
     );
 
@@ -5729,7 +5778,9 @@ app.get('/api/jugadores', authenticate, async (req, res) => {
     // el frontend): nunca se devuelve.
     const filas = result.rows.map(({ password_jugador: _omitida, ...j }) => ({ ...j, xp_total: Number(j.xp_total), nivel_actual: calcularNivelDesdeXPTotal(j.xp_total) }));
     if (!ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
-      return res.json(filas);
+      // Staff con categorías asignadas: solo recibe esas categorías.
+      const categorias = await categoriasDeStaff(req.actor);
+      return res.json(filas.filter((j) => enCategorias(categorias, j.categoria)));
     }
     const pupilos = await obtenerPupilosDeActor(req.actor);
     const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
@@ -5756,6 +5807,9 @@ app.get('/api/jugadores/:rut', authenticate, async (req, res) => {
     );
     const jugador = result.rows[0];
     if (!jugador) return res.json({});
+    if (!enCategorias(await categoriasDeStaff(req.actor), jugador.categoria)) {
+      return res.status(403).json({ error: 'Deportista fuera de tus categorías asignadas.' });
+    }
     delete jugador.password_jugador;
     jugador.xp_total = Number(jugador.xp_total);
     jugador.nivel_actual = calcularNivelDesdeXPTotal(jugador.xp_total);
@@ -5782,7 +5836,10 @@ const CAMPOS_JUGADOR_EXTRA_AL_CREAR = [
   'prevision', 'tipo_sangre', 'alergias', 'nombre_emergencia', 'parentesco_emergencia', 'num_emergencia',
   'fecha_ingreso', 'apoderado_socio', 'matricula_pagada', 'derechos_imagen',
 ];
-app.post('/api/jugadores', authenticate, requireModule('admin_dashboard'), asignarCategoriaPorEdad, async (req, res) => {
+// Inserta un deportista a partir de un cuerpo ya normalizado (categoría por
+// edad y teléfonos). Lo usan el alta directa del admin y la aprobación de una
+// solicitud del staff, para que ambos guarden exactamente lo mismo.
+const insertarJugador = async (db, body) => {
   const {
     rut_jugador,
     nombres,
@@ -5792,39 +5849,598 @@ app.post('/api/jugadores', authenticate, requireModule('admin_dashboard'), asign
     categoria,
     correo_apoderado,
     foto_jugador,
-  } = req.body;
+  } = body;
+  const columnasJugadores = await obtenerColumnasTabla('jugadores');
+  const columnas = ['rut_jugador', 'nombres', 'apellido_paterno', 'apellido_materno', 'rama', 'categoria', 'correo_apoderado', 'estado'];
+  const valores = [rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria, correo_apoderado, 'activo'];
+
+  if (foto_jugador !== undefined && columnasJugadores.has('foto_jugador')) {
+    columnas.push('foto_jugador');
+    valores.push(foto_jugador);
+  }
+  // El registro por secciones envía la ficha completa (datos personales,
+  // físicos, salud, club). Solo se guardan columnas que existen y vienen con
+  // valor; '' se omite para no chocar con columnas DATE/numéricas.
+  for (const campo of CAMPOS_JUGADOR_EXTRA_AL_CREAR) {
+    const valor = body[campo];
+    if (valor === undefined || valor === null || valor === '' || !columnasJugadores.has(campo)) continue;
+    columnas.push(campo);
+    valores.push(valor);
+  }
+  if (body.estado && ['ACTIVO', 'INACTIVO'].includes(String(body.estado).toUpperCase())) {
+    valores[columnas.indexOf('estado')] = String(body.estado).toUpperCase();
+  }
+
+  const placeholders = columnas.map((_columna, indice) => `$${indice + 1}`).join(', ');
+  const result = await db.query(
+    `INSERT INTO jugadores (${columnas.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+    valores
+  );
+  return result.rows[0];
+};
+
+app.post('/api/jugadores', authenticate, requireModule('admin_dashboard'), asignarCategoriaPorEdad, async (req, res) => {
+  // RUT válido es obligatorio en fichas (antes solo lo revisaba la pantalla).
+  if (!validarRutChileno(req.body?.rut_jugador)) return res.status(400).json({ error: 'RUT del deportista inválido.' });
+  if (String(req.body?.rut_apoderado || '').trim() && !validarRutChileno(req.body.rut_apoderado)) {
+    return res.status(400).json({ error: 'RUT del apoderado inválido.' });
+  }
   try {
-    const columnasJugadores = await obtenerColumnasTabla('jugadores');
-    const columnas = ['rut_jugador', 'nombres', 'apellido_paterno', 'apellido_materno', 'rama', 'categoria', 'correo_apoderado', 'estado'];
-    const valores = [rut_jugador, nombres, apellido_paterno, apellido_materno, rama, categoria, correo_apoderado, 'activo'];
-
-    if (foto_jugador !== undefined && columnasJugadores.has('foto_jugador')) {
-      columnas.push('foto_jugador');
-      valores.push(foto_jugador);
-    }
-    // El registro por secciones envía la ficha completa (datos personales,
-    // físicos, salud, club). Solo se guardan columnas que existen y vienen con
-    // valor; '' se omite para no chocar con columnas DATE/numéricas.
-    for (const campo of CAMPOS_JUGADOR_EXTRA_AL_CREAR) {
-      const valor = req.body[campo];
-      if (valor === undefined || valor === null || valor === '' || !columnasJugadores.has(campo)) continue;
-      columnas.push(campo);
-      valores.push(valor);
-    }
-    if (req.body.estado && ['ACTIVO', 'INACTIVO'].includes(String(req.body.estado).toUpperCase())) {
-      valores[columnas.indexOf('estado')] = String(req.body.estado).toUpperCase();
-    }
-
-    const placeholders = columnas.map((_columna, indice) => `$${indice + 1}`).join(', ');
-
-    const result = await pool.query(
-      `INSERT INTO jugadores (${columnas.join(', ')}) VALUES (${placeholders}) RETURNING *`,
-      valores
-    );
-    res.json(result.rows[0]);
+    res.json(await insertarJugador(pool, { ...req.body, rut_jugador: formatearRut(req.body.rut_jugador) }));
   } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Ya existe un deportista con ese RUT.' });
     console.error('[POST /api/jugadores]', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// SOLICITUDES DE INCORPORACIÓN DE DEPORTISTAS
+// ==========================================
+// El staff no da de alta deportistas directo: propone uno con los datos
+// básicos y queda 'pendiente' hasta que un admin/super_admin lo aprueba (se
+// crea el deportista con insertarJugador) o lo rechaza con un motivo.
+// Contadores de ID (secuencias SERIAL) atrasados respecto del MAX(id) real,
+// típico tras importar o restaurar filas con id explícito: cada INSERT falla
+// con "llave duplicada" (pasó con asistencia en la BD local). Al arrancar se
+// adelanta solo la secuencia que quedó atrás; nunca se retrocede ninguna.
+const realinearSecuenciasAtrasadas = async () => {
+  const columnas = await pool.query(`
+    SELECT table_name, column_name, pg_get_serial_sequence(format('%I', table_name), column_name) AS secuencia
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND column_default LIKE 'nextval(%'
+  `);
+  const corregidas = [];
+  for (const { table_name: tabla, column_name: columna, secuencia } of columnas.rows) {
+    if (!secuencia) continue;
+    const { rows: [estado] } = await pool.query(
+      `SELECT (SELECT MAX(${pgIdent(columna)}) FROM ${pgIdent(tabla)}) AS maximo, last_value, is_called FROM ${secuencia}`
+    );
+    const maximo = Number(estado?.maximo);
+    const ultimo = Number(estado?.last_value);
+    if (!Number.isFinite(maximo) || maximo < ultimo || (maximo === ultimo && estado.is_called)) continue;
+    await pool.query('SELECT setval($1, $2, true)', [secuencia, maximo]);
+    corregidas.push(`${tabla}.${columna} → ${maximo}`);
+  }
+  if (corregidas.length) console.log(`🔢 Secuencias realineadas: ${corregidas.join(', ')}`);
+};
+const pgIdent = (nombre) => `"${String(nombre).replace(/"/g, '""')}"`;
+
+const ensureSolicitudesJugadorTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS solicitudes_jugador (
+      id SERIAL PRIMARY KEY,
+      rut_jugador VARCHAR(20) NOT NULL,
+      datos JSONB NOT NULL,
+      estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+      creado_por_id INT,
+      creado_por_rut VARCHAR(20),
+      creado_por_nombre VARCHAR(255),
+      resuelto_por_rut VARCHAR(20),
+      motivo_rechazo TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      resuelto_at TIMESTAMP
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_solicitudes_jugador_estado ON solicitudes_jugador (estado)');
+};
+
+const CAMPOS_SOLICITUD_JUGADOR = [
+  'nombres', 'apellido_paterno', 'apellido_materno', 'rut_jugador', 'fecha_nacimiento', 'rama',
+  'categoria', 'colegio', 'alergias', 'rut_apoderado', 'nombre_apoderado', 'parentesco_apoderado',
+  'telefono_apoderado', 'correo_apoderado',
+];
+
+// Valida y normaliza los datos que manda el staff. Devuelve { error } o { datos }.
+const prepararDatosSolicitudJugador = (body = {}) => {
+  const datos = {};
+  for (const campo of CAMPOS_SOLICITUD_JUGADOR) {
+    const valor = String(body[campo] ?? '').trim().slice(0, 255);
+    if (valor) datos[campo] = valor;
+  }
+  const faltan = ['nombres', 'apellido_paterno', 'rut_jugador', 'fecha_nacimiento', 'rama', 'nombre_apoderado', 'rut_apoderado', 'telefono_apoderado']
+    .filter((c) => !datos[c]);
+  if (faltan.length) return { error: `Faltan datos obligatorios: ${faltan.join(', ')}.` };
+  if (!validarRutChileno(datos.rut_jugador)) return { error: 'RUT del deportista inválido.' };
+  if (!validarRutChileno(datos.rut_apoderado)) return { error: 'RUT del apoderado inválido.' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datos.fecha_nacimiento) || Number.isNaN(Date.parse(datos.fecha_nacimiento))) {
+    return { error: 'Fecha de nacimiento inválida.' };
+  }
+  if (datos.correo_apoderado && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(datos.correo_apoderado)) {
+    return { error: 'Correo del apoderado inválido.' };
+  }
+  datos.rut_jugador = formatearRut(datos.rut_jugador);
+  datos.rut_apoderado = formatearRut(datos.rut_apoderado);
+  datos.telefono_apoderado = normalizarTelefonoChile(datos.telefono_apoderado);
+  if (datos.correo_apoderado) datos.correo_apoderado = datos.correo_apoderado.toLowerCase();
+  const reqFalso = { body: datos };
+  asignarCategoriaPorEdad(reqFalso, null, () => {});
+  return { datos: reqFalso.body };
+};
+
+const existeJugadorConRut = async (db, rut) => {
+  const r = await db.query(
+    "SELECT 1 FROM jugadores WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = $1 LIMIT 1",
+    [normalizarRutParaComparar(rut)]
+  );
+  return r.rows.length > 0;
+};
+
+app.post('/api/solicitudes-jugador', authenticate, requireAnyModule('asistencia_staff', 'admin_dashboard'), async (req, res) => {
+  const { error, datos } = prepararDatosSolicitudJugador(req.body);
+  if (error) return res.status(400).json({ error });
+  try {
+    if (await existeJugadorConRut(pool, datos.rut_jugador)) {
+      return res.status(409).json({ error: 'Ya existe un deportista con ese RUT.' });
+    }
+    const pendiente = await pool.query(
+      "SELECT 1 FROM solicitudes_jugador WHERE estado = 'pendiente' AND REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = $1",
+      [normalizarRutParaComparar(datos.rut_jugador)]
+    );
+    if (pendiente.rows.length) return res.status(409).json({ error: 'Ya hay una solicitud pendiente para ese RUT.' });
+
+    const creador = (await pool.query('SELECT nombres, apellido_paterno FROM cuentas WHERE id = $1', [req.actor.id])).rows[0] || {};
+    const nombreCreador = `${creador.nombres || ''} ${creador.apellido_paterno || ''}`.trim() || req.actor.rut;
+    const result = await pool.query(
+      `INSERT INTO solicitudes_jugador (rut_jugador, datos, creado_por_id, creado_por_rut, creado_por_nombre)
+       VALUES ($1, $2::jsonb, $3, $4, $5) RETURNING *`,
+      [datos.rut_jugador, JSON.stringify(datos), req.actor.id, req.actor.rut, nombreCreador]
+    );
+    const solicitud = result.rows[0];
+
+    const admins = await pool.query("SELECT rut FROM cuentas WHERE LOWER(rol) IN ('admin', 'super_admin', 'superadmin') AND COALESCE(LOWER(estado), 'activo') = 'activo'");
+    await Promise.all(admins.rows.map((row) => crearNotificacionApp({
+      rut: row.rut,
+      tipo: 'datos',
+      titulo: 'Nuevo deportista por aprobar',
+      cuerpo: `${nombreCreador} propone incorporar a ${datos.nombres} ${datos.apellido_paterno} (${datos.categoria || 'sin categoría'}). Revísalo en Usuarios y Cuentas.`,
+      referenciaTipo: 'solicitud_jugador',
+      referenciaId: solicitud.id,
+    })));
+    res.status(201).json(solicitud);
+  } catch (err) {
+    console.error('[POST /api/solicitudes-jugador]', err);
+    res.status(500).json({ error: 'No se pudo guardar la solicitud.' });
+  }
+});
+
+// Admin ve todas; el staff solo las que creó (para seguir su estado).
+app.get('/api/solicitudes-jugador', authenticate, requireAnyModule('asistencia_staff', 'admin_dashboard'), async (req, res) => {
+  try {
+    const permisos = await resolverPermisosDeActor(req.actor);
+    const esAdmin = Boolean(permisos.admin_dashboard);
+    const estado = ['pendiente', 'aprobada', 'rechazada'].includes(req.query.estado) ? req.query.estado : null;
+    const condiciones = [];
+    const params = [];
+    if (!esAdmin) { params.push(req.actor.id); condiciones.push(`s.creado_por_id = $${params.length}`); }
+    if (estado) { params.push(estado); condiciones.push(`s.estado = $${params.length}`); }
+    const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
+    // apoderado_cuenta: si el apoderado ya tiene cuenta (al aprobar queda vinculado por RUT) o se le creará una.
+    const result = await pool.query(
+      `SELECT s.*, ap.id AS apoderado_cuenta_id, TRIM(CONCAT(ap.nombres, ' ', ap.apellido_paterno)) AS apoderado_cuenta_nombre
+       FROM solicitudes_jugador s
+       LEFT JOIN LATERAL (
+         SELECT id, nombres, apellido_paterno FROM cuentas
+         WHERE REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = REPLACE(REPLACE(UPPER(s.datos->>'rut_apoderado'), '.', ''), '-', '')
+         LIMIT 1
+       ) ap ON true
+       ${where} ORDER BY s.created_at DESC LIMIT 200`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[GET /api/solicitudes-jugador]', err);
+    res.status(500).json({ error: 'No se pudieron cargar las solicitudes.' });
+  }
+});
+
+app.post('/api/solicitudes-jugador/:id/resolver', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  const aprobar = req.body?.aprobar === true;
+  const motivo = String(req.body?.motivo || '').trim().slice(0, 500);
+  if (!aprobar && !motivo) return res.status(400).json({ error: 'Indica el motivo del rechazo.' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const fila = (await client.query('SELECT * FROM solicitudes_jugador WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!fila) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Solicitud no encontrada.' }); }
+    if (fila.estado !== 'pendiente') { await client.query('ROLLBACK'); return res.status(409).json({ error: `La solicitud ya fue ${fila.estado}.` }); }
+
+    let jugador = null;
+    let cuentaApoderadoCreada = false;
+    if (aprobar) {
+      // El admin puede corregir datos al aprobar; se re-validan completos.
+      const { error, datos } = prepararDatosSolicitudJugador({ ...fila.datos, ...(req.body?.datos || {}) });
+      if (error) { await client.query('ROLLBACK'); return res.status(400).json({ error }); }
+      if (await existeJugadorConRut(client, datos.rut_jugador)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Ya existe un deportista con ese RUT.' });
+      }
+      // Apoderado sin cuenta: se crea como en la importación de planilla (sin
+      // clave, se activa con el código del club). Si su correo ya lo usa otra
+      // cuenta, queda con correo provisorio.
+      const partes = String(datos.nombre_apoderado || '').split(/\s+/).filter(Boolean);
+      const [nombresAp, paternoAp, maternoAp] = partes.length >= 3
+        ? [partes.slice(0, -2).join(' '), partes[partes.length - 2], partes[partes.length - 1]]
+        : [partes[0] || null, partes[1] || null, null];
+      const cuentaCreada = await client.query(
+        `INSERT INTO cuentas (correo, rut, nombres, apellido_paterno, apellido_materno, telefono, prefijo_tel, rol, perfil_principal, estado, forzar_clave)
+         SELECT CASE WHEN $1::varchar IS NOT NULL AND NOT EXISTS (SELECT 1 FROM cuentas WHERE LOWER(correo) = LOWER($1::varchar)) THEN $1::varchar ELSE $2 END,
+                $3::varchar, $4, $5, $6, $7, '+56', 'apoderado', 'apoderado', 'activo', true
+         WHERE NOT EXISTS (SELECT 1 FROM cuentas WHERE REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = REPLACE(UPPER($3::varchar), '-', ''))
+         ON CONFLICT DO NOTHING
+         RETURNING id`,
+        [datos.correo_apoderado || null, construirCorreoPlaceholderDesdeRut(datos.rut_apoderado.replace('-', '')), datos.rut_apoderado,
+          nombresAp, paternoAp, maternoAp, datos.telefono_apoderado || null]
+      );
+      cuentaApoderadoCreada = cuentaCreada.rows[0]?.id || false;
+      jugador = await insertarJugador(client, {
+        ...datos,
+        correo_apoderado: datos.correo_apoderado || null,
+        // Contacto de emergencia por defecto = el apoderado que informó el staff.
+        nombre_emergencia: datos.nombre_apoderado,
+        parentesco_emergencia: datos.parentesco_apoderado,
+        num_emergencia: datos.telefono_apoderado,
+        fecha_ingreso: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date()),
+      });
+      await client.query("UPDATE solicitudes_jugador SET estado = 'aprobada', datos = $2::jsonb, resuelto_por_rut = $3, resuelto_at = NOW() WHERE id = $1", [fila.id, JSON.stringify(datos), req.actor.rut]);
+    } else {
+      await client.query("UPDATE solicitudes_jugador SET estado = 'rechazada', motivo_rechazo = $2, resuelto_por_rut = $3, resuelto_at = NOW() WHERE id = $1", [fila.id, motivo, req.actor.rut]);
+    }
+    await client.query('COMMIT');
+
+    const nombre = `${fila.datos.nombres || ''} ${fila.datos.apellido_paterno || ''}`.trim();
+    await crearNotificacionApp({
+      rut: fila.creado_por_rut,
+      tipo: 'asistencia',
+      titulo: aprobar ? `Deportista aprobado: ${nombre}` : `Solicitud rechazada: ${nombre}`,
+      cuerpo: aprobar ? `${nombre} ya está incorporado y aparece en Pasar Lista.` : `Motivo: ${motivo}`,
+      referenciaTipo: 'solicitud_jugador',
+      referenciaId: fila.id,
+    });
+    res.json({ ok: true, estado: aprobar ? 'aprobada' : 'rechazada', jugador, cuenta_apoderado_creada: Boolean(cuentaApoderadoCreada), cuenta_apoderado_id: cuentaApoderadoCreada || null });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[POST /api/solicitudes-jugador/:id/resolver]', err);
+    res.status(500).json({ error: 'No se pudo resolver la solicitud.' });
+  } finally {
+    client.release();
+  }
+});
+
+// ==========================================
+// CERTIFICADOS DEL CLUB
+// ==========================================
+// El apoderado (o el propio deportista) solicita un certificado para un
+// pupilo; un admin lo emite (o rechaza). Al emitir se guarda una "foto" de
+// los datos (datos) para que el PDF y la verificación pública muestren
+// siempre lo mismo aunque la ficha cambie después. El QR del PDF lleva el
+// codigo_verificacion, que cualquiera puede validar sin iniciar sesión.
+const ensureCertificadosTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS certificados (
+      id SERIAL PRIMARY KEY,
+      tipo VARCHAR(40) NOT NULL,
+      rut_jugador VARCHAR(20) NOT NULL,
+      estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+      motivo TEXT,
+      presentado_ante VARCHAR(255),
+      solicitado_por_id INT,
+      solicitado_por_rut VARCHAR(20),
+      solicitado_por_nombre VARCHAR(255),
+      folio VARCHAR(30) UNIQUE,
+      codigo_verificacion VARCHAR(20) UNIQUE,
+      datos JSONB,
+      vigencia_hasta DATE,
+      motivo_rechazo TEXT,
+      resuelto_por_rut VARCHAR(20),
+      emitido_at TIMESTAMP,
+      anulado_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_certificados_estado ON certificados (estado)');
+};
+
+const nombreCompleto = (o = {}) => [o.nombres, o.apellido_paterno, o.apellido_materno].filter(Boolean).join(' ').trim();
+const hoyChileISO = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
+const fechaISO = (v) => (v ? (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10)) : null);
+
+const notificarCertificado = async (rut, titulo, cuerpo, id) => crearNotificacionApp({
+  rut, tipo: 'certificado', titulo, cuerpo, referenciaTipo: 'certificado', referenciaId: id,
+});
+
+app.post('/api/certificados', authenticate, async (req, res) => {
+  const tipo = String(req.body?.tipo || '');
+  const rutJugador = String(req.body?.rut_jugador || '').trim();
+  const motivo = String(req.body?.motivo || '').trim().slice(0, 300);
+  const presentadoAnte = String(req.body?.presentado_ante || '').trim().slice(0, 255);
+  if (!TIPOS_CERTIFICADO[tipo]) return res.status(400).json({ error: 'Tipo de certificado no válido.' });
+  if (!rutJugador) return res.status(400).json({ error: 'Elige el deportista.' });
+  if (tipo === 'participacion_permiso' && !presentadoAnte) {
+    return res.status(400).json({ error: 'Indica el tipo y nombre del establecimiento educacional al que va dirigido.' });
+  }
+  try {
+    // Familias: solo para sus propios pupilos. Otros perfiles: solo admin.
+    if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+      const pupilos = await obtenerPupilosDeActor(req.actor);
+      if (!pupilos.some((p) => normalizarRutParaComparar(p.rut_jugador) === normalizarRutParaComparar(rutJugador))) {
+        return res.status(403).json({ error: 'Solo puedes solicitar certificados de tus pupilos.' });
+      }
+    } else if (!(await resolverPermisosDeActor(req.actor)).admin_dashboard) {
+      return res.status(403).json({ error: 'No tienes permiso para solicitar certificados.' });
+    }
+    const jugador = (await pool.query('SELECT rut_jugador FROM jugadores WHERE rut_jugador = $1', [rutJugador])).rows[0];
+    if (!jugador) return res.status(404).json({ error: 'Deportista no encontrado.' });
+    const repetida = await pool.query(
+      "SELECT 1 FROM certificados WHERE estado = 'pendiente' AND rut_jugador = $1 AND tipo = $2", [rutJugador, tipo]
+    );
+    if (repetida.rows.length) return res.status(409).json({ error: 'Ya hay una solicitud pendiente de ese certificado.' });
+
+    const cuenta = (await pool.query('SELECT nombres, apellido_paterno FROM cuentas WHERE id = $1', [req.actor.id])).rows[0] || {};
+    const nombreSolicitante = nombreCompleto(cuenta) || req.actor.rut;
+    const { rows: [cert] } = await pool.query(
+      `INSERT INTO certificados (tipo, rut_jugador, motivo, presentado_ante, solicitado_por_id, solicitado_por_rut, solicitado_por_nombre)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [tipo, rutJugador, motivo || null, presentadoAnte || null, req.actor.id, req.actor.rut, nombreSolicitante]
+    );
+    const admins = await pool.query("SELECT rut FROM cuentas WHERE LOWER(rol) IN ('admin', 'super_admin', 'superadmin') AND COALESCE(LOWER(estado), 'activo') = 'activo'");
+    await Promise.all(admins.rows.map((a) => notificarCertificado(
+      a.rut, 'Certificado por emitir',
+      `${nombreSolicitante} solicitó un ${TIPOS_CERTIFICADO[tipo].titulo.toLowerCase()}.${tipo === 'vigencia_pago' ? ' Solo se puede emitir si tiene todas las mensualidades al día.' : ''}`,
+      cert.id
+    )));
+    res.status(201).json(cert);
+  } catch (err) {
+    console.error('[POST /api/certificados]', err);
+    res.status(500).json({ error: 'No se pudo registrar la solicitud.' });
+  }
+});
+
+// Admin ve todos; las familias, los que pidieron o los de sus pupilos.
+app.get('/api/certificados', authenticate, async (req, res) => {
+  try {
+    const esAdmin = Boolean((await resolverPermisosDeActor(req.actor)).admin_dashboard);
+    const estado = ['pendiente', 'emitido', 'rechazado', 'anulado'].includes(req.query.estado) ? req.query.estado : null;
+    const { rows } = await pool.query(
+      `SELECT c.*, TRIM(CONCAT(j.nombres, ' ', j.apellido_paterno, ' ', COALESCE(j.apellido_materno, ''))) AS nombre_jugador,
+              j.categoria AS categoria_actual, j.rama AS rama_actual
+       FROM certificados c LEFT JOIN jugadores j ON j.rut_jugador = c.rut_jugador
+       WHERE ($1::text IS NULL OR c.estado = $1)
+       ORDER BY c.created_at DESC LIMIT 300`,
+      [estado]
+    );
+    if (esAdmin) return res.json(rows);
+    const pupilos = await obtenerPupilosDeActor(req.actor);
+    const ruts = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
+    res.json(rows.filter((c) => c.solicitado_por_id === req.actor.id || ruts.has(normalizarRutParaComparar(c.rut_jugador))));
+  } catch (err) {
+    console.error('[GET /api/certificados]', err);
+    res.status(500).json({ error: 'No se pudieron cargar los certificados.' });
+  }
+});
+
+app.post('/api/certificados/:id/emitir', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  const cambios = req.body || {};
+  if (cambios.tipo !== undefined && !TIPOS_CERTIFICADO[cambios.tipo]) return res.status(400).json({ error: 'Tipo de certificado no válido.' });
+  if (cambios.vigencia_hasta && !/^\d{4}-\d{2}-\d{2}$/.test(String(cambios.vigencia_hasta))) return res.status(400).json({ error: 'Fecha de vigencia inválida.' });
+  if (cambios.fecha_ingreso && !/^\d{4}-\d{2}-\d{2}$/.test(String(cambios.fecha_ingreso))) return res.status(400).json({ error: 'Fecha de ingreso inválida.' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const cert = (await client.query('SELECT * FROM certificados WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
+    if (!cert) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Certificado no encontrado.' }); }
+    if (cert.estado !== 'pendiente') { await client.query('ROLLBACK'); return res.status(409).json({ error: `El certificado ya está ${cert.estado}.` }); }
+    const j = (await client.query('SELECT * FROM jugadores WHERE rut_jugador = $1', [cert.rut_jugador])).rows[0];
+    if (!j) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El deportista ya no existe.' }); }
+    const apoderado = j.rut_apoderado
+      ? (await client.query(
+        "SELECT nombres, apellido_paterno, apellido_materno, rut FROM cuentas WHERE REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = $1 LIMIT 1",
+        [normalizarRutParaComparar(j.rut_apoderado)]
+      )).rows[0]
+      : null;
+    const tipo = cambios.tipo || cert.tipo;
+    const datos = {
+      titulo: TIPOS_CERTIFICADO[tipo].titulo,
+      colegio: j.colegio || null,
+      extra: limpiarExtraCertificado(cambios.extra),
+      nombre: nombreCompleto(j),
+      rut: formatearRut(j.rut_jugador),
+      fecha_nacimiento: fechaISO(j.fecha_nacimiento),
+      rama: j.rama || null,
+      categoria: j.categoria || null,
+      fecha_ingreso: cambios.fecha_ingreso || fechaISO(j.fecha_ingreso),
+      apoderado: apoderado ? nombreCompleto(apoderado) : (j.nombre_emergencia || null),
+      rut_apoderado: apoderado ? formatearRut(apoderado.rut) : (j.rut_apoderado || null),
+      presentado_ante: String(cambios.presentado_ante ?? cert.presentado_ante ?? '').trim().slice(0, 255) || null,
+      observacion: String(cambios.observacion || '').trim().slice(0, 500) || null,
+      fecha_emision: hoyChileISO(),
+    };
+    const falta = faltaParaEmitir(tipo, {
+      extra: datos.extra, presentadoAnte: datos.presentado_ante, alDiaVerificado: cambios.al_dia_verificado,
+    });
+    if (falta) { await client.query('ROLLBACK'); return res.status(400).json({ error: falta }); }
+    // Vigencia: la que indique el admin o la de la plantilla del tipo.
+    const vigencia = cambios.vigencia_hasta
+      || (TIPOS_CERTIFICADO[tipo].vigenciaDias ? sumarDias(datos.fecha_emision, TIPOS_CERTIFICADO[tipo].vigenciaDias) : null);
+    let actualizado = null;
+    for (let intento = 0; intento < 3 && !actualizado; intento += 1) {
+      await client.query('SAVEPOINT codigo');
+      try {
+        actualizado = (await client.query(
+          `UPDATE certificados SET tipo = $2, estado = 'emitido', datos = $3::jsonb, folio = $4, codigo_verificacion = $5,
+             vigencia_hasta = $6, presentado_ante = $7, resuelto_por_rut = $8, emitido_at = NOW()
+           WHERE id = $1 RETURNING *`,
+          [cert.id, tipo, JSON.stringify(datos), folioCertificado(cert.id), generarCodigoVerificacion(), vigencia, datos.presentado_ante, req.actor.rut]
+        )).rows[0];
+      } catch (err) {
+        // Choque improbable de código aleatorio: se reintenta con otro.
+        if (err.code !== '23505') throw err;
+        await client.query('ROLLBACK TO SAVEPOINT codigo');
+      }
+    }
+    if (!actualizado) throw new Error('No se pudo generar un código único.');
+    await client.query('COMMIT');
+    await notificarCertificado(cert.solicitado_por_rut, `Certificado listo: ${datos.nombre}`,
+      `Tu ${datos.titulo.toLowerCase()} ya está disponible para descargar en Mi Cuenta.`, cert.id);
+    res.json(actualizado);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[POST /api/certificados/:id/emitir]', err);
+    res.status(500).json({ error: 'No se pudo emitir el certificado.' });
+  } finally {
+    client.release();
+  }
+});
+
+const cambiarEstadoCertificado = (desde, hacia, columnaFecha) => async (req, res) => {
+  const motivo = String(req.body?.motivo || '').trim().slice(0, 500);
+  if (!motivo) return res.status(400).json({ error: 'Indica el motivo.' });
+  try {
+    const { rows: [cert] } = await pool.query(
+      `UPDATE certificados SET estado = $2, motivo_rechazo = $3, resuelto_por_rut = $4${columnaFecha ? `, ${columnaFecha} = NOW()` : ''}
+       WHERE id = $1 AND estado = $5 RETURNING *`,
+      [req.params.id, hacia, motivo, req.actor.rut, desde]
+    );
+    if (!cert) return res.status(409).json({ error: `Solo se puede hacer con certificados en estado ${desde}.` });
+    await notificarCertificado(cert.solicitado_por_rut,
+      hacia === 'rechazado' ? 'Solicitud de certificado rechazada' : 'Certificado anulado', `Motivo: ${motivo}`, cert.id);
+    res.json(cert);
+  } catch (err) {
+    console.error(`[certificados ${hacia}]`, err);
+    res.status(500).json({ error: 'No se pudo actualizar el certificado.' });
+  }
+};
+app.post('/api/certificados/:id/rechazar', authenticate, requireModule('admin_dashboard'), cambiarEstadoCertificado('pendiente', 'rechazado', null));
+app.post('/api/certificados/:id/anular', authenticate, requireModule('admin_dashboard'), cambiarEstadoCertificado('emitido', 'anulado', 'anulado_at'));
+
+
+// Firmas y timbre: los sube un admin y se guardan en la BD (no en el código
+// público). Solo se entregan junto a un certificado ya emitido, a quien
+// puede verlo, para armar el PDF.
+const ensureCertificadosRecursosTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS certificados_recursos (
+      clave VARCHAR(40) PRIMARY KEY,
+      mime_type VARCHAR(40) NOT NULL,
+      data BYTEA NOT NULL,
+      actualizado_por VARCHAR(20),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+};
+const uploadRecursoCertificado = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (_req, file, cb) => {
+    if (!['image/png', 'image/jpeg'].includes(file.mimetype)) {
+      cb(new Error('Usa una imagen PNG (ideal, con fondo transparente) o JPG.'));
+      return;
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 3 * 1024 * 1024 },
+});
+
+app.get('/api/certificados-recursos', authenticate, requireModule('admin_dashboard'), async (_req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT clave, updated_at FROM certificados_recursos');
+    res.json(RECURSOS_CERTIFICADO.map((clave) => ({ clave, cargado_en: rows.find((r) => r.clave === clave)?.updated_at || null })));
+  } catch (err) {
+    console.error('[GET /api/certificados-recursos]', err);
+    res.status(500).json({ error: 'No se pudieron cargar las firmas.' });
+  }
+});
+
+app.put('/api/certificados-recursos/:clave', authenticate, requireModule('admin_dashboard'), uploadRecursoCertificado.single('archivo'), async (req, res) => {
+  if (!RECURSOS_CERTIFICADO.includes(req.params.clave)) return res.status(400).json({ error: 'Recurso no válido.' });
+  if (!req.file) return res.status(400).json({ error: 'Selecciona una imagen.' });
+  try {
+    await pool.query(
+      `INSERT INTO certificados_recursos (clave, mime_type, data, actualizado_por, updated_at) VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (clave) DO UPDATE SET mime_type = EXCLUDED.mime_type, data = EXCLUDED.data, actualizado_por = EXCLUDED.actualizado_por, updated_at = NOW()`,
+      [req.params.clave, req.file.mimetype, req.file.buffer, req.actor.rut]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[PUT /api/certificados-recursos]', err);
+    res.status(500).json({ error: 'No se pudo guardar la imagen.' });
+  }
+});
+
+app.get('/api/certificados/:id/recursos', authenticate, async (req, res) => {
+  try {
+    const cert = (await pool.query("SELECT rut_jugador, solicitado_por_id, estado FROM certificados WHERE id = $1", [req.params.id])).rows[0];
+    if (!cert || cert.estado !== 'emitido') return res.status(404).json({ error: 'Certificado no disponible.' });
+    if (!(await resolverPermisosDeActor(req.actor)).admin_dashboard && cert.solicitado_por_id !== req.actor.id) {
+      const pupilos = await obtenerPupilosDeActor(req.actor);
+      if (!pupilos.some((p) => normalizarRutParaComparar(p.rut_jugador) === normalizarRutParaComparar(cert.rut_jugador))) {
+        return res.status(403).json({ error: 'No tienes acceso a este certificado.' });
+      }
+    }
+    const { rows } = await pool.query('SELECT clave, mime_type, data FROM certificados_recursos');
+    res.set('Cache-Control', 'no-store');
+    res.json(Object.fromEntries(rows.map((r) => [r.clave, `data:${r.mime_type};base64,${r.data.toString('base64')}`])));
+  } catch (err) {
+    console.error('[GET /api/certificados/:id/recursos]', err);
+    res.status(500).json({ error: 'No se pudieron cargar las firmas.' });
+  }
+});
+
+// Verificación pública (la abre el QR del PDF). Solo datos mínimos: el RUT
+// va enmascarado y no se devuelve fecha de nacimiento ni apoderado.
+const verificarCertificadoRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas consultas. Espera unos minutos.' },
+});
+app.get('/api/certificados/verificar/:codigo', verificarCertificadoRateLimiter, async (req, res) => {
+  const codigo = String(req.params.codigo || '').trim().toUpperCase();
+  if (!codigoValido(codigo)) return res.status(404).json({ valido: false, error: 'Código no válido.' });
+  try {
+    const cert = (await pool.query(
+      "SELECT folio, estado, datos, vigencia_hasta, emitido_at, anulado_at FROM certificados WHERE codigo_verificacion = $1 AND estado IN ('emitido', 'anulado')",
+      [codigo]
+    )).rows[0];
+    if (!cert) return res.status(404).json({ valido: false, error: 'No existe un certificado con ese código.' });
+    const vigencia = fechaISO(cert.vigencia_hasta);
+    const vencido = Boolean(vigencia && vigencia < hoyChileISO());
+    res.json({
+      valido: cert.estado === 'emitido' && !vencido,
+      estado: cert.estado === 'anulado' ? 'anulado' : (vencido ? 'vencido' : 'vigente'),
+      folio: cert.folio,
+      titulo: cert.datos?.titulo,
+      nombre: cert.datos?.nombre,
+      rut: enmascararRut(cert.datos?.rut),
+      rama: cert.datos?.rama,
+      categoria: cert.datos?.categoria,
+      fecha_emision: cert.datos?.fecha_emision,
+      vigencia_hasta: vigencia,
+    });
+  } catch (err) {
+    console.error('[GET /api/certificados/verificar]', err);
+    res.status(500).json({ valido: false, error: 'No se pudo verificar el certificado.' });
   }
 });
 
@@ -5841,6 +6457,9 @@ const CAMPOS_JUGADOR_SOLO_ADMIN = [
 // pupilo (datos personales, salud, contacto, tallas); los campos administrativos
 // (categoría, mensualidad, beca, vínculo de cuenta, etc.) quedan reservados a admin.
 app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(pool, 'admin_dashboard', { permitirPropioJugador: true }), stripFieldsUnlessModule(CAMPOS_JUGADOR_SOLO_ADMIN, 'admin_dashboard'), asignarCategoriaPorEdad, async (req, res) => {
+  if (String(req.body?.rut_apoderado || '').trim() && !validarRutChileno(req.body.rut_apoderado)) {
+    return res.status(400).json({ error: 'RUT del apoderado inválido.' });
+  }
   const {
     rut_apoderado,
     correo_apoderado,
@@ -7821,6 +8440,44 @@ const avisarComprobanteATesoreria = async (actor, pago) => {
   }
 };
 
+// Staff con categorías asignadas (cuentas.categorias_asignadas, [] = todas):
+// solo puede pasar lista, citar y evaluar a deportistas de esas categorías.
+// Antes el filtro era solo de pantalla y la API aceptaba cualquier RUT.
+// Categorías del staff en minúsculas; [] = sin restricción (o no es staff).
+const categoriasDeStaff = async (actor) => {
+  if (normalizarRol(actor?.rol) !== 'staff' || !actor?.id) return [];
+  const cuenta = (await pool.query('SELECT categorias_asignadas FROM cuentas WHERE id = $1', [actor.id])).rows[0];
+  return (Array.isArray(cuenta?.categorias_asignadas) ? cuenta.categorias_asignadas : [])
+    .map((c) => String(c || '').trim().toLowerCase()).filter(Boolean);
+};
+const enCategorias = (categorias, valor) => !categorias.length || categorias.includes(String(valor || '').trim().toLowerCase());
+
+const rutsFueraDeCategoriasStaff = async (actor, ruts) => {
+  const categorias = await categoriasDeStaff(actor);
+  const lista = [...new Set((ruts || []).map((r) => normalizarRutParaComparar(r)).filter(Boolean))];
+  if (!categorias.length || !lista.length) return [];
+  const result = await pool.query(
+    `SELECT rut_jugador, nombres, apellido_paterno FROM jugadores
+     WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = ANY($1)
+       AND NOT (LOWER(TRIM(COALESCE(categoria, ''))) = ANY($2))`,
+    [lista, categorias]
+  );
+  return result.rows;
+};
+
+// Middleware: extraerRuts(req) devuelve los RUT de deportistas que toca la acción.
+const soloCategoriasDelStaff = (extraerRuts) => async (req, res, next) => {
+  try {
+    const fuera = await rutsFueraDeCategoriasStaff(req.actor, await extraerRuts(req));
+    if (!fuera.length) return next();
+    const nombres = fuera.map((j) => `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim() || j.rut_jugador).join(', ');
+    return res.status(403).json({ error: `Fuera de tus categorías asignadas: ${nombres}.` });
+  } catch (err) {
+    console.error('[soloCategoriasDelStaff]', err);
+    return res.status(500).json({ error: 'No se pudieron verificar tus categorías.' });
+  }
+};
+
 // Crea una fila de notificación in-app para un RUT destinatario. No lanza:
 // una notificación fallida no debe tumbar la creación/RSVP de la citación.
 const crearNotificacionApp = async ({ rut, tipo, titulo, cuerpo, referenciaTipo, referenciaId }) => {
@@ -8055,7 +8712,7 @@ const cargarCitacionConConvocados = async (id) => {
 
 // POST: crear citación con su nómina inicial de convocados. Notifica al
 // apoderado y, si existe, a la cuenta propia del jugador de cada convocado.
-app.post('/api/citaciones', authenticate, requireModule('citaciones'), async (req, res) => {
+app.post('/api/citaciones', authenticate, requireModule('citaciones'), soloCategoriasDelStaff((req) => (Array.isArray(req.body?.convocados) ? req.body.convocados.map((c) => c?.rut_jugador) : [])), async (req, res) => {
   const {
     tipo_competencia, competencia_nombre, competencia_logo_url,
     dia_citacion, hora_citacion, hora_presentacion, hora_maxima_confirmacion,
@@ -8299,7 +8956,7 @@ app.delete('/api/citaciones/:id', authenticate, requireModule('citaciones'), asy
 });
 
 // POST: agrega un convocado a una citación existente y lo notifica.
-app.post('/api/citaciones/:id/convocados', authenticate, requireModule('citaciones'), async (req, res) => {
+app.post('/api/citaciones/:id/convocados', authenticate, requireModule('citaciones'), soloCategoriasDelStaff((req) => [req.body?.rut_jugador]), async (req, res) => {
   const { rut_jugador, nombre, rama, categoria, correo_apoderado, requiere_excepcion_morosidad } = req.body;
   if (!String(rut_jugador || '').trim()) {
     return res.status(400).json({ error: 'Falta el RUT del deportista.' });
@@ -8400,7 +9057,7 @@ app.delete('/api/citaciones/:id/convocados/:rut', authenticate, requireModule('c
 // convocado, a diferencia del RSVP de abajo que solo puede hacer el
 // apoderado. Independiente de "respuesta" (RSVP previo): confirmar
 // asistencia no es lo mismo que haber llegado.
-app.patch('/api/citaciones/:id/convocados/:rut/asistencia', authenticate, requireModule('citaciones'), async (req, res) => {
+app.patch('/api/citaciones/:id/convocados/:rut/asistencia', authenticate, requireModule('citaciones'), soloCategoriasDelStaff((req) => [req.params.rut]), async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE citacion_convocados SET asistio_evento = true, hora_asistencia_marcada = NOW()
@@ -8683,6 +9340,11 @@ app.get('/api/asistencia/sesiones', authenticate, requireAnyModule('citaciones',
       valores.push(hasta);
       condiciones.push(`fecha <= $${valores.length}`);
     }
+    const categoriasStaff = await categoriasDeStaff(req.actor);
+    if (categoriasStaff.length) {
+      valores.push(categoriasStaff);
+      condiciones.push(`LOWER(TRIM(categoria)) = ANY($${valores.length}::text[])`);
+    }
     const where = condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
 
     const result = await pool.query(
@@ -8714,7 +9376,8 @@ app.get('/api/asistencia/sesiones/:sesionId', authenticate, requireAnyModule('ci
       `SELECT * FROM asistencia WHERE sesion_id = $1 ORDER BY nombre_jugador ASC`,
       [req.params.sesionId]
     );
-    res.json(result.rows);
+    const categorias = await categoriasDeStaff(req.actor);
+    res.json(result.rows.filter((r) => enCategorias(categorias, r.categoria)));
   } catch (err) {
     console.error('[GET /api/asistencia/sesiones/:sesionId]', err);
     res.status(500).json({ error: err.message });
@@ -8725,7 +9388,7 @@ app.get('/api/asistencia/sesiones/:sesionId', authenticate, requireAnyModule('ci
 // cuenta los registros de las listas ya guardadas por staff. Mismo criterio
 // de acceso que GET /api/jugadores/:rut: el propio jugador, su apoderado, o
 // staff/admin vía obtenerPupilosDeActor.
-app.get('/api/asistencia/jugador/:rut', authenticate, async (req, res) => {
+app.get('/api/asistencia/jugador/:rut', authenticate, soloCategoriasDelStaff((req) => [req.params.rut]), async (req, res) => {
   try {
     if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
       const pupilos = await obtenerPupilosDeActor(req.actor);
@@ -8828,7 +9491,7 @@ app.get('/api/estadisticas/jugador/:rut/resumen', authenticate, async (req, res)
 
 // POST: registra una sesión completa de una sola vez (todo el roster de esa
 // pasada de lista), en una transacción con un sesion_id común.
-app.post('/api/asistencia/sesion', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
+app.post('/api/asistencia/sesion', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), soloCategoriasDelStaff((req) => (Array.isArray(req.body?.registros) ? req.body.registros.map((r) => r?.rut_jugador) : [])), async (req, res) => {
   const { fecha, rama, hora_inicio, hora_fin, entrenador_cargo, registros } = req.body;
   if (!Array.isArray(registros) || registros.length === 0) {
     return res.status(400).json({ error: 'No hay registros de asistencia para guardar.' });
@@ -8900,7 +9563,7 @@ app.post('/api/asistencia/sesion', authenticate, requireAnyModule('citaciones', 
 });
 
 // PUT: corrige el estado/observación de un jugador dentro de una sesión ya guardada.
-app.put('/api/asistencia/:id', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), async (req, res) => {
+app.put('/api/asistencia/:id', authenticate, requireAnyModule('citaciones', 'asistencia_staff'), soloCategoriasDelStaff(async (req) => (await pool.query('SELECT rut_jugador FROM asistencia WHERE id_asistencia = $1', [req.params.id])).rows.map((r) => r.rut_jugador)), async (req, res) => {
   const { estado_asistencia, observacion } = req.body;
   try {
     const result = await pool.query(
@@ -9292,7 +9955,7 @@ app.post('/api/estadisticas', authenticate, requireModule('scoreboard_live'), as
 // el resto (apoderado, jugador, socio, etc.) solo puede ver las de sus
 // propios pupilos — antes cualquiera con el módulo 'jugador' podía leer las
 // evaluaciones de CUALQUIER rut solo cambiando el parámetro de la URL.
-app.get('/api/evaluaciones/jugador/:rut', authenticate, requireAnyModule('evaluacion_staff', 'jugador'), async (req, res) => {
+app.get('/api/evaluaciones/jugador/:rut', authenticate, requireAnyModule('evaluacion_staff', 'jugador'), soloCategoriasDelStaff((req) => [req.params.rut]), async (req, res) => {
   try {
     if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
       const pupilos = await obtenerPupilosDeActor(req.actor);
@@ -9312,7 +9975,7 @@ app.get('/api/evaluaciones/jugador/:rut', authenticate, requireAnyModule('evalua
 });
 
 // POST: Crear evaluación
-app.post('/api/evaluaciones', authenticate, requireModule('evaluacion_staff'), async (req, res) => {
+app.post('/api/evaluaciones', authenticate, requireModule('evaluacion_staff'), soloCategoriasDelStaff((req) => [req.body?.rut_jugador]), async (req, res) => {
   const {
     rut_jugador, evaluador_rut, tipo_evaluacion,
     puntaje_tecnica, puntaje_actitud, puntaje_condicion, puntaje_mental,
@@ -9474,19 +10137,21 @@ app.post('/api/resultados', authenticate, requireModule('scoreboard_live'), asyn
 // ==========================================
 
 // GET: Todas las preguntas
-// Staff/super_admin ven todas las preguntas activas (para gestionarlas). El
-// resto solo ve las dirigidas a la rama/categoría de sus propios pupilos.
+// Staff/super_admin ven todas, también las despublicadas (igual que las
+// pizarras): si no, al despublicar una desaparecía de "Mis Publicaciones" y
+// no se podía volver a publicar. El resto solo ve las activas y dirigidas a
+// la rama/categoría de sus propios pupilos.
 app.get('/api/quiz', authenticate, requireModule('academia'), async (req, res) => {
   try {
-    const esProfesor = ['staff', 'super_admin'].includes(normalizarRol(req.actor.rol));
+    const esProfesor = ['staff', 'admin', 'super_admin'].includes(normalizarRol(req.actor.rol));
     const result = await pool.query(
-      `SELECT * FROM quiz_preguntas WHERE activo = true ORDER BY dificultad ASC`
+      `SELECT * FROM quiz_preguntas ORDER BY dificultad ASC`
     );
     if (esProfesor) {
       return res.json(result.rows);
     }
     const pupilos = await obtenerPupilosDeActor(req.actor);
-    res.json(result.rows.filter((q) => academiaContenidoEsVisibleParaPupilos(q, pupilos)));
+    res.json(result.rows.filter((q) => q.activo !== false && academiaContenidoEsVisibleParaPupilos(q, pupilos)));
   } catch (err) {
     console.error('[GET /api/quiz]', err);
     res.status(500).json({ error: err.message });
@@ -9496,7 +10161,7 @@ app.get('/api/quiz', authenticate, requireModule('academia'), async (req, res) =
 // POST: Crear pregunta. requireRole en vez de requireModule('academia'): ese
 // módulo también lo tienen jugadores/apoderados, que antes podían crear
 // preguntas llamando la API directo aunque ninguna pantalla lo permitiera.
-app.post('/api/quiz', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+app.post('/api/quiz', authenticate, requireRole('staff', 'admin', 'super_admin'), academiaParaCategoriasDelStaff(), async (req, res) => {
   const { titulo, tipo_quiz, rama, pregunta, opciones_json, respuesta_correcta, dificultad, categorias_objetivo } = req.body;
   try {
     const result = await pool.query(
@@ -9520,7 +10185,7 @@ app.post('/api/quiz', authenticate, requireRole('staff', 'admin', 'super_admin')
 // materiales/videos/pizarras (dueño o admin), el quiz lo puede editar/borrar
 // cualquier staff/admin/superadmin — con pocas cuentas de staff en el club,
 // tiene más sentido que el banco de preguntas se mantenga entre todos.
-app.put('/api/quiz/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), async (req, res) => {
+app.put('/api/quiz/:id', authenticate, requireRole('staff', 'admin', 'super_admin'), academiaParaCategoriasDelStaff(), async (req, res) => {
   const { titulo, tipo_quiz, rama, categorias_objetivo, pregunta, opciones_json, respuesta_correcta, dificultad, activo } = req.body;
   try {
     const existente = await pool.query('SELECT id_pregunta FROM quiz_preguntas WHERE id_pregunta = $1', [req.params.id]);
@@ -9755,7 +10420,12 @@ app.get('/api/academia/ranking', authenticate, requireRole('staff', 'admin', 'su
     const rama = String(req.query.rama || '').trim() || null;
     // Una o varias categorías separadas por coma; null = todas.
     const listaCategorias = String(req.query.categoria || '').split(',').map((c) => c.trim().toLowerCase()).filter(Boolean);
-    const categoria = listaCategorias.length ? listaCategorias : null;
+    // Staff con categorías asignadas: el ranking nunca sale de ellas.
+    const categoriasStaff = await categoriasDeStaff(req.actor);
+    const permitidas = categoriasStaff.length
+      ? (listaCategorias.length ? listaCategorias.filter((c) => categoriasStaff.includes(c)) : categoriasStaff)
+      : listaCategorias;
+    const categoria = permitidas.length ? permitidas : (categoriasStaff.length ? ['__ninguna__'] : null);
     const result = await pool.query(
       `SELECT j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria,
               COALESCE(SUM(gp.puntos_obtenidos), 0) AS xp_total,
@@ -11987,6 +12657,22 @@ app.listen(PORT, () => {
 
   ensureHorariosEntrenamientoExcepcionesTable().catch((error) => {
     console.error('❌ Error verificando tabla horarios_entrenamiento_excepciones:', error.message);
+  });
+
+  realinearSecuenciasAtrasadas().catch((error) => {
+    console.error('❌ Error realineando secuencias:', error.message);
+  });
+
+  ensureCertificadosRecursosTable().catch((error) => {
+    console.error('❌ Error verificando tabla certificados_recursos:', error.message);
+  });
+
+  ensureCertificadosTable().catch((error) => {
+    console.error('❌ Error verificando tabla certificados:', error.message);
+  });
+
+  ensureSolicitudesJugadorTable().catch((error) => {
+    console.error('❌ Error verificando tabla solicitudes_jugador:', error.message);
   });
 
   ensureStaffTable().catch((error) => {

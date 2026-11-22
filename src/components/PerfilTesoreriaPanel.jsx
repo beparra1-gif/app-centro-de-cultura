@@ -6,6 +6,7 @@ import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
+import { CertificadosFamilia } from './Certificados';
 import { normalizarRol } from '../security/accessControl';
 import { partesFechaCalendario } from '../utils/fechas';
 import { asignarAbonoEnOrden, resumirAbonosMes } from '../utils/abonosMes';
@@ -600,6 +601,7 @@ function PerfilTesoreriaPanel({
       // dentro del pago: inflaba la BD, la auditoría y el Sheet). El backend
       // fija el nombre (RUT + sufijo aleatorio), el 'nombre' es solo referencia.
       const formData = new FormData();
+      // eslint-disable-next-line react-hooks/purity -- dentro del manejador de subida, no del render
       formData.append('nombre', `comprobante-${rutPupiloActivo || Date.now()}`);
       formData.append('tipo', 'comprobante');
       formData.append('archivo', archivo);
@@ -874,6 +876,8 @@ function PerfilTesoreriaPanel({
           </div>
         </div>
       )}
+
+      {!esVistaAdmin && <CertificadosFamilia pupilos={pupilosActivos} morosos={morososAdmin || []} />}
 
       <div className="ptp-titulo-pagos">
         <h3 className="section-title mt-20">Panel de Pagos 2026</h3>

@@ -169,7 +169,9 @@ test('informe por categoría: filtra y descarga la imagen', async ({ page }, tes
   // HijoDos: marzo condonado en la prueba anterior.
   const filaHijo2 = tabla.locator('tr', { hasText: 'E2E HijoDos' });
   await expect(filaHijo2.locator('td.id-condonado')).toHaveCount(1);
-  await page.getByLabel('Categoría', { exact: true }).selectOption('SUB-15');
+  // Filtro de categorías de selección múltiple (desplegable con casillas).
+  await page.getByLabel(/^Categorías:/).first().click();
+  await page.getByRole('group', { name: 'Categorías' }).getByLabel('SUB-15', { exact: true }).check();
   await expect(tabla.locator('.id-grupo')).toHaveCount(1);
   const [descarga] = await Promise.all([
     page.waitForEvent('download'),

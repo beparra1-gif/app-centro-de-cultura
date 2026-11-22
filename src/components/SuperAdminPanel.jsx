@@ -53,6 +53,7 @@ import ErroresAppPanel from './ErroresAppPanel';
 import CumpleanosMes from './CumpleanosMes';
 import FichaPersonaModal from './FichaPersonaModal';
 import UsuariosCuentasPanel from './UsuariosCuentasPanel';
+import { CertificadosAdmin } from './Certificados';
 import BotonVolverAdmin from './BotonVolverAdmin';
 import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
 import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
@@ -69,6 +70,7 @@ import SaludDashboardPanel from './SaludDashboardPanel';
 import SaludTimelinePanel from './SaludTimelinePanel';
 import SettingsPanel from './SettingsPanel';
 import CampoCategoria from './CampoCategoria';
+import { useJugadoresDeCategoriasAsignadas } from '../utils/categoriasStaff';
 import { categoriaEfectiva } from '../utils/categoriaPorEdad';
 import { absolutizarLogoUrl } from '../utils/logoResolver';
 import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
@@ -167,6 +169,7 @@ function SuperAdminPanel({
   // citaciones, becas, estadísticas...). Usuarios y Cuentas y la ficha usan
   // las listas completas (…Todos/…Todas), desde ahí se reactivan.
   const jugadoresAdmin = useMemo(() => soloActivos(jugadoresAdminTodos), [jugadoresAdminTodos]);
+  const categoriasDeJugadores = useMemo(() => unicosSinMayusculas((jugadoresAdmin || []).map((j) => j.categoria)).sort(), [jugadoresAdmin]);
   const cuentasAdmin = useMemo(() => soloActivos(cuentasAdminTodas), [cuentasAdminTodas]);
   const esStaff = rolActual === 'staff';
   const esAdmin = rolActual === 'admin';
@@ -395,6 +398,23 @@ function SuperAdminPanel({
   };
 
   const [erroresRecientes, setErroresRecientes] = useState(0);
+  // Solicitudes de deportistas nuevos (propuestas por el staff) y de
+  // certificados (pedidos por familias) sin resolver.
+  const [solicitudesPendientes, setSolicitudesPendientes] = useState(0);
+  const [certificadosPendientes, setCertificadosPendientes] = useState(0);
+  useEffect(() => {
+    if (vistaAdmin !== 'inicio' || !(esAdmin || esSuperAdmin)) return undefined;
+    let activo = true;
+    api.solicitudesJugadorAPI.listar('pendiente')
+      .then((lista) => { if (activo) setSolicitudesPendientes(Array.isArray(lista) ? lista.length : 0); })
+      .catch(() => {});
+    api.certificadosAPI.listar('pendiente')
+      .then((lista) => { if (activo) setCertificadosPendientes(Array.isArray(lista) ? lista.length : 0); })
+      .catch(() => {});
+    return () => { activo = false; };
+  // esAdmin/esSuperAdmin se derivan del rol (estable durante la sesión).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vistaAdmin]);
   useEffect(() => {
     if (vistaAdmin !== 'inicio' || !(esAdmin || esSuperAdmin)) return undefined;
     let activo = true;
@@ -1126,8 +1146,10 @@ function SuperAdminPanel({
     new Set(ausenciasActivasCitacion.map((a) => String(a.rut_jugador || '').trim()).filter(Boolean))
   ), [ausenciasActivasCitacion]);
 
+  // Staff con categorías asignadas solo cita a deportistas de esas categorías.
+  const jugadoresCitables = useJugadoresDeCategoriasAsignadas(usuarioAutenticado, jugadoresAdmin);
   const jugadorasCitacion = useMemo(() => {
-    const base = (jugadoresAdmin || []).filter((j) => estaActivo(j) && !rutsConAusenciaActiva.has(String(j.rut_jugador || '').trim()));
+    const base = jugadoresCitables.filter((j) => estaActivo(j) && !rutsConAusenciaActiva.has(String(j.rut_jugador || '').trim()));
     const categoriasPermitidas = new Set(
       [citaCategoria, ...categoriasExtraCitacion]
         .map((c) => String(c || '').trim().toLowerCase())
@@ -1142,7 +1164,7 @@ function SuperAdminPanel({
       if (categoriasPermitidas.size > 0 && !categoriasPermitidas.has(categoria)) return false;
       return true;
     });
-  }, [jugadoresAdmin, citaRama, citaCategoria, categoriasExtraCitacion, rutsConAusenciaActiva]);
+  }, [jugadoresCitables, citaRama, citaCategoria, categoriasExtraCitacion, rutsConAusenciaActiva]);
 
   const cuposCitados = Object.values(seleccionCitacion).filter(Boolean).length;
 
@@ -1959,6 +1981,8 @@ function SuperAdminPanel({
   useEffect(() => {
     if (vistaAdmin !== 'activos' && vistaAdmin !== 'resultados' && vistaAdmin !== 'citaciones') return;
     cargarLogosDisponiblesActivos();
+  // Solo al entrar a esas vistas: la función se recrea en cada render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vistaAdmin]);
 
   useEffect(() => {
@@ -2572,7 +2596,8 @@ function SuperAdminPanel({
           {
             titulo: 'Personas',
             items: [
-              { key: 'usuarios', Icon: Users, titulo: 'Usuarios y Cuentas', desc: 'Fichas, cuentas, perfiles y vincular apoderados', badge: sinApoderadoActivos, badgeTxt: 'sin apoderado', ver: puedeAdminCompleto, ir: () => setVistaAdmin('usuarios') },
+              { key: 'usuarios', Icon: Users, titulo: 'Usuarios y Cuentas', desc: 'Fichas, cuentas, perfiles y vincular apoderados', badge: solicitudesPendientes || sinApoderadoActivos, badgeTxt: solicitudesPendientes ? 'por aprobar' : 'sin apoderado', ver: puedeAdminCompleto, ir: () => setVistaAdmin('usuarios') },
+              { key: 'certificados', Icon: FileText, titulo: 'Certificados', desc: 'Solicitudes de las familias, emisión con QR y firmas', badge: certificadosPendientes, badgeTxt: 'por emitir', ver: puedeAdminCompleto, ir: () => setVistaAdmin('certificados') },
               { key: 'lista', Icon: Users, titulo: 'Pasar lista', desc: 'Asistencia a entrenamientos', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('asistencia_staff') },
               { key: 'citaciones', Icon: UserPlus, titulo: 'Citaciones', desc: 'Convocatorias a partidos y torneos', ver: puedeAdminCompleto || puedeVerCitaciones, ir: () => setVistaAdmin('citaciones') },
               { key: 'jugador', Icon: UserPlus, titulo: 'Fichas deportivas', desc: 'Perfil, tarjeta y evaluaciones de cada deportista', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('jugador') },
@@ -3052,6 +3077,17 @@ function SuperAdminPanel({
                       />
                       También es apoderado (tiene hijos inscritos)
                     </label>
+                  </div>
+                )}
+                {normalizarRol(cuentaAdminEdit.rol) === 'staff' && (
+                  <div className="form-group">
+                    <label>Categorías a cargo (staff)</label>
+                    <FiltroCategorias
+                      opciones={unicosSinMayusculas([...categoriasDeJugadores, ...(cuentaAdminEdit.categorias_asignadas || [])]).sort()}
+                      valor={Array.isArray(cuentaAdminEdit.categorias_asignadas) ? cuentaAdminEdit.categorias_asignadas : []}
+                      onCambiar={(v) => setCuentaAdminEdit((p) => ({ ...p, categorias_asignadas: v }))}
+                    />
+                    <small className="pf-ayuda">En Pasar Lista y Evaluar verá solo estas categorías. "Todas" = sin restricción.</small>
                   </div>
                 )}
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
@@ -4494,6 +4530,13 @@ function SuperAdminPanel({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {vistaAdmin === 'certificados' && (
+        <div className="fade-in">
+          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
+          <CertificadosAdmin morososPorRut={new Map((morososAdmin || []).map((m) => [String(m.rut || '').replace(/[.\s-]/g, '').toUpperCase(), m]))} />
         </div>
       )}
 

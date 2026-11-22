@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart } from 'recharts';
 import PupiloSelector from './PupiloSelector';
 import BuscadorJugadorAdmin from './BuscadorJugadorAdmin';
+import { useJugadoresDeCategoriasAsignadas } from '../utils/categoriasStaff';
 import EditarJugadorModal from './EditarJugadorModal';
 import QrScanner from './QrScanner';
 import * as api from '../api/client';
@@ -36,6 +37,7 @@ const cargarImagenDesdeBlob = (blob) => new Promise((resolve, reject) => {
 });
 
 function TarjetaJugadorPanel({
+  usuarioAutenticado,
   pupiloActivo,
   setPupiloActivo,
   pupilosDisponibles,
@@ -43,6 +45,8 @@ function TarjetaJugadorPanel({
   onEvaluarJugador,
   onJugadorActualizado,
 }) {
+  // Staff con categorías asignadas solo busca fichas de esas categorías.
+  const pupilosBuscador = useJugadoresDeCategoriasAsignadas(usuarioAutenticado, pupilosDisponibles);
   const cardRef = useRef(null);
   const cardFrontExportRef = useRef(null);
   const [mostrarCredencialAsistencia, setMostrarCredencialAsistencia] = useState(false);
@@ -870,7 +874,7 @@ function TarjetaJugadorPanel({
     <div className="player-screen-shell">
       {puedeUsarBuscadorJugador ? (
         <BuscadorJugadorAdmin
-          jugadores={pupilosDisponibles}
+          jugadores={pupilosBuscador}
           pupiloActivo={pupiloActivo}
           onSeleccionar={setPupiloActivo}
         />

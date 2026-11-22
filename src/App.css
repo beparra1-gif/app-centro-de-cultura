@@ -4211,7 +4211,9 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .cm-cumples { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scroll-snap-type: x proximity; }
 .cm-cumple { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; min-height: var(--toque-min); max-width: 260px; padding: 8px 12px; border-radius: var(--radius-md); border: 1px solid var(--borde-suave); background: var(--blanco-tarjeta); color: var(--texto-principal); font-family: inherit; text-align: left; cursor: pointer; scroll-snap-align: start; }
 .cm-cumple.hoy { border-color: var(--azul-electrico); box-shadow: 0 0 0 2px rgba(0,122,255,0.18); }
-.cm-cumple.pasado { opacity: 0.7; }
+/* Pasados: se atenúa solo el número del día; opacity en toda la tarjeta dejaba el texto bajo contraste AA. */
+.cm-cumple.pasado { background: var(--fondo-input); }
+.cm-cumple.pasado .cm-cumple-dia { color: var(--texto-secundario); }
 .cm-cumple-dia { width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; background: var(--fondo-input); font-weight: 900; font-size: 14px; }
 .cm-cumple.hoy .cm-cumple-dia { background: var(--azul-electrico); color: #fff; }
 .cm-cumple-texto { display: flex; flex-direction: column; min-width: 0; }
@@ -4431,3 +4433,10 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .cc-auto { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 800; background: var(--estado-pagado-fondo); border-color: var(--estado-pagado-borde); }
 .cc-auto-chip { font-size: 11px; font-weight: 900; text-transform: uppercase; color: var(--estado-pagado-texto); }
 @media (max-width: 600px) { .uc-seccion .grid-auto-220 { grid-template-columns: 1fr; gap: 6px; } }
+
+/* main recibe foco solo para desplazarse con teclado: sin anillo al hacer clic. */
+.ios-main:focus:not(:focus-visible) { outline: none; }
+
+/* Tarjetas con formularios: sin el "levantar" de .card:hover. Con el cursor en
+   el borde inferior la tarjeta subía, el cursor salía, bajaba… y vibraba sin parar. */
+.card.card-estatica:hover { transform: none; }

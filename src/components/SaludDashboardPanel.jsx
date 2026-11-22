@@ -28,7 +28,7 @@ function SaludDashboardPanel({
           </div>
           <div className="card" style={{ padding: '12px', textAlign: 'center', background: 'rgba(52,199,89,0.05)', borderLeft: '4px solid #34C759', borderRadius: 'var(--radius-lg)' }}>
             <p style={{ margin: '0 0 4px 0', fontSize: '11px', fontWeight: '600', color: 'var(--texto-secundario)' }}>Comunicaciones</p>
-            <p style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#34C759' }}>{comunicacionesCount}</p>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: 'var(--verde-victoria)' }}>{comunicacionesCount}</p>
           </div>
         </div>
       </div>
@@ -36,7 +36,7 @@ function SaludDashboardPanel({
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '15px' }}>
         <div className="card" style={{ padding: '12px', textAlign: 'center', background: 'rgba(255,159,64,0.05)', borderLeft: '4px solid #FF9500', borderRadius: 'var(--radius-lg)' }}>
           <p style={{ margin: '0 0 4px 0', fontSize: '11px', fontWeight: '600', color: 'var(--texto-secundario)' }}>Engagement Total</p>
-          <p style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#FF9500' }}>
+          <p style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#8A4B00' }}>
             {engagementTotal}
           </p>
         </div>
