@@ -4280,6 +4280,9 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .uc-editor { overflow-y: auto; width: min(980px, 100%); }
 .uc-editor > .card { margin: 0; box-shadow: none; border: none; }
 .uc-perfil-rapido { width: auto; min-width: 130px; margin: 0; padding: 8px 10px; font-size: 12px; font-weight: 800; min-height: 38px; }
+.uc-barra-seleccion { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-lg); background: var(--fondo-secundario, rgba(0,0,0,0.04)); }
+.uc-barra-seleccion .checkbox-label-row { margin: 0; font-weight: 700; }
+.uc-seleccion { width: 20px; height: 20px; margin: 0; accent-color: var(--azul-electrico); cursor: pointer; }
 
 .tc-barra-botones { display: flex; gap: 6px; flex-wrap: wrap; }
 .tc-nota { font-size: var(--texto-min); color: var(--texto-secundario); margin: -4px 0 10px; }

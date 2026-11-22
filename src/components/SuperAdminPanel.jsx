@@ -62,7 +62,8 @@ import ResultadosCards from './ResultadosCards';
 import { calcularResumenCitacion } from '../utils/citaciones';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { mapearJugadorAPupilo } from '../utils/pupiloMapper';
-import { estaActivo, soloActivos } from '../utils/estadoActivo';
+import { cambioDeEstado, estaActivo, soloActivos } from '../utils/estadoActivo';
+import { construirCsvCuentas, construirCsvDeportistas, descargarCsv } from '../utils/exportarDeportistas';
 import { CATEGORIAS_POR_RAMA } from '../utils/categoriasDeportivas';
 import ReportesPanel from './ReportesPanel';
 import SaludAlertasPanel from './SaludAlertasPanel';
@@ -1105,13 +1106,13 @@ function SuperAdminPanel({
         || !rutValido
       );
     });
-  }, [jugadoresAdmin]);
+  }, [jugadoresAdminTodos]);
 
   const jugadoresSinApoderado = useMemo(() => {
     return (jugadoresAdminTodos || []).filter((j) => (
       !String(j.rut_apoderado || '').trim() && !String(j.correo_apoderado || '').trim()
     ));
-  }, [jugadoresAdmin]);
+  }, [jugadoresAdminTodos]);
 
   const rutsJugadoresIncompletos = useMemo(
     () => new Set(jugadoresIncompletos.map((j) => String(j.rut_jugador || ''))),
@@ -1342,6 +1343,75 @@ function SuperAdminPanel({
 
   // Tarjeta compartida por Deportistas y Cuentas — misma estructura, evita
   // duplicar ~90 líneas de JSX entre las dos pestañas.
+  // Selección múltiple en Usuarios y Cuentas: desactivar/reactivar varios de
+  // una vez (ej. después de revisar el listado exportado).
+  const [seleccionUsuarios, setSeleccionUsuarios] = useState(() => new Set());
+  const [aplicandoEstadoMasivo, setAplicandoEstadoMasivo] = useState(false);
+
+  const aplicarEstadoMasivo = async (items, activar) => {
+    const confirmado = await confirmAction({
+      title: activar ? 'Reactivar seleccionados' : 'Desactivar seleccionados',
+      message: activar
+        ? `${items.length} vuelven a estar activos y aparecen de nuevo en cobros, citaciones y listados.`
+        : `${items.length} quedarán inactivos: salen de cobros, citaciones, pasar lista e informes, y las cuentas no podrán ingresar. Se pueden reactivar después.`,
+      confirmText: activar ? 'Reactivar' : 'Desactivar',
+    });
+    if (!confirmado) return;
+    setAplicandoEstadoMasivo(true);
+    let fallidos = 0;
+    for (const u of items) {
+      try {
+        const cambio = cambioDeEstado(u.tipo, activar, hoyLocalISO());
+        if (u.tipo === 'jugador') await api.jugadoresAPI.update(u.raw.rut_jugador, cambio);
+        else await api.cuentasAPI.update(u.raw.id, cambio);
+      } catch {
+        fallidos += 1;
+      }
+    }
+    await recargarUsuariosAdmin?.();
+    setSeleccionUsuarios(new Set());
+    setAplicandoEstadoMasivo(false);
+    showToast({
+      message: fallidos ? `${items.length - fallidos} actualizados, ${fallidos} con error (revisa la conexión y reintenta).` : `${items.length} actualizados.`,
+      type: fallidos ? 'error' : 'success',
+    });
+  };
+
+  const barraSeleccionUsuarios = (lista) => {
+    if (!(esAdmin || esSuperAdmin) || lista.length === 0) return null;
+    const elegidos = lista.filter((u) => seleccionUsuarios.has(u.id));
+    const todosElegidos = elegidos.length === lista.length;
+    return (
+      <div className="uc-barra-seleccion" role="group" aria-label="Acciones con seleccionados">
+        <label className="checkbox-label-row">
+          <input
+            type="checkbox"
+            checked={todosElegidos}
+            onChange={() => setSeleccionUsuarios((prev) => {
+              const sig = new Set(prev);
+              lista.forEach((u) => (todosElegidos ? sig.delete(u.id) : sig.add(u.id)));
+              return sig;
+            })}
+          />
+          {elegidos.length ? `${elegidos.length} seleccionados` : `Seleccionar los ${lista.length}`}
+        </label>
+        {elegidos.length > 0 && (
+          <>
+            <button type="button" className="btn-secondary tc-btn" disabled={aplicandoEstadoMasivo} onClick={() => aplicarEstadoMasivo(elegidos, false)}>
+              {aplicandoEstadoMasivo ? 'Guardando…' : 'Desactivar'}
+            </button>
+            <button type="button" className="btn-secondary tc-btn" disabled={aplicandoEstadoMasivo} onClick={() => aplicarEstadoMasivo(elegidos, true)}>
+              Reactivar
+            </button>
+            <button type="button" className="btn-secondary tc-btn" disabled={aplicandoEstadoMasivo} onClick={() => setSeleccionUsuarios(new Set())}>
+              Limpiar
+            </button>
+          </>
+        )}
+      </div>
+    );
+  };
+
   const renderTarjetaUsuario = (u) => {
     const esIncompleta = u.tipo === 'jugador'
       ? rutsJugadoresIncompletos.has(String(u.raw.rut_jugador || ''))
@@ -1366,6 +1436,19 @@ function SuperAdminPanel({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {(esAdmin || esSuperAdmin) && (
+                <input
+                  type="checkbox"
+                  className="uc-seleccion"
+                  checked={seleccionUsuarios.has(u.id)}
+                  onChange={() => setSeleccionUsuarios((prev) => {
+                    const sig = new Set(prev);
+                    if (sig.has(u.id)) sig.delete(u.id); else sig.add(u.id);
+                    return sig;
+                  })}
+                  aria-label={`Seleccionar a ${u.nombre}`}
+                />
+              )}
               <button type="button" className="fp-nombre-link" onClick={() => setFichaPersona({ tipo: u.tipo, raw: u.raw })} title="Ver ficha completa">
                 {u.nombre}
               </button>
@@ -3140,7 +3223,12 @@ function SuperAdminPanel({
                 ['todos', 'Todos'],
               ].map(([valor, etiqueta]) => (
                 <button key={valor} type="button" className={`filter-chip ${filtroEstadoUsuarios === valor ? 'active' : ''}`} onClick={() => setFiltroEstadoUsuarios(valor)}>
-                  {etiqueta}
+                  {etiqueta} ({(() => {
+                    const base = (vistaUsuarios === 'deportistas' ? jugadoresAdminTodos : cuentasAdminTodas) || [];
+                    if (valor === 'todos') return base.length;
+                    const activos = base.filter(estaActivo).length;
+                    return valor === 'activos' ? activos : base.length - activos;
+                  })()})
                 </button>
               ))}
             </div>
@@ -3193,8 +3281,21 @@ function SuperAdminPanel({
                   <button className={`filter-chip ${filtroApoderadoJugadores === 'todos' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('todos')}>Todos ({jugadoresAdminTodos.length})</button>
                   <button className={`filter-chip ${filtroApoderadoJugadores === 'sin' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('sin')}>Sin apoderado ({jugadoresSinApoderado.length})</button>
                   <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdminTodos.length - jugadoresSinApoderado.length})</button>
+                  <button
+                    type="button"
+                    className="btn-secondary tc-btn"
+                    disabled={deportistasFiltrados.length === 0}
+                    title="Descarga los deportistas filtrados (rama, categoría, estado) con su apoderado, para abrir en Excel"
+                    onClick={() => descargarCsv(
+                      `deportistas-${[filtroRamaJugadores, filtroCategoriaJugadores, filtroEstadoUsuarios].filter((f) => f !== 'todas' && f !== 'todos').join('-')}-${hoyLocalISO()}.csv`,
+                      construirCsvDeportistas(deportistasFiltrados.map((u) => u.raw), cuentasAdminTodas || []),
+                    )}
+                  >
+                    <FileText size={13} /> Exportar listado ({deportistasFiltrados.length})
+                  </button>
                 </div>
 
+                {barraSeleccionUsuarios(deportistasFiltrados)}
                 <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
                   {deportistasFiltrados.length === 0 && (
                     <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay deportistas con los filtros actuales.</p>
@@ -3244,6 +3345,21 @@ function SuperAdminPanel({
                   </div>
                 </div>
 
+                <div className="filter-chips" style={{ marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    className="btn-secondary tc-btn"
+                    disabled={cuentasUsuariosFiltradas.length === 0}
+                    title="Descarga las cuentas filtradas con sus pupilos, para abrir en Excel"
+                    onClick={() => descargarCsv(
+                      `cuentas-${[filtroTipoPerfil, filtroEstadoUsuarios].filter((f) => f !== 'todos').join('-')}-${hoyLocalISO()}.csv`,
+                      construirCsvCuentas(cuentasUsuariosFiltradas.map((u) => u.raw), jugadoresAdminTodos || []),
+                    )}
+                  >
+                    <FileText size={13} /> Exportar listado ({cuentasUsuariosFiltradas.length})
+                  </button>
+                </div>
+                {barraSeleccionUsuarios(cuentasUsuariosFiltradas)}
                 <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
                   {cuentasUsuariosFiltradas.length === 0 && (
                     <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay cuentas con los filtros actuales.</p>
@@ -3374,7 +3490,7 @@ function SuperAdminPanel({
                   </div>
                 )}
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                <div className="form-group"><label>Estado</label><select className="form-input" value={cuentaAdminEdit.estado || 'activo'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="activo">Activo</option><option value="inactivo">Inactivo</option></select></div>
+                <div className="form-group"><label>Estado de la cuenta</label><select className="form-input" value={estaActivo(cuentaAdminEdit) ? 'activo' : 'inactivo'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="activo">Activo</option><option value="inactivo">Inactivo (no ingresa, sale de cobros y listados)</option></select></div>
                 <div className="form-group"><label>Valor UTM referencia (override opcional, se completa solo)</label><input type="number" min="1" className="form-input" value={cuentaAdminEdit.utm_valor_referencia || utmVigente?.valor || 68000} onChange={(e) => actualizarCuentaAdminEdit({ utm_valor_referencia: e.target.value })} /></div>
                 <div className="form-group"><label>Mensualidad base automática (0,3 UTM, se recalcula sola cada mes)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(cuentaAdminEdit) ? (Number(cuentaAdminEdit.monto_mensual_base) > 0 ? cuentaAdminEdit.monto_mensual_base : calcularMensualidadSocio(cuentaAdminEdit.utm_valor_referencia || utmVigente?.valor)) : 0} disabled /></div>
                 <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={cuentaAdminEdit.monto_mensual_override || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
@@ -3613,7 +3729,8 @@ function SuperAdminPanel({
               <fieldset className="uc-seccion">
                 <legend><History size={15} /> Estado deportivo y bajas</legend>
                 <div className="grid-auto-220">
-                  <div className="form-group"><label>Estado deportivo</label><input className="form-input" value={jugadorAdminEdit.estado_deportivo || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado_deportivo: e.target.value }))} placeholder="Activo" /></div>
+                  <div className="form-group"><label>Estado en el club</label><select className="form-input" value={estaActivo(jugadorAdminEdit) ? 'ACTIVO' : (String(jugadorAdminEdit.estado || '').toUpperCase() === 'BAJA' ? 'BAJA' : 'INACTIVO')} onChange={(e) => { const estado = e.target.value; setJugadorAdminEdit((p) => ({ ...p, estado, ...(estado === 'ACTIVO' ? (estaActivo(p) ? {} : { fecha_fin_baja: hoyLocalISO() }) : (estaActivo(p) ? { fecha_inicio_baja: hoyLocalISO() } : {})) })); }}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo (sale de cobros, citaciones y listas)</option><option value="BAJA">Baja / retirado</option></select></div>
+                  <div className="form-group"><label>Estado deportivo (lo ve la familia, ej. Lesionado; no activa ni desactiva)</label><input className="form-input" value={jugadorAdminEdit.estado_deportivo || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado_deportivo: e.target.value }))} placeholder="Activo" /></div>
                   <div className="form-group"><label>Fecha inicio baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_inicio_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_inicio_baja: e.target.value }))} /></div>
                   <div className="form-group"><label>Fecha fin baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_fin_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_fin_baja: e.target.value }))} /></div>
                   <div className="form-group"><label>XP puntos</label><input type="number" className="form-input" value={jugadorAdminEdit.xp_puntos || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, xp_puntos: e.target.value }))} /></div>
@@ -6126,9 +6243,15 @@ function SuperAdminPanel({
           onPagosCambiados={async () => { if (typeof recargarPagosMensualidades === 'function') await recargarPagosMensualidades(); }}
           puedeEditarHermanos={esAdmin || esSuperAdmin}
           onHermanosCambiados={async () => { await recargarUsuariosAdmin?.(); }}
+          puedeCambiarEstado={(esAdmin || esSuperAdmin) && !editandoTipo}
+          onEstadoCambiado={async () => { await recargarUsuariosAdmin?.(); }}
           onCerrar={() => setFichaPersona(null)}
           onAbrir={(otra) => setFichaPersona(otra)}
-          onEditar={(p) => { setFichaPersona(null); iniciarEdicion(p); }}
+          onEditar={(p) => {
+            setFichaPersona(null);
+            // Abierta desde el editor ("Ver pagos"): volver a él sin perder lo no guardado.
+            if (!editandoTipo) iniciarEdicion(p);
+          }}
           onRegistrarPago={(objetivo) => { setFichaPersona(null); abrirPagoManualTesoreria(objetivo); }}
         />
       )}

@@ -9,6 +9,8 @@ import { calcularCuotaDeportistasFamilia, obtenerCuotaJugador, obtenerPorcentaje
 import { ETIQUETA_ESTADO, MESES_INFORME, construirInformeDeportistas, construirInformeSocios } from '../utils/informeDeuda';
 import { normalizarRol } from '../security/accessControl';
 import { hermanosDe, normGrupoFamiliar } from '../utils/hermanos';
+import { cambioDeEstado, estaActivo } from '../utils/estadoActivo';
+import { hoyLocalISO } from '../utils/fechas';
 
 // Usuarios y Cuentas → "Ver ficha": ventana con todo lo de una persona
 // (deportista o cuenta): datos, vínculo apoderado ↔ pupilos (navegable) y
@@ -105,6 +107,7 @@ export default function FichaPersonaModal({
   persona, jugadores = [], cuentas = [], pagos = [], morosos = [], sociosMorosos = [],
   onCerrar, onAbrir, onEditar, onRegistrarPago, puedeRegistrarPago = false,
   puedeBorrarPagos = false, onPagosCambiados, puedeEditarHermanos = false, onHermanosCambiados,
+  puedeCambiarEstado = false, onEstadoCambiado,
 }) {
   const [pestana, setPestana] = useState(persona?.pestana || 'datos');
   useModalAccesible(Boolean(persona), onCerrar);
@@ -113,9 +116,12 @@ export default function FichaPersonaModal({
   // hermano se recargan los jugadores y la ficha abierta debe reflejarlo).
   const raw = useMemo(() => {
     const base = persona?.raw || {};
-    if (persona?.tipo !== 'jugador') return base;
+    // Se busca la versión recargada para que un cambio (estado, hermanos) se vea sin cerrar la ficha.
+    if (persona?.tipo !== 'jugador') return cuentas.find((c) => c.id != null && c.id === base.id) || base;
     return jugadores.find((j) => norm(j.rut_jugador) === norm(base.rut_jugador)) || base;
-  }, [persona, jugadores]);
+  }, [persona, jugadores, cuentas]);
+  const [guardandoEstado, setGuardandoEstado] = useState(false);
+
   const [hermanoNuevo, setHermanoNuevo] = useState('');
   const [guardandoHermano, setGuardandoHermano] = useState(false);
 
@@ -148,6 +154,47 @@ export default function FichaPersonaModal({
       })
       .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es'));
   }, [esJugador, raw, hermanos, jugadores]);
+
+  const cambiarEstado = async () => {
+    const activo = estaActivo(raw);
+    const nombreCorto = raw.nombres || raw.rut_jugador || raw.rut || 'esta persona';
+    const confirmado = await confirmAction({
+      title: activo ? 'Desactivar' : 'Reactivar',
+      message: activo
+        ? `${nombreCorto} quedará inactivo/a: sale de cobros, citaciones, pasar lista e informes${esJugador ? '' : ' y no podrá ingresar a la app'}. Se puede reactivar desde aquí cuando quieras.`
+        : `${nombreCorto} vuelve a estar activo/a y aparece de nuevo en cobros, citaciones y listados.`,
+      confirmText: activo ? 'Desactivar' : 'Reactivar',
+    });
+    if (!confirmado) return;
+    setGuardandoEstado(true);
+    try {
+      const cambio = cambioDeEstado(persona.tipo, !activo, hoyLocalISO());
+      if (esJugador) await api.jugadoresAPI.update(raw.rut_jugador, cambio);
+      else await api.cuentasAPI.update(raw.id, cambio);
+      showToast({ message: `${nombreCorto} quedó ${activo ? 'inactivo/a' : 'activo/a'}.`, type: 'success' });
+      // Apoderado puro que se queda sin ningún pupilo activo: se ofrece (no se
+      // impone) desactivar su cuenta. Socios y otros perfiles pagan/ingresan igual.
+      const apo = esJugador && activo ? cuentaDe(raw) : null;
+      const quedanActivos = apo && jugadores.some((j) => norm(j.rut_jugador) !== norm(raw.rut_jugador) && estaActivo(j) && cuentaDe(j)?.id === apo.id);
+      if (apo && estaActivo(apo) && !apo.es_socio && normalizarRol(apo.rol || apo.perfil_principal) === 'apoderado' && !quedanActivos) {
+        const tambien = await confirmAction({
+          title: 'Cuenta del apoderado',
+          message: `${`${apo.nombres || ''} ${apo.apellido_paterno || ''}`.trim() || apo.rut} ya no tiene pupilos activos. ¿Desactivar también su cuenta? Si dices que no, sigue pudiendo ingresar.`,
+          confirmText: 'Desactivar cuenta',
+          cancelText: 'Dejarla activa',
+        });
+        if (tambien) {
+          await api.cuentasAPI.update(apo.id, cambioDeEstado('cuenta', false));
+          showToast({ message: 'Cuenta del apoderado desactivada.', type: 'success' });
+        }
+      }
+      await onEstadoCambiado?.();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo cambiar el estado.', type: 'error' });
+    } finally {
+      setGuardandoEstado(false);
+    }
+  };
 
   const agregarHermano = async () => {
     const otro = jugadores.find((j) => norm(j.rut_jugador) === norm(hermanoNuevo));
@@ -233,12 +280,12 @@ export default function FichaPersonaModal({
   const beca = esJugador ? obtenerPorcentajeBeca(raw) : 0;
   const chips = esJugador
     ? [
-      raw.estado && String(raw.estado).toUpperCase() !== 'ACTIVO' ? raw.estado : null,
+      !estaActivo(raw) ? String(raw.estado).toUpperCase() : null,
       raw.apoderado_socio || apoderado?.es_socio ? 'Pupilo de socio' : null,
       raw.exento_mensualidad ? 'Exento' : (beca > 0 ? `Beca ${beca}%` : null),
       !apoderado ? 'Sin cuenta de apoderado' : null,
     ].filter(Boolean)
-    : [ETIQUETA_ROL[rol] || rol || 'Sin rol', raw.es_socio ? 'Socio' : null, pupilos.length ? `${pupilos.length} ${pupilos.length === 1 ? 'pupilo' : 'pupilos'}` : null].filter(Boolean);
+    : [!estaActivo(raw) ? String(raw.estado).toUpperCase() : null, ETIQUETA_ROL[rol] || rol || 'Sin rol', raw.es_socio ? 'Socio' : null, pupilos.length ? `${pupilos.length} ${pupilos.length === 1 ? 'pupilo' : 'pupilos'}` : null].filter(Boolean);
 
   const pestanas = [
     { id: 'datos', label: 'Datos' },
@@ -255,7 +302,7 @@ export default function FichaPersonaModal({
             <h3 id="fp-titulo">{nombre || 'Sin nombre'}</h3>
             <p>{esJugador ? `Deportista · ${raw.rut_jugador || ''}` : `Cuenta · ${raw.rut || ''}`}</p>
             <div className="tc-perfiles">
-              {chips.map((c) => <span key={c} className={`tc-perfil ${c.startsWith('Sin cuenta') ? 'alerta' : ''}`}>{c}</span>)}
+              {chips.map((c) => <span key={c} className={`tc-perfil ${c.startsWith('Sin cuenta') || c === String(raw.estado || '').toUpperCase() ? 'alerta' : ''}`}>{c}</span>)}
             </div>
           </div>
           <button type="button" className="fp-cerrar" onClick={onCerrar} aria-label="Cerrar ficha"><X size={20} /></button>
@@ -275,7 +322,7 @@ export default function FichaPersonaModal({
               <Dato etiqueta="Nacimiento" valor={raw.fecha_nacimiento ? `${fecha(raw.fecha_nacimiento)}${edad(raw.fecha_nacimiento) !== null ? ` (${edad(raw.fecha_nacimiento)} años)` : ''}` : 'Sin fecha'} />
               <Dato etiqueta="Rama" valor={raw.rama} />
               <Dato etiqueta="Categoría" valor={raw.categoria} />
-              <Dato etiqueta="Estado" valor={raw.estado || 'ACTIVO'} />
+              <Dato etiqueta="Estado" valor={estaActivo(raw) ? 'Activo' : `${raw.estado}${raw.fecha_inicio_baja ? ` desde ${fecha(raw.fecha_inicio_baja)}` : ''}`} />
               <Dato etiqueta="Ingreso" valor={fecha(raw.fecha_ingreso)} />
               <Dato etiqueta="Cobra desde" valor={raw.mes_inicio_cobro} />
               <Dato
@@ -295,7 +342,7 @@ export default function FichaPersonaModal({
           ) : (
             <div className="fp-datos">
               <Dato etiqueta="Perfil" valor={ETIQUETA_ROL[rol] || rol || 'Sin rol'} />
-              <Dato etiqueta="Estado" valor={raw.estado || 'activo'} />
+              <Dato etiqueta="Estado" valor={estaActivo(raw) ? 'Activo' : raw.estado} />
               <Dato etiqueta="Correo" valor={raw.correo} />
               <Dato etiqueta="Teléfono" valor={raw.telefono ? `${raw.prefijo_tel || '+56'} ${raw.telefono}` : ''} />
               <Dato etiqueta="Dirección" valor={[raw.direccion, raw.comuna].filter(Boolean).join(', ')} />
@@ -396,7 +443,12 @@ export default function FichaPersonaModal({
               <Plus size={13} /> Registrar pago
             </button>
           )}
-          <button type="button" className="btn-electric tc-btn" onClick={() => onEditar(persona)}>
+          {puedeCambiarEstado && (
+            <button type="button" className="btn-secondary tc-btn" disabled={guardandoEstado} onClick={cambiarEstado}>
+              {guardandoEstado ? 'Guardando…' : (estaActivo(raw) ? 'Desactivar' : 'Reactivar')}
+            </button>
+          )}
+          <button type="button" className="btn-electric tc-btn" onClick={() => onEditar({ ...persona, raw })}>
             <Pencil size={13} /> Editar ficha
           </button>
         </footer>

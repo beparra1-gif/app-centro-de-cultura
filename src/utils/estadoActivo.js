@@ -7,3 +7,11 @@ const ESTADOS_INACTIVOS = new Set(['inactivo', 'inactiva', 'baja', 'retirado', '
 export const estaActivo = (entidad = {}) => !ESTADOS_INACTIVOS.has(String(entidad?.estado || '').trim().toLowerCase());
 
 export const soloActivos = (lista) => (Array.isArray(lista) ? lista.filter(estaActivo) : []);
+
+// Cambio de estado listo para guardar. En deportistas deja la fecha: al
+// desactivar, fecha_inicio_baja = hoy; al reactivar, fecha_fin_baja = hoy
+// (si fin < inicio, sigue inactivo desde "inicio").
+export const cambioDeEstado = (tipo, activar, hoy) => {
+  if (tipo !== 'jugador') return { estado: activar ? 'activo' : 'inactivo' };
+  return activar ? { estado: 'ACTIVO', fecha_fin_baja: hoy } : { estado: 'INACTIVO', fecha_inicio_baja: hoy };
+};
