@@ -920,6 +920,26 @@ const createSchema = async () => {
     // fichas con el mismo grupo_familiar se tratan como una familia.
     await pool.query('ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS grupo_familiar TEXT');
 
+    // Motivo de baja (interno, no lo ven las familias) e historial de cada
+    // activación/desactivación: informe de altas y bajas por mes.
+    await pool.query('ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS motivo_baja TEXT');
+    await pool.query('ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS motivo_baja TEXT');
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS historial_estado_personas (
+      id SERIAL PRIMARY KEY,
+      fecha TIMESTAMPTZ DEFAULT NOW(),
+      tipo TEXT NOT NULL,
+      identificador TEXT NOT NULL,
+      nombre TEXT,
+      rama TEXT,
+      categoria TEXT,
+      estado_anterior TEXT,
+      estado_nuevo TEXT,
+      motivo TEXT,
+      actor_rut TEXT
+    )
+    `);
+
     // Errores reportados por los navegadores (Panel → Errores recientes).
     await pool.query(`
     CREATE TABLE IF NOT EXISTS errores_app (

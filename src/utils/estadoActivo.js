@@ -11,7 +11,9 @@ export const soloActivos = (lista) => (Array.isArray(lista) ? lista.filter(estaA
 // Cambio de estado listo para guardar. En deportistas deja la fecha: al
 // desactivar, fecha_inicio_baja = hoy; al reactivar, fecha_fin_baja = hoy
 // (si fin < inicio, sigue inactivo desde "inicio").
-export const cambioDeEstado = (tipo, activar, hoy) => {
-  if (tipo !== 'jugador') return { estado: activar ? 'activo' : 'inactivo' };
-  return activar ? { estado: 'ACTIVO', fecha_fin_baja: hoy } : { estado: 'INACTIVO', fecha_inicio_baja: hoy };
+// motivo (solo al desactivar) queda como motivo_baja: interno, no lo ven las familias.
+export const cambioDeEstado = (tipo, activar, hoy, motivo) => {
+  const conMotivo = !activar && typeof motivo === 'string' ? { motivo_baja: motivo } : {};
+  if (tipo !== 'jugador') return { estado: activar ? 'activo' : 'inactivo', ...conMotivo };
+  return activar ? { estado: 'ACTIVO', fecha_fin_baja: hoy } : { estado: 'INACTIVO', fecha_inicio_baja: hoy, ...conMotivo };
 };

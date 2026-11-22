@@ -54,6 +54,8 @@ import ErroresAppPanel from './ErroresAppPanel';
 import CumpleanosMes from './CumpleanosMes';
 import FichaPersonaModal from './FichaPersonaModal';
 import VincularApoderadosPanel from './VincularApoderadosPanel';
+import RevisionPadronPanel from './RevisionPadronPanel';
+import AvisoWhatsappLista from './AvisoWhatsappLista';
 import ImportarJugadoresPlanilla from './ImportarJugadoresPlanilla';
 import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
 import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
@@ -1378,6 +1380,21 @@ function SuperAdminPanel({
   };
 
   const [exportandoListado, setExportandoListado] = useState('');
+  const [avisoWsp, setAvisoWsp] = useState(null);
+  // Un destinatario por teléfono de apoderado (hermanos juntos); sin cuenta
+  // de apoderado o con la cuenta inactiva no se incluye.
+  const destinatariosApoderados = (lista) => {
+    const porTelefono = new Map();
+    listadoDeportistas(lista.map((u) => u.raw), cuentasAdminTodas || []).filas.forEach((f) => {
+      if (!f.telApoderado || f.estadoCuenta === 'Inactiva') return;
+      const clave = f.telApoderado.replace(/\D/g, '');
+      const previo = porTelefono.get(clave);
+      porTelefono.set(clave, previo
+        ? { ...previo, detalle: `${previo.detalle}, ${f.nombres} (${f.categoria})` }
+        : { clave, nombre: f.apoderado, telefono: f.telApoderado, detalle: `${f.nombres} (${f.categoria})` });
+    });
+    return [...porTelefono.values()];
+  };
   const ETIQUETA_FILTRO_ESTADO = { activos: 'Solo activos', inactivos: 'Solo inactivos / baja', todos: 'Activos e inactivos' };
   const botonesExportar = ({ cantidad, archivo, armar, titulo, subtitulo }) => {
     const exportar = async (formato) => {
@@ -3224,6 +3241,11 @@ function SuperAdminPanel({
               <Link2 size={14} /> Vincular apoderados
               {jugadoresSinApoderado.filter(estaActivo).length > 0 && <span className="tesoreria-tab-badge">{jugadoresSinApoderado.filter(estaActivo).length}</span>}
             </button>
+            {(esAdmin || esSuperAdmin) && (
+              <button type="button" className={`segment-btn ${vistaUsuarios === 'padron' ? 'active' : ''}`} onClick={() => setVistaUsuarios('padron')}>
+                <History size={14} /> Altas y bajas
+              </button>
+            )}
             <button type="button" className={`segment-btn ${vistaUsuarios === 'registrar' ? 'active' : ''}`} onClick={() => setVistaUsuarios('registrar')}>
               <Plus size={14} /> Registrar nuevo
             </button>
@@ -3315,6 +3337,11 @@ function SuperAdminPanel({
                     titulo: 'Deportistas y apoderados',
                     subtitulo: [filtroRamaJugadores !== 'todas' && `Rama ${filtroRamaJugadores}`, filtroCategoriaJugadores !== 'todas' && `Categoría ${filtroCategoriaJugadores}`, ETIQUETA_FILTRO_ESTADO[filtroEstadoUsuarios]].filter(Boolean).join(' · '),
                   })}
+                  {(esAdmin || esSuperAdmin) && (
+                    <button type="button" className="btn-secondary tc-btn" disabled={!deportistasFiltrados.length} onClick={() => setAvisoWsp({ titulo: `WhatsApp a apoderados (${deportistasFiltrados.length} deportistas)`, destinatarios: destinatariosApoderados(deportistasFiltrados) })}>
+                      <Megaphone size={13} /> WhatsApp apoderados
+                    </button>
+                  )}
                 </div>
 
                 {barraSeleccionUsuarios(deportistasFiltrados)}
@@ -3375,6 +3402,14 @@ function SuperAdminPanel({
                     titulo: 'Cuentas y pupilos',
                     subtitulo: [filtroTipoPerfil !== 'todos' && `Perfil ${filtroTipoPerfil}`, ETIQUETA_FILTRO_ESTADO[filtroEstadoUsuarios]].filter(Boolean).join(' · '),
                   })}
+                  {(esAdmin || esSuperAdmin) && (
+                    <button type="button" className="btn-secondary tc-btn" disabled={!cuentasUsuariosFiltradas.length} onClick={() => setAvisoWsp({
+                      titulo: `WhatsApp a ${cuentasUsuariosFiltradas.length} cuentas`,
+                      destinatarios: cuentasUsuariosFiltradas.map((u) => ({ clave: u.id, nombre: u.nombre, telefono: u.raw.telefono ? `${u.raw.prefijo_tel || '+56'} ${u.raw.telefono}` : '', detalle: u.raw.perfil_principal || u.raw.rol || '' })),
+                    })}>
+                      <Megaphone size={13} /> WhatsApp
+                    </button>
+                  )}
                 </div>
                 {barraSeleccionUsuarios(cuentasUsuariosFiltradas)}
                 <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
@@ -3387,6 +3422,14 @@ function SuperAdminPanel({
             </>
           )}
 
+          {vistaUsuarios === 'padron' && (esAdmin || esSuperAdmin) && (
+            <RevisionPadronPanel
+              jugadores={jugadoresAdminTodos || []}
+              cuentas={cuentasAdminTodas || []}
+              onRecargar={recargarUsuariosAdmin}
+              onVerFicha={(j) => setFichaPersona({ tipo: 'jugador', raw: j })}
+            />
+          )}
           {vistaUsuarios === 'vincular' && esSuperAdmin && (
             <ImportarJugadoresPlanilla onAplicado={recargarUsuariosAdmin} />
           )}
@@ -3508,6 +3551,7 @@ function SuperAdminPanel({
                 )}
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Estado de la cuenta</label><select className="form-input" value={estaActivo(cuentaAdminEdit) ? 'activo' : 'inactivo'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="activo">Activo</option><option value="inactivo">Inactivo (no ingresa, sale de cobros y listados)</option></select></div>
+                {!estaActivo(cuentaAdminEdit) && <div className="form-group"><label>Motivo de baja (interno)</label><input className="form-input" maxLength={300} value={cuentaAdminEdit.motivo_baja || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, motivo_baja: e.target.value }))} placeholder="Ej: ya no tiene pupilos en el club" /></div>}
                 <div className="form-group"><label>Valor UTM referencia (override opcional, se completa solo)</label><input type="number" min="1" className="form-input" value={cuentaAdminEdit.utm_valor_referencia || utmVigente?.valor || 68000} onChange={(e) => actualizarCuentaAdminEdit({ utm_valor_referencia: e.target.value })} /></div>
                 <div className="form-group"><label>Mensualidad base automática (0,3 UTM, se recalcula sola cada mes)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(cuentaAdminEdit) ? (Number(cuentaAdminEdit.monto_mensual_base) > 0 ? cuentaAdminEdit.monto_mensual_base : calcularMensualidadSocio(cuentaAdminEdit.utm_valor_referencia || utmVigente?.valor)) : 0} disabled /></div>
                 <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={cuentaAdminEdit.monto_mensual_override || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
@@ -3747,6 +3791,7 @@ function SuperAdminPanel({
                 <legend><History size={15} /> Estado deportivo y bajas</legend>
                 <div className="grid-auto-220">
                   <div className="form-group"><label>Estado en el club</label><select className="form-input" value={estaActivo(jugadorAdminEdit) ? 'ACTIVO' : (String(jugadorAdminEdit.estado || '').toUpperCase() === 'BAJA' ? 'BAJA' : 'INACTIVO')} onChange={(e) => { const estado = e.target.value; setJugadorAdminEdit((p) => ({ ...p, estado, ...(estado === 'ACTIVO' ? (estaActivo(p) ? {} : { fecha_fin_baja: hoyLocalISO() }) : (estaActivo(p) ? { fecha_inicio_baja: hoyLocalISO() } : {})) })); }}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo (sale de cobros, citaciones y listas)</option><option value="BAJA">Baja / retirado</option></select></div>
+                  {!estaActivo(jugadorAdminEdit) && <div className="form-group"><label>Motivo de baja (interno, no lo ve la familia)</label><input className="form-input" maxLength={300} value={jugadorAdminEdit.motivo_baja || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, motivo_baja: e.target.value }))} placeholder="Ej: se cambió de club" /></div>}
                   <div className="form-group"><label>Estado deportivo (lo ve la familia, ej. Lesionado; no activa ni desactiva)</label><input className="form-input" value={jugadorAdminEdit.estado_deportivo || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, estado_deportivo: e.target.value }))} placeholder="Activo" /></div>
                   <div className="form-group"><label>Fecha inicio baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_inicio_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_inicio_baja: e.target.value }))} /></div>
                   <div className="form-group"><label>Fecha fin baja</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_fin_baja || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_fin_baja: e.target.value }))} /></div>
@@ -6246,6 +6291,8 @@ function SuperAdminPanel({
           }}
         />
       )}
+
+      {avisoWsp && <AvisoWhatsappLista titulo={avisoWsp.titulo} destinatarios={avisoWsp.destinatarios} onCerrar={() => setAvisoWsp(null)} />}
 
       {fichaPersona && (
         <FichaPersonaModal

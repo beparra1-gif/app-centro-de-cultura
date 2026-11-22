@@ -4285,6 +4285,22 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .uc-seleccion { width: 20px; height: 20px; margin: 0; accent-color: var(--azul-electrico); cursor: pointer; }
 .uc-exportar { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .uc-exportar-etiqueta { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: var(--texto-secundario); }
+.rp-panel { display: grid; gap: 12px; }
+.rp-panel .form-subtitle { display: flex; align-items: center; gap: 6px; }
+.rp-subir { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; width: auto; }
+.rp-plan { margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-lg); background: rgba(10, 132, 255, 0.06); }
+.rp-plan ul { margin: 6px 0; padding-left: 18px; font-size: 13px; }
+.rp-plan details { margin: 6px 0; font-size: 13px; }
+.rp-nombres { max-height: 220px; overflow-y: auto; }
+.rp-alerta { color: var(--rojo-alerta); }
+.rp-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.rp-semanas { width: auto; margin: 0; }
+.rp-grupo h5 { margin: 14px 0 6px; font-size: 13px; color: var(--texto-secundario); }
+.rp-fila, .wsp-fila { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--borde-suave); }
+.rp-fila-texto, .wsp-fila > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rp-fila-texto small, .wsp-fila small { font-size: 12px; color: var(--texto-secundario); }
+.wsp-fila a { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; width: auto; white-space: nowrap; }
+.wsp-fila a.wsp-listo { color: #1c7a3d; }
 
 .tc-barra-botones { display: flex; gap: 6px; flex-wrap: wrap; }
 .tc-nota { font-size: var(--texto-min); color: var(--texto-secundario); margin: -4px 0 10px; }

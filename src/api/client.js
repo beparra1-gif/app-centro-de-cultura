@@ -1063,6 +1063,11 @@ export const erroresAppAPI = {
   limpiar: async () => handleResponse(await apiFetch(`${API_BASE_URL}/admin/errores-app`, { method: 'DELETE' })),
 };
 
+// Historial de activaciones/desactivaciones (Usuarios y Cuentas → Altas y bajas).
+export const historialEstadosAPI = {
+  listar: async (desde) => handleResponse(await apiFetch(`${API_BASE_URL}/historial-estados${buildQuery(desde ? { desde } : {})}`)),
+};
+
 // Tarifas de mensualidad con historial (Tesorería → Tarifas).
 export const configuracionAPI = {
   getTarifas: async () => {
@@ -1134,6 +1139,8 @@ export const eventosAPI = {
 // ========== ASISTENCIA (FASE 1) ==========
 
 export const asistenciaAPI = {
+  // Deportistas activos sin "presente" en las últimas N semanas.
+  inactividad: async (semanas = 4) => handleResponse(await apiFetch(`${API_BASE_URL}/asistencia/inactividad${buildQuery({ semanas })}`)),
   // Lista de sesiones (historial/resumen), con filtros opcionales
   getSesiones: async (filtros = {}) => {
     const response = await apiFetch(`${API_BASE_URL}/asistencia/sesiones${buildQuery(filtros)}`);

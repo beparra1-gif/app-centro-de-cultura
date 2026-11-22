@@ -164,11 +164,12 @@ export default function FichaPersonaModal({
         ? `${nombreCorto} quedará inactivo/a: sale de cobros, citaciones, pasar lista e informes${esJugador ? '' : ' y no podrá ingresar a la app'}. Se puede reactivar desde aquí cuando quieras.`
         : `${nombreCorto} vuelve a estar activo/a y aparece de nuevo en cobros, citaciones y listados.`,
       confirmText: activo ? 'Desactivar' : 'Reactivar',
+      pedirTexto: activo ? { etiqueta: 'Motivo (opcional, no lo ve la familia)', placeholder: 'Ej: se cambió de club, económico, lesión' } : null,
     });
-    if (!confirmado) return;
+    if (confirmado === false) return;
     setGuardandoEstado(true);
     try {
-      const cambio = cambioDeEstado(persona.tipo, !activo, hoyLocalISO());
+      const cambio = cambioDeEstado(persona.tipo, !activo, hoyLocalISO(), typeof confirmado === 'string' ? confirmado : undefined);
       if (esJugador) await api.jugadoresAPI.update(raw.rut_jugador, cambio);
       else await api.cuentasAPI.update(raw.id, cambio);
       showToast({ message: `${nombreCorto} quedó ${activo ? 'inactivo/a' : 'activo/a'}.`, type: 'success' });
@@ -184,7 +185,7 @@ export default function FichaPersonaModal({
           cancelText: 'Dejarla activa',
         });
         if (tambien) {
-          await api.cuentasAPI.update(apo.id, cambioDeEstado('cuenta', false));
+          await api.cuentasAPI.update(apo.id, cambioDeEstado('cuenta', false, hoyLocalISO(), 'Sin pupilos activos'));
           showToast({ message: 'Cuenta del apoderado desactivada.', type: 'success' });
         }
       }
@@ -323,6 +324,7 @@ export default function FichaPersonaModal({
               <Dato etiqueta="Rama" valor={raw.rama} />
               <Dato etiqueta="Categoría" valor={raw.categoria} />
               <Dato etiqueta="Estado" valor={estaActivo(raw) ? 'Activo' : `${raw.estado}${raw.fecha_inicio_baja ? ` desde ${fecha(raw.fecha_inicio_baja)}` : ''}`} />
+              {!estaActivo(raw) && <Dato etiqueta="Motivo de baja" valor={raw.motivo_baja} />}
               <Dato etiqueta="Ingreso" valor={fecha(raw.fecha_ingreso)} />
               <Dato etiqueta="Cobra desde" valor={raw.mes_inicio_cobro} />
               <Dato
@@ -343,6 +345,7 @@ export default function FichaPersonaModal({
             <div className="fp-datos">
               <Dato etiqueta="Perfil" valor={ETIQUETA_ROL[rol] || rol || 'Sin rol'} />
               <Dato etiqueta="Estado" valor={estaActivo(raw) ? 'Activo' : raw.estado} />
+              {!estaActivo(raw) && <Dato etiqueta="Motivo de baja" valor={raw.motivo_baja} />}
               <Dato etiqueta="Correo" valor={raw.correo} />
               <Dato etiqueta="Teléfono" valor={raw.telefono ? `${raw.prefijo_tel || '+56'} ${raw.telefono}` : ''} />
               <Dato etiqueta="Dirección" valor={[raw.direccion, raw.comuna].filter(Boolean).join(', ')} />

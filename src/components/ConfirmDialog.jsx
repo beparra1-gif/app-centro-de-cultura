@@ -5,8 +5,9 @@ import useModalAccesible from '../utils/useModalAccesible';
 
 function ConfirmDialog() {
   const [pedido, setPedido] = useState(null);
+  const [texto, setTexto] = useState('');
 
-  useEffect(() => subscribeConfirmDialog(setPedido), []);
+  useEffect(() => subscribeConfirmDialog((p) => { setTexto(''); setPedido(p); }), []);
   // Escape = Cancelar.
   useModalAccesible(Boolean(pedido), () => {
     if (!pedido) return;
@@ -16,10 +17,10 @@ function ConfirmDialog() {
 
   if (!pedido) return null;
 
-  const { title, message, confirmText, cancelText, danger, resolve } = pedido;
+  const { title, message, confirmText, cancelText, danger, pedirTexto, resolve } = pedido;
 
   const cerrar = (valor) => {
-    resolve(valor);
+    resolve(valor && pedirTexto ? texto.trim() : valor);
     setPedido(null);
   };
 
@@ -75,6 +76,20 @@ function ConfirmDialog() {
         </div>
         <h4 style={{ margin: '0 0 8px', fontSize: '17px', color: 'var(--texto-principal)' }}>{title}</h4>
         <p style={{ margin: '0 0 20px', fontSize: '13px', color: 'var(--texto-secundario)', lineHeight: '1.5' }}>{message}</p>
+        {pedirTexto && (
+          <div className="form-group" style={{ textAlign: 'left', margin: '-8px 0 16px' }}>
+            <label htmlFor="confirm-texto">{pedirTexto.etiqueta}</label>
+            <input
+              id="confirm-texto"
+              className="form-input"
+              value={texto}
+              maxLength={300}
+              placeholder={pedirTexto.placeholder || ''}
+              onChange={(e) => setTexto(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') cerrar(true); }}
+            />
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
             onClick={() => cerrar(false)}

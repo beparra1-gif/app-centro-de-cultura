@@ -810,6 +810,37 @@ const registrarAuditoriaCambio = async (poolRef, req, tableName) => {
   }
 };
 
+// Mismo criterio que src/utils/estadoActivo.js.
+const ESTADOS_PERSONA_INACTIVOS = new Set(['inactivo', 'inactiva', 'baja', 'retirado', 'retirada', 'suspendido', 'suspendida', 'eliminado']);
+const personaActiva = (fila) => !ESTADOS_PERSONA_INACTIVOS.has(String(fila?.estado || '').trim().toLowerCase());
+
+// Después de un PUT de jugador/cuenta: guarda motivo_baja si vino y, si la
+// persona pasó de activa a inactiva (o al revés), deja una fila en
+// historial_estado_personas para el informe de altas y bajas. Nunca hace
+// fallar el guardado principal.
+const registrarCambioEstado = async (req, tipo, previo, actual) => {
+  try {
+    const tabla = tipo === 'jugador' ? 'jugadores' : 'cuentas';
+    const clave = tipo === 'jugador' ? 'rut_jugador' : 'id';
+    const motivo = typeof req.body?.motivo_baja === 'string' ? req.body.motivo_baja.trim().slice(0, 300) : null;
+    if (motivo !== null) {
+      await pool.query(`UPDATE ${tabla} SET motivo_baja = NULLIF($1, '') WHERE ${clave} = $2`, [motivo, actual[clave]]);
+    }
+    if (!previo || personaActiva(previo) === personaActiva(actual)) return;
+    await pool.query(
+      `INSERT INTO historial_estado_personas (tipo, identificador, nombre, rama, categoria, estado_anterior, estado_nuevo, motivo, actor_rut)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        tipo, String(actual[clave]), `${actual.nombres || ''} ${actual.apellido_paterno || ''}`.trim(),
+        actual.rama || null, actual.categoria || null, previo.estado || null, actual.estado || null,
+        personaActiva(actual) ? null : (motivo || null), obtenerActorRequest(req).rut || null,
+      ]
+    );
+  } catch (error) {
+    console.error(`[HISTORIAL ESTADO] ${tipo}: ${error.message}`);
+  }
+};
+
 const normalizarEstadoPagoMensualidad = (estado) => {
   const raw = String(estado || '').trim().toLowerCase();
   if (['aprobado', 'aprobada', 'pagado', 'pagada', 'ok', 'completado', 'completada'].includes(raw)) {
@@ -1621,6 +1652,24 @@ const ensureJugadoresExtendedColumns = async () => {
   // Hermanos sin apoderado todavía: el admin los agrupa desde la ficha
   // (Apoderado y hermanos) y la tarifa de hermanos los cuenta juntos.
   await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS grupo_familiar TEXT`);
+
+  // Motivo de baja (interno) e historial de activaciones/desactivaciones
+  // (Usuarios y Cuentas → Altas y bajas). Ver registrarCambioEstado.
+  await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS motivo_baja TEXT`);
+  await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS motivo_baja TEXT`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS historial_estado_personas (
+      id SERIAL PRIMARY KEY,
+      fecha TIMESTAMPTZ DEFAULT NOW(),
+      tipo TEXT NOT NULL,
+      identificador TEXT NOT NULL,
+      nombre TEXT,
+      rama TEXT,
+      categoria TEXT,
+      estado_anterior TEXT,
+      estado_nuevo TEXT,
+      motivo TEXT,
+      actor_rut TEXT
+    )`);
 
   // Errores de la app reportados por los navegadores (pantalla "Algo salió
   // mal" y errores no controlados): Panel → Sistema → Errores recientes.
@@ -5060,7 +5109,7 @@ const CAMPOS_CUENTA_SOLO_ADMIN = [
   // Ningún flujo de autoservicio los edita (el onboarding solo manda nombre,
   // teléfono, dirección y foto). password tampoco: el dueño cambia su clave
   // por /api/auth/change-password, que exige la clave actual.
-  'rut', 'correo', 'password',
+  'rut', 'correo', 'password', 'motivo_baja',
 ];
 
 app.put(
@@ -5118,6 +5167,7 @@ app.put(
     const rutNormalizado = rut ? formatearRut(rut) : null;
     const logoPerfilUrl = foto_perfil_url || logo_url || null;
     const passwordHash = password ? await hashPassword(password) : null;
+    const previo = estado ? (await pool.query('SELECT estado FROM cuentas WHERE id = $1', [req.params.id])).rows[0] : null;
     const result = await pool.query(
       `UPDATE cuentas SET
         correo = COALESCE($1, correo),
@@ -5207,6 +5257,7 @@ app.put(
     }
 
     const cuenta = result.rows[0];
+    await registrarCambioEstado(req, 'cuenta', previo, cuenta);
     res.json({
       ...omitPassword(cuenta),
       campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
@@ -5617,7 +5668,10 @@ app.get('/api/jugadores', authenticate, async (req, res) => {
     }
     const pupilos = await obtenerPupilosDeActor(req.actor);
     const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
-    res.json(filas.filter((j) => rutsPupilos.has(normalizarRutParaComparar(j.rut_jugador))));
+    // motivo_baja es interno del club: las familias no lo reciben.
+    res.json(filas
+      .filter((j) => rutsPupilos.has(normalizarRutParaComparar(j.rut_jugador)))
+      .map(({ motivo_baja: _interno, ...j }) => j));
   } catch (err) {
     console.error('[GET /api/jugadores]', err);
     res.status(500).json({ error: err.message });
@@ -5647,6 +5701,7 @@ app.get('/api/jugadores/:rut', authenticate, async (req, res) => {
       if (!rutsPupilos.has(normalizarRutParaComparar(jugador.rut_jugador))) {
         return res.status(403).json({ error: 'No tienes acceso a este deportista.' });
       }
+      delete jugador.motivo_baja;
     }
     res.json(jugador);
   } catch (err) {
@@ -5714,7 +5769,7 @@ const CAMPOS_JUGADOR_SOLO_ADMIN = [
   'rama', 'categoria', 'numero_camiseta', 'fecha_ingreso', 'mes_inicio_cobro', 'beca', 'exento_mensualidad',
   'valor_mensualidad', 'matricula_pagada', 'polera_entregada', 'poleron_entregado',
   'estado', 'estado_deportivo', 'fecha_inicio_baja', 'fecha_fin_baja', 'xp_puntos', 'apoderado_socio',
-  'grupo_familiar',
+  'grupo_familiar', 'motivo_baja',
 ];
 
 // El apoderado dueño (rut_apoderado registrado) puede editar el perfil de su propio
@@ -5769,6 +5824,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
   } = req.body;
 
   try {
+    const previo = estado ? (await pool.query('SELECT estado FROM jugadores WHERE rut_jugador = $1', [req.params.rut])).rows[0] : null;
     const result = await pool.query(
       `UPDATE jugadores SET
         correo_apoderado = COALESCE($1, correo_apoderado),
@@ -5876,6 +5932,7 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
       return res.status(404).json({ error: 'Jugador no encontrado' });
     }
 
+    await registrarCambioEstado(req, 'jugador', previo, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[PUT /api/jugadores/:rut]', err);
@@ -9826,6 +9883,67 @@ app.put('/api/jugadores-visita/:id', authenticate, requireModule('invitados'), a
 // ==========================================
 // 24. ENDPOINTS: AUDITORIA (FASE 3)
 // ==========================================
+
+// Usuarios y Cuentas -> "No vienen hace N semanas": deportistas activos sin
+// ningún "presente" en pasar lista en ese tiempo, solo si su categoría sí
+// tuvo listas (si nadie pasó lista, no hay cómo saberlo). Se excluyen los
+// que entraron hace poco y los que tienen una ausencia prolongada vigente.
+app.get('/api/asistencia/inactividad', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  const semanas = Math.min(Math.max(Number.parseInt(String(req.query.semanas || '4'), 10) || 4, 2), 26);
+  const rutSql = (col) => `REPLACE(REPLACE(UPPER(TRIM(${col})), '.', ''), '-', '')`;
+  try {
+    const { rows } = await pool.query(
+      `WITH corte AS (SELECT (CURRENT_DATE - ($1::int * 7)) AS desde),
+       por_jugador AS (
+         SELECT ${rutSql('a.rut_jugador')} AS rut,
+                MAX(a.fecha) FILTER (WHERE LOWER(a.estado_asistencia) = 'presente') AS ultima_presencia,
+                COUNT(*) FILTER (WHERE a.fecha >= (SELECT desde FROM corte)) AS listas_recientes,
+                COUNT(*) FILTER (WHERE a.fecha >= (SELECT desde FROM corte) AND LOWER(a.estado_asistencia) = 'ausente') AS ausencias_recientes
+         FROM asistencia a GROUP BY 1
+       ),
+       categorias_con_lista AS (
+         SELECT DISTINCT LOWER(TRIM(categoria)) AS categoria FROM asistencia
+         WHERE fecha >= (SELECT desde FROM corte) AND COALESCE(TRIM(categoria), '') <> ''
+       )
+       SELECT j.rut_jugador, j.nombres, j.apellido_paterno, j.rama, j.categoria,
+              p.ultima_presencia, COALESCE(p.listas_recientes, 0)::int AS listas_recientes,
+              COALESCE(p.ausencias_recientes, 0)::int AS ausencias_recientes
+       FROM jugadores j
+       LEFT JOIN por_jugador p ON p.rut = ${rutSql('j.rut_jugador')}
+       WHERE LOWER(TRIM(COALESCE(j.estado, ''))) <> ALL($2)
+         AND LOWER(TRIM(COALESCE(j.categoria, ''))) IN (SELECT categoria FROM categorias_con_lista)
+         AND (p.ultima_presencia IS NULL OR p.ultima_presencia < (SELECT desde FROM corte))
+         AND (j.fecha_ingreso IS NULL OR j.fecha_ingreso < (SELECT desde FROM corte))
+         AND NOT EXISTS (
+           SELECT 1 FROM ausencias_jugador au
+           WHERE au.rut_jugador = j.rut_jugador AND au.confirmada_vuelta = false AND au.fecha_fin >= CURRENT_DATE
+         )
+       ORDER BY j.categoria, j.rama, j.apellido_paterno, j.nombres`,
+      [semanas, [...ESTADOS_PERSONA_INACTIVOS]]
+    );
+    res.json({ semanas, jugadores: rows });
+  } catch (err) {
+    console.error('[GET /api/asistencia/inactividad]', err);
+    res.status(500).json({ error: 'No se pudo calcular quiénes dejaron de venir.' });
+  }
+});
+
+// Usuarios y Cuentas -> Altas y bajas: activaciones/desactivaciones con motivo.
+app.get('/api/historial-estados', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  const desde = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.desde || '')) ? req.query.desde : null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM historial_estado_personas
+       WHERE fecha >= COALESCE($1::date, NOW() - INTERVAL '13 months')
+       ORDER BY fecha DESC LIMIT 2000`,
+      [desde]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('[GET /api/historial-estados]', err);
+    res.status(500).json({ error: 'No se pudo leer el historial de altas y bajas.' });
+  }
+});
 
 app.get('/api/auditoria', authenticate, requireModule('auditoria'), async (req, res) => {
   try {
