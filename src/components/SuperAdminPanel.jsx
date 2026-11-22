@@ -74,6 +74,7 @@ import { absolutizarLogoUrl } from '../utils/logoResolver';
 import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
 import useModalAccesible from '../utils/useModalAccesible';
 
+import { mismoTexto } from '../utils/texto';
 // comprobante_url llega en 2 formatos: URL relativa del backend
 // (/api/logo-assets/file/...) para imágenes subidas como archivo, o un data
 // URI base64 completo para PDF (ver convertirArchivoABase64 en
@@ -2870,7 +2871,7 @@ function SuperAdminPanel({
               <fieldset className="uc-seccion">
                 <legend><Trophy size={15} /> Deportivo</legend>
                 <div className="grid-auto-220">
-                  <div className="form-group"><label>Rama *</label><select className="form-input" value={nuevoJugador.rama || 'MASCULINA'} onChange={(e) => setNuevoJugador((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
+                  <div className="form-group"><label>Rama *</label><select className="form-input" value={String(nuevoJugador.rama || 'MASCULINA').trim().toUpperCase()} onChange={(e) => setNuevoJugador((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
                   <CampoCategoria id="categoria-nuevo" requerido={true} fechaNacimiento={nuevoJugador.fecha_nacimiento} anioNacimiento={nuevoJugador['año_nacimiento']} valor={nuevoJugador.categoria} onCambiar={(categoria) => setNuevoJugador((p) => ({ ...p, categoria }))} />
                   <div className="form-group"><label>Posición de juego</label><input className="form-input" value={nuevoJugador.posicion_de_juego || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, posicion_de_juego: e.target.value }))} /></div>
                   <div className="form-group"><label>Número de camiseta</label><input type="number" className="form-input" value={nuevoJugador.numero_camiseta || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, numero_camiseta: e.target.value }))} /></div>
@@ -3265,7 +3266,7 @@ function SuperAdminPanel({
               <fieldset className="uc-seccion">
                 <legend><Trophy size={15} /> Deportivo</legend>
                 <div className="grid-auto-220">
-                  <div className="form-group"><label>Rama</label><select className="form-input" value={jugadorAdminEdit.rama || 'MASCULINA'} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
+                  <div className="form-group"><label>Rama</label><select className="form-input" value={String(jugadorAdminEdit.rama || 'MASCULINA').trim().toUpperCase()} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
                   <CampoCategoria id="categoria-edit" requerido={false} fechaNacimiento={jugadorAdminEdit.fecha_nacimiento} anioNacimiento={jugadorAdminEdit['año_nacimiento']} valor={jugadorAdminEdit.categoria} onCambiar={(categoria) => setJugadorAdminEdit((p) => ({ ...p, categoria }))} />
                   <div className="form-group"><label>Posición de juego</label><input className="form-input" value={jugadorAdminEdit.posicion_de_juego || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, posicion_de_juego: e.target.value }))} /></div>
                   <div className="form-group"><label>Número de camiseta</label><input type="number" className="form-input" value={jugadorAdminEdit.numero_camiseta || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, numero_camiseta: e.target.value }))} /></div>
@@ -3919,8 +3920,8 @@ function SuperAdminPanel({
                 ? []
                 : (sociosMorosos || []).filter((s) => (s.mesesMorosos || []).includes(fila.mes));
               const deportistasDelMes = (morososAdmin || []).filter((m) => (m.mesesMorosos || []).includes(fila.mes)
-                && (filtroRamaRecaudacion === 'todas' || m.rama === filtroRamaRecaudacion)
-                && (filtroCategoriaRecaudacion === 'todas' || m.categoria === filtroCategoriaRecaudacion));
+                && (filtroRamaRecaudacion === 'todas' || mismoTexto(m.rama, filtroRamaRecaudacion))
+                && (filtroCategoriaRecaudacion === 'todas' || mismoTexto(m.categoria, filtroCategoriaRecaudacion)));
               return (
                 <div key={fila.mes} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
                   <button
@@ -5014,7 +5015,7 @@ function SuperAdminPanel({
               <div className="form-group"><label>Apellido paterno *</label><input className="form-input" value={nuevoJugadorVisita.apellido_paterno} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
               <div className="form-group"><label>Apellido materno</label><input className="form-input" value={nuevoJugadorVisita.apellido_materno} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
               <div className="form-group"><label>Club de procedencia</label><input className="form-input" value={nuevoJugadorVisita.club_procedencia} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, club_procedencia: e.target.value }))} /></div>
-              <div className="form-group"><label>Rama</label><select className="form-input" value={nuevoJugadorVisita.rama} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
+              <div className="form-group"><label>Rama</label><select className="form-input" value={String(nuevoJugadorVisita.rama || 'MASCULINA').trim().toUpperCase()} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
               <div className="form-group"><label>Categoría</label><input className="form-input" value={nuevoJugadorVisita.categoria} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, categoria: e.target.value }))} /></div>
               <div className="form-group"><label>Posición</label><input className="form-input" value={nuevoJugadorVisita.posicion} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, posicion: e.target.value }))} /></div>
               <div className="form-group"><label>Contacto apoderado</label><input className="form-input" value={nuevoJugadorVisita.contacto_apoderado} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, contacto_apoderado: e.target.value }))} /></div>

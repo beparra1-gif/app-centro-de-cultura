@@ -6,6 +6,7 @@
 import { partesFechaCalendario } from './fechas';
 import { noDebeMensualidad, obtenerPorcentajeBeca } from './beca';
 
+import { mismoTexto } from './texto';
 export const ANIO_INFORME = 2026;
 export const MESES_INFORME = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
@@ -142,8 +143,8 @@ export const filtrarInforme = (filas = [], { texto = '', rama = 'todas', categor
   const q = sinTildes(texto.trim());
   const idxMes = mes === 'todos' ? -1 : MESES_INFORME.indexOf(mes);
   return filas.filter((f) => {
-    if (rama !== 'todas' && f.rama !== rama) return false;
-    if (categoria !== 'todas' && f.categoria !== categoria) return false;
+    if (rama !== 'todas' && !mismoTexto(f.rama, rama)) return false;
+    if (categoria !== 'todas' && !mismoTexto(f.categoria, categoria)) return false;
     if (estado === 'con_deuda' && f.mesesDeuda <= 0) return false;
     if (estado === 'al_dia' && f.mesesDeuda > 0) return false;
     if (idxMes >= 0 && !['debe', 'parcial'].includes(f.estados[idxMes])) return false;

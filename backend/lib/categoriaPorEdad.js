@@ -32,6 +32,8 @@ const categoriaPorNacimiento = (fecha, temporada = new Date().getFullYear()) => 
 const asignarCategoriaPorEdad = (req, _res, next) => {
   const categoria = categoriaPorNacimiento(req.body?.fecha_nacimiento);
   if (categoria) req.body.categoria = categoria;
+  // De paso, la rama siempre en mayúsculas ("masculina" = "MASCULINA").
+  if (typeof req.body?.rama === 'string' && req.body.rama.trim()) req.body.rama = req.body.rama.trim().toUpperCase();
   next();
 };
 

@@ -4,6 +4,7 @@ import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Responsi
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 
+import { mismoTexto } from '../utils/texto';
 const LATERALIDAD_OPCIONES = [
   { value: '', label: 'Sin evaluar' },
   { value: 'derecha', label: 'Derecha definida' },
@@ -54,15 +55,15 @@ function StaffEvaluacionPanel({
   }, [jugadoresAdmin]);
 
   const categoriasDisponibles = useMemo(() => {
-    const base = (jugadoresAdmin || []).filter((j) => filtroRama === 'Todas' || j.rama === filtroRama);
+    const base = (jugadoresAdmin || []).filter((j) => filtroRama === 'Todas' || mismoTexto(j.rama, filtroRama));
     const set = new Set(base.map((j) => String(j.categoria || '').trim()).filter(Boolean));
     return Array.from(set).sort();
   }, [jugadoresAdmin, filtroRama]);
 
   const jugadoresFiltrados = useMemo(() => {
     return (jugadoresAdmin || []).filter((j) => {
-      const coincideRama = filtroRama === 'Todas' || j.rama === filtroRama;
-      const coincideCategoria = filtroCategoria === 'Todas' || j.categoria === filtroCategoria;
+      const coincideRama = filtroRama === 'Todas' || mismoTexto(j.rama, filtroRama);
+      const coincideCategoria = filtroCategoria === 'Todas' || mismoTexto(j.categoria, filtroCategoria);
       return coincideRama && coincideCategoria;
     });
   }, [jugadoresAdmin, filtroRama, filtroCategoria]);

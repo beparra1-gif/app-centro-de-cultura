@@ -924,6 +924,8 @@ const createSchema = async () => {
     // activación/desactivación: informe de altas y bajas por mes.
     await pool.query('ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS motivo_baja TEXT');
     await pool.query('ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS motivo_baja TEXT');
+    // Rama en una sola forma (mayúsculas); ver server.js.
+    await pool.query('UPDATE jugadores SET rama = UPPER(TRIM(rama)) WHERE rama IS NOT NULL AND rama <> UPPER(TRIM(rama))');
     await pool.query(`
     CREATE TABLE IF NOT EXISTS historial_estado_personas (
       id SERIAL PRIMARY KEY,

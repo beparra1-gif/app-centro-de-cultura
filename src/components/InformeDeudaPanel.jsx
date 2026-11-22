@@ -6,6 +6,7 @@ import SelectorOrden from './SelectorOrden';
 import usePreferenciaLocal, { esOrdenValido } from '../utils/usePreferenciaLocal';
 import { OPCIONES_ORDEN, ordenarPersonas } from '../utils/ordenarPersonas';
 import { hoyLocalISO } from '../utils/fechas';
+import { mismoTexto, unicosSinMayusculas } from '../utils/texto';
 import {
   ANIO_INFORME, ETIQUETA_ESTADO, MESES_INFORME, agruparPorCategoria, construirInformeDeportistas, construirInformeSocios,
   filtrarInforme, ordenarCategorias,
@@ -63,9 +64,9 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
   const esDeportistas = tipo === 'deportistas';
   const base = esDeportistas ? filasDeportistas : filasSocios;
 
-  const ramas = useMemo(() => [...new Set(filasDeportistas.map((f) => f.rama))].sort(), [filasDeportistas]);
+  const ramas = useMemo(() => unicosSinMayusculas(filasDeportistas.map((f) => f.rama)).sort(), [filasDeportistas]);
   const categorias = useMemo(() => (
-    [...new Set(filasDeportistas.filter((f) => filtros.rama === 'todas' || f.rama === filtros.rama).map((f) => f.categoria))].sort(ordenarCategorias)
+    [...new Set(filasDeportistas.filter((f) => filtros.rama === 'todas' || mismoTexto(f.rama, filtros.rama)).map((f) => f.categoria))].sort(ordenarCategorias)
   ), [filasDeportistas, filtros.rama]);
 
   const filtradas = useMemo(

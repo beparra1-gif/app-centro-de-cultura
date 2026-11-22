@@ -1657,6 +1657,11 @@ const ensureJugadoresExtendedColumns = async () => {
   // (Usuarios y Cuentas → Altas y bajas). Ver registrarCambioEstado.
   await pool.query(`ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS motivo_baja TEXT`);
   await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS motivo_baja TEXT`);
+  // Rama en una sola forma (MASCULINA/FEMENINA/MIXTA): el Sheet y los
+  // formularios la traían en mayúsculas y minúsculas mezcladas, y algunos
+  // filtros las trataban como ramas distintas. Las escrituras nuevas ya
+  // llegan normalizadas (lib/categoriaPorEdad.js).
+  await pool.query(`UPDATE jugadores SET rama = UPPER(TRIM(rama)) WHERE rama IS NOT NULL AND rama <> UPPER(TRIM(rama))`);
   await pool.query(`CREATE TABLE IF NOT EXISTS historial_estado_personas (
       id SERIAL PRIMARY KEY,
       fecha TIMESTAMPTZ DEFAULT NOW(),
@@ -6906,7 +6911,7 @@ const aplicarPlanImportacionPagos = async (plan, { borrarDuplicados, actualizarF
          SELECT $1::varchar, $2, $3, $4, $5::date, $6, $7, $8, $9::date, 'ACTIVO', $10
          WHERE NOT EXISTS (SELECT 1 FROM jugadores WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = REPLACE(UPPER($1::varchar), '-', ''))`,
         [ficha.rut_jugador, ficha.nombres, ficha.apellido_paterno, ficha.apellido_materno, ficha.fecha_nacimiento,
-          ficha.rama, ficha.categoria, ficha.correo_apoderado, ficha.fecha_ingreso, Boolean(ficha.apoderado_socio)]
+          (ficha.rama ? String(ficha.rama).trim().toUpperCase() : ficha.rama), ficha.categoria, ficha.correo_apoderado, ficha.fecha_ingreso, Boolean(ficha.apoderado_socio)]
       );
       creados += r.rowCount;
     }
@@ -7108,7 +7113,7 @@ app.post('/api/jugadores/importar-planilla', authenticate, requireRole('super_ad
           `INSERT INTO jugadores (rut_jugador, nombres, apellido_paterno, apellido_materno, fecha_nacimiento, fecha_ingreso, rama, categoria, rut_apoderado, correo_apoderado, estado)
            SELECT $1::varchar, $2, $3, $4, $5::date, $6::date, $7, $8, $9, $10, 'ACTIVO'
            WHERE NOT EXISTS (SELECT 1 FROM jugadores WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = REPLACE(UPPER($1::varchar), '-', ''))`,
-          [f.rut_jugador, f.nombres, f.apellido_paterno, f.apellido_materno, f.fecha_nacimiento, f.fecha_ingreso, f.rama, f.categoria, f.rut_apoderado, f.correo_apoderado]
+          [f.rut_jugador, f.nombres, f.apellido_paterno, f.apellido_materno, f.fecha_nacimiento, f.fecha_ingreso, (f.rama ? String(f.rama).trim().toUpperCase() : f.rama), f.categoria, f.rut_apoderado, f.correo_apoderado]
         );
         creados += r.rowCount;
       }
@@ -8599,11 +8604,11 @@ app.get('/api/asistencia/sesiones', authenticate, requireAnyModule('citaciones',
     const valores = [];
     if (rama && rama !== 'todas') {
       valores.push(rama);
-      condiciones.push(`rama = $${valores.length}`);
+      condiciones.push(`LOWER(TRIM(rama)) = LOWER(TRIM($${valores.length}))`);
     }
     if (categoria) {
       valores.push(categoria);
-      condiciones.push(`categoria = $${valores.length}`);
+      condiciones.push(`LOWER(TRIM(categoria)) = LOWER(TRIM($${valores.length}))`);
     }
     if (entrenador) {
       valores.push(`%${entrenador}%`);
@@ -9694,7 +9699,7 @@ app.get('/api/academia/ranking', authenticate, requireRole('staff', 'admin', 'su
               COUNT(gp.id_logro) AS logros_totales
        FROM jugadores j
        LEFT JOIN gamificacion_puntos gp ON gp.rut_jugador = j.rut_jugador
-       WHERE ($1::text IS NULL OR j.rama = $1) AND ($2::text IS NULL OR j.categoria = $2)
+       WHERE ($1::text IS NULL OR LOWER(TRIM(j.rama)) = LOWER(TRIM($1))) AND ($2::text IS NULL OR LOWER(TRIM(j.categoria)) = LOWER(TRIM($2)))
        GROUP BY j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria
        ORDER BY xp_total DESC, j.apellido_paterno ASC`,
       [rama, categoria]

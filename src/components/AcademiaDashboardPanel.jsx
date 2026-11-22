@@ -4,6 +4,7 @@ import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import SkeletonLoaderPanel from './SkeletonLoaderPanel';
 
+import { mismoTexto } from '../utils/texto';
 const normalizarNombreCompleto = (item = {}) => (
   `${item.nombres || ''} ${item.apellido_paterno || ''} ${item.apellido_materno || ''}`.trim() || 'Deportista'
 );
@@ -12,7 +13,7 @@ const normalizarNombreCompleto = (item = {}) => (
 // audiencia): "Todas" no filtra, y sin categorías_objetivo = aplica a toda
 // la rama, así que sigue apareciendo aunque se filtre por una categoría.
 const filtrarContenidoPorRamaCategoria = (items = [], filtroRama, filtroCategoria) => (items || []).filter((item) => {
-  const coincideRama = filtroRama === 'Todas' || String(item.rama || 'General') === filtroRama;
+  const coincideRama = filtroRama === 'Todas' || mismoTexto(item.rama || 'General', filtroRama);
   if (!coincideRama) return false;
   if (filtroCategoria === 'Todas') return true;
   const categorias = Array.isArray(item.categorias_objetivo) ? item.categorias_objetivo : [];
@@ -26,7 +27,7 @@ function FiltroRamaCategoria({ jugadoresAdmin, filtroRama, setFiltroRama, filtro
   }, [jugadoresAdmin]);
 
   const categoriasDisponibles = useMemo(() => {
-    const base = (jugadoresAdmin || []).filter((j) => filtroRama === 'Todas' || j.rama === filtroRama);
+    const base = (jugadoresAdmin || []).filter((j) => filtroRama === 'Todas' || mismoTexto(j.rama, filtroRama));
     const set = new Set(base.map((j) => String(j.categoria || '').trim()).filter(Boolean));
     return Array.from(set).sort();
   }, [jugadoresAdmin, filtroRama]);

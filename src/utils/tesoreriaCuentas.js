@@ -13,6 +13,7 @@
 import { normalizarRol } from '../security/accessControl';
 import { agruparFamilias } from './hermanos';
 
+import { mismoTexto } from './texto';
 export const normalizarRutTesoreria = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 const normalizarCorreo = (correo = '') => String(correo || '').trim().toLowerCase();
 const normalizarTexto = (texto = '') => String(texto || '')
@@ -212,7 +213,7 @@ export const filtrarCuentasQuePagan = (filas = [], { texto = '', estado = 'con_d
     if (perfil === 'apoderados' && !f.esApoderado) return false;
     if (perfil === 'autogestionados' && !f.autogestionado) return false;
     if (perfil === 'sin_responsable' && f.tipo !== 'sin_responsable') return false;
-    if (rama !== 'todas' && !f.pupilos.some((p) => p.rama === rama)) return false;
+    if (rama !== 'todas' && !f.pupilos.some((p) => mismoTexto(p.rama, rama))) return false;
     if (q && !f.textoBusqueda.includes(q)) return false;
     return true;
   });
