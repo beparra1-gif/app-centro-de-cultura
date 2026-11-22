@@ -9,7 +9,6 @@ import {
   Check,
   CheckSquare,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Eye,
   EyeOff,
@@ -53,10 +52,8 @@ import RespaldosPanel from './RespaldosPanel';
 import ErroresAppPanel from './ErroresAppPanel';
 import CumpleanosMes from './CumpleanosMes';
 import FichaPersonaModal from './FichaPersonaModal';
-import VincularApoderadosPanel from './VincularApoderadosPanel';
-import RevisionPadronPanel from './RevisionPadronPanel';
-import AvisoWhatsappLista from './AvisoWhatsappLista';
-import ImportarJugadoresPlanilla from './ImportarJugadoresPlanilla';
+import UsuariosCuentasPanel from './UsuariosCuentasPanel';
+import BotonVolverAdmin from './BotonVolverAdmin';
 import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
 import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
 import QrScanner from './QrScanner';
@@ -64,8 +61,7 @@ import ResultadosCards from './ResultadosCards';
 import { calcularResumenCitacion } from '../utils/citaciones';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { mapearJugadorAPupilo } from '../utils/pupiloMapper';
-import { cambioDeEstado, estaActivo, soloActivos } from '../utils/estadoActivo';
-import { descargarExcel, descargarPdf, listadoCuentas, listadoDeportistas } from '../utils/exportarDeportistas';
+import { estaActivo, soloActivos } from '../utils/estadoActivo';
 import { CATEGORIAS_POR_RAMA } from '../utils/categoriasDeportivas';
 import ReportesPanel from './ReportesPanel';
 import SaludAlertasPanel from './SaludAlertasPanel';
@@ -77,10 +73,6 @@ import { categoriaEfectiva } from '../utils/categoriaPorEdad';
 import { absolutizarLogoUrl } from '../utils/logoResolver';
 import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
 import useModalAccesible from '../utils/useModalAccesible';
-import { hermanosDe } from '../utils/hermanos';
-import { ordenarPersonas } from '../utils/ordenarPersonas';
-import SelectorOrden from './SelectorOrden';
-import usePreferenciaLocal, { esOrdenValido } from '../utils/usePreferenciaLocal';
 
 // comprobante_url llega en 2 formatos: URL relativa del backend
 // (/api/logo-assets/file/...) para imágenes subidas como archivo, o un data
@@ -98,22 +90,6 @@ const ANIO_RECAUDACION = 2026;
 
 const esComprobanteImagen = (url = '') => /^data:image\//i.test(url) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url);
 
-// Botón "← Volver" reusado por todas las pantallas de contenido de la nueva
-// grilla de Panel — declarado fuera de SuperAdminPanel (no adentro) porque un
-// componente con JSX (mayúscula inicial) creado DENTRO del render de otro
-// pierde su identidad en cada re-render (lint real, no cosmético). Recibe
-// onVolver ya resuelto (setVistaAdmin(destino)) en vez de destino+setter
-// para no depender de nada del componente padre.
-const BotonVolverAdmin = ({ onVolver, label = 'Volver' }) => (
-  <button
-    type="button"
-    onClick={onVolver}
-    className="btn-secondary"
-    style={{ width: 'auto', padding: '8px 14px', marginBottom: '14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-  >
-    <ChevronLeft size={15} /> {label}
-  </button>
-);
 
 function SuperAdminPanel({
   rolUsuario,
@@ -415,15 +391,6 @@ function SuperAdminPanel({
     setAvisadosEnLote((prev) => new Set(prev).add(m.id));
   };
 
-  // Deportistas (tabla jugadores) y Cuentas (tabla cuentas: apoderados, socios,
-  // staff, admins, y también jugadores con login propio) son dos entidades
-  // distintas que antes vivían mezcladas en una sola lista/filtro — separadas
-  // en dos pestañas para que cada una tenga sus propios filtros relevantes.
-  const [vistaUsuarios, setVistaUsuarios] = useState('deportistas');
-  const [filtroUsuariosTexto, setFiltroUsuariosTexto] = useState('');
-  const [filtroCuentasTexto, setFiltroCuentasTexto] = useState('');
-  // Se recuerda en este dispositivo.
-  const [ordenUsuarios, setOrdenUsuarios] = usePreferenciaLocal('usuarios.orden', { orden: 'apellido', dir: 'asc' }, esOrdenValido(['deuda', 'apellido', 'nombre', 'nacimiento', 'edad', 'categoria']));
   const [erroresRecientes, setErroresRecientes] = useState(0);
   useEffect(() => {
     if (vistaAdmin !== 'inicio' || !(esAdmin || esSuperAdmin)) return undefined;
@@ -438,11 +405,6 @@ function SuperAdminPanel({
   // esAdmin/esSuperAdmin se derivan del rol (estable durante la sesión).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vistaAdmin]);
-  const [filtroTipoPerfil, setFiltroTipoPerfil] = useState('todos');
-  const [filtroEstadoUsuarios, setFiltroEstadoUsuarios] = useState('activos');
-  const [filtroRamaJugadores, setFiltroRamaJugadores] = useState('todas');
-  const [filtroCategoriaJugadores, setFiltroCategoriaJugadores] = useState('todas');
-  const [filtroApoderadoJugadores, setFiltroApoderadoJugadores] = useState('todos');
   const [filtroPupiloManual, setFiltroPupiloManual] = useState('');
   const [busquedaPermisosAjustes, setBusquedaPermisosAjustes] = useState('');
   const [filtroRolPermisosAjustes, setFiltroRolPermisosAjustes] = useState('Todos');
@@ -588,9 +550,6 @@ function SuperAdminPanel({
   const [citaForm, setCitaForm] = useState(crearCitaFormInicial);
   const [jugadorVisitaEdit, setJugadorVisitaEdit] = useState(null);
   const [guardandoVisita, setGuardandoVisita] = useState(false);
-  const [asignandoApoderadoRut, setAsignandoApoderadoRut] = useState(null);
-  const [correoApoderadoParaAsignar, setCorreoApoderadoParaAsignar] = useState('');
-  const [guardandoAsignacionApoderado, setGuardandoAsignacionApoderado] = useState(false);
   const [syncToken, setSyncToken] = useState('');
   const [syncSheetsRunning, setSyncSheetsRunning] = useState(false);
   const [syncSheetsResult, setSyncSheetsResult] = useState(null);
@@ -1116,18 +1075,6 @@ function SuperAdminPanel({
     ));
   }, [jugadoresAdminTodos]);
 
-  const rutsJugadoresIncompletos = useMemo(
-    () => new Set(jugadoresIncompletos.map((j) => String(j.rut_jugador || ''))),
-    [jugadoresIncompletos]
-  );
-  const idsCuentasIncompletas = useMemo(
-    () => new Set((cuentasIncompletas || []).map((c) => String(c.id))),
-    [cuentasIncompletas]
-  );
-  const rutsJugadoresSinApoderado = useMemo(
-    () => new Set(jugadoresSinApoderado.map((j) => String(j.rut_jugador || ''))),
-    [jugadoresSinApoderado]
-  );
 
   const normalizarRutUsuarios = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 
@@ -1145,76 +1092,6 @@ function SuperAdminPanel({
     return mapa;
   }, [cuentasAdmin]);
 
-  // Sin ignorar tildes, "Theza" (cuenta) y "Thezá" (jugador) no matchean
-  // pese a ser el mismo apellido — apellidos con tilde son comunes acá.
-  const normalizarApellido = (texto = '') => String(texto || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
-
-  const cuentasApoderadoParaAsignar = useMemo(() => {
-    return (cuentasAdmin || [])
-      .filter((c) => String(c.correo || '').trim())
-      .map((c) => ({
-        correo: c.correo,
-        rut: c.rut || '',
-        nombre: `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || c.correo,
-        apellidoPaterno: normalizarApellido(c.apellido_paterno || ''),
-      }))
-      .sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [cuentasAdmin]);
-
-  // Mismas cuentas de arriba, pero con las que comparten apellido con ESTE
-  // jugador puestas primero — acelera vincular a un apoderado sin tener que
-  // buscarlo a mano en 100+ opciones cuando el apellido ya da una pista
-  // fuerte de cuál es. Sigue siendo el admin quien confirma con el clic, no
-  // se vincula nada solo.
-  const ordenarCandidatosApoderado = (jugador) => {
-    const apellidoJugador = normalizarApellido(jugador?.apellido_paterno || '');
-    if (!apellidoJugador) return cuentasApoderadoParaAsignar;
-    const coinciden = cuentasApoderadoParaAsignar.filter((c) => c.apellidoPaterno && c.apellidoPaterno === apellidoJugador);
-    const resto = cuentasApoderadoParaAsignar.filter((c) => !(c.apellidoPaterno && c.apellidoPaterno === apellidoJugador));
-    return [...coinciden.map((c) => ({ ...c, sugerido: true })), ...resto];
-  };
-
-  const asignarApoderadoAJugador = async (jugador) => {
-    const cuenta = cuentasApoderadoParaAsignar.find((c) => c.correo === correoApoderadoParaAsignar);
-    if (!cuenta) {
-      showToast({ message: 'Selecciona un apoderado de la lista.', type: 'error' });
-      return;
-    }
-    setGuardandoAsignacionApoderado(true);
-    try {
-      await guardarJugadorAdmin({
-        rut_jugador: jugador.rut_jugador,
-        rut_apoderado: cuenta.rut || null,
-        correo_apoderado: cuenta.correo,
-      }, jugador.rut_jugador);
-      // Hermanos agrupados a mano (grupo_familiar) que aún no tienen
-      // apoderado: nunca se asigna solo; se pregunta y el admin decide.
-      const candidatosHermanos = hermanosDe(jugador, jugadoresAdminTodos || [])
-        .filter((h) => !String(h.rut_apoderado || '').trim() && !String(h.correo_apoderado || '').includes('@'));
-      const tambienHermanos = candidatosHermanos.length > 0 && await confirmAction({
-        title: 'Asignar también a sus hermanos',
-        message: `${jugador.nombres || jugador.rut_jugador} está agrupado con ${candidatosHermanos.map((h) => h.nombres).join(', ')}, que no ${candidatosHermanos.length === 1 ? 'tiene' : 'tienen'} apoderado. ¿Asignar a ${cuenta.nombre} también como su apoderado?`,
-        confirmText: 'Sí, a todos',
-        cancelText: 'Solo a este deportista',
-      });
-      const hermanosSinApoderado = tambienHermanos ? candidatosHermanos : [];
-      for (const h of hermanosSinApoderado) {
-        await guardarJugadorAdmin({ rut_jugador: h.rut_jugador, rut_apoderado: cuenta.rut || null, correo_apoderado: cuenta.correo }, h.rut_jugador);
-      }
-      if (onSheetsSyncComplete) await onSheetsSyncComplete();
-      showToast({ message: `${cuenta.nombre} asignado como apoderado de ${jugador.nombres || jugador.rut_jugador}${hermanosSinApoderado.length ? ` y ${hermanosSinApoderado.length === 1 ? 'su hermano/a' : `sus ${hermanosSinApoderado.length} hermanos`}` : ''}.`, type: 'success' });
-      setAsignandoApoderadoRut(null);
-      setCorreoApoderadoParaAsignar('');
-    } catch (error) {
-      showToast({ message: error.message || 'No se pudo asignar el apoderado.', type: 'error' });
-    } finally {
-      setGuardandoAsignacionApoderado(false);
-    }
-  };
 
   const pagosConCorreccion = useMemo(() => {
     return (pagosMensualidadesAdmin || []).filter((p) => {
@@ -1266,352 +1143,6 @@ function SuperAdminPanel({
 
   const cuposCitados = Object.values(seleccionCitacion).filter(Boolean).length;
 
-  const listadoUsuarios = useMemo(() => {
-    const cuentas = (cuentasAdminTodas || []).map((c) => ({
-      id: `cuenta-${c.id}`,
-      tipo: 'cuenta',
-      perfil: (() => {
-        const perfil = String(c.perfil_principal || c.rol || 'apoderado').toLowerCase();
-        return perfil === 'deportista' ? 'jugador' : perfil;
-      })(),
-      nombre: `${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || String(c.correo || c.rut || 'Sin nombre'),
-      busqueda: `${c.nombres || ''} ${c.apellido_paterno || ''} ${c.apellido_materno || ''} ${c.correo || ''} ${c.rut || ''} ${c.rol || ''} ${c.perfil_principal || ''} ${c.cargo_directiva || ''}`.toLowerCase(),
-      rama: null,
-      categoria: null,
-      raw: c,
-    }));
-
-    const jugadores = (jugadoresAdminTodos || []).map((j) => ({
-      id: `jugador-${j.rut_jugador}`,
-      tipo: 'jugador',
-      perfil: 'jugador',
-      nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim() || String(j.rut_jugador || 'Sin nombre'),
-      busqueda: `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''} ${j.rut_jugador || ''} ${j.rama || ''} ${j.categoria || ''}`.toLowerCase(),
-      rama: (j.rama || '').toLowerCase(),
-      categoria: (j.categoria || '').toLowerCase(),
-      raw: j,
-    }));
-
-    return [...cuentas, ...jugadores];
-  }, [cuentasAdminTodas, jugadoresAdminTodos]);
-
-  // Datos para "Ordenar por" (apellido, nombre, nacimiento, edad, categoría).
-  const accesoOrdenUsuario = (u) => ({
-    nombre: u.raw.nombres || u.nombre,
-    apellido: `${u.raw.apellido_paterno || ''} ${u.raw.apellido_materno || ''}`.trim(),
-    fechaNacimiento: u.raw.fecha_nacimiento || '',
-    categoria: u.raw.categoria || '',
-  });
-
-  const deportistasFiltrados = useMemo(() => {
-    const q = filtroUsuariosTexto.trim().toLowerCase();
-    const lista = listadoUsuarios
-      .filter((u) => {
-        if (u.tipo !== 'jugador') return false;
-        if (filtroEstadoUsuarios === 'activos' && !estaActivo(u.raw)) return false;
-        if (filtroEstadoUsuarios === 'inactivos' && estaActivo(u.raw)) return false;
-        if (q && !u.busqueda.includes(q)) return false;
-        if (filtroRamaJugadores !== 'todas' && u.rama !== filtroRamaJugadores.toLowerCase()) return false;
-        if (filtroCategoriaJugadores !== 'todas' && u.categoria !== filtroCategoriaJugadores.toLowerCase()) return false;
-        const sinApoderado = rutsJugadoresSinApoderado.has(String(u.raw.rut_jugador || ''));
-        if (filtroApoderadoJugadores === 'sin' && !sinApoderado) return false;
-        if (filtroApoderadoJugadores === 'con' && sinApoderado) return false;
-        return true;
-      });
-    return ordenarPersonas(lista, ordenUsuarios, accesoOrdenUsuario);
-  }, [
-    ordenUsuarios,
-    listadoUsuarios,
-    filtroUsuariosTexto,
-    filtroRamaJugadores,
-    filtroCategoriaJugadores,
-    filtroApoderadoJugadores,
-    rutsJugadoresSinApoderado,
-    filtroEstadoUsuarios,
-  ]);
-
-  const cuentasUsuariosFiltradas = useMemo(() => {
-    const q = filtroCuentasTexto.trim().toLowerCase();
-    const lista = listadoUsuarios.filter((u) => {
-      if (u.tipo !== 'cuenta') return false;
-      if (filtroEstadoUsuarios === 'activos' && !estaActivo(u.raw)) return false;
-      if (filtroEstadoUsuarios === 'inactivos' && estaActivo(u.raw)) return false;
-      if (filtroTipoPerfil !== 'todos' && u.perfil !== filtroTipoPerfil) return false;
-      if (q && !u.busqueda.includes(q)) return false;
-      return true;
-    });
-    return ordenarPersonas(lista, ordenUsuarios, accesoOrdenUsuario);
-  }, [listadoUsuarios, filtroCuentasTexto, filtroTipoPerfil, filtroEstadoUsuarios, ordenUsuarios]);
-
-  // Tarjeta compartida por Deportistas y Cuentas — misma estructura, evita
-  // duplicar ~90 líneas de JSX entre las dos pestañas.
-  // Selección múltiple en Usuarios y Cuentas: desactivar/reactivar varios de
-  // una vez (ej. después de revisar el listado exportado).
-  const [seleccionUsuarios, setSeleccionUsuarios] = useState(() => new Set());
-  const [aplicandoEstadoMasivo, setAplicandoEstadoMasivo] = useState(false);
-
-  const aplicarEstadoMasivo = async (items, activar) => {
-    const confirmado = await confirmAction({
-      title: activar ? 'Reactivar seleccionados' : 'Desactivar seleccionados',
-      message: activar
-        ? `${items.length} vuelven a estar activos y aparecen de nuevo en cobros, citaciones y listados.`
-        : `${items.length} quedarán inactivos: salen de cobros, citaciones, pasar lista e informes, y las cuentas no podrán ingresar. Se pueden reactivar después.`,
-      confirmText: activar ? 'Reactivar' : 'Desactivar',
-    });
-    if (!confirmado) return;
-    setAplicandoEstadoMasivo(true);
-    let fallidos = 0;
-    for (const u of items) {
-      try {
-        const cambio = cambioDeEstado(u.tipo, activar, hoyLocalISO());
-        if (u.tipo === 'jugador') await api.jugadoresAPI.update(u.raw.rut_jugador, cambio);
-        else await api.cuentasAPI.update(u.raw.id, cambio);
-      } catch {
-        fallidos += 1;
-      }
-    }
-    await recargarUsuariosAdmin?.();
-    setSeleccionUsuarios(new Set());
-    setAplicandoEstadoMasivo(false);
-    showToast({
-      message: fallidos ? `${items.length - fallidos} actualizados, ${fallidos} con error (revisa la conexión y reintenta).` : `${items.length} actualizados.`,
-      type: fallidos ? 'error' : 'success',
-    });
-  };
-
-  const [exportandoListado, setExportandoListado] = useState('');
-  const [avisoWsp, setAvisoWsp] = useState(null);
-  // Un destinatario por teléfono de apoderado (hermanos juntos); sin cuenta
-  // de apoderado o con la cuenta inactiva no se incluye.
-  const destinatariosApoderados = (lista) => {
-    const porTelefono = new Map();
-    listadoDeportistas(lista.map((u) => u.raw), cuentasAdminTodas || []).filas.forEach((f) => {
-      if (!f.telApoderado || f.estadoCuenta === 'Inactiva') return;
-      const clave = f.telApoderado.replace(/\D/g, '');
-      const previo = porTelefono.get(clave);
-      porTelefono.set(clave, previo
-        ? { ...previo, detalle: `${previo.detalle}, ${f.nombres} (${f.categoria})` }
-        : { clave, nombre: f.apoderado, telefono: f.telApoderado, detalle: `${f.nombres} (${f.categoria})` });
-    });
-    return [...porTelefono.values()];
-  };
-  const ETIQUETA_FILTRO_ESTADO = { activos: 'Solo activos', inactivos: 'Solo inactivos / baja', todos: 'Activos e inactivos' };
-  const botonesExportar = ({ cantidad, archivo, armar, titulo, subtitulo }) => {
-    const exportar = async (formato) => {
-      setExportandoListado(formato);
-      try {
-        if (formato === 'excel') await descargarExcel(`${archivo}.xlsx`, armar(), titulo);
-        else await descargarPdf(`${archivo}.pdf`, armar(), titulo, subtitulo);
-      } catch (error) {
-        showToast({ message: `No se pudo exportar: ${error.message}`, type: 'error' });
-      } finally {
-        setExportandoListado('');
-      }
-    };
-    return (
-      <span className="uc-exportar" role="group" aria-label={`Exportar ${cantidad} en Excel o PDF`}>
-        <span className="uc-exportar-etiqueta"><FileText size={13} /> Exportar {cantidad}:</span>
-        <button type="button" className="btn-secondary tc-btn" disabled={!cantidad || Boolean(exportandoListado)} onClick={() => exportar('excel')}>
-          {exportandoListado === 'excel' ? 'Generando…' : 'Excel'}
-        </button>
-        <button type="button" className="btn-secondary tc-btn" disabled={!cantidad || Boolean(exportandoListado)} onClick={() => exportar('pdf')}>
-          {exportandoListado === 'pdf' ? 'Generando…' : 'PDF'}
-        </button>
-      </span>
-    );
-  };
-
-  const barraSeleccionUsuarios = (lista) => {
-    if (!(esAdmin || esSuperAdmin) || lista.length === 0) return null;
-    const elegidos = lista.filter((u) => seleccionUsuarios.has(u.id));
-    const todosElegidos = elegidos.length === lista.length;
-    return (
-      <div className="uc-barra-seleccion" role="group" aria-label="Acciones con seleccionados">
-        <label className="checkbox-label-row">
-          <input
-            type="checkbox"
-            checked={todosElegidos}
-            onChange={() => setSeleccionUsuarios((prev) => {
-              const sig = new Set(prev);
-              lista.forEach((u) => (todosElegidos ? sig.delete(u.id) : sig.add(u.id)));
-              return sig;
-            })}
-          />
-          {elegidos.length ? `${elegidos.length} seleccionados` : `Seleccionar los ${lista.length}`}
-        </label>
-        {elegidos.length > 0 && (
-          <>
-            <button type="button" className="btn-secondary tc-btn" disabled={aplicandoEstadoMasivo} onClick={() => aplicarEstadoMasivo(elegidos, false)}>
-              {aplicandoEstadoMasivo ? 'Guardando…' : 'Desactivar'}
-            </button>
-            <button type="button" className="btn-secondary tc-btn" disabled={aplicandoEstadoMasivo} onClick={() => aplicarEstadoMasivo(elegidos, true)}>
-              Reactivar
-            </button>
-            <button type="button" className="btn-secondary tc-btn" disabled={aplicandoEstadoMasivo} onClick={() => setSeleccionUsuarios(new Set())}>
-              Limpiar
-            </button>
-          </>
-        )}
-      </div>
-    );
-  };
-
-  const renderTarjetaUsuario = (u) => {
-    const esIncompleta = u.tipo === 'jugador'
-      ? rutsJugadoresIncompletos.has(String(u.raw.rut_jugador || ''))
-      : idsCuentasIncompletas.has(String(u.raw.id));
-    const sinApoderado = u.tipo === 'jugador' && rutsJugadoresSinApoderado.has(String(u.raw.rut_jugador || ''));
-    const mostrandoAsignar = asignandoApoderadoRut === u.raw.rut_jugador;
-    const cuentaPropiaJugador = u.tipo === 'jugador'
-      ? cuentaPropiaPorRutJugador.get(normalizarRutUsuarios(u.raw.rut_jugador))
-      : null;
-
-    return (
-      <div
-        key={u.id}
-        className="card"
-        style={{
-          marginBottom: '10px',
-          borderLeft: `4px solid ${sinApoderado ? 'var(--rojo-alerta)' : (u.tipo === 'jugador' ? 'var(--azul-electrico)' : '#FF9500')}`,
-          borderRadius: 'var(--radius-lg)',
-          background: sinApoderado ? 'rgba(255,59,48,0.05)' : undefined,
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              {(esAdmin || esSuperAdmin) && (
-                <input
-                  type="checkbox"
-                  className="uc-seleccion"
-                  checked={seleccionUsuarios.has(u.id)}
-                  onChange={() => setSeleccionUsuarios((prev) => {
-                    const sig = new Set(prev);
-                    if (sig.has(u.id)) sig.delete(u.id); else sig.add(u.id);
-                    return sig;
-                  })}
-                  aria-label={`Seleccionar a ${u.nombre}`}
-                />
-              )}
-              <button type="button" className="fp-nombre-link" onClick={() => setFichaPersona({ tipo: u.tipo, raw: u.raw })} title="Ver ficha completa">
-                {u.nombre}
-              </button>
-              <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: esIncompleta ? '#8A4B00' : '#1c7a3d', background: esIncompleta ? 'rgba(255,149,0,0.14)' : 'rgba(52,199,89,0.14)' }}>
-                {esIncompleta ? 'Incompleta' : 'Completa'}
-              </span>
-              {sinApoderado && (
-                <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: '#b00020', background: 'rgba(255,59,48,0.12)' }}>
-                  Sin apoderado
-                </span>
-              )}
-              {!estaActivo(u.raw) && <span className="tc-perfil alerta">{String(u.raw.estado || 'Inactivo').toUpperCase()}</span>}
-            </div>
-            <div className="text-caption">
-              {u.tipo === 'jugador'
-                ? `${u.raw.rut_jugador || '-'} · ${u.raw.rama || 'Sin rama'} · ${u.raw.categoria || 'Sin categoría'}`
-                : `${u.raw.correo || '-'} · ${u.raw.rut || '-'} · ${(u.raw.rol || 'sin rol').toUpperCase()}`}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {sinApoderado && (
-              <button
-                className="btn-secondary"
-                style={{ width: 'auto' }}
-                onClick={() => {
-                  setAsignandoApoderadoRut(mostrandoAsignar ? null : u.raw.rut_jugador);
-                  setCorreoApoderadoParaAsignar('');
-                }}
-              >
-                {mostrandoAsignar ? 'Cancelar' : 'Asignar apoderado'}
-              </button>
-            )}
-            {u.tipo === 'cuenta' && (esAdmin || esSuperAdmin) && (
-              <select
-                className="form-input uc-perfil-rapido"
-                aria-label={`Perfil de ${u.nombre}`}
-                value={perfilBaseParaSelector(u.raw.rol || u.raw.perfil_principal)}
-                onChange={(e) => cambiarPerfilRapido(u.raw, e.target.value)}
-              >
-                {PERFIL_UNICO_OPTIONS.filter((o) => esSuperAdmin || o.value !== 'super_admin').map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            )}
-            <button type="button" className="btn-secondary" style={{ width: 'auto' }} onClick={() => setFichaPersona({ tipo: u.tipo, raw: u.raw })}>
-              <Eye size={13} /> Ver ficha
-            </button>
-            <button className="btn-modificar" onClick={() => iniciarEdicion(u)}>
-              Modificar
-            </button>
-            {u.tipo === 'cuenta' && (esAdmin || esSuperAdmin) && (
-              <button
-                className="btn-secondary"
-                style={{ width: 'auto' }}
-                onClick={() => resetearClaveDesdeLista(u.raw)}
-                disabled={reseteandoClaveId === u.raw.id}
-              >
-                <Lock size={13} /> {reseteandoClaveId === u.raw.id ? 'Generando...' : 'Código de acceso'}
-              </button>
-            )}
-            {u.tipo === 'jugador' && (esAdmin || esSuperAdmin) && (
-              cuentaPropiaJugador ? (
-                <button
-                  className="btn-secondary"
-                  style={{ width: 'auto' }}
-                  onClick={() => resetearClaveDesdeLista(cuentaPropiaJugador)}
-                  disabled={reseteandoClaveId === cuentaPropiaJugador.id}
-                >
-                  <Lock size={13} /> {reseteandoClaveId === cuentaPropiaJugador.id ? 'Generando...' : 'Código de acceso'}
-                </button>
-              ) : (
-                <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: 'var(--radius-pill)', color: 'var(--texto-secundario)', background: 'rgba(120,120,128,0.12)' }}>
-                  Sin cuenta propia
-                </span>
-              )
-            )}
-            {esSuperAdmin && (
-              <button
-                className="btn-secondary"
-                style={{
-                  width: 'auto',
-                  background: 'rgba(255,59,48,0.12)',
-                  borderColor: 'rgba(255,59,48,0.36)',
-                  color: '#b00020',
-                  fontWeight: '800',
-                }}
-                onClick={() => eliminarUsuarioDefinitivo(u)}
-                disabled={eliminandoUsuarioId === u.id}
-              >
-                {eliminandoUsuarioId === u.id ? 'Borrando...' : 'Borrar definitivo'}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {mostrandoAsignar && (
-          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--borde-suave)', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <select
-              className="form-input"
-              style={{ flex: '1 1 240px' }}
-              value={correoApoderadoParaAsignar}
-              onChange={(e) => setCorreoApoderadoParaAsignar(e.target.value)}
-            >
-              <option value="">Selecciona un apoderado/socio...</option>
-              {ordenarCandidatosApoderado(u.raw).map((c) => (
-                <option key={c.correo} value={c.correo}>{c.sugerido ? '⭐ ' : ''}{c.nombre} · {c.correo}{c.sugerido ? ' (mismo apellido)' : ''}</option>
-              ))}
-            </select>
-            <button
-              className="btn-electric"
-              style={{ width: 'auto' }}
-              disabled={!correoApoderadoParaAsignar || guardandoAsignacionApoderado}
-              onClick={() => asignarApoderadoAJugador(u.raw)}
-            >
-              {guardandoAsignacionApoderado ? 'Guardando...' : 'Confirmar asignación'}
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
 
   const cuentaPupilosActiva = cuentaAdminEdit || null;
 
@@ -3217,231 +2748,224 @@ function SuperAdminPanel({
         </div>
       )}
 
-      {vistaAdmin === 'usuarios' && (
-        <div className="fade-in">
-          <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} />
-          <div className="tesoreria-cabecera">
-            <h2>Usuarios y Cuentas</h2>
-            <button type="button" className="btn-electric tesoreria-btn-pago" onClick={() => setVistaUsuarios('registrar')}>
-              <Plus size={15} /> Registrar
+      <UsuariosCuentasPanel
+        visible={vistaAdmin === 'usuarios'}
+        esAdmin={esAdmin}
+        esSuperAdmin={esSuperAdmin}
+        jugadoresAdmin={jugadoresAdmin}
+        jugadoresAdminTodos={jugadoresAdminTodos}
+        cuentasAdmin={cuentasAdmin}
+        cuentasAdminTodas={cuentasAdminTodas}
+        jugadoresIncompletos={jugadoresIncompletos}
+        jugadoresSinApoderado={jugadoresSinApoderado}
+        cuentasIncompletas={cuentasIncompletas}
+        categoriasUnicas={categoriasUnicas}
+        cuentaPropiaPorRutJugador={cuentaPropiaPorRutJugador}
+        normalizarRutUsuarios={normalizarRutUsuarios}
+        recargarUsuariosAdmin={recargarUsuariosAdmin}
+        guardarJugadorAdmin={guardarJugadorAdmin}
+        onSheetsSyncComplete={onSheetsSyncComplete}
+        setVistaAdmin={setVistaAdmin}
+        setFichaPersona={setFichaPersona}
+        iniciarEdicion={iniciarEdicion}
+        cambiarPerfilRapido={cambiarPerfilRapido}
+        perfilBaseParaSelector={perfilBaseParaSelector}
+        PERFIL_UNICO_OPTIONS={PERFIL_UNICO_OPTIONS}
+        resetearClaveDesdeLista={resetearClaveDesdeLista}
+        reseteandoClaveId={reseteandoClaveId}
+        eliminarUsuarioDefinitivo={eliminarUsuarioDefinitivo}
+        eliminandoUsuarioId={eliminandoUsuarioId}
+        formularioRegistrar={(
+          <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
+            <h4 className="form-subtitle"><Plus size={16} /> Registrar nuevo</h4>
+            <div className="segment-control uc-tipo-registro" role="radiogroup" aria-label="Qué vas a registrar">
+              <button type="button" role="radio" aria-checked={tipoNuevoUsuario === 'jugador'} className={`segment-btn ${tipoNuevoUsuario === 'jugador' ? 'active' : ''}`} onClick={() => setTipoNuevoUsuario('jugador')}><Trophy size={14} /> Deportista</button>
+              <button type="button" role="radio" aria-checked={tipoNuevoUsuario === 'cuenta'} className={`segment-btn ${tipoNuevoUsuario === 'cuenta' ? 'active' : ''}`} onClick={() => setTipoNuevoUsuario('cuenta')}><User size={14} /> Cuenta (apoderado, socio, staff…)</button>
+            </div>
+            <p className="uc-seccion-ayuda">{tipoNuevoUsuario === 'jugador' ? 'Ficha del deportista. Con la fecha de nacimiento la categoría se asigna sola.' : 'Persona que ingresa a la app con su RUT y clave.'}</p>
+
+            {tipoNuevoUsuario === 'cuenta' ? (
+              <>
+              <fieldset className="uc-seccion">
+                <legend><ShieldCheck size={15} /> Acceso y perfil</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
+                  <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
+                  <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
+                  <div className="form-group">
+                    <label>Perfil *</label>
+                    <select
+                      className="form-input"
+                      value={perfilBaseParaSelector(nuevaCuenta.rol || nuevaCuenta.perfil_principal)}
+                      onChange={(e) => actualizarNuevaCuenta(construirCambioPerfilUnico(e.target.value, esSocioApoderadoStacked(nuevaCuenta.rol)))}
+                    >
+                      {PERFIL_UNICO_OPTIONS.map((opt) => <option key={`perfil-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                  </div>
+                  {perfilBaseParaSelector(nuevaCuenta.rol || nuevaCuenta.perfil_principal) === 'socio' && (
+                    <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <label className="checkbox-label-row">
+                        <input
+                          type="checkbox"
+                          checked={esSocioApoderadoStacked(nuevaCuenta.rol)}
+                          onChange={(e) => actualizarNuevaCuenta(construirCambioPerfilUnico('socio', e.target.checked))}
+                        />
+                        También es apoderado (tiene hijos inscritos)
+                      </label>
+                    </div>
+                  )}
+                  <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={nuevaCuenta.cargo_directiva || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-new-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><User size={15} /> Datos personales</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Nombres</label><input className="form-input" value={nuevaCuenta.nombres} onChange={(e) => setNuevaCuenta((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                  <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={nuevaCuenta.apellido_paterno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                  <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevaCuenta.apellido_materno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                  <div className="form-group"><label>Teléfono</label><input className="form-input" value={nuevaCuenta.telefono} onChange={(e) => setNuevaCuenta((p) => ({ ...p, telefono: e.target.value }))} /></div>
+                  <div className="form-group"><label>Dirección</label><input className="form-input" value={nuevaCuenta.direccion} onChange={(e) => setNuevaCuenta((p) => ({ ...p, direccion: e.target.value }))} /></div>
+                  <div className="form-group"><label>Comuna</label><input className="form-input" value={nuevaCuenta.comuna} onChange={(e) => setNuevaCuenta((p) => ({ ...p, comuna: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><FileText size={15} /> Cuota de socio</legend>
+                <p className="uc-seccion-ayuda">Solo aplica a socios: 0,3 UTM al mes, se recalcula sola.</p>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Valor UTM referencia (override opcional, se completa solo)</label><input type="number" min="1" className="form-input" value={nuevaCuenta.utm_valor_referencia || utmVigente?.valor || 68000} onChange={(e) => actualizarNuevaCuenta({ utm_valor_referencia: e.target.value })} /></div>
+                  <div className="form-group"><label>Mensualidad base automática (0,3 UTM, se recalcula sola cada mes)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(nuevaCuenta) ? (Number(nuevaCuenta.monto_mensual_base) > 0 ? nuevaCuenta.monto_mensual_base : calcularMensualidadSocio(nuevaCuenta.utm_valor_referencia || utmVigente?.valor)) : 0} disabled /></div>
+                  <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={nuevaCuenta.monto_mensual_override || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
+                  <div className="form-group"><label>Fecha corte UTM (mes anterior)</label><input type="date" className="form-input" value={nuevaCuenta.fecha_corte_utm || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, fecha_corte_utm: e.target.value }))} /></div>
+                  <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={nuevaCuenta.condiciones_pago || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, condiciones_pago: e.target.value }))}></textarea></div>
+                </div>
+              </fieldset>
+              </>
+            ) : (
+              <>
+              <fieldset className="uc-seccion">
+                <legend><User size={15} /> Datos personales</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevoJugador.rut_jugador || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_jugador: e.target.value }))} placeholder="12.345.678-9" /></div>
+                  <div className="form-group"><label>Nombres *</label><input className="form-input" value={nuevoJugador.nombres || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombres: e.target.value }))} /></div>
+                  <div className="form-group"><label>Apellido paterno *</label><input className="form-input" value={nuevoJugador.apellido_paterno || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
+                  <div className="form-group"><label>Apellido materno</label><input className="form-input" value={nuevoJugador.apellido_materno || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
+                  <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(nuevoJugador.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setNuevoJugador((p) => ({ ...p, fecha_nacimiento: e.target.value, categoria: categoriaEfectiva({ ...p, fecha_nacimiento: e.target.value }) }))} /></div>
+                  <div className="form-group"><label>Colegio</label><input className="form-input" value={nuevoJugador.colegio || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, colegio: e.target.value }))} /></div>
+                  <div className="form-group"><label>Correo del deportista</label><input className="form-input" value={nuevoJugador.correo_jugador || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_jugador: e.target.value }))} inputMode="email" /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Users size={15} /> Apoderado</legend>
+                <p className="uc-seccion-ayuda">Con el RUT o correo del apoderado la familia ve sus pagos y recibe avisos.</p>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>RUT apoderado</label><input className="form-input" value={nuevoJugador.rut_apoderado || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_apoderado: e.target.value }))} /></div>
+                  <div className="form-group"><label>Correo apoderado</label><input className="form-input" value={nuevoJugador.correo_apoderado || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_apoderado: e.target.value }))} inputMode="email" /></div>
+                  <div className="form-group"><label>Parentesco</label><input className="form-input" value={nuevoJugador.parentesco_apoderado || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, parentesco_apoderado: e.target.value }))} placeholder="Madre, padre, tutor…" /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Trophy size={15} /> Deportivo</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Rama *</label><select className="form-input" value={nuevoJugador.rama || 'MASCULINA'} onChange={(e) => setNuevoJugador((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
+                  <CampoCategoria id="categoria-nuevo" requerido={true} fechaNacimiento={nuevoJugador.fecha_nacimiento} anioNacimiento={nuevoJugador['año_nacimiento']} valor={nuevoJugador.categoria} onCambiar={(categoria) => setNuevoJugador((p) => ({ ...p, categoria }))} />
+                  <div className="form-group"><label>Posición de juego</label><input className="form-input" value={nuevoJugador.posicion_de_juego || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, posicion_de_juego: e.target.value }))} /></div>
+                  <div className="form-group"><label>Número de camiseta</label><input type="number" className="form-input" value={nuevoJugador.numero_camiseta || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, numero_camiseta: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Activity size={15} /> Físico y tallas</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Estatura (cm)</label><input className="form-input" value={nuevoJugador.estatura || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, estatura: e.target.value }))} inputMode="decimal" /></div>
+                  <div className="form-group"><label>Peso (kg)</label><input className="form-input" value={nuevoJugador.peso || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, peso: e.target.value }))} inputMode="decimal" /></div>
+                  <div className="form-group"><label>Mano hábil</label><input className="form-input" value={nuevoJugador.mano_habil || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, mano_habil: e.target.value }))} placeholder="Derecha / Izquierda" /></div>
+                  <div className="form-group"><label>Talla camiseta</label><input className="form-input" value={nuevoJugador.talla_camiseta || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, talla_camiseta: e.target.value }))} /></div>
+                  <div className="form-group"><label>Talla short</label><input className="form-input" value={nuevoJugador.talla_short || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, talla_short: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Stethoscope size={15} /> Salud y emergencia</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Previsión</label><input className="form-input" value={nuevoJugador.prevision || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, prevision: e.target.value }))} /></div>
+                  <div className="form-group"><label>Tipo de sangre</label><input className="form-input" value={nuevoJugador.tipo_sangre || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, tipo_sangre: e.target.value }))} /></div>
+                  <div className="form-group"><label>Alergias</label><input className="form-input" value={nuevoJugador.alergias || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, alergias: e.target.value }))} /></div>
+                  <div className="form-group"><label>Contacto de emergencia</label><input className="form-input" value={nuevoJugador.nombre_emergencia || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombre_emergencia: e.target.value }))} /></div>
+                  <div className="form-group"><label>Parentesco del contacto</label><input className="form-input" value={nuevoJugador.parentesco_emergencia || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, parentesco_emergencia: e.target.value }))} /></div>
+                  <div className="form-group"><label>Teléfono de emergencia</label><input type="tel" className="form-input" value={nuevoJugador.num_emergencia || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, num_emergencia: e.target.value }))} /></div>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><FileText size={15} /> Club y cobro</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Fecha de ingreso al club</label><input type="date" className="form-input" value={String(nuevoJugador.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setNuevoJugador((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
+                  <div className="form-group"><label>Estado</label><select className="form-input" value={nuevoJugador.estado || 'ACTIVO'} onChange={(e) => setNuevoJugador((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option></select></div>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.apoderado_socio)} onChange={(e) => setNuevoJugador((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; 2 hermanos $12.000 c/u)</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.matricula_pagada)} onChange={(e) => setNuevoJugador((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.derechos_imagen)} onChange={(e) => setNuevoJugador((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
+                </div>
+              </fieldset>
+
+              <fieldset className="uc-seccion">
+                <legend><Image size={15} /> Foto</legend>
+                <div className="grid-auto-220">
+                  <div className="form-group"><label>Foto (URL)</label><input className="form-input" value={nuevoJugador.foto_jugador || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, foto_jugador: e.target.value }))} placeholder="Se completa al subir desde la galería" /></div>
+                  <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'nuevo')} /></div>
+                </div>
+              </fieldset>
+              </>
+            )}
+
+            {subiendoFotoJugadorNuevo && <p className="text-caption">Subiendo foto...</p>}
+
+            {tipoNuevoUsuario === 'cuenta' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(nuevaCuenta))} disabled />
+                  Es socio (automático por perfil)
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(nuevaCuenta.socio_admin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, socio_admin: e.target.checked }))} />
+                  Admin entre socios
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(nuevaCuenta.aprobado_superadmin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
+                  Aprobado por SuperAdmin
+                </label>
+                <label className="checkbox-label-row">
+                  <input type="checkbox" checked={Boolean(nuevaCuenta.requiere_foto_perfil)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
+                  Solicitar foto de perfil en onboarding
+                </label>
+              </div>
+            )}
+
+            {tipoNuevoUsuario === 'cuenta' && (
+              <div className="card" style={{ marginTop: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
+                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> Permisos iniciales</h4>
+                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '10px' }}>
+                  La cuenta nueva tomará los permisos base según el rol de acceso seleccionado. Después de guardar, podrás ajustar módulos específicos en esta misma vista unificada.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {MODULOS_ACCESO.filter((modulo) => modulo.id !== 'mesa_publica' && obtenerPermisosBasePorRol(nuevaCuenta.rol || 'apoderado')[modulo.id]).map((modulo) => (
+                    <span key={`nuevo-perm-${modulo.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 8px', borderRadius: 'var(--radius-pill)', background: 'rgba(0,122,255,0.08)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800' }}>
+                      <ShieldCheck size={11} /> {modulo.etiqueta}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button className="btn-electric" onClick={guardarNuevoUsuario} disabled={guardandoUsuario}>
+              {guardandoUsuario ? 'Guardando...' : 'Guardar nuevo usuario'}
             </button>
           </div>
-          <p className="uc-ayuda">
-            <b>Deportistas</b>: fichas deportivas. <b>Cuentas</b>: quienes ingresan a la app (apoderados, socios, staff y admins). Toca un nombre para ver su ficha completa.
-          </p>
-
-          <div className="tesoreria-tabs-wrap"><div className="segment-control tesoreria-tabs" role="group" aria-label="Secciones de Usuarios y Cuentas" style={{ gap: '6px' }}>
-            <button type="button" className={`segment-btn ${vistaUsuarios === 'deportistas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('deportistas')}>
-              <Users size={14} /> Deportistas ({jugadoresAdminTodos.length})
-            </button>
-            <button type="button" className={`segment-btn ${vistaUsuarios === 'cuentas' ? 'active' : ''}`} onClick={() => setVistaUsuarios('cuentas')}>
-              <User size={14} /> Cuentas ({cuentasAdminTodas.length})
-            </button>
-            <button type="button" className={`segment-btn ${vistaUsuarios === 'vincular' ? 'active' : ''}`} onClick={() => setVistaUsuarios('vincular')}>
-              <Link2 size={14} /> Vincular apoderados
-              {jugadoresSinApoderado.filter(estaActivo).length > 0 && <span className="tesoreria-tab-badge">{jugadoresSinApoderado.filter(estaActivo).length}</span>}
-            </button>
-            {(esAdmin || esSuperAdmin) && (
-              <button type="button" className={`segment-btn ${vistaUsuarios === 'padron' ? 'active' : ''}`} onClick={() => setVistaUsuarios('padron')}>
-                <History size={14} /> Altas y bajas
-              </button>
-            )}
-            <button type="button" className={`segment-btn ${vistaUsuarios === 'registrar' ? 'active' : ''}`} onClick={() => setVistaUsuarios('registrar')}>
-              <Plus size={14} /> Registrar nuevo
-            </button>
-            {/* Permisos individuales: antes solo en el engranaje (panel chico)
-                o escondidos en Sistema; ahora junto a las cuentas que afectan. */}
-            <button type="button" className="segment-btn" onClick={() => setVistaAdmin('permisos')}>
-              <ShieldCheck size={14} /> Permisos
-            </button>
-          </div></div>
-
-          {(vistaUsuarios === 'deportistas' || vistaUsuarios === 'cuentas') && (
-            <SelectorOrden
-              className="mb-10"
-              valor={ordenUsuarios}
-              onCambiar={setOrdenUsuarios}
-              opciones={vistaUsuarios === 'deportistas' ? ['apellido', 'nombre', 'nacimiento', 'edad', 'categoria'] : ['apellido', 'nombre', 'nacimiento', 'edad']}
-            />
-          )}
-          {(vistaUsuarios === 'deportistas' || vistaUsuarios === 'cuentas') && (
-            <div className="filter-chips mb-15" role="group" aria-label="Estado">
-              {[
-                ['activos', 'Activos'],
-                ['inactivos', 'Inactivos / baja'],
-                ['todos', 'Todos'],
-              ].map(([valor, etiqueta]) => (
-                <button key={valor} type="button" className={`filter-chip ${filtroEstadoUsuarios === valor ? 'active' : ''}`} onClick={() => setFiltroEstadoUsuarios(valor)}>
-                  {etiqueta} ({(() => {
-                    const base = (vistaUsuarios === 'deportistas' ? jugadoresAdminTodos : cuentasAdminTodas) || [];
-                    if (valor === 'todos') return base.length;
-                    const activos = base.filter(estaActivo).length;
-                    return valor === 'activos' ? activos : base.length - activos;
-                  })()})
-                </button>
-              ))}
-            </div>
-          )}
-
-          {vistaUsuarios === 'deportistas' && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <div className="admin-stat-pill verde"><span>Completos</span><h2>{jugadoresAdminTodos.length - jugadoresIncompletos.length}</h2></div>
-                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletos</span><h2 style={{ color: '#8A4B00' }}>{jugadoresIncompletos.length}</h2></div>
-                <div className="admin-stat-pill rojo"><span>Sin apoderado</span><h2>{jugadoresSinApoderado.length}</h2></div>
-              </div>
-
-              <div className="card">
-                <div className="grid-auto-220">
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Buscar</label>
-                    <div style={{ position: 'relative' }}>
-                      <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-                      <input
-                        className="form-input"
-                        style={{ paddingLeft: '32px' }}
-                        placeholder="Nombre, RUT, rama o categoría"
-                        value={filtroUsuariosTexto}
-                        onChange={(e) => setFiltroUsuariosTexto(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Rama</label>
-                    <select className="form-input" value={filtroRamaJugadores} onChange={(e) => setFiltroRamaJugadores(e.target.value)}>
-                      <option value="todas">Todas</option>
-                      <option value="masculina">Masculina</option>
-                      <option value="femenina">Femenina</option>
-                      <option value="mixta">Mixta</option>
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Categoría</label>
-                    <select className="form-input" value={filtroCategoriaJugadores} onChange={(e) => setFiltroCategoriaJugadores(e.target.value)}>
-                      <option value="todas">Todas</option>
-                      {categoriasUnicas.map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="filter-chips" style={{ marginTop: '10px' }}>
-                  <button className={`filter-chip ${filtroApoderadoJugadores === 'todos' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('todos')}>Todos ({jugadoresAdminTodos.length})</button>
-                  <button className={`filter-chip ${filtroApoderadoJugadores === 'sin' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('sin')}>Sin apoderado ({jugadoresSinApoderado.length})</button>
-                  <button className={`filter-chip ${filtroApoderadoJugadores === 'con' ? 'active' : ''}`} onClick={() => setFiltroApoderadoJugadores('con')}>Con apoderado ({jugadoresAdminTodos.length - jugadoresSinApoderado.length})</button>
-                  {botonesExportar({
-                    cantidad: deportistasFiltrados.length,
-                    archivo: `deportistas-${[filtroRamaJugadores, filtroCategoriaJugadores, filtroEstadoUsuarios].filter((f) => f !== 'todas' && f !== 'todos').join('-')}-${hoyLocalISO()}`,
-                    armar: () => listadoDeportistas(deportistasFiltrados.map((u) => u.raw), cuentasAdminTodas || []),
-                    titulo: 'Deportistas y apoderados',
-                    subtitulo: [filtroRamaJugadores !== 'todas' && `Rama ${filtroRamaJugadores}`, filtroCategoriaJugadores !== 'todas' && `Categoría ${filtroCategoriaJugadores}`, ETIQUETA_FILTRO_ESTADO[filtroEstadoUsuarios]].filter(Boolean).join(' · '),
-                  })}
-                  {(esAdmin || esSuperAdmin) && (
-                    <button type="button" className="btn-secondary tc-btn" disabled={!deportistasFiltrados.length} onClick={() => setAvisoWsp({ titulo: `WhatsApp a apoderados (${deportistasFiltrados.length} deportistas)`, destinatarios: destinatariosApoderados(deportistasFiltrados) })}>
-                      <Megaphone size={13} /> WhatsApp apoderados
-                    </button>
-                  )}
-                </div>
-
-                {barraSeleccionUsuarios(deportistasFiltrados)}
-                <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
-                  {deportistasFiltrados.length === 0 && (
-                    <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay deportistas con los filtros actuales.</p>
-                  )}
-                  {deportistasFiltrados.map(renderTarjetaUsuario)}
-                </div>
-              </div>
-            </>
-          )}
-          {vistaUsuarios === 'cuentas' && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <div className="admin-stat-pill verde"><span>Completas</span><h2>{cuentasAdminTodas.length - cuentasIncompletas.length}</h2></div>
-                <div className="admin-stat-pill" style={{ background: 'rgba(255,149,0,0.1)' }}><span>Incompletas</span><h2 style={{ color: '#8A4B00' }}>{cuentasIncompletas.length}</h2></div>
-                <div className="admin-stat-pill azul"><span>Total</span><h2>{cuentasAdminTodas.length}</h2></div>
-              </div>
-
-              <div className="card">
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Buscar</label>
-                    <div style={{ position: 'relative' }}>
-                      <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
-                      <input
-                        className="form-input"
-                        style={{ paddingLeft: '32px' }}
-                        placeholder="Nombre, correo, RUT o rol"
-                        value={filtroCuentasTexto}
-                        onChange={(e) => setFiltroCuentasTexto(e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Tipo de perfil</label>
-                    <select className="form-input" value={filtroTipoPerfil} onChange={(e) => setFiltroTipoPerfil(e.target.value)}>
-                      <option value="todos">Todos</option>
-                      <option value="apoderado">Apoderado</option>
-                      <option value="socio">Socio</option>
-                      <option value="socio_apoderado">Socio / Apoderado</option>
-                      <option value="directiva">Directiva</option>
-                      <option value="staff">Staff</option>
-                      <option value="admin">Admin</option>
-                      <option value="super_admin">Super Admin</option>
-                      <option value="jugador">Deportista con login propio</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="filter-chips" style={{ marginTop: '10px' }}>
-                  {botonesExportar({
-                    cantidad: cuentasUsuariosFiltradas.length,
-                    archivo: `cuentas-${[filtroTipoPerfil, filtroEstadoUsuarios].filter((f) => f !== 'todos').join('-')}-${hoyLocalISO()}`,
-                    armar: () => listadoCuentas(cuentasUsuariosFiltradas.map((u) => u.raw), jugadoresAdminTodos || []),
-                    titulo: 'Cuentas y pupilos',
-                    subtitulo: [filtroTipoPerfil !== 'todos' && `Perfil ${filtroTipoPerfil}`, ETIQUETA_FILTRO_ESTADO[filtroEstadoUsuarios]].filter(Boolean).join(' · '),
-                  })}
-                  {(esAdmin || esSuperAdmin) && (
-                    <button type="button" className="btn-secondary tc-btn" disabled={!cuentasUsuariosFiltradas.length} onClick={() => setAvisoWsp({
-                      titulo: `WhatsApp a ${cuentasUsuariosFiltradas.length} cuentas`,
-                      destinatarios: cuentasUsuariosFiltradas.map((u) => ({ clave: u.id, nombre: u.nombre, telefono: u.raw.telefono ? `${u.raw.prefijo_tel || '+56'} ${u.raw.telefono}` : '', detalle: u.raw.perfil_principal || u.raw.rol || '' })),
-                    })}>
-                      <Megaphone size={13} /> WhatsApp
-                    </button>
-                  )}
-                </div>
-                {barraSeleccionUsuarios(cuentasUsuariosFiltradas)}
-                <div style={{ marginTop: '12px', maxHeight: '420px', overflowY: 'auto' }}>
-                  {cuentasUsuariosFiltradas.length === 0 && (
-                    <p className="text-muted" style={{ fontStyle: 'italic' }}>No hay cuentas con los filtros actuales.</p>
-                  )}
-                  {cuentasUsuariosFiltradas.map(renderTarjetaUsuario)}
-                </div>
-              </div>
-            </>
-          )}
-
-          {vistaUsuarios === 'padron' && (esAdmin || esSuperAdmin) && (
-            <RevisionPadronPanel
-              jugadores={jugadoresAdminTodos || []}
-              cuentas={cuentasAdminTodas || []}
-              onRecargar={recargarUsuariosAdmin}
-              onVerFicha={(j) => setFichaPersona({ tipo: 'jugador', raw: j })}
-            />
-          )}
-          {vistaUsuarios === 'vincular' && esSuperAdmin && (
-            <ImportarJugadoresPlanilla onAplicado={recargarUsuariosAdmin} />
-          )}
-          {vistaUsuarios === 'vincular' && (
-            <VincularApoderadosPanel
-              jugadores={jugadoresAdmin}
-              cuentas={cuentasAdmin}
-              onRecargar={recargarUsuariosAdmin}
-              onVerFicha={(j) => setFichaPersona({ tipo: 'jugador', raw: j })}
-            />
-          )}
-
+        )}
+      >
           {editandoTipo === 'cuenta' && cuentaAdminEdit && createPortal(
             <div className="fp-fondo" role="presentation">
             <div className="fp-ventana uc-editor" role="dialog" aria-modal="true" aria-label="Editar cuenta">
@@ -3850,199 +3374,7 @@ function SuperAdminPanel({
             </div>,
             document.body
           )}
-
-          {vistaUsuarios === 'registrar' && (
-          <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
-            <h4 className="form-subtitle"><Plus size={16} /> Registrar nuevo</h4>
-            <div className="segment-control uc-tipo-registro" role="radiogroup" aria-label="Qué vas a registrar">
-              <button type="button" role="radio" aria-checked={tipoNuevoUsuario === 'jugador'} className={`segment-btn ${tipoNuevoUsuario === 'jugador' ? 'active' : ''}`} onClick={() => setTipoNuevoUsuario('jugador')}><Trophy size={14} /> Deportista</button>
-              <button type="button" role="radio" aria-checked={tipoNuevoUsuario === 'cuenta'} className={`segment-btn ${tipoNuevoUsuario === 'cuenta' ? 'active' : ''}`} onClick={() => setTipoNuevoUsuario('cuenta')}><User size={14} /> Cuenta (apoderado, socio, staff…)</button>
-            </div>
-            <p className="uc-seccion-ayuda">{tipoNuevoUsuario === 'jugador' ? 'Ficha del deportista. Con la fecha de nacimiento la categoría se asigna sola.' : 'Persona que ingresa a la app con su RUT y clave.'}</p>
-
-            {tipoNuevoUsuario === 'cuenta' ? (
-              <>
-              <fieldset className="uc-seccion">
-                <legend><ShieldCheck size={15} /> Acceso y perfil</legend>
-                <div className="grid-auto-220">
-                  <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevaCuenta.rut} onChange={(e) => setNuevaCuenta((p) => ({ ...p, rut: e.target.value }))} /></div>
-                  <div className="form-group"><label>Correo *</label><input className="form-input" value={nuevaCuenta.correo} onChange={(e) => setNuevaCuenta((p) => ({ ...p, correo: e.target.value }))} /></div>
-                  <div className="form-group"><label>Password inicial</label><input className="form-input" value={nuevaCuenta.password} onChange={(e) => setNuevaCuenta((p) => ({ ...p, password: e.target.value }))} /></div>
-                  <div className="form-group">
-                    <label>Perfil *</label>
-                    <select
-                      className="form-input"
-                      value={perfilBaseParaSelector(nuevaCuenta.rol || nuevaCuenta.perfil_principal)}
-                      onChange={(e) => actualizarNuevaCuenta(construirCambioPerfilUnico(e.target.value, esSocioApoderadoStacked(nuevaCuenta.rol)))}
-                    >
-                      {PERFIL_UNICO_OPTIONS.map((opt) => <option key={`perfil-new-${opt.value}`} value={opt.value}>{opt.label}</option>)}
-                    </select>
-                  </div>
-                  {perfilBaseParaSelector(nuevaCuenta.rol || nuevaCuenta.perfil_principal) === 'socio' && (
-                    <div className="form-group" style={{ display: 'flex', alignItems: 'flex-end' }}>
-                      <label className="checkbox-label-row">
-                        <input
-                          type="checkbox"
-                          checked={esSocioApoderadoStacked(nuevaCuenta.rol)}
-                          onChange={(e) => actualizarNuevaCuenta(construirCambioPerfilUnico('socio', e.target.checked))}
-                        />
-                        También es apoderado (tiene hijos inscritos)
-                      </label>
-                    </div>
-                  )}
-                  <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={nuevaCuenta.cargo_directiva || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-new-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
-                </div>
-              </fieldset>
-
-              <fieldset className="uc-seccion">
-                <legend><User size={15} /> Datos personales</legend>
-                <div className="grid-auto-220">
-                  <div className="form-group"><label>Nombres</label><input className="form-input" value={nuevaCuenta.nombres} onChange={(e) => setNuevaCuenta((p) => ({ ...p, nombres: e.target.value }))} /></div>
-                  <div className="form-group"><label>Apellido Paterno</label><input className="form-input" value={nuevaCuenta.apellido_paterno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
-                  <div className="form-group"><label>Apellido Materno</label><input className="form-input" value={nuevaCuenta.apellido_materno} onChange={(e) => setNuevaCuenta((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
-                  <div className="form-group"><label>Teléfono</label><input className="form-input" value={nuevaCuenta.telefono} onChange={(e) => setNuevaCuenta((p) => ({ ...p, telefono: e.target.value }))} /></div>
-                  <div className="form-group"><label>Dirección</label><input className="form-input" value={nuevaCuenta.direccion} onChange={(e) => setNuevaCuenta((p) => ({ ...p, direccion: e.target.value }))} /></div>
-                  <div className="form-group"><label>Comuna</label><input className="form-input" value={nuevaCuenta.comuna} onChange={(e) => setNuevaCuenta((p) => ({ ...p, comuna: e.target.value }))} /></div>
-                </div>
-              </fieldset>
-
-              <fieldset className="uc-seccion">
-                <legend><FileText size={15} /> Cuota de socio</legend>
-                <p className="uc-seccion-ayuda">Solo aplica a socios: 0,3 UTM al mes, se recalcula sola.</p>
-                <div className="grid-auto-220">
-                  <div className="form-group"><label>Valor UTM referencia (override opcional, se completa solo)</label><input type="number" min="1" className="form-input" value={nuevaCuenta.utm_valor_referencia || utmVigente?.valor || 68000} onChange={(e) => actualizarNuevaCuenta({ utm_valor_referencia: e.target.value })} /></div>
-                  <div className="form-group"><label>Mensualidad base automática (0,3 UTM, se recalcula sola cada mes)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(nuevaCuenta) ? (Number(nuevaCuenta.monto_mensual_base) > 0 ? nuevaCuenta.monto_mensual_base : calcularMensualidadSocio(nuevaCuenta.utm_valor_referencia || utmVigente?.valor)) : 0} disabled /></div>
-                  <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={nuevaCuenta.monto_mensual_override || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
-                  <div className="form-group"><label>Fecha corte UTM (mes anterior)</label><input type="date" className="form-input" value={nuevaCuenta.fecha_corte_utm || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, fecha_corte_utm: e.target.value }))} /></div>
-                  <div className="form-group"><label>Condiciones de pago</label><textarea className="form-input" rows="2" value={nuevaCuenta.condiciones_pago || ''} onChange={(e) => setNuevaCuenta((p) => ({ ...p, condiciones_pago: e.target.value }))}></textarea></div>
-                </div>
-              </fieldset>
-              </>
-            ) : (
-              <>
-              <fieldset className="uc-seccion">
-                <legend><User size={15} /> Datos personales</legend>
-                <div className="grid-auto-220">
-                  <div className="form-group"><label>RUT *</label><input className="form-input" value={nuevoJugador.rut_jugador || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_jugador: e.target.value }))} placeholder="12.345.678-9" /></div>
-                  <div className="form-group"><label>Nombres *</label><input className="form-input" value={nuevoJugador.nombres || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombres: e.target.value }))} /></div>
-                  <div className="form-group"><label>Apellido paterno *</label><input className="form-input" value={nuevoJugador.apellido_paterno || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_paterno: e.target.value }))} /></div>
-                  <div className="form-group"><label>Apellido materno</label><input className="form-input" value={nuevoJugador.apellido_materno || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, apellido_materno: e.target.value }))} /></div>
-                  <div className="form-group"><label>Fecha de nacimiento</label><input type="date" className="form-input" value={String(nuevoJugador.fecha_nacimiento || '').slice(0, 10)} onChange={(e) => setNuevoJugador((p) => ({ ...p, fecha_nacimiento: e.target.value, categoria: categoriaEfectiva({ ...p, fecha_nacimiento: e.target.value }) }))} /></div>
-                  <div className="form-group"><label>Colegio</label><input className="form-input" value={nuevoJugador.colegio || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, colegio: e.target.value }))} /></div>
-                  <div className="form-group"><label>Correo del deportista</label><input className="form-input" value={nuevoJugador.correo_jugador || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_jugador: e.target.value }))} inputMode="email" /></div>
-                </div>
-              </fieldset>
-
-              <fieldset className="uc-seccion">
-                <legend><Users size={15} /> Apoderado</legend>
-                <p className="uc-seccion-ayuda">Con el RUT o correo del apoderado la familia ve sus pagos y recibe avisos.</p>
-                <div className="grid-auto-220">
-                  <div className="form-group"><label>RUT apoderado</label><input className="form-input" value={nuevoJugador.rut_apoderado || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, rut_apoderado: e.target.value }))} /></div>
-                  <div className="form-group"><label>Correo apoderado</label><input className="form-input" value={nuevoJugador.correo_apoderado || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, correo_apoderado: e.target.value }))} inputMode="email" /></div>
-                  <div className="form-group"><label>Parentesco</label><input className="form-input" value={nuevoJugador.parentesco_apoderado || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, parentesco_apoderado: e.target.value }))} placeholder="Madre, padre, tutor…" /></div>
-                </div>
-              </fieldset>
-
-              <fieldset className="uc-seccion">
-                <legend><Trophy size={15} /> Deportivo</legend>
-                <div className="grid-auto-220">
-                  <div className="form-group"><label>Rama *</label><select className="form-input" value={nuevoJugador.rama || 'MASCULINA'} onChange={(e) => setNuevoJugador((p) => ({ ...p, rama: e.target.value }))}><option value="MASCULINA">Masculina</option><option value="FEMENINA">Femenina</option><option value="MIXTA">Mixta</option></select></div>
-                  <CampoCategoria id="categoria-nuevo" requerido={true} fechaNacimiento={nuevoJugador.fecha_nacimiento} anioNacimiento={nuevoJugador['año_nacimiento']} valor={nuevoJugador.categoria} onCambiar={(categoria) => setNuevoJugador((p) => ({ ...p, categoria }))} />
-                  <div className="form-group"><label>Posición de juego</label><input className="form-input" value={nuevoJugador.posicion_de_juego || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, posicion_de_juego: e.target.value }))} /></div>
-                  <div className="form-group"><label>Número de camiseta</label><input type="number" className="form-input" value={nuevoJugador.numero_camiseta || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, numero_camiseta: e.target.value }))} /></div>
-                </div>
-              </fieldset>
-
-              <fieldset className="uc-seccion">
-                <legend><Activity size={15} /> Físico y tallas</legend>
-                <div className="grid-auto-220">
-                  <div className="form-group"><label>Estatura (cm)</label><input className="form-input" value={nuevoJugador.estatura || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, estatura: e.target.value }))} inputMode="decimal" /></div>
-                  <div className="form-group"><label>Peso (kg)</label><input className="form-input" value={nuevoJugador.peso || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, peso: e.target.value }))} inputMode="decimal" /></div>
-                  <div className="form-group"><label>Mano hábil</label><input className="form-input" value={nuevoJugador.mano_habil || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, mano_habil: e.target.value }))} placeholder="Derecha / Izquierda" /></div>
-                  <div className="form-group"><label>Talla camiseta</label><input className="form-input" value={nuevoJugador.talla_camiseta || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, talla_camiseta: e.target.value }))} /></div>
-                  <div className="form-group"><label>Talla short</label><input className="form-input" value={nuevoJugador.talla_short || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, talla_short: e.target.value }))} /></div>
-                </div>
-              </fieldset>
-
-              <fieldset className="uc-seccion">
-                <legend><Stethoscope size={15} /> Salud y emergencia</legend>
-                <div className="grid-auto-220">
-                  <div className="form-group"><label>Previsión</label><input className="form-input" value={nuevoJugador.prevision || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, prevision: e.target.value }))} /></div>
-                  <div className="form-group"><label>Tipo de sangre</label><input className="form-input" value={nuevoJugador.tipo_sangre || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, tipo_sangre: e.target.value }))} /></div>
-                  <div className="form-group"><label>Alergias</label><input className="form-input" value={nuevoJugador.alergias || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, alergias: e.target.value }))} /></div>
-                  <div className="form-group"><label>Contacto de emergencia</label><input className="form-input" value={nuevoJugador.nombre_emergencia || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, nombre_emergencia: e.target.value }))} /></div>
-                  <div className="form-group"><label>Parentesco del contacto</label><input className="form-input" value={nuevoJugador.parentesco_emergencia || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, parentesco_emergencia: e.target.value }))} /></div>
-                  <div className="form-group"><label>Teléfono de emergencia</label><input type="tel" className="form-input" value={nuevoJugador.num_emergencia || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, num_emergencia: e.target.value }))} /></div>
-                </div>
-              </fieldset>
-
-              <fieldset className="uc-seccion">
-                <legend><FileText size={15} /> Club y cobro</legend>
-                <div className="grid-auto-220">
-                  <div className="form-group"><label>Fecha de ingreso al club</label><input type="date" className="form-input" value={String(nuevoJugador.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setNuevoJugador((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
-                  <div className="form-group"><label>Estado</label><select className="form-input" value={nuevoJugador.estado || 'ACTIVO'} onChange={(e) => setNuevoJugador((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option></select></div>
-                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.apoderado_socio)} onChange={(e) => setNuevoJugador((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; 2 hermanos $12.000 c/u)</label>
-                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.matricula_pagada)} onChange={(e) => setNuevoJugador((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
-                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.derechos_imagen)} onChange={(e) => setNuevoJugador((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
-                </div>
-              </fieldset>
-
-              <fieldset className="uc-seccion">
-                <legend><Image size={15} /> Foto</legend>
-                <div className="grid-auto-220">
-                  <div className="form-group"><label>Foto (URL)</label><input className="form-input" value={nuevoJugador.foto_jugador || ''} onChange={(e) => setNuevoJugador((p) => ({ ...p, foto_jugador: e.target.value }))} placeholder="Se completa al subir desde la galería" /></div>
-                  <div className="form-group"><label>Subir foto desde galería</label><input type="file" className="form-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml" onChange={(e) => subirFotoJugadorDesdeGaleria(e.target.files?.[0] || null, 'nuevo')} /></div>
-                </div>
-              </fieldset>
-              </>
-            )}
-
-            {subiendoFotoJugadorNuevo && <p className="text-caption">Subiendo foto...</p>}
-
-            {tipoNuevoUsuario === 'cuenta' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(nuevaCuenta))} disabled />
-                  Es socio (automático por perfil)
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(nuevaCuenta.socio_admin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, socio_admin: e.target.checked }))} />
-                  Admin entre socios
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(nuevaCuenta.aprobado_superadmin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, aprobado_superadmin: e.target.checked }))} />
-                  Aprobado por SuperAdmin
-                </label>
-                <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(nuevaCuenta.requiere_foto_perfil)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, requiere_foto_perfil: e.target.checked }))} />
-                  Solicitar foto de perfil en onboarding
-                </label>
-              </div>
-            )}
-
-            {tipoNuevoUsuario === 'cuenta' && (
-              <div className="card" style={{ marginTop: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
-                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><ShieldCheck size={15} /> Permisos iniciales</h4>
-                <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0, marginBottom: '10px' }}>
-                  La cuenta nueva tomará los permisos base según el rol de acceso seleccionado. Después de guardar, podrás ajustar módulos específicos en esta misma vista unificada.
-                </p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {MODULOS_ACCESO.filter((modulo) => modulo.id !== 'mesa_publica' && obtenerPermisosBasePorRol(nuevaCuenta.rol || 'apoderado')[modulo.id]).map((modulo) => (
-                    <span key={`nuevo-perm-${modulo.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 8px', borderRadius: 'var(--radius-pill)', background: 'rgba(0,122,255,0.08)', color: 'var(--azul-electrico)', fontSize: '11px', fontWeight: '800' }}>
-                      <ShieldCheck size={11} /> {modulo.etiqueta}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <button className="btn-electric" onClick={guardarNuevoUsuario} disabled={guardandoUsuario}>
-              {guardandoUsuario ? 'Guardando...' : 'Guardar nuevo usuario'}
-            </button>
-          </div>
-          )}
-        </div>
-      )}
+      </UsuariosCuentasPanel>
 
       {vistaAdmin === 'activos' && (
         <div className="fade-in">
@@ -6292,7 +5624,6 @@ function SuperAdminPanel({
         />
       )}
 
-      {avisoWsp && <AvisoWhatsappLista titulo={avisoWsp.titulo} destinatarios={avisoWsp.destinatarios} onCerrar={() => setAvisoWsp(null)} />}
 
       {fichaPersona && (
         <FichaPersonaModal
