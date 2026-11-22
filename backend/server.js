@@ -4386,6 +4386,27 @@ app.post('/api/cuentas/propia/correo/confirmar', authRateLimiter, authenticate, 
 // esta respuesta; en la BD queda con hash.
 const CODIGO_ACTIVACION_HORAS = 48;
 
+// Altas y bajas -> "Cuentas sin activar": activas que todavía no tienen clave
+// propia (sin clave, o con la inicial pendiente de cambio). Desde
+// CLAVE_INICIAL_HASTA solo pueden entrar con un código del club.
+app.get('/api/admin/cuentas/sin-activar', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.id, (COALESCE(c.password, '') = '') AS sin_clave,
+              (SELECT MAX(ca.expira_en) FROM codigos_acceso ca
+                WHERE ca.cuenta_id = c.id AND ca.proposito = 'acceso' AND ca.usado_en IS NULL AND ca.expira_en > NOW()) AS codigo_vigente_hasta
+       FROM cuentas c
+       WHERE LOWER(TRIM(COALESCE(c.estado, ''))) <> ALL($1)
+         AND (COALESCE(c.password, '') = '' OR c.forzar_clave = true)`,
+      [[...ESTADOS_PERSONA_INACTIVOS]]
+    );
+    res.json({ clave_inicial_hasta: process.env.CLAVE_INICIAL_HASTA || null, cuentas: rows });
+  } catch (err) {
+    console.error('[GET /api/admin/cuentas/sin-activar]', err);
+    res.status(500).json({ error: 'No se pudo listar las cuentas sin activar.' });
+  }
+});
+
 app.post('/api/admin/cuentas/:id/codigo-activacion', authenticate, requireModule('admin_dashboard'), async (req, res) => {
   const idCuenta = Number.parseInt(String(req.params.id || ''), 10);
   if (!Number.isFinite(idCuenta)) return res.status(400).json({ error: 'Cuenta no válida.' });

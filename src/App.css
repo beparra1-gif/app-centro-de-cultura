@@ -4301,6 +4301,8 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .rp-fila-texto small, .wsp-fila small { font-size: 12px; color: var(--texto-secundario); }
 .wsp-fila a { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; width: auto; white-space: nowrap; }
 .wsp-fila a.wsp-listo { color: #1c7a3d; }
+.cs-codigo { font-family: ui-monospace, monospace; font-size: 15px; letter-spacing: 1px; color: var(--texto-principal); }
+.cs-wsp { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; width: auto; white-space: nowrap; }
 
 .tc-barra-botones { display: flex; gap: 6px; flex-wrap: wrap; }
 .tc-nota { font-size: var(--texto-min); color: var(--texto-secundario); margin: -4px 0 10px; }

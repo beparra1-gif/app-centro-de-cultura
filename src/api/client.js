@@ -398,6 +398,9 @@ export const cuentasAPI = {
     return handleResponse(response);
   },
 
+  // Admin: cuentas activas sin clave propia (Altas y bajas -> Cuentas sin activar).
+  sinActivar: async () => handleResponse(await apiFetch(`${API_BASE_URL}/admin/cuentas/sin-activar`)),
+
   // Admin: código de activación para entregar por WhatsApp o en persona.
   generarCodigoActivacion: async (id) => {
     const response = await apiFetch(`${API_BASE_URL}/admin/cuentas/${id}/codigo-activacion`, { method: 'POST' });

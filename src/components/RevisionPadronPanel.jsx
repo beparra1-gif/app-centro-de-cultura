@@ -7,11 +7,13 @@ import { cambioDeEstado, estaActivo } from '../utils/estadoActivo';
 import { hoyLocalISO } from '../utils/fechas';
 import { leerPrimeraHojaXlsx } from '../utils/leerXlsx';
 import { planRevisionPadron, resumenAltasBajas } from '../utils/revisionPadron';
+import CuentasSinActivar from './CuentasSinActivar';
 
 // Usuarios y Cuentas → "Altas y bajas": mantener el padrón al día.
 //  1. Subir el Excel exportado con "¿Sigue?" marcado y aplicar los cambios.
 //  2. Deportistas que no vienen hace N semanas (según pasar lista).
 //  3. Informe de ingresos, bajas y reactivaciones de los últimos 12 meses.
+//  (Arriba: cuentas sin activar, para repartir códigos del club.)
 
 const nombreDe = (p) => `${p.nombres || ''} ${p.apellido_paterno || ''}`.trim() || p.rut_jugador || p.rut;
 const fechaCl = (v) => {
@@ -140,6 +142,8 @@ export default function RevisionPadronPanel({ jugadores = [], cuentas = [], onRe
 
   return (
     <div className="rp-panel">
+      <CuentasSinActivar jugadores={jugadores} cuentas={cuentas} />
+
       <section className="card">
         <h4 className="form-subtitle"><FileUp size={16} /> Subir el Excel revisado</h4>
         <p className="fp-ayuda">

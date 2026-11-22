@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, MessageCircle, X } from 'lucide-react';
 import useModalAccesible from '../utils/useModalAccesible';
+import { telefonoParaWhatsApp } from '../utils/codigoActivacion';
 
 // Usuarios y Cuentas → "WhatsApp": mensaje a los apoderados (o cuentas) del
 // listado filtrado. wa.me abre UNA conversación por toque (no hay envío
@@ -9,19 +10,11 @@ import useModalAccesible from '../utils/useModalAccesible';
 // tocando "Abrir" uno por uno; el check solo recuerda a quién ya se abrió.
 // {nombre} se reemplaza por el primer nombre de cada destinatario.
 
-const numeroWsp = (telefono = '') => {
-  const d = String(telefono || '').replace(/\D/g, '');
-  if (d.startsWith('56') && d.length === 11) return d;
-  if (d.length === 9 && d.startsWith('9')) return `56${d}`;
-  if (d.length === 8) return `569${d}`;
-  return d.length >= 10 ? d : '';
-};
-
 export default function AvisoWhatsappLista({ titulo, destinatarios = [], onCerrar }) {
   useModalAccesible(true, onCerrar);
   const [mensaje, setMensaje] = useState('Hola {nombre}, te escribimos del Club Centro de Cultura Física: ');
   const [abiertos, setAbiertos] = useState(() => new Set());
-  const conNumero = destinatarios.filter((d) => numeroWsp(d.telefono));
+  const conNumero = destinatarios.filter((d) => telefonoParaWhatsApp(d.telefono));
   const sinNumero = destinatarios.length - conNumero.length;
 
   return createPortal(
@@ -53,7 +46,7 @@ export default function AvisoWhatsappLista({ titulo, destinatarios = [], onCerra
                   </div>
                   <a
                     className={`btn-secondary tc-btn ${listo ? 'wsp-listo' : ''}`}
-                    href={`https://wa.me/${numeroWsp(d.telefono)}?text=${encodeURIComponent(texto)}`}
+                    href={`https://wa.me/${telefonoParaWhatsApp(d.telefono)}?text=${encodeURIComponent(texto)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => setAbiertos((prev) => new Set(prev).add(d.clave))}
