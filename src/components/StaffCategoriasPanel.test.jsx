@@ -31,6 +31,7 @@ describe('StaffCategoriasPanel', () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith(3, {
       categorias_asignadas: ['MASCULINA|SUB-13', 'FEMENINA|SUB-13', 'FEMENINA|SUB-15', 'FEMENINA|SUB-17'],
       ramas_asignadas: [],
+      nivel_entrenador: '',
     }));
     update.mockRestore();
   });
