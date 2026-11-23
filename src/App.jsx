@@ -521,6 +521,7 @@ function App() {
       urgencia: c.urgencia,
       solicita_asistencia: c.solicita_asistencia,
       reacciones: c.reacciones || {},
+      mi_reaccion: c.mi_reaccion || null,
       asistencias: c.asistencias || [],
       citacion_id: c.citacion_id || null,
       convocatoria_ruts: c.convocatoria_ruts || [],

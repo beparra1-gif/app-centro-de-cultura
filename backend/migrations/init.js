@@ -55,6 +55,17 @@ const createSchema = async () => {
     `);
     console.log('✅ Tabla comunicaciones creada');
 
+    // Tabla: reacciones del Muro (una por persona y publicación)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS comunicacion_reacciones (
+        comunicacion_id INT NOT NULL REFERENCES comunicaciones(id) ON DELETE CASCADE,
+        rut_norm VARCHAR(20) NOT NULL,
+        tipo VARCHAR(20) NOT NULL,
+        creado_en TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (comunicacion_id, rut_norm)
+      )
+    `);
+
     // Tabla: comentarios
     await pool.query(`
       CREATE TABLE IF NOT EXISTS comentarios (

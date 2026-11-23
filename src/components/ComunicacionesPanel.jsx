@@ -139,15 +139,24 @@ function ComunicacionesPanel({
     return { bg: 'rgba(15,23,42,0.07)', color: 'var(--texto-secundario)' };
   };
 
-  const addReaccion = (comId, reaccionId) => {
-    setComunicaciones(comunicaciones.map(c => {
-      if (c.id === comId) {
-        const nuevasReacciones = { ...c.reacciones };
-        nuevasReacciones[reaccionId] = (nuevasReacciones[reaccionId] || 0) + 1;
-        return { ...c, reacciones: nuevasReacciones };
-      }
-      return c;
-    }));
+  // Una reacción por persona y publicación (la guarda el servidor). Mientras
+  // se guarda, los botones de esa publicación quedan bloqueados.
+  const [reaccionando, setReaccionando] = useState(null);
+  const addReaccion = async (comId, reaccionId) => {
+    if (reaccionando) return;
+    if (!usuarioAutenticado?.rut || rolUsuario === 'visita') {
+      showToast({ message: 'Inicia sesión para reaccionar.', type: 'info' });
+      return;
+    }
+    setReaccionando(comId);
+    try {
+      const { reacciones, mi_reaccion: miReaccion } = await api.comunicacionesAPI.reaccionar(comId, reaccionId);
+      setComunicaciones((prev) => (prev || []).map((c) => (c.id === comId ? { ...c, reacciones, mi_reaccion: miReaccion } : c)));
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo guardar la reacción.', type: 'error' });
+    } finally {
+      setReaccionando(null);
+    }
   };
 
   // justificacionManual: viene del borrador local (justificacionesPendientes)
@@ -640,12 +649,15 @@ function ComunicacionesPanel({
               <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid var(--borde-suave)' }}>
                 {reaccionesDisponibles.map(reaccion => {
                   const IconComponent = reaccion.icon;
-                  const tieneReaccion = Object.keys(c.reacciones || {}).includes(reaccion.id);
+                  const tieneReaccion = c.mi_reaccion === reaccion.id;
                   const contador = (c.reacciones || {})[reaccion.id] || 0;
                   return (
                     <button 
                       key={reaccion.id} 
-                      onClick={() => addReaccion(c.id, reaccion.id)} 
+                      onClick={() => addReaccion(c.id, reaccion.id)}
+                      disabled={reaccionando === c.id}
+                      aria-pressed={tieneReaccion}
+                      aria-label={`${reaccion.nombre}${contador > 0 ? ` (${contador})` : ''}`}
                       style={{ 
                         padding: '8px 12px', 
                         borderRadius: 'var(--radius-sm)', 

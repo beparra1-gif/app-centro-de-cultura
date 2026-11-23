@@ -124,6 +124,16 @@ export const comunicacionesAPI = {
     return handleResponse(response);
   },
 
+  // Una reacción por persona: repetir la misma la quita, otra la reemplaza.
+  reaccionar: async (id, tipo) => {
+    const response = await apiFetch(`${API_BASE_URL}/comunicaciones/${id}/reaccion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo }),
+    });
+    return handleResponse(response);
+  },
+
   // Crear
   create: async (data) => {
     const response = await apiFetch(`${API_BASE_URL}/comunicaciones`, {

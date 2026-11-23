@@ -4639,18 +4639,61 @@ app.get('/api/comunicaciones', authenticateOpcional, async (req, res) => {
     const result = await pool.query(`
       SELECT
         id, titulo, cuerpo_texto, tipo, rama, categoria, urgencia,
-        solicita_asistencia, reacciones, asistencias,
+        solicita_asistencia, asistencias,
+        COALESCE((SELECT jsonb_object_agg(x.tipo, x.n) FROM (
+          SELECT r.tipo, COUNT(*)::int AS n FROM comunicacion_reacciones r WHERE r.comunicacion_id = c.id GROUP BY r.tipo
+        ) x), '{}'::jsonb) AS reacciones,
+        (SELECT r.tipo FROM comunicacion_reacciones r WHERE r.comunicacion_id = c.id AND r.rut_norm = $1) AS mi_reaccion,
         citacion_id, convocatoria_ruts, convocatoria_alertas_morosidad,
         responsable_nombre, responsable_rol, categorias_objetivo,
         creado_por, academia_video_id, activo,
         created_at as fecha
-      FROM comunicaciones
+      FROM comunicaciones c
       ORDER BY created_at DESC
-    `);
+    `, [req.actor ? normalizarRutParaComparar(req.actor.rut) : '']);
     res.json(await filtrarComunicacionesParaActor(result.rows, req.actor));
   } catch (err) {
     console.error('Error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+const TIPOS_REACCION = new Set(['love', 'great', 'sad']);
+const reaccionRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas reacciones seguidas. Espera un momento.' },
+});
+
+// Reaccionar: misma reacción otra vez la quita; otra distinta la reemplaza.
+app.post('/api/comunicaciones/:id/reaccion', reaccionRateLimiter, authenticate, async (req, res) => {
+  const tipo = String(req.body?.tipo || '');
+  const id = Number(req.params.id);
+  if (!TIPOS_REACCION.has(tipo) || !Number.isInteger(id)) return res.status(400).json({ error: 'Reacción inválida.' });
+  const rut = normalizarRutParaComparar(req.actor.rut);
+  if (!rut) return res.status(403).json({ error: 'Inicia sesión para reaccionar.' });
+  try {
+    const existe = (await pool.query('SELECT 1 FROM comunicaciones WHERE id = $1', [id])).rowCount;
+    if (!existe) return res.status(404).json({ error: 'La publicación ya no existe.' });
+    const quitada = await pool.query(
+      'DELETE FROM comunicacion_reacciones WHERE comunicacion_id = $1 AND rut_norm = $2 AND tipo = $3', [id, rut, tipo]
+    );
+    if (!quitada.rowCount) {
+      await pool.query(
+        `INSERT INTO comunicacion_reacciones (comunicacion_id, rut_norm, tipo) VALUES ($1, $2, $3)
+         ON CONFLICT (comunicacion_id, rut_norm) DO UPDATE SET tipo = EXCLUDED.tipo, creado_en = NOW()`,
+        [id, rut, tipo]
+      );
+    }
+    const { rows } = await pool.query(
+      'SELECT tipo, COUNT(*)::int AS n FROM comunicacion_reacciones WHERE comunicacion_id = $1 GROUP BY tipo', [id]
+    );
+    res.json({ reacciones: Object.fromEntries(rows.map((r) => [r.tipo, r.n])), mi_reaccion: quitada.rowCount ? null : tipo });
+  } catch (err) {
+    console.error('[POST /api/comunicaciones/:id/reaccion]', err);
+    res.status(500).json({ error: 'No se pudo guardar la reacción.' });
   }
 });
 
@@ -8544,6 +8587,21 @@ const obtenerVapid = () => {
     return { publicKey };
   })().catch((e) => { vapidListo = null; throw e; });
   return vapidListo;
+};
+
+// Reacciones del Muro: una por persona y publicación (la clave primaria lo
+// garantiza aunque se hagan muchos clics). La columna comunicaciones.reacciones
+// quedó en desuso: la app nunca la guardaba.
+const ensureComunicacionReaccionesTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS comunicacion_reacciones (
+      comunicacion_id INT NOT NULL REFERENCES comunicaciones(id) ON DELETE CASCADE,
+      rut_norm VARCHAR(20) NOT NULL,
+      tipo VARCHAR(20) NOT NULL,
+      creado_en TIMESTAMP DEFAULT NOW(),
+      PRIMARY KEY (comunicacion_id, rut_norm)
+    )
+  `);
 };
 
 const ensurePushSuscripcionesTable = async () => {
@@ -12979,6 +13037,10 @@ app.listen(PORT, () => {
 
   ensureCitacionesTables().catch((error) => {
     console.error('❌ Error verificando tablas de citaciones:', error.message);
+  });
+
+  ensureComunicacionReaccionesTable().catch((error) => {
+    console.error('❌ Error verificando tabla comunicacion_reacciones:', error.message);
   });
 
   ensurePushSuscripcionesTable().catch((error) => {
