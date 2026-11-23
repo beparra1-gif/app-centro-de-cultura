@@ -45,7 +45,7 @@ export const calcularCuotaFinal = (valorMensualidad, jugador = {}) => {
 //    dosHijosSocio: hermanos hijos de socio, c/u (sin tope: 3 hijos = 3 × ese
 //    valor). La clave conserva su nombre por el historial ya guardado.
 export const TARIFAS_POR_DEFECTO = [
-  { desde: '2026-01', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 15000 },
+  { desde: '2026-01', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 12000 },
 ];
 const CLAVES_TARIFA = ['uno', 'hermanos', 'hijoSocio', 'dosHijosSocio'];
 let historialTarifas = TARIFAS_POR_DEFECTO;

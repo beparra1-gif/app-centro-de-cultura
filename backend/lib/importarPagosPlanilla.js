@@ -137,7 +137,7 @@ const parsearGidsPlanilla = (html = '') => {
 // Tarifas del club por deportista (igual que src/utils/beca.js):
 // 1 pupilo $30.000 · hermanos $25.000 c/u · hijo de socio $15.000 ·
 // 2 hijos de socio $12.000 c/u (desde el 3ro, tope familiar $24.000).
-const TARIFAS_POR_DEFECTO = [{ desde: '2026-01', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 15000 }];
+const TARIFAS_POR_DEFECTO = [{ desde: '2026-01', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 12000 }];
 // Tarifa vigente en un mes (historial configurable en Tesorería → Tarifas).
 const tarifaDelMes = (historial, mes) => {
   const lista = Array.isArray(historial) && historial.length ? [...historial].sort((a, b) => String(a.desde).localeCompare(String(b.desde))) : TARIFAS_POR_DEFECTO;
