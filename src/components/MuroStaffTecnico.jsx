@@ -11,6 +11,22 @@ import { FotoPersona } from './MuroCumpleanos';
 // Se carga al abrir, no en cada visita al Muro.
 
 const titulo = (t = '') => String(t).charAt(0).toUpperCase() + String(t).slice(1).toLowerCase();
+const corta = (c) => String(c).replace(/\s*\/\s*SUB-/i, '/'); // "SUB-17 / SUB-18" → "SUB-17/18"
+
+// Pares "RAMA|CATEGORÍA" agrupados en una línea por rama (antes era una
+// etiqueta por categoría y la ficha se llenaba de texto).
+const categoriasPorRama = (p = {}) => {
+  if (!p.categorias?.length) return [[p.ramas?.length ? p.ramas.map(titulo).join(' y ') : 'Todas las ramas', ['Todas las categorías']]];
+  const grupos = new Map();
+  p.categorias.forEach((c) => {
+    const [rama, cat] = c.includes('|') ? c.split('|') : [p.ramas?.length ? p.ramas.map(titulo).join(' y ') : 'Ambas ramas', c];
+    const clave = rama.includes(' ') ? rama : titulo(rama);
+    grupos.set(clave, [...(grupos.get(clave) || []), cat]);
+  });
+  return [...grupos.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, 'es'))
+    .map(([rama, cats]) => [rama, cats.sort(ordenarCategorias).map(corta)]);
+};
 
 function VentanaStaff({ onCerrar }) {
   useModalAccesible(true, onCerrar);
@@ -42,19 +58,19 @@ function VentanaStaff({ onCerrar }) {
           {staff?.length === 0 && <p className="tc-vacio">Todavía no hay entrenadores registrados.</p>}
           <div className="ms-grilla">
             {(staff || []).map((p) => (
-              <article key={p.id} className="ms-persona">
-                <FotoPersona foto={p.foto} nombre={p.nombre} size={64} />
-                <strong>{p.nombre}</strong>
-                {p.ramas?.length > 0 && <small className="ms-rama">{p.ramas.map(titulo).join(' y ')}</small>}
-                <div className="ms-categorias">
-                  {p.categorias.length
-                    // Pares "RAMA|CATEGORÍA" → "SUB-13 Femenina".
-                    ? [...p.categorias].sort((a, b) => ordenarCategorias(a.split('|').pop(), b.split('|').pop())).map((c) => {
-                      const [rama, cat] = c.includes('|') ? c.split('|') : ['', c];
-                      return <span key={c} className="tc-perfil">{cat}{rama ? ` ${titulo(rama)}` : ''}</span>;
-                    })
-                    : <span className="tc-perfil">Todas las categorías</span>}
-                </div>
+              <article key={p.id} className="ms-ficha">
+                <div className="ms-ficha-banda" aria-hidden="true" />
+                <FotoPersona foto={p.foto} nombre={p.nombre} size={96} />
+                <strong className="ms-ficha-nombre">{p.nombre}</strong>
+                <span className="ms-ficha-nivel">{p.nivel || 'Staff técnico'}</span>
+                <dl className="ms-ficha-categorias">
+                  {categoriasPorRama(p).map(([rama, cats]) => (
+                    <div key={rama}>
+                      <dt>{rama}</dt>
+                      <dd>{cats.join(' · ')}</dd>
+                    </div>
+                  ))}
+                </dl>
               </article>
             ))}
           </div>

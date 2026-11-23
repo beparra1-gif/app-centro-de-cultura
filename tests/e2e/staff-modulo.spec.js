@@ -51,3 +51,29 @@ test('un admin sin "Gestión de Staff" no ve la pestaña', async ({ page }) => {
   await expect(page.getByRole('button', { name: /^Cuentas/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Staff', exact: true })).toHaveCount(0);
 });
+
+test('Muro: ficha del staff técnico con nivel y categorías agrupadas por rama', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await iniciarSesion(page, CUENTAS.super_admin.rut);
+  await page.getByRole('button', { name: 'Usuarios y Cuentas' }).first().click();
+  await page.getByRole('button', { name: 'Staff', exact: true }).click();
+  await page.getByRole('button', { name: /E2E Staff/ }).click();
+  const ventana = page.getByRole('dialog', { name: /E2E Staff/ });
+  await ventana.getByLabel('Nivel de entrenador oficial').fill('Entrenador Nivel 2 FEB');
+  await ventana.getByLabel('SUB-13 Masculina', { exact: true }).check();
+  await ventana.getByLabel('SUB-17 / SUB-18 Femenina', { exact: true }).check();
+  await ventana.getByRole('button', { name: 'Guardar' }).click();
+  await expect(ventana).toBeHidden();
+  const { rows: [c] } = await pool.query('SELECT nivel_entrenador FROM cuentas WHERE rut = $1', [CUENTAS.staff.rut]);
+  expect(c.nivel_entrenador).toBe('Entrenador Nivel 2 FEB');
+
+  await page.locator('.nav-item', { hasText: 'Muro' }).first().click();
+  await page.getByRole('button', { name: /CONOCE A NUESTRO STAFF/ }).click();
+  const ficha = page.locator('.ms-ficha', { hasText: 'E2E' }).filter({ hasText: 'Entrenador Nivel 2 FEB' });
+  await expect(ficha).toBeVisible({ timeout: 15000 });
+  await expect(ficha).toContainText('Femenina');
+  await expect(ficha).toContainText('SUB-17/18');
+  await expect(ficha).toContainText('Masculina');
+  await foto(page, '5-muro-staff');
+  await pool.query("UPDATE cuentas SET categorias_asignadas = '[]', ramas_asignadas = '[]', nivel_entrenador = NULL WHERE rut = $1", [CUENTAS.staff.rut]);
+});

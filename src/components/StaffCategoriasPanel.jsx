@@ -37,14 +37,15 @@ function VentanaAsignacion({ cuenta, ramas, categoriasPorRama, onCerrar, onGuard
   useModalAccesible(true, onCerrar);
   const iniciales = paresDe(cuenta, ramas, [...new Set(Object.values(categoriasPorRama).flat())]);
   const [pares, setPares] = useState(iniciales);
+  const [nivel, setNivel] = useState(cuenta.nivel_entrenador || '');
   const [guardando, setGuardando] = useState(false);
   const tiene = (p) => pares.some((x) => mismoTexto(x, p));
   const alternar = (p) => setPares((prev) => (prev.some((x) => mismoTexto(x, p)) ? prev.filter((x) => !mismoTexto(x, p)) : [...prev, p]));
-  const cambiado = JSON.stringify([...pares].sort()) !== JSON.stringify([...iniciales].sort());
+  const cambiado = JSON.stringify([...pares].sort()) !== JSON.stringify([...iniciales].sort()) || nivel.trim() !== (cuenta.nivel_entrenador || '');
 
   const guardar = async () => {
     setGuardando(true);
-    const ok = await onGuardar(cuenta, pares);
+    const ok = await onGuardar(cuenta, pares, nivel.trim());
     setGuardando(false);
     if (ok) onCerrar();
   };
@@ -61,6 +62,10 @@ function VentanaAsignacion({ cuenta, ramas, categoriasPorRama, onCerrar, onGuard
           <button type="button" className="fp-cerrar" onClick={onCerrar} aria-label="Cerrar"><X size={20} /></button>
         </header>
         <div className="fp-cuerpo">
+          <div className="form-group">
+            <label htmlFor="sc-nivel">Nivel de entrenador oficial</label>
+            <input id="sc-nivel" className="form-input" maxLength={80} value={nivel} onChange={(e) => setNivel(e.target.value)} placeholder="Ej: Entrenador Nivel 2 FEB" />
+          </div>
           <label className="fc-opcion fc-todas">
             <input type="checkbox" checked={pares.length === 0} onChange={() => setPares([])} /> Todas las ramas y categorías (sin restricción)
           </label>
@@ -110,7 +115,7 @@ export default function StaffCategoriasPanel({ cuentas = [], jugadores = [], onR
   const todasCategorias = useMemo(() => [...new Set(Object.values(categoriasPorRama).flat())], [categoriasPorRama]);
   const paresCuenta = (c) => paresDe(c, ramas, todasCategorias);
 
-  const guardar = async (cuenta, pares) => {
+  const guardar = async (cuenta, pares, nivel) => {
     if (pares.length === 0 && lista(cuenta.categorias_asignadas).length) {
       const ok = await confirmAction({
         title: 'Sin asignación',
@@ -121,7 +126,7 @@ export default function StaffCategoriasPanel({ cuentas = [], jugadores = [], onR
     }
     try {
       // Los pares ya llevan la rama: ramas_asignadas (formato anterior) se limpia.
-      await api.cuentasAPI.update(cuenta.id, { categorias_asignadas: pares, ramas_asignadas: [] });
+      await api.cuentasAPI.update(cuenta.id, { categorias_asignadas: pares, ramas_asignadas: [], ...(typeof nivel === 'string' ? { nivel_entrenador: nivel } : {}) });
       await onRecargar?.();
       showToast({ message: `${nombreDe(cuenta)}: ${resumenPares(pares)}.`, type: 'success' });
       return true;
@@ -156,7 +161,7 @@ export default function StaffCategoriasPanel({ cuentas = [], jugadores = [], onR
           {staff.map((c) => (
             <button key={c.id} type="button" className="sc-fila" onClick={() => setAbierto(c.id)}>
               <span className="sc-fila-texto">
-                <strong>{nombreDe(c)}</strong>
+                <strong>{nombreDe(c)}{c.nivel_entrenador ? ` · ${c.nivel_entrenador}` : ''}</strong>
                 <small>{resumenPares(paresCuenta(c))}</small>
               </span>
               <span className="sc-fila-accion"><Pencil size={14} aria-hidden="true" /> Asignar</span>

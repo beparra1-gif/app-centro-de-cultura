@@ -1896,6 +1896,8 @@ const ensureCuentasExtendedColumns = async () => {
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS categorias_asignadas JSONB DEFAULT '[]'::jsonb`,
     // Ramas a cargo del staff ([] = todas): se combina con categorias_asignadas.
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS ramas_asignadas JSONB DEFAULT '[]'::jsonb`,
+    // Nivel de entrenador oficial (texto libre, ej. "Nivel 2 FEB"): ficha del Muro.
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS nivel_entrenador TEXT`,
   ];
 
   for (const statement of ddl) {
@@ -3480,7 +3482,8 @@ app.get('/api/staff-tecnico', authenticate, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT id, nombres, apellido_paterno, NULLIF(TRIM(foto_perfil_url), '') AS foto,
               COALESCE(categorias_asignadas, '[]'::jsonb) AS categorias,
-              COALESCE(ramas_asignadas, '[]'::jsonb) AS ramas
+              COALESCE(ramas_asignadas, '[]'::jsonb) AS ramas,
+              NULLIF(TRIM(nivel_entrenador), '') AS nivel
        FROM cuentas
        WHERE LOWER(TRIM(COALESCE(rol, ''))) IN ('staff', 'entrenador', 'profesor')
          AND LOWER(TRIM(COALESCE(estado, ''))) <> ALL($1)
@@ -3493,6 +3496,7 @@ app.get('/api/staff-tecnico', authenticate, async (req, res) => {
       foto: r.foto,
       categorias: Array.isArray(r.categorias) ? r.categorias : [],
       ramas: Array.isArray(r.ramas) ? r.ramas : [],
+      nivel: r.nivel,
     })));
   } catch (err) {
     console.error('[GET /api/staff-tecnico]', err.message);
@@ -5315,7 +5319,7 @@ const CAMPOS_CUENTA_SOLO_ADMIN = [
   // Ningún flujo de autoservicio los edita (el onboarding solo manda nombre,
   // teléfono, dirección y foto). password tampoco: el dueño cambia su clave
   // por /api/auth/change-password, que exige la clave actual.
-  'rut', 'correo', 'password', 'motivo_baja', 'categorias_asignadas', 'ramas_asignadas',
+  'rut', 'correo', 'password', 'motivo_baja', 'categorias_asignadas', 'ramas_asignadas', 'nivel_entrenador',
 ];
 
 app.put(
@@ -5324,7 +5328,7 @@ app.put(
   requireOwnerIdOrModule('id', 'admin_dashboard'),
   stripFieldsUnlessModule(CAMPOS_CUENTA_SOLO_ADMIN, 'admin_dashboard'),
   // Las categorías del staff además requieren el permiso Gestión de Staff.
-  stripFieldsUnlessModule(['categorias_asignadas', 'ramas_asignadas'], 'gestion_staff'),
+  stripFieldsUnlessModule(['categorias_asignadas', 'ramas_asignadas', 'nivel_entrenador'], 'gestion_staff'),
   async (req, res) => {
   const {
     correo,
@@ -5475,6 +5479,11 @@ app.put(
       const ramas = req.body.ramas_asignadas.map((r) => String(r || '').trim().toUpperCase()).filter(Boolean).slice(0, 10);
       await pool.query('UPDATE cuentas SET ramas_asignadas = $1::jsonb WHERE id = $2', [JSON.stringify(ramas), cuenta.id]);
       cuenta.ramas_asignadas = ramas;
+    }
+    if (typeof req.body?.nivel_entrenador === 'string') {
+      const nivel = req.body.nivel_entrenador.trim().slice(0, 80) || null;
+      await pool.query('UPDATE cuentas SET nivel_entrenador = $1 WHERE id = $2', [nivel, cuenta.id]);
+      cuenta.nivel_entrenador = nivel;
     }
     res.json({
       ...omitPassword(cuenta),

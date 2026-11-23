@@ -4347,6 +4347,16 @@ button.sc-chip { border: 0; padding: 6px 12px; cursor: pointer; color: var(--tex
 .ms-persona { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 10px; border-radius: var(--radius-lg); background: rgba(10, 132, 255, 0.06); text-align: center; }
 .ms-persona strong { font-size: 14px; }
 .ms-categorias { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.ms-grilla { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.ms-ficha { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 14px 16px; border-radius: var(--radius-lg); background: var(--blanco-tarjeta); border: 1px solid var(--borde-suave); box-shadow: 0 6px 18px rgba(11, 29, 58, 0.08); overflow: hidden; text-align: center; }
+.ms-ficha-banda { align-self: stretch; height: 56px; margin: 0 -14px -48px; background: linear-gradient(135deg, #0b1d3a, var(--azul-electrico)); }
+.ms-ficha .mc-foto { position: relative; border: 4px solid var(--blanco-tarjeta); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
+.ms-ficha-nombre { margin-top: 4px; font-size: 16px; line-height: 1.2; }
+.ms-ficha-nivel { padding: 3px 12px; border-radius: var(--radius-pill); background: rgba(10, 108, 240, 0.1); color: var(--azul-electrico); font-size: 12px; font-weight: 800; }
+.ms-ficha-categorias { margin: 6px 0 0; width: 100%; display: grid; gap: 6px; text-align: left; }
+.ms-ficha-categorias > div { padding: 6px 10px; border-radius: var(--radius-md); background: rgba(10, 108, 240, 0.05); }
+.ms-ficha-categorias dt { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.4px; color: var(--texto-secundario); }
+.ms-ficha-categorias dd { margin: 2px 0 0; font-size: 13px; font-weight: 700; color: var(--texto-principal); }
 
 .tc-barra-botones { display: flex; gap: 6px; flex-wrap: wrap; }
 .tc-nota { font-size: var(--texto-min); color: var(--texto-secundario); margin: -4px 0 10px; }
