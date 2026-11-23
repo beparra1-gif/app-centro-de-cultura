@@ -932,7 +932,8 @@ function SuperAdminPanel({
   // desincronizarse.
   const construirCambioPerfilUnico = (nuevoPerfilBase, mantenerApoderado) => {
     const valorFinal = (nuevoPerfilBase === 'socio' && mantenerApoderado) ? 'socio_apoderado' : nuevoPerfilBase;
-    return { rol: valorFinal, perfil_principal: valorFinal };
+    // Elegir un perfil de socio lo deja como socio activo; los demás perfiles no lo tocan.
+    return { rol: valorFinal, perfil_principal: valorFinal, ...(['socio', 'socio_apoderado', 'directiva'].includes(valorFinal) ? { es_socio: true } : {}) };
   };
 
   const calcularFechaCorteMesAnterior = () => {
@@ -946,9 +947,12 @@ function SuperAdminPanel({
     return Math.round(base * 0.3);
   };
 
+  // es_socio manda (el admin puede quitarlo a cualquier perfil); el perfil solo
+  // decide cuando la cuenta todavía no tiene el dato (p. ej. una cuenta nueva).
   const esCuentaCatalogadaSocio = (cuenta = {}) => {
+    if (typeof cuenta.es_socio === 'boolean') return cuenta.es_socio;
     const perfil = normalizarRol(cuenta.perfil_principal || cuenta.rol || '');
-    return ['socio', 'socio_apoderado', 'directiva'].includes(perfil) || Boolean(cuenta.es_socio);
+    return ['socio', 'socio_apoderado', 'directiva'].includes(perfil);
   };
 
   // OJO: esta función NO debe calcular ni persistir monto_mensual_base — antes
@@ -3057,8 +3061,8 @@ function SuperAdminPanel({
             {tipoNuevoUsuario === 'cuenta' && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '12px' }}>
                 <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(nuevaCuenta))} disabled />
-                  Es socio (automático por perfil)
+                  <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(nuevaCuenta))} onChange={(e) => setNuevaCuenta((p) => ({ ...p, es_socio: e.target.checked }))} />
+                  Socio activo del club (paga cuota de socio)
                 </label>
                 <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(nuevaCuenta.socio_admin)} onChange={(e) => setNuevaCuenta((p) => ({ ...p, socio_admin: e.target.checked }))} />
@@ -3229,8 +3233,8 @@ function SuperAdminPanel({
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', marginBottom: '10px' }}>
                 <label className="checkbox-label-row">
-                  <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(cuentaAdminEdit))} disabled />
-                  Es socio (automático por perfil)
+                  <input type="checkbox" checked={Boolean(esCuentaCatalogadaSocio(cuentaAdminEdit))} onChange={(e) => actualizarCuentaAdminEdit({ es_socio: e.target.checked })} />
+                  Socio activo del club (paga cuota de socio)
                 </label>
                 <label className="checkbox-label-row">
                   <input type="checkbox" checked={Boolean(cuentaAdminEdit.socio_admin)} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, socio_admin: e.target.checked }))} />

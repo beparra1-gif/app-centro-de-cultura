@@ -275,7 +275,8 @@ function PerfilTesoreriaPanel({
   // antes esta comparación solo miraba la forma con guión bajo, así que una
   // cuenta guardada con guión no disparaba el reparto de cuota socio+hijos.
   const perfilPrincipal = normalizarRol(cuentaActual?.perfil_principal || cuentaActual?.rol || '');
-  const esSocio = Boolean(cuentaActual?.es_socio) || ['socio', 'socio_apoderado', 'directiva'].includes(perfilPrincipal);
+  // es_socio manda (el admin puede quitarlo); el perfil solo si la cuenta no trae el dato.
+  const esSocio = typeof cuentaActual?.es_socio === 'boolean' ? cuentaActual.es_socio : ['socio', 'socio_apoderado', 'directiva'].includes(perfilPrincipal);
 
   // Sin pupilo (socio revisado directo, sin deportistas) la deuda no vive en
   // morososAdmin (deuda de jugadores) sino en sociosMorosos (deuda de cuota
