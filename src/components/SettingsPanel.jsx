@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, CheckCircle, KeyRound, LogOut, RefreshCw, Save, ShieldCheck } from 'lucide-react';
+import { Check, CheckCircle, KeyRound, LogOut, RefreshCw, Save, ShieldCheck, Type } from 'lucide-react';
 import * as api from '../api/client';
 import PushPreferenciasPanel from './PushPreferenciasPanel';
 import { MODULOS_ACCESO, normalizarRol, obtenerPermisosBasePorRol } from '../security/accessControl';
@@ -228,7 +228,7 @@ function SettingsPanel({
 
   return (
     <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', borderRadius: 'var(--radius-lg)', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
-      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '900' }}>Mi Perfil</h4>
+      <h4 style={{ margin: 0, fontSize: '17px', fontWeight: '900' }}>Mi Perfil</h4>
       {/* Antes iba bajo el logo del header; acá confirma con qué cuenta se opera sin recargar la vista inicial. */}
       {nombreUsuario && <span style={{ margin: '-4px 0 6px', fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: 700 }}>{nombreUsuario}</span>}
       {rutUsuario && (
@@ -248,32 +248,27 @@ function SettingsPanel({
         </form>
       )}
       {typeof setModoSimple === 'function' && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 'var(--radius-md)', background: 'var(--fondo-card-sutil)', border: '1px solid var(--borde-suave)' }}>
-          <div>
-            <strong style={{ fontSize: '12px', display: 'block' }}>Modo Fácil</strong>
-            <span style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>Letra grande, 3 botones: ficha, comprobante, noticias.</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              const activando = !modoSimple;
-              setModoSimple(activando);
-              // Al activarlo, cerramos este panel para que se vea de
-              // inmediato el Modo Fácil, en vez de quedar tapado detrás.
-              if (activando && typeof onCerrarConfiguracion === 'function') onCerrarConfiguracion();
-            }}
-            style={{
-              flexShrink: 0, width: '46px', height: '26px', borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer',
-              background: modoSimple ? 'var(--verde-victoria)' : 'rgba(120,120,128,0.3)', position: 'relative', transition: 'background 0.2s',
-            }}
-            aria-label="Activar o desactivar Modo Fácil"
-          >
-            <span style={{
-              position: 'absolute', top: '3px', left: modoSimple ? '23px' : '3px', width: '20px', height: '20px',
-              borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-            }} />
-          </button>
-        </div>
+        // Misma forma que las demás opciones; toda la fila es el interruptor.
+        <button
+          type="button"
+          role="switch"
+          aria-checked={Boolean(modoSimple)}
+          className="settings-accion"
+          onClick={() => {
+            const activando = !modoSimple;
+            setModoSimple(activando);
+            // Al activarlo, cerramos este panel para que se vea de
+            // inmediato el Modo Fácil, en vez de quedar tapado detrás.
+            if (activando && typeof onCerrarConfiguracion === 'function') onCerrarConfiguracion();
+          }}
+        >
+          <Type size={18} aria-hidden="true" />
+          <span style={{ flex: 1 }}>
+            <strong>Modo Fácil</strong>
+            <small>Letra grande, 3 botones: ficha, comprobante, noticias</small>
+          </span>
+          <span aria-hidden="true" className={`settings-switch ${modoSimple ? 'on' : ''}`}><span /></span>
+        </button>
       )}
       {esAdmin && typeof onAbrirPermisos === 'function' && (
         <>

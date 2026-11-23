@@ -380,7 +380,8 @@ button,
   padding: 15px; 
   overflow-y: auto; 
   scroll-behavior: smooth; 
-  padding-bottom: 110px; /* Evita que el Bottom Nav tape el contenido */
+  /* Menú flotante (~92px con su margen) + aire + zona segura del iPhone: el último elemento nunca queda debajo. */
+  padding-bottom: calc(128px + env(safe-area-inset-bottom, 0px));
   transition: opacity 0.28s ease, transform 0.28s ease;
 }
 .ios-main.screen-loading { opacity: 0.55; transform: translateY(4px); }
@@ -573,9 +574,11 @@ button,
 .nav-item:hover { color: var(--texto-principal); }
 .nav-item.active { 
   color: var(--azul-electrico); font-weight: 900; 
-  transform: translateY(-5px) scale(1.10);
   filter: drop-shadow(0 4px 8px rgba(0,122,255,0.28));
 }
+/* Solo el ícono se destaca: antes se movía todo el botón y la etiqueta activa quedaba más arriba que las demás. */
+.nav-item svg { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.nav-item.active svg { transform: scale(1.12); }
 
 /* ==========================================
    5. SKELETON LOADERS Y ANIMACIONES
@@ -3538,7 +3541,7 @@ button,
     grid-column: auto !important;
     grid-row: auto !important;
     padding: 20px 22px !important;
-    padding-bottom: 108px !important;
+    padding-bottom: calc(124px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   .ios-bottom-nav {
@@ -4466,3 +4469,15 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
   background: var(--fondo-card-sutil); border: 1px solid var(--borde-suave);
   font-size: 13px; line-height: 1.5; color: var(--texto-principal);
 }
+
+/* Interruptor dentro de una fila .settings-accion (Modo Fácil). */
+.settings-accion .settings-switch {
+  flex-direction: row; flex-shrink: 0; position: relative; width: 46px; height: 26px;
+  border-radius: var(--radius-pill); background: rgba(120,120,128,0.3); transition: background 0.2s;
+}
+.settings-accion .settings-switch.on { background: var(--verde-victoria); }
+.settings-accion .settings-switch > span {
+  position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+  background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); transition: left 0.2s;
+}
+.settings-accion .settings-switch.on > span { left: 23px; }

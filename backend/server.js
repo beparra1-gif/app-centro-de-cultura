@@ -5842,10 +5842,14 @@ app.get('/api/jugadores', authenticate, async (req, res) => {
     // password_jugador es una columna legada (clave en texto plano, sin uso en
     // el frontend): nunca se devuelve.
     const filas = result.rows.map(({ password_jugador: _omitida, ...j }) => ({ ...j, xp_total: Number(j.xp_total), nivel_actual: calcularNivelDesdeXPTotal(j.xp_total) }));
-    if (!ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+    if (await tienePlantelCompleto(req.actor)) {
       // Staff con categorías asignadas: solo recibe esas categorías.
       const categorias = await categoriasDeStaff(req.actor);
-      return res.json(filas.filter((j) => enCategorias(categorias, j.categoria)));
+      const visibles = filas.filter((j) => enCategorias(categorias, j.categoria));
+      // Perfil familiar con un módulo de plantel por excepción: sin motivo_baja (interno) salvo que tenga Admin.
+      const ocultarInterno = ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))
+        && !(await resolverPermisosDeActor(req.actor)).admin_dashboard;
+      return res.json(ocultarInterno ? visibles.map(({ motivo_baja: _interno, ...j }) => j) : visibles);
     }
     const pupilos = await obtenerPupilosDeActor(req.actor);
     const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
@@ -5879,7 +5883,7 @@ app.get('/api/jugadores/:rut', authenticate, async (req, res) => {
     jugador.xp_total = Number(jugador.xp_total);
     jugador.nivel_actual = calcularNivelDesdeXPTotal(jugador.xp_total);
 
-    if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+    if (!(await tienePlantelCompleto(req.actor))) {
       const pupilos = await obtenerPupilosDeActor(req.actor);
       const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
       if (!rutsPupilos.has(normalizarRutParaComparar(jugador.rut_jugador))) {
@@ -7196,6 +7200,31 @@ app.get('/api/pagos-mensualidades', authenticate, async (req, res) => {
 // valor no cambia dentro del mismo mes, así que basta refrescarlo una vez
 // al mes (o al reiniciar el server).
 let utmCache = { claveMes: null, valor: null, fechaConsultada: null, actualizadoEn: null };
+
+// mindicador.cl a veces se cae o no responde: sin límite, cada carga de la app
+// esperaba esa respuesta (y reintentaba en cada consulta). Tras una falla se
+// espera unos minutos antes de volver a preguntar por ese mismo mes.
+const UTM_TIMEOUT_MS = 4000;
+const UTM_REINTENTO_MS = 5 * 60 * 1000;
+const fallosUtm = new Map(); // clave 'anio-mes' -> momento de la última falla
+const consultarMindicadorUTM = async (claveMes, fechaTexto) => {
+  const ultimoFallo = fallosUtm.get(claveMes);
+  if (ultimoFallo && Date.now() - ultimoFallo < UTM_REINTENTO_MS) {
+    throw new Error('mindicador.cl no respondió hace poco; se reintentará en unos minutos.');
+  }
+  try {
+    const respuesta = await fetch(`https://mindicador.cl/api/utm/${fechaTexto}`, { signal: AbortSignal.timeout(UTM_TIMEOUT_MS) });
+    if (!respuesta.ok) throw new Error(`mindicador.cl respondió ${respuesta.status}`);
+    const datos = await respuesta.json();
+    const valor = Number(datos?.serie?.[0]?.valor);
+    if (!Number.isFinite(valor) || valor <= 0) throw new Error('Respuesta de mindicador.cl sin un valor de UTM válido.');
+    fallosUtm.delete(claveMes);
+    return valor;
+  } catch (err) {
+    fallosUtm.set(claveMes, Date.now());
+    throw err;
+  }
+};
 const UTM_FALLBACK_ULTIMO_CONOCIDO = 71649; // agosto 2026 — solo si la API externa y el caché fallan a la vez.
 
 const calcularUltimoDiaMesAnterior = () => {
@@ -7257,12 +7286,7 @@ const obtenerUTMParaMes = async (anioObjetivo, mesObjetivo, opciones = {}) => {
     : new Date(anio, mes - 1, 0);
 
   try {
-    const fechaTexto = formatearFechaMindicador(fechaCorte);
-    const respuesta = await fetch(`https://mindicador.cl/api/utm/${fechaTexto}`);
-    if (!respuesta.ok) throw new Error(`mindicador.cl respondió ${respuesta.status}`);
-    const datos = await respuesta.json();
-    const valor = Number(datos?.serie?.[0]?.valor);
-    if (!Number.isFinite(valor) || valor <= 0) throw new Error('Respuesta de mindicador.cl sin un valor de UTM válido.');
+    const valor = await consultarMindicadorUTM(`${anio}-${mes}`, formatearFechaMindicador(fechaCorte));
 
     // ON CONFLICT DO UPDATE (no DO NOTHING): un recálculo forzado tiene que
     // poder pisar una fila existente con datos viejos/incorrectos (ver
@@ -7291,12 +7315,7 @@ const obtenerUTMVigente = async () => {
     return utmCache;
   }
   try {
-    const fechaTexto = formatearFechaMindicador(fechaObjetivo);
-    const respuesta = await fetch(`https://mindicador.cl/api/utm/${fechaTexto}`);
-    if (!respuesta.ok) throw new Error(`mindicador.cl respondió ${respuesta.status}`);
-    const datos = await respuesta.json();
-    const valor = Number(datos?.serie?.[0]?.valor);
-    if (!Number.isFinite(valor) || valor <= 0) throw new Error('Respuesta de mindicador.cl sin un valor de UTM válido.');
+    const valor = await consultarMindicadorUTM(`vigente-${claveMes}`, formatearFechaMindicador(fechaObjetivo));
     utmCache = {
       claveMes,
       valor,
@@ -7913,8 +7932,10 @@ app.post('/api/pagos-mensualidades', authenticate, requireAnyModule('perfil', 'v
     // override de validacion_pagos) sí registran pagos de cualquiera.
     const permisosPago = esStaffOAdminPago ? null : await resolverPermisosDeActor(req.actor);
     const puedeRegistrarPagosAjenos = esStaffOAdminPago || permisosPago.validacion_pagos || permisosPago.admin_dashboard;
+    // Solo SUS pupilos: ver todo el plantel (p. ej. por "Pasar lista") no
+    // habilita a informar pagos de otras familias.
     if (!puedeRegistrarPagosAjenos && String(rut_jugador || '').trim()
-      && !(await actorPuedeVerJugador(req.actor, rut_jugador))) {
+      && !(await obtenerPupilosDeActor(req.actor)).some((p) => normalizarRutParaComparar(p.rut_jugador) === normalizarRutParaComparar(rut_jugador))) {
       return res.status(403).json({ error: 'Solo puedes informar pagos de tus propios deportistas.' });
     }
     if (!esStaffOAdminPago && String(rut_jugador || '').trim()) {
@@ -8831,10 +8852,21 @@ const obtenerPupilosDeActor = async (actor) => {
 // ficha), así que quedan acotados igual que jugador/apoderado/socio.
 const ROLES_JUGADORES_ACOTADOS = ['jugador', 'apoderado', 'socio', 'socio_apoderado', 'socio-apoderado', 'directiva', 'mesa', 'visita'];
 
+// Módulos de gestión deportiva que trabajan sobre TODO el plantel. Si el
+// superadmin le habilita uno a un perfil familiar (excepción por usuario),
+// esa cuenta deja de estar acotada a sus pupilos: antes un apoderado con
+// "Pasar lista" solo veía a su propio hijo en la nómina.
+const MODULOS_PLANTEL_COMPLETO = ['asistencia_staff', 'evaluacion_staff', 'citaciones', 'admin_dashboard', 'invitados', 'reportes'];
+const tienePlantelCompleto = async (actor) => {
+  if (!ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(actor?.rol))) return true;
+  const permisos = await resolverPermisosDeActor(actor);
+  return MODULOS_PLANTEL_COMPLETO.some((modulo) => permisos[modulo]);
+};
+
 // true si el actor puede ver/actuar sobre ese deportista: cualquier rol no
 // acotado (staff/admin/...), o un rol acotado cuyo pupilo (o él mismo) es ese RUT.
 const actorPuedeVerJugador = async (actor, rutJugador) => {
-  if (!ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(actor?.rol))) return true;
+  if (await tienePlantelCompleto(actor)) return true;
   const objetivo = normalizarRutParaComparar(rutJugador);
   if (!objetivo) return false;
   const pupilos = await obtenerPupilosDeActor(actor);
@@ -9591,6 +9623,21 @@ app.get('/api/notificaciones', authenticate, async (req, res) => {
   }
 });
 
+// PATCH: marca TODAS las notificaciones propias como leídas (botón del panel).
+app.patch('/api/notificaciones/leidas', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE notificaciones_app SET leida = true
+       WHERE leida IS NOT TRUE AND REPLACE(REPLACE(UPPER(rut_destinatario), '.', ''), '-', '') = $1`,
+      [normalizarRutParaComparar(req.actor.rut)]
+    );
+    res.json({ ok: true, actualizadas: result.rowCount });
+  } catch (err) {
+    console.error('[PATCH /api/notificaciones/leidas]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH: marca una notificación propia como leída.
 app.patch('/api/notificaciones/:id/leida', authenticate, async (req, res) => {
   try {
@@ -9746,7 +9793,7 @@ app.get('/api/asistencia/sesiones/:sesionId', authenticate, requireAnyModule('ci
 // staff/admin vía obtenerPupilosDeActor.
 app.get('/api/asistencia/jugador/:rut', authenticate, soloCategoriasDelStaff((req) => [req.params.rut]), async (req, res) => {
   try {
-    if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+    if (!(await tienePlantelCompleto(req.actor))) {
       const pupilos = await obtenerPupilosDeActor(req.actor);
       const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
       if (!rutsPupilos.has(normalizarRutParaComparar(req.params.rut))) {
@@ -9814,7 +9861,7 @@ app.get('/api/asistencia/jugador/:rut', authenticate, soloCategoriasDelStaff((re
 // honesto en vez de inventar promedios en 0.
 app.get('/api/estadisticas/jugador/:rut/resumen', authenticate, async (req, res) => {
   try {
-    if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+    if (!(await tienePlantelCompleto(req.actor))) {
       const pupilos = await obtenerPupilosDeActor(req.actor);
       const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
       if (!rutsPupilos.has(normalizarRutParaComparar(req.params.rut))) {
@@ -10313,7 +10360,7 @@ app.post('/api/estadisticas', authenticate, requireModule('scoreboard_live'), as
 // evaluaciones de CUALQUIER rut solo cambiando el parámetro de la URL.
 app.get('/api/evaluaciones/jugador/:rut', authenticate, requireAnyModule('evaluacion_staff', 'jugador'), soloCategoriasDelStaff((req) => [req.params.rut]), async (req, res) => {
   try {
-    if (ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))) {
+    if (!(await tienePlantelCompleto(req.actor))) {
       const pupilos = await obtenerPupilosDeActor(req.actor);
       if (!pupilos.some((p) => normalizarRutParaComparar(p.rut_jugador) === normalizarRutParaComparar(req.params.rut))) {
         return res.status(403).json({ error: 'No tienes acceso a las evaluaciones de ese deportista.' });

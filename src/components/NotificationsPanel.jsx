@@ -1,13 +1,20 @@
-import { X, ArrowRight } from 'lucide-react';
+import { X, ArrowRight, CheckCheck } from 'lucide-react';
 
 function NotificationsPanel({
   notificaciones,
   onBorrar,
+  onMarcarTodasLeidas,
   onIrA,
   resolverDestino,
 }) {
+  const sinLeer = notificaciones.filter((n) => !n.leida).length;
   return (
     <div style={{ position: 'fixed', top: '90px', right: '15px', width: '320px', maxHeight: '400px', overflowY: 'auto', zIndex: 1000, background: 'rgba(255,255,255,0.78)', backdropFilter: 'blur(22px)', WebkitBackdropFilter: 'blur(22px)', borderRadius: 'var(--radius-lg)', padding: '8px' }}>
+      {sinLeer > 0 && onMarcarTodasLeidas && (
+        <button type="button" onClick={onMarcarTodasLeidas} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', width: '100%', minHeight: '40px', marginBottom: '8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--borde-suave)', background: 'var(--blanco-tarjeta)', color: 'var(--azul-electrico)', fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}>
+          <CheckCheck size={16} aria-hidden="true" /> Marcar todas como leídas ({sinLeer})
+        </button>
+      )}
       {notificaciones.length === 0 ? (
         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--texto-secundario)', fontSize: '13px' }}>
           Sin notificaciones
@@ -16,10 +23,10 @@ function NotificationsPanel({
         notificaciones.map(notif => {
           const tieneDestino = Boolean(resolverDestino?.(notif));
           return (
-            <div key={notif.id} style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', border: '1px solid rgba(255,255,255,0.72)', borderRadius: 'var(--radius-md)', padding: '12px', marginBottom: '8px', boxShadow: '0 10px 24px rgba(15,23,42,0.08)', animation: 'slideInRight 0.3s ease-out' }}>
+            <div key={notif.id} style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', border: '1px solid rgba(255,255,255,0.72)', borderRadius: 'var(--radius-md)', padding: '12px', marginBottom: '8px', boxShadow: '0 10px 24px rgba(15,23,42,0.08)', animation: 'slideInRight 0.3s ease-out', opacity: notif.leida ? 0.6 : 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
                 <span style={{ fontWeight: '700', fontSize: '13px', color: 'var(--texto-principal)' }}>
-                  {notif.tipo === 'comentario' ? 'Comentario' : notif.tipo === 'rsvp' ? 'RSVP' : notif.tipo === 'comunicacion' ? 'Comunicacion' : notif.tipo === 'pago' ? 'Pago' : notif.tipo === 'beca' ? 'Beca' : 'Notificacion'} {notif.titulo}
+                  {notif.tipo === 'comentario' ? 'Comentario' : notif.tipo === 'rsvp' ? 'RSVP' : notif.tipo === 'comunicacion' ? 'Comunicación' : notif.tipo === 'pago' ? 'Pago' : notif.tipo === 'beca' ? 'Beca' : 'Notificación'} {notif.titulo}
                 </span>
                 <button onClick={() => onBorrar(notif)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '30px', height: '30px', borderRadius: 'var(--radius-pill)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} aria-label="Cerrar"><X size={14} /></button>
               </div>

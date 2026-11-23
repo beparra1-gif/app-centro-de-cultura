@@ -152,6 +152,8 @@ export const abrirMiCuenta = async (page) => {
   await expect(cabecera).toBeVisible({ timeout: 10000 });
   if (await cabecera.getAttribute('aria-expanded') !== 'true') await cabecera.click();
   await expect(cabecera).toHaveAttribute('aria-expanded', 'true');
+  // Con la suite completa la grilla puede tardar más de 5 s en pintarse.
+  await expect(page.locator('button.mes-box').first()).toBeVisible({ timeout: 15000 });
 };
 
 export const abrirCertificados = async (page) => {

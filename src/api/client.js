@@ -1186,6 +1186,10 @@ export const notificacionesAppAPI = {
     const response = await apiFetch(`${API_BASE_URL}/notificaciones`);
     return handleResponse(response);
   },
+  marcarTodasLeidas: async () => {
+    const response = await apiFetch(`${API_BASE_URL}/notificaciones/leidas`, { method: 'PATCH' });
+    return handleResponse(response);
+  },
   marcarLeida: async (id) => {
     const response = await apiFetch(`${API_BASE_URL}/notificaciones/${id}/leida`, {
       method: 'PATCH',

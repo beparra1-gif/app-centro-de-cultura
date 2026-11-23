@@ -1543,6 +1543,15 @@ function App() {
     }
   };
 
+  // Quedan en la lista (atenuadas) pero dejan de sumar en el contador; el
+  // servidor las guarda leídas, así el próximo poll no las vuelve a traer.
+  const marcarTodasLeidas = () => {
+    setNotificaciones((prev) => prev.map((n) => ({ ...n, leida: true })));
+    api.notificacionesAppAPI.marcarTodasLeidas().catch(() => {
+      showToast({ message: 'No se pudieron marcar como leídas. Intenta de nuevo.', type: 'error' });
+    });
+  };
+
   const irANotificacion = (notif) => {
     const destino = resolverDestinoNotificacion(notif);
     if (!destino) return;
@@ -1562,8 +1571,15 @@ function App() {
     try { token = sessionStorage.getItem(CLAVE_PARTIDO_PENDIENTE); } catch { token = null; }
     if (!token) return;
     if (!usuarioAutenticado?.rut) {
+      // Una vez por enlace: antes se repetía en cada recarga mientras no iniciara sesión.
+      let yaAvisado = false;
+      try { yaAvisado = sessionStorage.getItem(`${CLAVE_PARTIDO_PENDIENTE}-avisado`) === token; } catch { /* sin storage: se avisa */ }
+      if (yaAvisado) return;
       // Se espera a que cargue la portada (lazy): mientras Suspense la carga, los avisos no se muestran.
-      const t = window.setTimeout(() => showToast({ message: 'Inicia sesión para ver y responder la citación.', type: 'info', duration: 8000 }), 1200);
+      const t = window.setTimeout(() => {
+        showToast({ message: 'Inicia sesión para ver y responder la citación.', type: 'info', duration: 8000 });
+        try { sessionStorage.setItem(`${CLAVE_PARTIDO_PENDIENTE}-avisado`, token); } catch { /* nada */ }
+      }, 1200);
       return () => window.clearTimeout(t);
     }
     try { sessionStorage.removeItem(CLAVE_PARTIDO_PENDIENTE); } catch { /* nada que limpiar */ }
@@ -3400,6 +3416,7 @@ function App() {
           <NotificationsPanel
             notificaciones={notificaciones}
             onBorrar={borrarNotificacion}
+            onMarcarTodasLeidas={marcarTodasLeidas}
             onIrA={irANotificacion}
             resolverDestino={resolverDestinoNotificacion}
           />
