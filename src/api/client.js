@@ -1074,13 +1074,9 @@ export const citacionesAPI = {
     const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados/${rutJugador}/promover`, { method: 'POST' });
     return handleResponse(response);
   },
-  // Enlace directo de WhatsApp: sin sesión (el token identifica la convocatoria).
-  verPorEnlace: async (token) => handleResponse(await fetch(`${API_BASE_URL}/citaciones/responder/${encodeURIComponent(token)}`)),
-  responderPorEnlace: async (token, datos) => handleResponse(await fetch(`${API_BASE_URL}/citaciones/responder/${encodeURIComponent(token)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(datos),
-  })),
+  // Enlace de WhatsApp de la citación (?partido=TOKEN): con sesión, dice si a
+  // esta cuenta le corresponde ('gestion' | 'apoderado' | 'jugador') o 404.
+  porEnlace: async (token) => handleResponse(await apiFetch(`${API_BASE_URL}/citaciones/por-enlace/${encodeURIComponent(token)}`)),
   resolverExcepcionMorosidad: async (citacionId, rutJugador, aprobar) => {
     const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados/${rutJugador}/resolver-excepcion`, {
       method: 'POST',

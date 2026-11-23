@@ -2649,6 +2649,11 @@ const ensureCitacionesTables = async () => {
   await pool.query(`ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS lugar_nombre VARCHAR(255)`);
   await pool.query(`ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS lugar_direccion VARCHAR(255)`);
   await pool.query(`ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS mensaje_adicional TEXT`);
+  // Enlace único de la citación (va en el mensaje de WhatsApp del grupo):
+  // cada citado entra, ingresa el RUT del deportista y responde.
+  await pool.query(`ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS token_publico VARCHAR(40) DEFAULT md5(random()::text || clock_timestamp()::text || random()::text)`);
+  await pool.query(`UPDATE citaciones SET token_publico = md5(random()::text || clock_timestamp()::text || random()::text || id::text) WHERE token_publico IS NULL`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_citaciones_token_publico ON citaciones (token_publico)`);
 
   console.log('📋 Tablas de citaciones verificadas');
 };
@@ -8820,7 +8825,7 @@ const CITACION_COLUMNAS_SQL = `
   dia_citacion, hora_citacion, hora_presentacion,
   rival_nombre, rival_logo_url, rama, categoria_base, categorias_apoyo,
   responsable_nombre, responsable_rut, responsable_correo, responsable_rol,
-  estado, creado_en, updated_at, lugar_nombre, lugar_direccion, mensaje_adicional,
+  estado, creado_en, updated_at, lugar_nombre, lugar_direccion, mensaje_adicional, token_publico,
   to_char(hora_maxima_confirmacion, 'YYYY-MM-DD"T"HH24:MI') AS hora_maxima_confirmacion
 `;
 
@@ -8849,7 +8854,7 @@ const CONVOCADOS_SELECT_SQL = `
 
 // Las familias no reciben enlaces ni teléfonos de otros apoderados.
 const CAMPOS_CONVOCADO_SOLO_GESTION = ['token_respuesta', 'apoderado_telefono', 'apoderado_nombre'];
-const citacionParaFamilia = (citacion) => ({
+const citacionParaFamilia = ({ token_publico: _enlace, ...citacion }) => ({
   ...citacion,
   convocados: (citacion.convocados || []).map((c) => {
     const limpio = { ...c };
@@ -9365,8 +9370,9 @@ app.post('/api/citaciones/:id/convocados/:rut/promover', authenticate, requireMo
   }
 });
 
-// Enlace directo (WhatsApp) para responder sin iniciar sesión. El token es
-// aleatorio y único por convocado; solo muestra y cambia ESA convocatoria.
+// Enlace de la citación (el del WhatsApp del grupo, ?partido=TOKEN): exige
+// iniciar sesión y solo abre la citación a quien corresponde. Nadie responde
+// sin sesión: confirma el apoderado (o staff/admin desde el control).
 const TOKEN_CITACION = /^[a-f0-9]{32}$/;
 const citacionPorTokenRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -9375,63 +9381,51 @@ const citacionPorTokenRateLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Demasiados intentos. Espera unos minutos.' },
 });
-const cargarConvocadoPorToken = async (token) => {
-  if (!TOKEN_CITACION.test(String(token || ''))) return null;
-  const { rows: [fila] } = await pool.query(
-    `SELECT cc.citacion_id, cc.rut_jugador, cc.nombre, cc.rol_convocatoria, cc.respuesta, cc.justificacion,
-            cc.respondido_automaticamente, c.tipo_competencia, c.competencia_nombre, c.rival_nombre,
-            to_char(c.dia_citacion, 'YYYY-MM-DD') AS dia_citacion, c.hora_citacion, c.hora_presentacion, c.estado,
-            c.lugar_nombre, c.lugar_direccion, c.mensaje_adicional, c.competencia_logo_url, c.rival_logo_url,
-            to_char(c.hora_maxima_confirmacion, 'YYYY-MM-DD"T"HH24:MI') AS hora_maxima_confirmacion,
-            (c.hora_maxima_confirmacion IS NOT NULL AND c.hora_maxima_confirmacion <= (NOW() AT TIME ZONE 'America/Santiago')) AS plazo_vencido
-     FROM citacion_convocados cc JOIN citaciones c ON c.id = cc.citacion_id
-     WHERE cc.token_respuesta = $1`,
-    [token]
-  );
-  return fila || null;
+
+app.get('/api/citaciones/por-enlace/:token', citacionPorTokenRateLimiter, authenticate, async (req, res) => {
+  const sinCitacion = () => res.status(404).json({ error: 'No tiene citación asignada para este juego.', sin_citacion: true });
+  if (!TOKEN_CITACION.test(String(req.params.token || ''))) return sinCitacion();
+  try {
+    const cita = (await pool.query('SELECT id, responsable_rut FROM citaciones WHERE token_publico = $1', [req.params.token])).rows[0];
+    if (!cita) return sinCitacion();
+    const permisos = await resolverPermisosDeActor(req.actor);
+    const esAdminOSuper = ['admin', 'super_admin', 'superadmin'].includes(normalizarRol(req.actor.rol));
+    if (permisos.citaciones && (esAdminOSuper || normalizarRutParaComparar(cita.responsable_rut) === normalizarRutParaComparar(req.actor.rut))) {
+      return res.json({ citacion_id: cita.id, acceso: 'gestion' });
+    }
+    const convocados = (await pool.query('SELECT rut_jugador FROM citacion_convocados WHERE citacion_id = $1', [cita.id])).rows
+      .map((c) => normalizarRutParaComparar(c.rut_jugador));
+    const pupilos = (await obtenerPupilosDeActor(req.actor)).map((p) => normalizarRutParaComparar(p.rut_jugador));
+    const rutActor = normalizarRutParaComparar(req.actor.rut);
+    // obtenerPupilosDeActor incluye al propio deportista con cuenta: se
+    // distingue porque solo responde si es autogestionado (ver requireApoderadoDeJugador).
+    if (convocados.includes(rutActor)) return res.json({ citacion_id: cita.id, acceso: 'jugador' });
+    if (pupilos.some((r) => convocados.includes(r))) return res.json({ citacion_id: cita.id, acceso: 'apoderado' });
+    return sinCitacion();
+  } catch (err) {
+    console.error('[GET /api/citaciones/por-enlace]', err);
+    res.status(500).json({ error: 'No se pudo abrir la citación.' });
+  }
+});
+
+// Quién confirma o rechaza: el apoderado del deportista, o quien gestiona
+// citaciones (admin/super_admin, y staff solo para sus categorías).
+const autorizarRespuestaCitacion = async (req, res, next) => {
+  if (!req.actor) return res.status(401).json({ error: 'Falta token de autenticación.' });
+  try {
+    const permisos = await resolverPermisosDeActor(req.actor);
+    const esAdminOSuper = ['admin', 'super_admin', 'superadmin'].includes(normalizarRol(req.actor.rol));
+    if (esAdminOSuper) return next();
+    if (permisos.citaciones && normalizarRol(req.actor.rol) === 'staff') {
+      return soloCategoriasDelStaff((r) => [r.params.rut])(req, res, next);
+    }
+    return requireApoderadoDeJugador(pool)(req, res, next);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 };
-const vistaPublicaConvocado = (f) => ({
-  deportista: f.nombre, rol: f.rol_convocatoria || 'titular', respuesta: f.respuesta, justificacion: f.justificacion,
-  respondido_automaticamente: f.respondido_automaticamente, tipo_competencia: f.tipo_competencia,
-  competencia_nombre: f.competencia_nombre, rival_nombre: f.rival_nombre, dia_citacion: f.dia_citacion,
-  hora_citacion: f.hora_citacion, hora_presentacion: f.hora_presentacion,
-  hora_maxima_confirmacion: f.hora_maxima_confirmacion, plazo_vencido: f.plazo_vencido,
-  lugar_nombre: f.lugar_nombre, lugar_direccion: f.lugar_direccion, mensaje_adicional: f.mensaje_adicional,
-  competencia_logo_url: f.competencia_logo_url, rival_logo_url: f.rival_logo_url,
-});
 
-app.get('/api/citaciones/responder/:token', citacionPorTokenRateLimiter, async (req, res) => {
-  try {
-    await barrerCitacionesVencidas();
-    const fila = await cargarConvocadoPorToken(req.params.token);
-    if (!fila) return res.status(404).json({ error: 'El enlace no es válido o la citación ya no existe.' });
-    res.json(vistaPublicaConvocado(fila));
-  } catch (err) {
-    console.error('[GET /api/citaciones/responder]', err);
-    res.status(500).json({ error: 'No se pudo cargar la citación.' });
-  }
-});
-
-app.post('/api/citaciones/responder/:token', citacionPorTokenRateLimiter, async (req, res) => {
-  const respuesta = req.body?.respuesta;
-  const justificacion = String(req.body?.justificacion || '').trim().slice(0, 500);
-  if (!['si', 'no'].includes(respuesta)) return res.status(400).json({ error: 'Elige si asiste o no.' });
-  if (respuesta === 'no' && !justificacion) return res.status(400).json({ error: 'Indica el motivo de la inasistencia.' });
-  try {
-    const fila = await cargarConvocadoPorToken(req.params.token);
-    if (!fila) return res.status(404).json({ error: 'El enlace no es válido o la citación ya no existe.' });
-    if (fila.plazo_vencido) return res.status(409).json({ error: 'El plazo para responder ya venció. Escríbele al responsable de la citación.' });
-    await registrarRespuestaCitacion({
-      citacionId: fila.citacion_id, rut: fila.rut_jugador, respuesta, justificacion, origen: 'enlace',
-    });
-    res.json(vistaPublicaConvocado(await cargarConvocadoPorToken(req.params.token)));
-  } catch (err) {
-    console.error('[POST /api/citaciones/responder]', err);
-    res.status(500).json({ error: 'No se pudo guardar la respuesta.' });
-  }
-});
-
-app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireApoderadoDeJugador(pool), async (req, res) => {
+app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, autorizarRespuestaCitacion, async (req, res) => {
   const { respuesta, justificacion, mensaje_profesor, excepcion_solicitada } = req.body;
   const hayRespuesta = respuesta !== undefined && respuesta !== null;
 

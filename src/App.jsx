@@ -607,6 +607,7 @@ function App() {
   }, [rolUsuario, usuarioAutenticado, pantallaActiva, sesionToken, sesionHidratada, SESSION_STORAGE_KEY, isOnboarding]);
 
   const [nominaCita, setNominaCita] = useState([]);
+  const CLAVE_PARTIDO_PENDIENTE = 'ccf-partido-pendiente';
   // ?abrir=citaciones: llega desde el aviso nativo de una citación (ver
   // public/push-sw.js): abre el Muro y la ventana para responder.
   const [abrirCitaciones] = useState(() => {
@@ -618,6 +619,21 @@ function App() {
       return true;
     } catch { return false; }
   });
+  // ?partido=TOKEN: enlace de WhatsApp de una citación. Se guarda hasta que la
+  // persona inicie sesión; recién ahí se abre (solo si le corresponde).
+  useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('partido');
+      if (token) {
+        sessionStorage.setItem(CLAVE_PARTIDO_PENDIENTE, token);
+        params.delete('partido');
+        window.history.replaceState(null, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}`);
+      }
+    } catch { /* sin almacenamiento: el enlace abre la app normal */ }
+    return null;
+  });
+  const [citacionEnfocadaId, setCitacionEnfocadaId] = useState(null);
 
   // ==========================================
   // 3. LÓGICA BASE Y EFECTOS
@@ -1535,6 +1551,37 @@ function App() {
     cambiarPantallaConLoader(destino.pantalla);
     borrarNotificacion(notif);
   };
+
+  // Abre la citación del enlace de WhatsApp una vez iniciada la sesión: a
+  // quien gestiona, en Citaciones; al apoderado o la jugadora citada, en la
+  // ventana del Muro. A cualquier otra cuenta: "No tiene citación asignada".
+  useEffect(() => {
+    if (!sesionHidratada) return;
+    let token;
+    try { token = sessionStorage.getItem(CLAVE_PARTIDO_PENDIENTE); } catch { token = null; }
+    if (!token) return;
+    if (!usuarioAutenticado?.rut) {
+      // Se espera a que cargue la portada (lazy): mientras Suspense la carga, los avisos no se muestran.
+      const t = window.setTimeout(() => showToast({ message: 'Inicia sesión para ver y responder la citación.', type: 'info', duration: 8000 }), 1200);
+      return () => window.clearTimeout(t);
+    }
+    try { sessionStorage.removeItem(CLAVE_PARTIDO_PENDIENTE); } catch { /* nada que limpiar */ }
+    api.citacionesAPI.porEnlace(token)
+      .then(({ citacion_id: citacionId, acceso }) => {
+        if (acceso === 'gestion') {
+          setVistaAdmin('citaciones');
+          cambiarPantallaConLoader('admin_dashboard');
+          return;
+        }
+        setCitacionEnfocadaId(citacionId);
+        cambiarPantallaConLoader('comunicaciones');
+      })
+      .catch((error) => {
+        void confirmAction({ title: 'Citación', message: error.message || 'No tiene citación asignada para este juego.', confirmText: 'Entendido' });
+      });
+  // Solo al hidratar la sesión o cambiar de cuenta.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sesionHidratada, usuarioAutenticado?.rut]);
 
   const getUsuarioActivoPermisos = () => {
     if (!usuarioAutenticado) return null;
@@ -3408,6 +3455,8 @@ function App() {
           rutsPupilos={esPerfilFamiliar ? pupilosDisponibles.map((p) => p.rut) : []}
           rutPropio={usuarioAutenticado?.rut}
           forzarApertura={abrirCitaciones}
+          citacionEnfocadaId={citacionEnfocadaId}
+          onCerrar={() => setCitacionEnfocadaId(null)}
           onActualizar={setNominaCita}
         />
       )}

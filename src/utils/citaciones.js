@@ -2,6 +2,10 @@
 // Control de Citaciones), banca de reserva y mensajes de WhatsApp con el
 // enlace directo de respuesta.
 
+// El propio deportista solo responde si el club lo marcó autogestionable
+// (el backend lo informa por convocado); los demás solo ven que fueron citados.
+export const puedeJugadorResponderPropiaCitacion = (convocado = {}) => Boolean(convocado.autogestionado);
+
 export const esBanca = (c = {}) => c.rol_convocatoria === 'banca';
 
 // Porcentajes sobre los TITULARES; la banca se informa aparte (no cuenta como
@@ -25,74 +29,70 @@ export const calcularResumenCitacion = (convocados = []) => {
   };
 };
 
-// El propio deportista solo responde si el club lo marcó autogestionable
-// (el backend lo informa por convocado); los demás solo ven que fueron
-// citados y responde su apoderado.
-export const puedeJugadorResponderPropiaCitacion = (convocado = {}) => Boolean(convocado.autogestionado);
+// Enlace de la citación para el WhatsApp del grupo: abre la app (pide iniciar
+// sesión) y muestra la citación solo a quien está en la nómina o la gestiona.
+export const urlCitacionGrupal = (token) => `${window.location.origin}/?partido=${encodeURIComponent(token)}`;
 
-// Enlace directo para responder sin iniciar sesión (token único por citado).
-export const urlRespuestaCitacion = (token) => `${window.location.origin}/?citacion=${encodeURIComponent(token)}`;
-
-const fechaLegible = (iso) => {
+const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+// "Sábado 21" (como lo escribe el club en sus citaciones).
+const diaCorto = (iso) => {
   const [a, m, d] = String(iso || '').slice(0, 10).split('-').map(Number);
-  if (!a) return '';
-  const dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  return `${dias[new Date(a, m - 1, d).getDay()]} ${d} de ${meses[m - 1]}`;
+  return a ? `${DIAS[new Date(a, m - 1, d).getDay()]} ${d}` : '';
 };
 const hora = (h) => String(h || '').slice(0, 5);
-const lineaHorario = (cita) => `📅 ${fechaLegible(cita.dia_citacion)} · Citación (llegada) ${hora(cita.hora_presentacion)} · Partido ${hora(cita.hora_citacion)}`;
-// Dirección + enlace de Google Maps (en WhatsApp abre la app de mapas o Waze).
-const lineasLugar = (cita) => {
-  const q = [cita.lugar_nombre, cita.lugar_direccion].filter(Boolean).join(', ');
-  return q ? [`📍 ${q}`, `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`] : [];
-};
-const plazoLegible = (fechaHora) => {
-  if (!fechaHora) return '';
-  const [fecha, hh] = String(fechaHora).split('T');
-  return `${fechaLegible(fecha)} a las ${hora(hh)}`;
+// SUB-15 → U-15 (forma en que el club nombra la categoría en WhatsApp).
+const categoriaCorta = (c) => String(c || '').trim().replace(/^sub[-\s]?/i, 'U-');
+const tituloNomina = (rama) => {
+  const r = String(rama || '').toLowerCase();
+  if (r.startsWith('fem')) return 'JUGADORAS CITADAS';
+  if (r.startsWith('masc')) return 'JUGADORES CITADOS';
+  return 'DEPORTISTAS CITADOS';
 };
 
-// Mensaje personal al apoderado (o al deportista autogestionado) con su enlace.
-export const mensajeWhatsappCitacion = (cita = {}, convocado = {}) => {
-  const saludo = convocado.apoderado_nombre ? `Hola ${String(convocado.apoderado_nombre).split(' ')[0]}` : 'Hola';
-  const partido = `${cita.tipo_competencia || ''} ${cita.competencia_nombre || ''} vs ${cita.rival_nombre || ''}`.replace(/\s+/g, ' ').trim();
-  const lineas = esBanca(convocado)
-    ? [`${saludo}! ${convocado.nombre} quedó en la *banca (reserva)* para ${partido}.`]
-    : [`${saludo}! ${convocado.nombre} fue *citada/o* a ${partido}.`];
-  lineas.push(
-    lineaHorario(cita),
-    ...lineasLugar(cita),
-    ...(cita.mensaje_adicional ? ['', `📝 ${cita.mensaje_adicional}`] : []),
+// Encabezado común: sin enlaces de mapa (la ubicación con Maps/Waze está en la app).
+const encabezado = (cita) => {
+  const categoria = cita.categoria_base && cita.categoria_base !== 'todas' ? ` ${categoriaCorta(cita.categoria_base)}` : '';
+  return [
+    `⚪️🔵 CITACIÓN OFICIAL${categoria} ⚪️🔵`,
     '',
-    esBanca(convocado)
-      ? 'Si se libera un cupo te avisaremos. Puedes indicar desde ya si estará disponible:'
-      : 'Confirma la asistencia o indica el motivo si no puede ir:',
-    urlRespuestaCitacion(convocado.token_respuesta),
-  );
-  if (cita.hora_maxima_confirmacion && !esBanca(convocado)) lineas.push('', `⏰ Plazo para responder: ${plazoLegible(cita.hora_maxima_confirmacion)}.`);
-  lineas.push('', 'Centro de Cultura Física Viña del Mar');
-  return lineas.join('\n');
+    `🏆 Competencia: ${cita.competencia_nombre || ''}`,
+    `📅 Día: ${diaCorto(cita.dia_citacion)}`,
+    ...(cita.lugar_nombre ? [`📍 Lugar: ${cita.lugar_nombre}`] : []),
+    `⏰ Hora : ${hora(cita.hora_citacion)}`,
+    `🕙 Hora de llegada: ${hora(cita.hora_presentacion)}`,
+  ];
 };
 
-// Mensaje para el grupo de WhatsApp de la categoría: nómina sin enlaces
-// personales (cada familia responde con su enlace o en la app).
+// Mensaje del grupo de WhatsApp: nómina y UN enlace para que cualquiera de los citados confirme.
 export const mensajeGrupoCitacion = (cita = {}) => {
   const convocados = cita.convocados || [];
-  const titulares = convocados.filter((c) => !esBanca(c)).map((c, i) => `${i + 1}. ${c.nombre}`);
+  const titulares = convocados.filter((c) => !esBanca(c)).map((c) => `• ${c.nombre}`);
   const banca = convocados.filter(esBanca).map((c) => `• ${c.nombre}`);
-  const partido = `${cita.tipo_competencia || ''} ${cita.competencia_nombre || ''} vs ${cita.rival_nombre || ''}`.replace(/\s+/g, ' ').trim();
   return [
-    `📣 *Citación ${partido}*`,
-    lineaHorario(cita),
-    ...lineasLugar(cita),
+    ...encabezado(cita),
     ...(cita.mensaje_adicional ? ['', `📝 ${cita.mensaje_adicional}`] : []),
     '',
-    '*Citadas/os:*',
-    ...titulares,
-    ...(banca.length ? ['', '*En banca (reserva):*', ...banca] : []),
+    `👥 ${tituloNomina(cita.rama)}`,
     '',
-    'Cada apoderado recibirá su enlace para confirmar, o puede responder en la app (Muro).',
-    ...(cita.hora_maxima_confirmacion ? [`⏰ Plazo: ${plazoLegible(cita.hora_maxima_confirmacion)}.`] : []),
+    ...titulares,
+    ...(banca.length ? ['', '🔁 EN BANCA (reserva)', '', ...banca] : []),
+    '',
+    'Acá enlace para confirmar citación',
+    urlCitacionGrupal(cita.token_publico),
+  ].join('\n');
+};
+
+// Recordatorio personal (a quien aún no responde), con el mismo enlace único.
+export const mensajeWhatsappCitacion = (cita = {}, convocado = {}) => {
+  const saludo = convocado.apoderado_nombre ? `Hola ${String(convocado.apoderado_nombre).split(' ')[0]}` : 'Hola';
+  return [
+    ...encabezado(cita),
+    '',
+    esBanca(convocado)
+      ? `${saludo}, ${convocado.nombre} quedó en la banca (reserva) para este partido.`
+      : `${saludo}, ${convocado.nombre} está citada/o. Por favor confirma la asistencia o indica el motivo si no puede ir.`,
+    '',
+    'Acá enlace para confirmar citación',
+    urlCitacionGrupal(cita.token_publico),
   ].join('\n');
 };

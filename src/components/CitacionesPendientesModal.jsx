@@ -52,6 +52,8 @@ function BotonAvisos() {
   );
 }
 
+const ESTADO = { si: 'Asistencia confirmada', no: 'No asistirá', pendiente: 'Sin responder' };
+
 function Pendiente({ cita, convocado, puedeResponder, onRespondida }) {
   const [rechazando, setRechazando] = useState(false);
   const [motivo, setMotivo] = useState('');
@@ -75,6 +77,9 @@ function Pendiente({ cita, convocado, puedeResponder, onRespondida }) {
         {convocado.nombre} {esBanca(convocado) ? 'quedó en la banca (reserva)' : 'fue citada/o'}
       </p>
       <TarjetaPartido cita={cita} />
+      <p style={{ fontWeight: 800, margin: '10px 0 0', color: convocado.respuesta === 'si' ? 'var(--verde-victoria)' : convocado.respuesta === 'no' ? '#B42318' : '#8A4B00' }}>
+        {ESTADO[convocado.respuesta] || convocado.respuesta}{convocado.respuesta === 'no' && convocado.justificacion ? ` · Motivo: ${convocado.justificacion}` : ''}
+      </p>
       {!puedeResponder ? (
         <p className="pf-ayuda">Tu apoderado debe confirmar o indicar el motivo si no puedes ir.</p>
       ) : !rechazando ? (
@@ -99,31 +104,36 @@ function Pendiente({ cita, convocado, puedeResponder, onRespondida }) {
 }
 
 // citaciones: nominaCita de App. rutsPupilos: RUT de los pupilos de la cuenta.
-export default function CitacionesPendientesModal({ citaciones = [], rutsPupilos = [], rutPropio = '', forzarApertura = false, onActualizar }) {
+export default function CitacionesPendientesModal({ citaciones = [], rutsPupilos = [], rutPropio = '', forzarApertura = false, citacionEnfocadaId = null, onCerrar, onActualizar }) {
   const pendientes = useMemo(() => {
     const pupilos = new Set(rutsPupilos.map(normRut));
     const propio = normRut(rutPropio);
     return (citaciones || []).flatMap((cita) => (cita.convocados || [])
-      .filter((c) => c.respuesta === 'pendiente' && (pupilos.has(normRut(c.rut_jugador)) || normRut(c.rut_jugador) === propio))
+      .filter((c) => (c.respuesta === 'pendiente' || cita.id === citacionEnfocadaId) && (pupilos.has(normRut(c.rut_jugador)) || normRut(c.rut_jugador) === propio))
       .map((c) => ({
         cita,
         convocado: c,
         clave: `${cita.id}-${normRut(c.rut_jugador)}`,
-        // El apoderado siempre responde; el propio deportista solo si es autogestionado.
-        puedeResponder: pupilos.has(normRut(c.rut_jugador)) || puedeJugadorResponderPropiaCitacion(c),
+        // Responde el apoderado; la jugadora citada solo si es autogestionada.
+        puedeResponder: normRut(c.rut_jugador) === propio ? puedeJugadorResponderPropiaCitacion(c) : pupilos.has(normRut(c.rut_jugador)),
+        enfocada: cita.id === citacionEnfocadaId,
       })));
-  }, [citaciones, rutsPupilos, rutPropio]);
+  }, [citaciones, rutsPupilos, rutPropio, citacionEnfocadaId]);
 
   const [pospuestas, setPospuestas] = useState(leerPospuestas);
-  const visibles = forzarApertura ? pendientes : pendientes.filter((p) => !pospuestas.has(p.clave));
   const [cerrada, setCerrada] = useState(false);
-  if (cerrada || visibles.length === 0) return null;
+  // La citación del enlace se muestra siempre (aunque se haya pospuesto o cerrado antes).
+  const visibles = citacionEnfocadaId
+    ? pendientes.filter((p) => p.enfocada)
+    : (forzarApertura ? pendientes : pendientes.filter((p) => !pospuestas.has(p.clave)));
+  if ((cerrada && !citacionEnfocadaId) || visibles.length === 0) return null;
 
   const posponer = () => {
     const siguiente = new Set([...pospuestas, ...pendientes.map((p) => p.clave)]);
     try { sessionStorage.setItem(CLAVE_VISTAS, JSON.stringify([...siguiente])); } catch { /* sin almacenamiento: se vuelve a mostrar */ }
     setPospuestas(siguiente);
     setCerrada(true);
+    onCerrar?.();
   };
   const onRespondida = (citaId, convocado) => onActualizar?.((prev) => (prev || []).map((c) => (c.id !== citaId ? c : {
     ...c,
@@ -135,7 +145,7 @@ export default function CitacionesPendientesModal({ citaciones = [], rutsPupilos
       <div className="fp-ventana" role="dialog" aria-modal="true" aria-labelledby="titulo-citaciones-pendientes" style={{ width: 'min(520px, 100%)' }} data-testid="citaciones-pendientes">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px 0' }}>
           <h2 id="titulo-citaciones-pendientes" style={{ margin: 0, fontSize: '18px' }}>
-            {visibles.length === 1 ? 'Tienes una citación por responder' : `Tienes ${visibles.length} citaciones por responder`}
+            {citacionEnfocadaId ? 'Citación' : visibles.length === 1 ? 'Tienes una citación por responder' : `Tienes ${visibles.length} citaciones por responder`}
           </h2>
           <button type="button" className="btn-secondary tc-btn" aria-label="Cerrar" onClick={posponer}><X size={16} /></button>
         </div>
@@ -143,7 +153,7 @@ export default function CitacionesPendientesModal({ citaciones = [], rutsPupilos
           {visibles.map((p) => <Pendiente key={p.clave} {...p} onRespondida={onRespondida} />)}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '14px' }}>
             <BotonAvisos />
-            <button type="button" className="btn-secondary tc-btn" onClick={posponer}>Responder más tarde</button>
+            <button type="button" className="btn-secondary tc-btn" onClick={posponer}>{citacionEnfocadaId ? 'Cerrar' : 'Responder más tarde'}</button>
           </div>
         </div>
       </div>

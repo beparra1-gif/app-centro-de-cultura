@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { Check, Copy, MessageCircle } from 'lucide-react';
 import { showToast } from '../utils/toast';
 import { telefonoParaWhatsApp } from '../utils/codigoActivacion';
-import { esBanca, mensajeGrupoCitacion, mensajeWhatsappCitacion, urlRespuestaCitacion } from '../utils/citaciones';
+import { esBanca, mensajeGrupoCitacion, mensajeWhatsappCitacion, urlCitacionGrupal } from '../utils/citaciones';
 
-// Envío por WhatsApp de una citación: un mensaje personal por apoderado con
-// su enlace directo para confirmar o rechazar (con motivo), y un mensaje para
-// el grupo de la categoría con la nómina.
+// Envío por WhatsApp de una citación: el mensaje del grupo de la categoría
+// (formato del club) con UN enlace que abre la citación al iniciar sesión
+// (solo responde el apoderado), y recordatorios individuales con ese enlace.
 
 const copiar = async (texto, ok) => {
   try {
@@ -31,14 +31,15 @@ export default function CitacionWhatsapp({ cita, soloPendientes: soloPendientesI
         <strong style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}><MessageCircle size={15} /> Enviar por WhatsApp</strong>
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           <a className="btn-secondary tc-btn" href={`https://wa.me/?text=${encodeURIComponent(grupo)}`} target="_blank" rel="noopener noreferrer">Mensaje al grupo</a>
-          <button type="button" className="btn-secondary tc-btn" onClick={() => copiar(grupo, 'Mensaje del grupo copiado.')}><Copy size={13} /> Copiar</button>
+          <button type="button" className="btn-secondary tc-btn" onClick={() => copiar(grupo, 'Mensaje del grupo copiado.')}><Copy size={13} /> Copiar mensaje</button>
+          <button type="button" className="btn-secondary tc-btn" onClick={() => copiar(urlCitacionGrupal(cita.token_publico), 'Enlace de la citación copiado.')}><Copy size={13} /> Copiar enlace</button>
         </div>
       </div>
       <p className="pf-ayuda" style={{ marginTop: '6px' }}>
-        Cada apoderado recibe su enlace para confirmar o indicar el motivo, sin iniciar sesión. Los deportistas solo confirman si son autogestionados.
+        Un solo enlace para todos: al abrirlo cada familia inicia sesión con su cuenta y el apoderado confirma o indica el motivo (la jugadora solo ve su citación). Quien no está en la nómina ve que no tiene citación para este juego.
       </p>
       <label className="checkbox-label-row" style={{ margin: '4px 0 8px' }}>
-        <input type="checkbox" checked={soloPendientes} onChange={(e) => setSoloPendientes(e.target.checked)} /> Solo quienes no han respondido (recordatorio)
+        <input type="checkbox" checked={soloPendientes} onChange={(e) => setSoloPendientes(e.target.checked)} /> Recordatorio individual: solo quienes no han respondido
       </label>
       {convocados.length === 0 && <p className="text-muted" style={{ fontSize: '12px', margin: 0 }}>Todos respondieron.</p>}
       <div style={{ display: 'grid', gap: '6px' }}>
@@ -66,7 +67,6 @@ export default function CitacionWhatsapp({ cita, soloPendientes: soloPendientesI
                 ) : (
                   <button type="button" className="btn-secondary tc-btn" onClick={() => copiar(mensaje, `Mensaje para ${c.nombre} copiado.`)}><Copy size={13} /> Copiar mensaje</button>
                 )}
-                <button type="button" className="btn-secondary tc-btn" aria-label={`Copiar enlace de ${c.nombre}`} onClick={() => copiar(urlRespuestaCitacion(c.token_respuesta), 'Enlace copiado.')}><Copy size={13} /> Enlace</button>
               </div>
             </div>
           );

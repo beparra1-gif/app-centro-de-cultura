@@ -356,7 +356,7 @@ const requireApoderadoDeJugador = (pool) => (req, res, next) => {
         if (cuenta?.permisos_override?.perfil === true) return next();
       }
 
-      return res.status(403).json({ error: 'Solo el apoderado (o el deportista autogestionado) puede confirmar o rechazar esta citación.' });
+      return res.status(403).json({ error: 'Solo el apoderado del deportista (o staff/admin del club) puede confirmar o rechazar esta citación.' });
     })
     .catch((err) => res.status(500).json({ error: err.message }));
 };

@@ -2382,6 +2382,26 @@ function SuperAdminPanel({
     }
   };
 
+  // Staff/admin responden por el apoderado (p. ej. avisó por teléfono).
+  const responderPorConvocado = async (cita, conv, respuesta) => {
+    let justificacion;
+    if (respuesta === 'no') {
+      const motivo = await confirmAction({ title: 'No asiste', message: `Motivo por el que ${conv.nombre} no asistirá.`, confirmText: 'Guardar', pedirTexto: { etiqueta: 'Motivo', placeholder: 'Ej: viaje familiar' } });
+      if (motivo === false) return;
+      if (!motivo) { showToast({ message: 'Indica el motivo de la inasistencia.', type: 'error' }); return; }
+      justificacion = motivo;
+    }
+    try {
+      await api.citacionesAPI.responder(cita.id, conv.rut_jugador, { respuesta, justificacion });
+      const citaActualizada = normalizarCitacion(await api.citacionesAPI.getById(cita.id));
+      setNominaCita((prev) => (prev || []).map((item) => (item.id === cita.id ? citaActualizada : item)));
+      sincronizarComunicacionDesdeCitacion(citaActualizada);
+      showToast({ message: respuesta === 'si' ? `Asistencia de ${conv.nombre} confirmada.` : 'Quedó registrado el motivo.', type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo guardar la respuesta.', type: 'error' });
+    }
+  };
+
   const quitarConvocadoDeCitacion = async (cita, rutJugador) => {
     if (!cita || !rutJugador) return;
 
@@ -5159,6 +5179,16 @@ function SuperAdminPanel({
                             )}
                             {puedeEditarNominaCitacion(cita) && (
                               <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end', gap: '6px', flexWrap: 'wrap' }}>
+                                {conv.respuesta !== 'si' && (
+                                  <button type="button" className="btn-secondary" style={{ width: 'auto', padding: '7px 10px' }} onClick={() => responderPorConvocado(cita, conv, 'si')}>
+                                    Asiste
+                                  </button>
+                                )}
+                                {conv.respuesta !== 'no' && (
+                                  <button type="button" className="btn-secondary" style={{ width: 'auto', padding: '7px 10px' }} onClick={() => responderPorConvocado(cita, conv, 'no')}>
+                                    No asiste
+                                  </button>
+                                )}
                                 {esBanca(conv) && (
                                   <button
                                     type="button"

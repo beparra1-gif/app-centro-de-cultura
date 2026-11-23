@@ -21,29 +21,41 @@ describe('citaciones', () => {
     expect(puedeJugadorResponderPropiaCitacion({ fecha_nacimiento: '2000-01-01' })).toBe(false);
   });
 
-  it('incluye lugar con enlace de mapa y el mensaje del responsable', () => {
-    const texto = mensajeWhatsappCitacion({ ...cita, lugar_nombre: 'Gimnasio Polideportivo', lugar_direccion: 'Av. Libertad 123, Viña del Mar', mensaje_adicional: 'Llevar camiseta blanca' }, { nombre: 'Ana', token_respuesta: 't' });
-    expect(texto).toContain('📍 Gimnasio Polideportivo, Av. Libertad 123, Viña del Mar');
-    expect(texto).toContain('https://www.google.com/maps/search/?api=1&query=Gimnasio%20Polideportivo');
-    expect(texto).toContain('📝 Llevar camiseta blanca');
-  });
-
-  it('arma el WhatsApp personal con el enlace y el plazo', () => {
-    const texto = mensajeWhatsappCitacion(cita, { nombre: 'Ana Pérez', apoderado_nombre: 'María José Soto', token_respuesta: 'abc123' });
-    expect(texto).toContain('Hola María!');
-    expect(texto).toContain('Ana Pérez fue *citada/o* a Liga ARBAM vs Club X');
-    expect(texto).toContain('sábado 28 de noviembre · Citación (llegada) 08:30 · Partido 09:00');
-    expect(texto).toContain('/?citacion=abc123');
-    expect(texto).toContain('Plazo para responder: viernes 27 de noviembre a las 22:00');
-    const banca = mensajeWhatsappCitacion(cita, { nombre: 'Bea', rol_convocatoria: 'banca', token_respuesta: 't' });
-    expect(banca).toContain('*banca (reserva)*');
-    expect(banca).not.toContain('Plazo');
-  });
-
-  it('el mensaje de grupo lista titulares y banca sin enlaces personales', () => {
-    const texto = mensajeGrupoCitacion({ ...cita, convocados: [{ nombre: 'Ana', token_respuesta: 'x1' }, { nombre: 'Bea', rol_convocatoria: 'banca', token_respuesta: 'x2' }] });
-    expect(texto).toContain('1. Ana');
-    expect(texto).toContain('*En banca (reserva):*\n• Bea');
+  it('arma el mensaje del grupo en el formato del club, con un solo enlace y sin mapa', () => {
+    const texto = mensajeGrupoCitacion({
+      ...cita, categoria_base: 'SUB-15', rama: 'femenina', competencia_nombre: 'Asoc valpo', lugar_nombre: 'Gimnasio Los leones',
+      lugar_direccion: 'Av. X 1', hora_citacion: '16:00:00', hora_presentacion: '15:00:00', dia_citacion: '2026-11-21', token_publico: 'tok123',
+      convocados: [{ nombre: 'Magdalena Morales', token_respuesta: 'x1' }, { nombre: 'Byana Galvez' }, { nombre: 'Bea', rol_convocatoria: 'banca' }],
+    });
+    expect(texto).toBe([
+      '⚪️🔵 CITACIÓN OFICIAL U-15 ⚪️🔵',
+      '',
+      '🏆 Competencia: Asoc valpo',
+      '📅 Día: Sábado 21',
+      '📍 Lugar: Gimnasio Los leones',
+      '⏰ Hora : 16:00',
+      '🕙 Hora de llegada: 15:00',
+      '',
+      '👥 JUGADORAS CITADAS',
+      '',
+      '• Magdalena Morales',
+      '• Byana Galvez',
+      '',
+      '🔁 EN BANCA (reserva)',
+      '',
+      '• Bea',
+      '',
+      'Acá enlace para confirmar citación',
+      'http://localhost:3000/?partido=tok123',
+    ].join('\n'));
+    expect(texto).not.toContain('maps');
     expect(texto).not.toContain('x1');
+  });
+
+  it('el recordatorio personal usa el mismo enlace único', () => {
+    const texto = mensajeWhatsappCitacion({ ...cita, token_publico: 'tok123' }, { nombre: 'Ana', apoderado_nombre: 'María José', token_respuesta: 'personal' });
+    expect(texto).toContain('Hola María, Ana está citada/o.');
+    expect(texto).toContain('/?partido=tok123');
+    expect(texto).not.toContain('personal');
   });
 });

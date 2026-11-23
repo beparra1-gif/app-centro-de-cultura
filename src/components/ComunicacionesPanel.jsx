@@ -158,8 +158,8 @@ function ComunicacionesPanel({
     const actorId = rutUsuario || correoUsuario || `anon-${nextId()}`;
     // El backend autoriza por titularidad (rut_apoderado del jugador), no por
     // el rol de la cuenta. Lo único que bloquea es que el propio deportista
-    // citado (coincide por su propio RUT) intente responder por sí mismo —
-    // salvo que el club lo marcó autogestionado, ver puedeJugadorResponderPropiaCitacion.
+    // citado (coincide por su propio RUT) intente responder por sí mismo, salvo
+    // que el club lo marcó autogestionado; si no, responde su apoderado.
     const esElJugadorCitado = Boolean(rutUsuario) && String(convocado?.rut_jugador || '').trim() === rutUsuario;
     const claveMensaje = obtenerClaveMensaje(comId, convocado?.rut_jugador || actorId);
     const justificacion = respuesta === 'no'
@@ -577,11 +577,8 @@ function ComunicacionesPanel({
                               // El backend autoriza el RSVP por titularidad (rut_apoderado del
                               // jugador), no por el rol de la cuenta — un "socio" o "directiva"
                               // puede ser apoderado igual que un rol "apoderado" literal. El
-                              // propio deportista citado (coincide por su propio RUT, no por
-                              // correo de apoderado) solo puede responder si el club lo marcó
-                              // autogestionado (puedeJugadorResponderPropiaCitacion); si no, solo
-                              // ve que fue citado y responde su apoderado. El apoderado nunca
-                              // pierde su capacidad de responder.
+                              // propio deportista citado solo responde si es autogestionado;
+                              // si no, solo ve que fue citado y responde su apoderado.
                               const esElJugadorCitado = Boolean(rutUsuario) && String(convocado.rut_jugador || '').trim() === rutUsuario;
                               const jugadorPuedeResponderPropio = esElJugadorCitado && puedeJugadorResponderPropiaCitacion(convocado);
                               const puedeResponder = (esPropio && !esElJugadorCitado) || jugadorPuedeResponderPropio;

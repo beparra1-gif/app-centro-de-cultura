@@ -1,6 +1,6 @@
 // Citaciones de punta a punta: creador por pasos (los citados al final),
 // titulares y banca, publicación con aviso en la app y por WhatsApp (enlace
-// directo sin sesión), ventana emergente para el apoderado, % de aceptadas en
+// que exige iniciar sesión), ventana emergente para el apoderado, % de aceptadas en
 // el Muro, reemplazo desde la banca y reglas de quién puede responder.
 import { test, expect } from '@playwright/test';
 import { CUENTAS, JUGADORES, PASSWORD_PRUEBA, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion } from './fixtures/cuentasPrueba.js';
@@ -103,14 +103,22 @@ test('el admin crea la convocatoria por pasos y la publica', async ({ page }) =>
   await page.getByRole('button', { name: 'PUBLICAR Y NOTIFICAR' }).click();
   await expect(page.getByText(/Citación publicada: 2 titulares y 1 en banca/)).toBeVisible({ timeout: 10000 });
 
-  // Se abre el envío por WhatsApp con enlace personal por apoderado.
+  // Se abre el envío por WhatsApp: mensaje del grupo en el formato del club,
+  // con UN enlace para todos y sin enlace de mapa (eso queda en la app).
   const wsp = page.getByTestId('citacion-whatsapp');
   await expect(wsp).toBeVisible();
-  const enlace = wsp.getByRole('link', { name: 'WhatsApp', exact: true }).first();
-  const href = decodeURIComponent(await enlace.getAttribute('href'));
-  expect(href).toMatch(/^https:\/\/wa\.me\/56900000000\?text=/);
-  expect(href).toMatch(/\/\?citacion=[a-f0-9]{32}/);
-  expect(href).toContain('Gimnasio E2E');
+  const grupo = decodeURIComponent(await wsp.getByRole('link', { name: 'Mensaje al grupo' }).getAttribute('href'));
+  expect(grupo).toContain('⚪️🔵 CITACIÓN OFICIAL U-13 ⚪️🔵');
+  expect(grupo).toContain(`🏆 Competencia: ${COMPETENCIA}`);
+  expect(grupo).toContain('📍 Lugar: Gimnasio E2E');
+  expect(grupo).toContain('👥 JUGADORES CITADOS');
+  expect(grupo).toContain('• E2E Pupilo Prueba');
+  expect(grupo).toMatch(/Acá enlace para confirmar citación\n\S+\/\?partido=[a-f0-9]{32}$/);
+  expect(grupo).not.toContain('maps');
+  // El recordatorio individual va al teléfono del apoderado con el mismo enlace.
+  const recordatorio = decodeURIComponent(await wsp.getByRole('link', { name: 'WhatsApp', exact: true }).first().getAttribute('href'));
+  expect(recordatorio).toMatch(/^https:\/\/wa\.me\/56900000000\?text=/);
+  expect(recordatorio).toMatch(/\/\?partido=[a-f0-9]{32}/);
 
   const c = await cita();
   expect(c).toMatchObject({ lugar_nombre: 'Gimnasio E2E', lugar_direccion: 'Av. Libertad 123, Viña del Mar', mensaje_adicional: 'Llevar camiseta blanca' });
@@ -127,20 +135,21 @@ test('el admin crea la convocatoria por pasos y la publica', async ({ page }) =>
   expect(avisos.some((a) => a.titulo.startsWith('Citación Liga'))).toBe(true);
 });
 
-test('el apoderado responde desde el enlace de WhatsApp, sin iniciar sesión', async ({ page }) => {
-  const { token_respuesta: token } = await conv(JUGADORES.pupilo.rut);
-  await page.goto(`/?citacion=${token}`);
-  const pagina = page.getByTestId('responder-citacion');
-  await expect(pagina.getByText('E2E Pupilo Prueba')).toBeVisible({ timeout: 15000 });
-  await expect(pagina.getByText('Sin responder').or(pagina.getByText('Pendiente de respuesta'))).toBeVisible();
-  await expect(pagina.getByTestId('tarjeta-partido').getByText('Gimnasio E2E', { exact: false })).toBeVisible();
-  await pagina.getByRole('button', { name: 'No podrá asistir' }).click();
-  await pagina.getByLabel('Motivo de la inasistencia').fill('Prueba en el colegio');
-  await pagina.getByRole('button', { name: 'Enviar' }).click();
-  await expect(pagina.getByText('Motivo: Prueba en el colegio')).toBeVisible({ timeout: 10000 });
-
-  const r = await conv(JUGADORES.pupilo.rut);
-  expect(r).toMatchObject({ respuesta: 'no', justificacion: 'Prueba en el colegio', respondido_por: 'enlace' });
+test('el enlace del grupo pide iniciar sesión y abre la citación solo a quien está en la nómina', async ({ page, browser }) => {
+  const { token_publico: enlace } = await cita();
+  // Sin sesión no se ve ni responde nada: se guarda el enlace hasta ingresar.
+  await page.goto(`/?partido=${enlace}`);
+  await expect(page.getByText('Inicia sesión para ver y responder la citación.')).toBeVisible({ timeout: 15000 });
+  await iniciarSesion(page, CUENTAS.apoderado.rut);
+  const modal = page.getByTestId('citaciones-pendientes');
+  await expect(modal.getByRole('heading', { name: 'Citación' })).toBeVisible({ timeout: 15000 });
+  const pupilo = modal.locator('div', { has: page.getByText('E2E Pupilo Prueba fue citada/o') }).filter({ has: page.getByRole('button', { name: 'No podrá asistir' }) }).last();
+  await expect(pupilo.getByTestId('tarjeta-partido').getByText('Gimnasio E2E', { exact: false })).toBeVisible();
+  await pupilo.getByRole('button', { name: 'No podrá asistir' }).click();
+  await pupilo.getByLabel('Motivo de la inasistencia').fill('Prueba en el colegio');
+  await pupilo.getByRole('button', { name: 'Enviar' }).click();
+  await expect(pupilo.getByText('Motivo: Prueba en el colegio')).toBeVisible({ timeout: 10000 });
+  expect(await conv(JUGADORES.pupilo.rut)).toMatchObject({ respuesta: 'no', justificacion: 'Prueba en el colegio' });
   // El responsable sabe que hay banca para reemplazar.
   const { rows } = await pool.query(
     "SELECT cuerpo FROM notificaciones_app WHERE REPLACE(REPLACE(UPPER(rut_destinatario), '.', ''), '-', '') = $1 AND tipo = 'citacion_rsvp' ORDER BY id DESC LIMIT 1",
@@ -148,8 +157,12 @@ test('el apoderado responde desde el enlace de WhatsApp, sin iniciar sesión', a
   );
   expect(rows[0].cuerpo).toContain('Hay 1 en banca para reemplazar');
 
-  await page.goto('/?citacion=00000000000000000000000000000000');
-  await expect(page.getByText('El enlace no es válido o la citación ya no existe.')).toBeVisible({ timeout: 10000 });
+  // Otra familia (no está en la nómina) con el mismo enlace.
+  const ajena = await browser.newPage();
+  await ajena.goto(`/?partido=${enlace}`);
+  await iniciarSesion(ajena, CUENTAS.socio_apoderado.rut);
+  await expect(ajena.getByText('No tiene citación asignada para este juego.')).toBeVisible({ timeout: 15000 });
+  await ajena.close();
 });
 
 test('al entrar, el apoderado ve la ventana para responder y el Muro con % de aceptadas', async ({ page }) => {
@@ -183,7 +196,7 @@ test('el admin reemplaza con la banca a quien se bajó', async ({ page }) => {
   expect(await conv(BANCA.rut)).toMatchObject({ rol_convocatoria: 'titular', respuesta: 'pendiente' });
 });
 
-test('reglas: solo autogestionados responden por sí mismos, familias sin enlaces ajenos y plazos', async ({ request }) => {
+test('reglas: responde el apoderado, staff o admin, y la jugadora solo si es autogestionada; familias sin enlaces', async ({ request }) => {
   const admin = { Authorization: `Bearer ${await tokenDe(request, CUENTAS.super_admin.rut)}` };
   const pasado = '2020-01-01T10:00';
   const vencida = await request.post(`${API}/citaciones`, { headers: admin, data: { competencia_nombre: 'E2E Cita Vencida', rival_nombre: 'X', hora_maxima_confirmacion: pasado, convocados: [{ rut_jugador: JUGADORES.propio.rut, nombre: 'E2E Jugador' }] } });
@@ -192,23 +205,29 @@ test('reglas: solo autogestionados responden por sí mismos, familias sin enlace
 
   const creada = await (await request.post(`${API}/citaciones`, { headers: admin, data: { competencia_nombre: 'E2E Cita Propia', rival_nombre: 'X', dia_citacion: diaFuturo(), convocados: [{ rut_jugador: JUGADORES.propio.rut, nombre: 'E2E Jugador' }] } })).json();
   const jugador = { Authorization: `Bearer ${await tokenDe(request, CUENTAS.jugador.rut)}` };
-  const responder = () => request.patch(`${API}/citaciones/${creada.id}/convocados/${JUGADORES.propio.rut}/rsvp`, { headers: jugador, data: { respuesta: 'si' } });
-  expect((await responder()).status()).toBe(403);
+  const responder = (headers) => request.patch(`${API}/citaciones/${creada.id}/convocados/${JUGADORES.propio.rut}/rsvp`, { headers, data: { respuesta: 'si' } });
+  // La jugadora citada no responde... salvo que el club la marque autogestionada.
+  expect((await responder(jugador)).status()).toBe(403);
   await request.post(`${API}/jugadores/${JUGADORES.propio.rut}/autogestionable`, { headers: admin, data: { activo: true } });
-  expect((await responder()).status()).toBe(200);
+  expect((await responder(jugador)).status()).toBe(200);
+  await request.post(`${API}/jugadores/${JUGADORES.propio.rut}/autogestionable`, { headers: admin, data: { activo: false } });
+  expect((await responder(jugador)).status()).toBe(403);
+  // Con el enlace la ve; quien gestiona la abre en Citaciones.
+  const { rows: [propia] } = await pool.query('SELECT token_publico FROM citaciones WHERE id = $1', [creada.id]);
+  expect((await (await request.get(`${API}/citaciones/por-enlace/${propia.token_publico}`, { headers: jugador })).json()).acceso).toBe('jugador');
+  expect((await (await request.get(`${API}/citaciones/por-enlace/${propia.token_publico}`, { headers: admin })).json()).acceso).toBe('gestion');
+  expect((await request.get(`${API}/citaciones/por-enlace/${propia.token_publico}`)).status()).toBe(401);
+  // El admin responde por la familia.
+  expect((await responder(admin)).status()).toBe(200);
 
   // Las familias no reciben enlaces ni teléfonos de otros apoderados.
   const apoderado = { Authorization: `Bearer ${await tokenDe(request, CUENTAS.apoderado.rut)}` };
+  expect((await responder(apoderado)).status()).toBe(403);
   const visibles = await (await request.get(`${API}/citaciones`, { headers: apoderado })).json();
   const nuestra = visibles.find((c) => c.competencia_nombre === COMPETENCIA);
   expect(nuestra.convocados.length).toBeGreaterThan(0);
   expect(nuestra.convocados.every((c) => c.token_respuesta === undefined && c.apoderado_telefono === undefined)).toBe(true);
-
-  // Pasado el plazo, el enlace ya no permite cambiar la respuesta.
-  const { token_respuesta: token } = await conv(SEGUNDA.rut);
-  await pool.query("UPDATE citaciones SET hora_maxima_confirmacion = NOW() - interval '1 day' WHERE competencia_nombre = $1", [COMPETENCIA]);
-  const tarde = await request.post(`${API}/citaciones/responder/${token}`, { data: { respuesta: 'si' } });
-  expect(tarde.status()).toBe(409);
+  expect(nuestra.token_publico).toBeUndefined();
 });
 
 test('avisos nativos: clave pública y registro del teléfono', async ({ request }) => {
