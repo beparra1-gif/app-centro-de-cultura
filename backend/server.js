@@ -1893,6 +1893,8 @@ const ensureCuentasExtendedColumns = async () => {
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS requiere_foto_perfil BOOLEAN DEFAULT false`,
     // Categorías a cargo de un staff ([] = todas). Solo las asigna un admin.
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS categorias_asignadas JSONB DEFAULT '[]'::jsonb`,
+    // Ramas a cargo del staff ([] = todas): se combina con categorias_asignadas.
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS ramas_asignadas JSONB DEFAULT '[]'::jsonb`,
   ];
 
   for (const statement of ddl) {
@@ -3475,7 +3477,8 @@ app.get('/api/staff-tecnico', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT id, nombres, apellido_paterno, NULLIF(TRIM(foto_perfil_url), '') AS foto,
-              COALESCE(categorias_asignadas, '[]'::jsonb) AS categorias
+              COALESCE(categorias_asignadas, '[]'::jsonb) AS categorias,
+              COALESCE(ramas_asignadas, '[]'::jsonb) AS ramas
        FROM cuentas
        WHERE LOWER(TRIM(COALESCE(rol, ''))) IN ('staff', 'entrenador', 'profesor')
          AND LOWER(TRIM(COALESCE(estado, ''))) <> ALL($1)
@@ -3487,6 +3490,7 @@ app.get('/api/staff-tecnico', authenticate, async (req, res) => {
       nombre: `${String(r.nombres || '').trim().split(/\s+/)[0]} ${r.apellido_paterno || ''}`.trim(),
       foto: r.foto,
       categorias: Array.isArray(r.categorias) ? r.categorias : [],
+      ramas: Array.isArray(r.ramas) ? r.ramas : [],
     })));
   } catch (err) {
     console.error('[GET /api/staff-tecnico]', err.message);
@@ -5309,7 +5313,7 @@ const CAMPOS_CUENTA_SOLO_ADMIN = [
   // Ningún flujo de autoservicio los edita (el onboarding solo manda nombre,
   // teléfono, dirección y foto). password tampoco: el dueño cambia su clave
   // por /api/auth/change-password, que exige la clave actual.
-  'rut', 'correo', 'password', 'motivo_baja', 'categorias_asignadas',
+  'rut', 'correo', 'password', 'motivo_baja', 'categorias_asignadas', 'ramas_asignadas',
 ];
 
 app.put(
@@ -5318,7 +5322,7 @@ app.put(
   requireOwnerIdOrModule('id', 'admin_dashboard'),
   stripFieldsUnlessModule(CAMPOS_CUENTA_SOLO_ADMIN, 'admin_dashboard'),
   // Las categorías del staff además requieren el permiso Gestión de Staff.
-  stripFieldsUnlessModule(['categorias_asignadas'], 'gestion_staff'),
+  stripFieldsUnlessModule(['categorias_asignadas', 'ramas_asignadas'], 'gestion_staff'),
   async (req, res) => {
   const {
     correo,
@@ -5465,6 +5469,11 @@ app.put(
 
     const cuenta = result.rows[0];
     await registrarCambioEstado(req, 'cuenta', previo, cuenta);
+    if (Array.isArray(req.body?.ramas_asignadas)) {
+      const ramas = req.body.ramas_asignadas.map((r) => String(r || '').trim().toUpperCase()).filter(Boolean).slice(0, 10);
+      await pool.query('UPDATE cuentas SET ramas_asignadas = $1::jsonb WHERE id = $2', [JSON.stringify(ramas), cuenta.id]);
+      cuenta.ramas_asignadas = ramas;
+    }
     res.json({
       ...omitPassword(cuenta),
       campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
@@ -5872,8 +5881,8 @@ app.get('/api/jugadores', authenticate, async (req, res) => {
     const filas = result.rows.map(({ password_jugador: _omitida, ...j }) => ({ ...j, xp_total: Number(j.xp_total), nivel_actual: calcularNivelDesdeXPTotal(j.xp_total) }));
     if (await tienePlantelCompleto(req.actor)) {
       // Staff con categorías asignadas: solo recibe esas categorías.
-      const categorias = await categoriasDeStaff(req.actor);
-      const visibles = filas.filter((j) => enCategorias(categorias, j.categoria));
+      const alcance = await alcanceDeStaff(req.actor);
+      const visibles = filas.filter((j) => enAlcance(alcance, j));
       // Perfil familiar con un módulo de plantel por excepción: sin motivo_baja (interno) salvo que tenga Admin.
       const ocultarInterno = ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))
         && !(await resolverPermisosDeActor(req.actor)).admin_dashboard;
@@ -5904,7 +5913,7 @@ app.get('/api/jugadores/:rut', authenticate, async (req, res) => {
     );
     const jugador = result.rows[0];
     if (!jugador) return res.json({});
-    if (!enCategorias(await categoriasDeStaff(req.actor), jugador.categoria)) {
+    if (!enAlcance(await alcanceDeStaff(req.actor), jugador)) {
       return res.status(403).json({ error: 'Deportista fuera de tus categorías asignadas.' });
     }
     delete jugador.password_jugador;
@@ -8558,23 +8567,30 @@ const avisarComprobanteATesoreria = async (actor, pago) => {
 // solo puede pasar lista, citar y evaluar a deportistas de esas categorías.
 // Antes el filtro era solo de pantalla y la API aceptaba cualquier RUT.
 // Categorías del staff en minúsculas; [] = sin restricción (o no es staff).
-const categoriasDeStaff = async (actor) => {
-  if (normalizarRol(actor?.rol) !== 'staff' || !actor?.id) return [];
-  const cuenta = (await pool.query('SELECT categorias_asignadas FROM cuentas WHERE id = $1', [actor.id])).rows[0];
-  return (Array.isArray(cuenta?.categorias_asignadas) ? cuenta.categorias_asignadas : [])
-    .map((c) => String(c || '').trim().toLowerCase()).filter(Boolean);
+// Alcance del staff: categorías y ramas en minúsculas; [] = sin restricción.
+// Un deportista entra si su categoría Y su rama están dentro.
+const alcanceDeStaff = async (actor) => {
+  if (normalizarRol(actor?.rol) !== 'staff' || !actor?.id) return { categorias: [], ramas: [] };
+  const cuenta = (await pool.query('SELECT categorias_asignadas, ramas_asignadas FROM cuentas WHERE id = $1', [actor.id])).rows[0];
+  const lista = (v) => (Array.isArray(v) ? v : []).map((c) => String(c || '').trim().toLowerCase()).filter(Boolean);
+  return { categorias: lista(cuenta?.categorias_asignadas), ramas: lista(cuenta?.ramas_asignadas) };
 };
+const categoriasDeStaff = async (actor) => (await alcanceDeStaff(actor)).categorias;
 const enCategorias = (categorias, valor) => !categorias.length || categorias.includes(String(valor || '').trim().toLowerCase());
+const enAlcance = (alcance, j = {}) => enCategorias(alcance.categorias, j.categoria) && enCategorias(alcance.ramas, j.rama);
 
 const rutsFueraDeCategoriasStaff = async (actor, ruts) => {
-  const categorias = await categoriasDeStaff(actor);
+  const { categorias, ramas } = await alcanceDeStaff(actor);
   const lista = [...new Set((ruts || []).map((r) => normalizarRutParaComparar(r)).filter(Boolean))];
-  if (!categorias.length || !lista.length) return [];
+  if ((!categorias.length && !ramas.length) || !lista.length) return [];
   const result = await pool.query(
     `SELECT rut_jugador, nombres, apellido_paterno FROM jugadores
      WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = ANY($1)
-       AND NOT (LOWER(TRIM(COALESCE(categoria, ''))) = ANY($2))`,
-    [lista, categorias]
+       AND NOT (
+         (cardinality($2::text[]) = 0 OR LOWER(TRIM(COALESCE(categoria, ''))) = ANY($2))
+         AND (cardinality($3::text[]) = 0 OR LOWER(TRIM(COALESCE(rama, ''))) = ANY($3))
+       )`,
+    [lista, categorias, ramas]
   );
   return result.rows;
 };
@@ -9775,10 +9791,14 @@ app.get('/api/asistencia/sesiones', authenticate, requireAnyModule('citaciones',
       valores.push(hasta);
       condiciones.push(`fecha <= $${valores.length}`);
     }
-    const categoriasStaff = await categoriasDeStaff(req.actor);
+    const { categorias: categoriasStaff, ramas: ramasStaff } = await alcanceDeStaff(req.actor);
     if (categoriasStaff.length) {
       valores.push(categoriasStaff);
       condiciones.push(`LOWER(TRIM(categoria)) = ANY($${valores.length}::text[])`);
+    }
+    if (ramasStaff.length) {
+      valores.push(ramasStaff);
+      condiciones.push(`LOWER(TRIM(rama)) = ANY($${valores.length}::text[])`);
     }
     const where = condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
 
@@ -10861,6 +10881,7 @@ app.get('/api/academia/ranking', authenticate, requireRole('staff', 'admin', 'su
       ? (listaCategorias.length ? listaCategorias.filter((c) => categoriasStaff.includes(c)) : categoriasStaff)
       : listaCategorias;
     const categoria = permitidas.length ? permitidas : (categoriasStaff.length ? ['__ninguna__'] : null);
+    const { ramas: ramasStaff } = await alcanceDeStaff(req.actor);
     const result = await pool.query(
       `SELECT j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria,
               COALESCE(SUM(gp.puntos_obtenidos), 0) AS xp_total,
@@ -10868,9 +10889,10 @@ app.get('/api/academia/ranking', authenticate, requireRole('staff', 'admin', 'su
        FROM jugadores j
        LEFT JOIN gamificacion_puntos gp ON gp.rut_jugador = j.rut_jugador
        WHERE ($1::text IS NULL OR LOWER(TRIM(j.rama)) = LOWER(TRIM($1))) AND ($2::text[] IS NULL OR LOWER(TRIM(j.categoria)) = ANY($2::text[]))
+         AND (cardinality($3::text[]) = 0 OR LOWER(TRIM(j.rama)) = ANY($3::text[]))
        GROUP BY j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria
        ORDER BY xp_total DESC, j.apellido_paterno ASC`,
-      [rama, categoria]
+      [rama, categoria, ramasStaff]
     );
     const filas = result.rows.map((fila, idx) => ({
       ...fila,

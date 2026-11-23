@@ -45,6 +45,8 @@ test.afterAll(async () => { await limpiarExtra(); await limpiarDatosPrueba(pool)
 
 const tokenDe = async (request, rut) => (await (await request.post(`${API}/auth/login`, { data: { rut, password: PASSWORD_PRUEBA } })).json()).token;
 const nombre = (j) => `${j.nombres} ${j.apellido}`;
+// Pasar lista y nóminas muestran primer nombre + primer apellido (pupilo e hijoSocio quedan iguales: "E2E Prueba").
+const corto = (j) => `${j.nombres.split(' ')[0]} ${j.apellido}`;
 
 test('super admin asigna categorías a un staff desde Editar cuenta', async ({ page, request }) => {
   await iniciarSesion(page, CUENTAS.super_admin.rut);
@@ -73,9 +75,10 @@ test('super admin asigna categorías a un staff desde Editar cuenta', async ({ p
 test('staff pasa lista solo con su categoría y la asistencia se guarda', async ({ page }) => {
   await iniciarSesion(page, CUENTAS.staff.rut);
   await page.locator('.nav-item', { hasText: 'Asistencia' }).click();
-  const pupilo = nombre(JUGADORES.pupilo);
+  const pupilo = corto(JUGADORES.pupilo);
   await expect(page.getByText(pupilo, { exact: true })).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText(nombre(JUGADORES.hijoSocio), { exact: true })).toHaveCount(0);
+  // Solo uno: el pupilo (SUB-13), no el hijo del socio (SUB-15), que se vería con el mismo nombre corto.
+  await expect(page.getByText(pupilo, { exact: true })).toHaveCount(1);
   // Los botones de categoría del entrenamiento solo ofrecen SUB-13.
   await expect(page.getByRole('button', { name: 'SUB-15', exact: true })).toHaveCount(0);
 
@@ -106,10 +109,11 @@ test('staff cita a un partido solo a deportistas de su categoría', async ({ pag
   const f = new Date(); f.setDate(f.getDate() + 3);
   await page.locator('input[type=date]').first().fill(f.toISOString().slice(0, 10));
   await page.getByRole('button', { name: /Siguiente: Citados/ }).click();
-  const pupilo = nombre(JUGADORES.pupilo);
+  const pupilo = corto(JUGADORES.pupilo);
   const grupo = page.getByRole('group', { name: `Citar a ${pupilo}` });
   await expect(grupo).toBeVisible({ timeout: 15000 });
-  await expect(page.getByText(new RegExp(nombre(JUGADORES.hijoSocio)))).toHaveCount(0);
+  // Un solo citable con ese nombre corto: el hijo del socio (SUB-15) no aparece.
+  await expect(page.getByRole('group', { name: `Citar a ${pupilo}` })).toHaveCount(1);
   await grupo.getByRole('button', { name: 'Titular' }).click();
   await page.getByRole('button', { name: /Siguiente: Revisar y publicar/ }).click();
   await page.getByRole('button', { name: 'PUBLICAR Y NOTIFICAR' }).click();
@@ -274,7 +278,7 @@ test('admin aprueba uno (entra a la nómina) y rechaza otro con motivo', async (
 test('staff ve el resultado y el aprobado ya aparece en su lista', async ({ page }) => {
   await iniciarSesion(page, CUENTAS.staff.rut);
   await page.locator('.nav-item', { hasText: 'Asistencia' }).click();
-  await expect(page.getByText(nombre(NUEVO), { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(corto(NUEVO), { exact: true }).first()).toBeVisible({ timeout: 15000 });
   await page.getByRole('button', { name: 'Nuevo deportista' }).click();
   const form = page.getByTestId('solicitud-jugador-staff');
   await expect(form.getByText('Aprobada', { exact: true })).toHaveCount(2);

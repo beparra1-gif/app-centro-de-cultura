@@ -43,6 +43,7 @@ function VentanaStaff({ onCerrar }) {
               <article key={p.id} className="ms-persona">
                 <FotoPersona foto={p.foto} nombre={p.nombre} size={64} />
                 <strong>{p.nombre}</strong>
+                {p.ramas?.length > 0 && <small className="ms-rama">{p.ramas.map((r) => r.charAt(0) + r.slice(1).toLowerCase()).join(' y ')}</small>}
                 <div className="ms-categorias">
                   {p.categorias.length
                     ? [...p.categorias].sort(ordenarCategorias).map((c) => <span key={c} className="tc-perfil">{c}</span>)
