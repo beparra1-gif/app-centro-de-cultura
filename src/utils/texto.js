@@ -15,3 +15,6 @@ export const unicosSinMayusculas = (valores = []) => {
 
 // Filtros de selección múltiple: [] = todas; si no, el valor debe ser alguno de los elegidos.
 export const coincideAlguna = (seleccion = [], valor) => !seleccion.length || seleccion.some((s) => mismoTexto(s, valor));
+
+// Nóminas y pasar lista: solo primer nombre y primer apellido ("Antonia Moreno").
+export const nombreCorto = (p = {}) => [String(p.nombres || '').trim().split(/\s+/)[0], String(p.apellido_paterno || '').trim()].filter(Boolean).join(' ');

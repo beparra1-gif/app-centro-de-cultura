@@ -78,7 +78,7 @@ import { absolutizarLogoUrl } from '../utils/logoResolver';
 import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
 import useModalAccesible from '../utils/useModalAccesible';
 
-import { coincideAlguna, mismoTexto, unicosSinMayusculas } from '../utils/texto';
+import { coincideAlguna, mismoTexto, nombreCorto, unicosSinMayusculas } from '../utils/texto';
 import { mensajeCodigoActivacion, telefonoParaWhatsApp } from '../utils/codigoActivacion';
 import FiltroCategorias from './FiltroCategorias';
 // comprobante_url llega en 2 formatos: URL relativa del backend
@@ -2475,7 +2475,7 @@ function SuperAdminPanel({
       .map((j) => ({
         rol: seleccionCitacion[j.rut_jugador] === 'banca' ? 'banca' : 'titular',
         rut_jugador: j.rut_jugador,
-        nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim(),
+        nombre: nombreCorto(j),
         categoria: j.categoria || 'Sin categoría',
         rama: j.rama || 'Sin rama',
         correo_apoderado: j.correo_apoderado || '',
@@ -4892,7 +4892,7 @@ function SuperAdminPanel({
                   return (
                   <div key={jugador.rut_jugador} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', background: 'var(--fondo-app)', border: `1px solid ${requiereAutorizacion ? 'rgba(255,149,0,0.45)' : 'rgba(0,0,0,0.05)'}`, borderRadius: 'var(--radius-sm)', marginBottom: '10px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <strong style={{ fontSize: '15px', color: 'var(--texto-principal)' }}>{`${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim()}</strong>
+                      <strong style={{ fontSize: '15px', color: 'var(--texto-principal)' }}>{nombreCorto(jugador)}</strong>
                       <span className="text-caption" style={{ fontWeight: 'bold' }}>
                         RUT: {jugador.rut_jugador} | Rama: {jugador.rama || 'N/A'} | Cat: {jugador.categoria || 'N/A'}
                       </span>
@@ -4916,7 +4916,7 @@ function SuperAdminPanel({
                       )}
                     </div>
 
-                    <div className="segment-control" role="group" aria-label={`Citar a ${`${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim()}`} style={{ gap: '4px', flexShrink: 0 }}>
+                    <div className="segment-control" role="group" aria-label={`Citar a ${nombreCorto(jugador)}`} style={{ gap: '4px', flexShrink: 0 }}>
                       <button
                         type="button"
                         className={`segment-btn ${seleccionCitacion[jugador.rut_jugador] === 'titular' ? 'active' : ''}`}

@@ -8925,6 +8925,10 @@ const CITACION_COLUMNAS_SQL = `
 // teléfono del apoderado para avisar por WhatsApp.
 const CONVOCADOS_SELECT_SQL = `
   SELECT cc.*, j.rut_apoderado, j.fecha_nacimiento,
+         -- Nómina con primer nombre y primer apellido (también en citaciones ya
+         -- creadas, que guardaron el nombre completo). Reemplaza cc.nombre: en
+         -- node-pg la última columna con el mismo nombre gana.
+         COALESCE(NULLIF(TRIM(CONCAT(split_part(TRIM(j.nombres), ' ', 1), ' ', TRIM(j.apellido_paterno))), ''), cc.nombre) AS nombre,
          COALESCE((ca.permisos_override->>'perfil') = 'true', false) AS autogestionado,
          NULLIF(TRIM(CONCAT(ap.nombres, ' ', ap.apellido_paterno)), '') AS apoderado_nombre,
          COALESCE(NULLIF(TRIM(ap.telefono), ''), NULLIF(TRIM(j.num_emergencia), '')) AS apoderado_telefono

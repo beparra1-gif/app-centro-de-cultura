@@ -14,6 +14,7 @@ import FiltroCategorias from './FiltroCategorias';
 import { useJugadoresDeCategoriasAsignadas } from '../utils/categoriasStaff';
 import { SolicitudJugadorStaff } from './SolicitudesJugador';
 import { unicosSinMayusculas } from '../utils/texto';
+import { nombreCorto } from '../utils/texto';
 
 const ESTADO_COLOR = {
   presente: { bg: 'var(--verde-victoria)', bgSoft: 'rgba(52,199,89,0.10)' },
@@ -192,7 +193,7 @@ function StaffAsistenciaPanel({
     (Array.isArray(todosJugadores) ? todosJugadores : []).map((j) => ({
       id: j.rut_jugador,
       rut_jugador: j.rut_jugador,
-      nombre: `${j.nombres || ''} ${j.apellido_paterno || ''} ${j.apellido_materno || ''}`.trim(),
+      nombre: nombreCorto(j),
       rama: j.rama || '',
       categoria: j.categoria || '',
     }))

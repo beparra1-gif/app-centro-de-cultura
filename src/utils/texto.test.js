@@ -26,3 +26,12 @@ describe('coincideAlguna', () => {
     expect(coincideAlguna(['SUB-15'], 'SUB-13')).toBe(false);
   });
 });
+
+describe('nombreCorto', () => {
+  it('primer nombre y primer apellido', async () => {
+    const { nombreCorto } = await import('./texto');
+    expect(nombreCorto({ nombres: ' ANTONIA  ANA ', apellido_paterno: 'MORENO', apellido_materno: 'SOTO' })).toBe('ANTONIA MORENO');
+    expect(nombreCorto({ nombres: 'Emilia Javiera', apellido_paterno: 'Rojas-Mery' })).toBe('Emilia Rojas-Mery');
+    expect(nombreCorto({ nombres: 'Leo' })).toBe('Leo');
+  });
+});
