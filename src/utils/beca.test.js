@@ -101,3 +101,20 @@ describe('historial de tarifas', () => {
     expect(obtenerHistorialTarifas()).toBe(TARIFAS_POR_DEFECTO);
   });
 });
+
+
+describe('cuota personalizada por mes', () => {
+  it('el mes personalizado manda; los demás usan la cuota normal', async () => {
+    const { cuotaPersonalizadaDelMes } = await import('./beca');
+    const j = { valor_mensualidad: 20000, cuotas_por_mes: { '2026-03': 10000, '2026-07': 0 } };
+    expect(obtenerCuotaJugador(j, 30000, 3)).toBe(10000);
+    expect(obtenerCuotaJugador(j, 30000, 7)).toBe(0);
+    expect(obtenerCuotaJugador(j, 30000, 4)).toBe(20000);
+    expect(obtenerCuotaJugador({ cuotas_por_mes: { '2026-05': 8000 } }, 30000, 6)).toBe(30000);
+    expect(cuotaPersonalizadaDelMes(j, 5)).toBe(null);
+  });
+  it('exención y beca se siguen aplicando sobre el mes personalizado', () => {
+    expect(obtenerCuotaJugador({ exento_mensualidad: true, cuotas_por_mes: { '2026-03': 10000 } }, 30000, 3)).toBe(0);
+    expect(obtenerCuotaJugador({ beca: 50, cuotas_por_mes: { '2026-03': 10000 } }, 30000, 3)).toBe(5000);
+  });
+});

@@ -58,6 +58,7 @@ export const mapearJugadorAPupilo = (j, idx = 0) => ({
   mes_inicio_cobro: j.mes_inicio_cobro || '',
   anio_ingreso: j.anio_ingreso ?? j.año_ingreso ?? null,
   valor_mensualidad: j.valor_mensualidad ?? null,
+  cuotas_por_mes: j.cuotas_por_mes || {},
   anioNacimiento: obtenerAnioNacimientoJugador(j),
   foto_jugador: j.foto_jugador || j.foto_perfil_url || j.club_logo_url || '',
 });

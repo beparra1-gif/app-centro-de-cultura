@@ -1896,6 +1896,9 @@ const ensureCuentasExtendedColumns = async () => {
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS categorias_asignadas JSONB DEFAULT '[]'::jsonb`,
     // Ramas a cargo del staff ([] = todas): se combina con categorias_asignadas.
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS ramas_asignadas JSONB DEFAULT '[]'::jsonb`,
+    // Cuota personalizada por mes de un deportista: {"2026-03": 10000, ...};
+    // los meses que no están usan la cuota normal (ver src/utils/beca.js).
+    `ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS cuotas_por_mes JSONB DEFAULT '{}'::jsonb`,
     // Nivel de entrenador oficial (texto libre, ej. "Nivel 2 FEB"): ficha del Muro.
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS nivel_entrenador TEXT`,
   ];
@@ -6567,7 +6570,7 @@ const CAMPOS_JUGADOR_SOLO_ADMIN = [
   'rama', 'categoria', 'numero_camiseta', 'fecha_ingreso', 'mes_inicio_cobro', 'beca', 'exento_mensualidad',
   'valor_mensualidad', 'matricula_pagada', 'polera_entregada', 'poleron_entregado',
   'estado', 'estado_deportivo', 'fecha_inicio_baja', 'fecha_fin_baja', 'xp_puntos', 'apoderado_socio',
-  'grupo_familiar', 'motivo_baja',
+  'grupo_familiar', 'motivo_baja', 'cuotas_por_mes',
 ];
 
 // El apoderado dueño (rut_apoderado registrado) puede editar el perfil de su propio
@@ -6734,6 +6737,15 @@ app.put('/api/jugadores/:rut', authenticate, requireApoderadoDeJugadorOModule(po
     }
 
     await registrarCambioEstado(req, 'jugador', previo, result.rows[0]);
+    const cuotas = req.body?.cuotas_por_mes;
+    if (cuotas && typeof cuotas === 'object' && !Array.isArray(cuotas)) {
+      // Solo meses "AAAA-MM" con montos >= 0; un mes vacío se omite (= cuota normal).
+      const limpias = Object.fromEntries(Object.entries(cuotas)
+        .filter(([mes, monto]) => /^\d{4}-(0[1-9]|1[0-2])$/.test(mes) && monto !== '' && monto !== null && Number.isFinite(Number(monto)) && Number(monto) >= 0)
+        .map(([mes, monto]) => [mes, Math.round(Number(monto))]));
+      await pool.query('UPDATE jugadores SET cuotas_por_mes = $1::jsonb WHERE rut_jugador = $2', [JSON.stringify(limpias), result.rows[0].rut_jugador]);
+      result.rows[0].cuotas_por_mes = limpias;
+    }
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[PUT /api/jugadores/:rut]', err);
@@ -7689,7 +7701,7 @@ const leerPlanillaPagos = async (urlPlanilla) => {
 const construirPlanImportacionPagos = async (urlPlanilla) => {
   const { csvDeportistas, csvSocios, csvBase } = await leerPlanillaPagos(urlPlanilla);
   const [jugadores, cuentas, pagos, utm] = await Promise.all([
-    pool.query('SELECT rut_jugador, nombres, apellido_paterno, rut_apoderado, correo_apoderado, valor_mensualidad, beca, exento_mensualidad, apoderado_socio FROM jugadores'),
+    pool.query('SELECT rut_jugador, nombres, apellido_paterno, rut_apoderado, correo_apoderado, valor_mensualidad, cuotas_por_mes, beca, exento_mensualidad, apoderado_socio FROM jugadores'),
     pool.query('SELECT rut, nombres, apellido_paterno, correo, es_socio, monto_mensual_base, utm_valor_referencia, monto_mensual_override FROM cuentas'),
     pool.query('SELECT id, rut_jugador, rut_pagos, concepto_pago, meses_correspondientes, monto_total_pagado, estado_pago, comprobante_url, notas_tesoreria FROM pagos_mensualidades'),
     pool.query('SELECT mes, valor FROM utm_mensual WHERE anio = 2026'),

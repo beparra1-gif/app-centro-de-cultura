@@ -328,6 +328,12 @@ export default function FichaPersonaModal({
               <Dato etiqueta="Ingreso" valor={fecha(raw.fecha_ingreso)} />
               <Dato etiqueta="Cobra desde" valor={raw.mes_inicio_cobro} />
               <Dato
+                etiqueta="Meses personalizados"
+                valor={Object.keys(raw.cuotas_por_mes || {}).length
+                  ? Object.entries(raw.cuotas_por_mes).sort().map(([m, v]) => `${m.slice(5)}/${m.slice(2, 4)}: ${pesos(v)}`).join(' · ')
+                  : ''}
+              />
+              <Dato
                 etiqueta="Cuota mensual"
                 valor={noDebeMensualidad(raw) ? '$0 (no paga)' : `${pesos(cuota.monto)}${Number(raw.valor_mensualidad) > 0 ? ' (cuota especial)' : cuota.esSocio ? ' (hijo de socio)' : familia.length > 1 ? ' (hermanos)' : ''}`}
               />

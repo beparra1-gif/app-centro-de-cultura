@@ -114,7 +114,16 @@ const montoPropioDelMes = (monto, mes) => {
 // Cuota mensual real de UN pupilo dentro de su familia: su valor_mensualidad
 // propio (ajustado al mes, ver arriba) o la tarifa referencial de la familia;
 // siempre con beca/exención aplicada.
+// Cuota personalizada de ese mes (ficha → "Personalizar por mes"), o null.
+export const cuotaPersonalizadaDelMes = (pupilo = {}, mes = null) => {
+  const v = pupilo?.cuotas_por_mes?.[claveMes(mes)];
+  return v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
+};
+
 export const obtenerCuotaJugador = (pupilo = {}, cuotaReferencial = 0, mes = null) => {
+  // Un mes personalizado manda sobre la cuota propia y la tarifa (beca/exención igual se aplican).
+  const delMes = cuotaPersonalizadaDelMes(pupilo, mes);
+  if (delMes !== null) return calcularCuotaFinal(delMes, pupilo);
   const monto = Number(pupilo?.valor_mensualidad || 0);
   const base = Number.isFinite(monto) && monto > 0 ? montoPropioDelMes(monto, mes) : cuotaReferencial;
   return calcularCuotaFinal(base, pupilo);

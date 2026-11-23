@@ -82,6 +82,7 @@ import { coincideAlguna, mismoTexto, nombreCorto, unicosSinMayusculas } from '..
 import { mensajeCodigoActivacion, telefonoParaWhatsApp } from '../utils/codigoActivacion';
 import FiltroCategorias from './FiltroCategorias';
 import { tarifaVigente } from '../utils/beca';
+import CuotasPorMes from './CuotasPorMes';
 // comprobante_url llega en 2 formatos: URL relativa del backend
 // (/api/logo-assets/file/...) para imágenes subidas como archivo, o un data
 // URI base64 completo para PDF (ver convertirArchivoABase64 en
@@ -3041,7 +3042,7 @@ function SuperAdminPanel({
                 <div className="grid-auto-220">
                   <div className="form-group"><label>Fecha de ingreso al club</label><input type="date" className="form-input" value={String(nuevoJugador.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setNuevoJugador((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
                   <div className="form-group"><label>Estado</label><select className="form-input" value={nuevoJugador.estado || 'ACTIVO'} onChange={(e) => setNuevoJugador((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option></select></div>
-                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.apoderado_socio)} onChange={(e) => setNuevoJugador((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; 2 hermanos $12.000 c/u)</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.apoderado_socio)} onChange={(e) => setNuevoJugador((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; hermanos $12.000 c/u)</label>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.matricula_pagada)} onChange={(e) => setNuevoJugador((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.derechos_imagen)} onChange={(e) => setNuevoJugador((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
                 </div>
@@ -3457,12 +3458,19 @@ function SuperAdminPanel({
                     <label>Cuota mensual especial (opcional)</label>
                     <input type="number" min="0" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} placeholder="Vacío = tarifa del club" />
                     <small className="pf-ayuda">
-                      Solo si este deportista paga un monto distinto cada mes (no es beca). Vacío = tarifa del club:{' '}
+                      Solo si este deportista paga siempre un monto distinto (no es beca). Vacío = tarifa del club:{' '}
                       {(() => { const t = tarifaVigente(); const $ = (n) => `$${Number(n).toLocaleString('es-CL')}`; return `${$(t.uno)} un pupilo · ${$(t.hermanos)} hermanos c/u · ${$(t.hijoSocio)} hijo de socio · ${$(t.dosHijosSocio)} hermanos hijos de socio c/u`; })()}.
                     </small>
                   </div>
+                  <div className="cpm-fila">
+                    <CuotasPorMes
+                      valor={jugadorAdminEdit.cuotas_por_mes}
+                      onCambiar={(cuotas_por_mes) => setJugadorAdminEdit((p) => ({ ...p, cuotas_por_mes }))}
+                      cuotaNormal={Number(jugadorAdminEdit.valor_mensualidad) > 0 ? `$${Number(jugadorAdminEdit.valor_mensualidad).toLocaleString('es-CL')}, su cuota especial` : 'la tarifa del club'}
+                    />
+                  </div>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.exento_mensualidad)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, exento_mensualidad: e.target.checked }))} /> Exento de mensualidad (no paga nada)</label>
-                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.apoderado_socio)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; 2 hermanos $12.000 c/u)</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.apoderado_socio)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; hermanos $12.000 c/u)</label>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.derechos_imagen)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
                 </div>

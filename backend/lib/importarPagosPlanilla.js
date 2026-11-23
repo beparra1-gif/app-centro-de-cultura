@@ -154,9 +154,12 @@ const tarifaPorDeportista = (cantidad = 1, esSocio = false, tarifa = TARIFAS_POR
 };
 // Cuota de un deportista para filas sin monto (marcadas VALIDADO): su
 // valor_mensualidad propio o la tarifa de su familia, con beca/exención.
-const cuotaDeportista = (jugador = {}, { hermanos = 1, esSocio = false, montoAcordado = 0, tarifa = TARIFAS_POR_DEFECTO[0] } = {}) => {
+// Si la ficha tiene cuota personalizada para ese mes (cuotas_por_mes), manda.
+const cuotaDeportista = (jugador = {}, { hermanos = 1, esSocio = false, montoAcordado = 0, tarifa = TARIFAS_POR_DEFECTO[0], mes = null } = {}) => {
   if (jugador.exento_mensualidad) return 0;
   const beca = Math.min(100, Math.max(0, Number(jugador.beca) || 0));
+  const delMes = mes ? jugador.cuotas_por_mes?.[`${ANIO}-${String(mes).padStart(2, '0')}`] : undefined;
+  if (delMes !== undefined && delMes !== null && delMes !== '' && Number.isFinite(Number(delMes))) return Math.round(Number(delMes) * (1 - beca / 100));
   const propio = Number(jugador.valor_mensualidad) || 0;
   const base = propio > 0 ? propio
     : (montoAcordado > 0 ? Math.round(montoAcordado / Math.max(1, hermanos)) : tarifaPorDeportista(hermanos, esSocio, tarifa));
@@ -372,6 +375,7 @@ const planificarImportacion = ({
             hermanos: pagador ? (hermanosPorPagador.get(normalizarRut(pagador.rut)) || 1) : 1,
             esSocio: Boolean(pagador?.es_socio) || Boolean(jugador.apoderado_socio) || pistasSocio.has(elegido.rut),
             montoAcordado: Number(pagador?.monto_mensual_override) || 0,
+            mes: elegido.mes,
           })
           : elegido.monto;
         agregar.push({
