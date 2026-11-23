@@ -548,22 +548,26 @@ function SuperAdminPanel({
   const [citacionWhatsappId, setCitacionWhatsappId] = useState(null);
   // Creador por pasos: 1 Partido, 2 Fecha y lugar, 3 Citados, 4 Revisar y publicar.
   // No se avanza sin lo esencial del paso anterior (los citados van al final).
-  const [pasoCita, setPasoCita] = useState(1);
+  // El paso 0 (categoría) va primero: define a quiénes se puede citar al final.
+  const [pasoCita, setPasoCita] = useState(0);
   const pasosCitacion = () => {
     const pasos = [
+      { n: 0, titulo: 'Categoría' },
       { n: 1, titulo: 'Partido' },
       { n: 2, titulo: 'Fecha y lugar' },
       ...(citaEditandoId ? [] : [{ n: 3, titulo: 'Citados' }]),
       { n: 4, titulo: citaEditandoId ? 'Guardar' : 'Revisar y publicar' },
     ];
-    const faltaPaso1 = !String(citaForm.competencia_nombre || '').trim() || !String(citaForm.rival_nombre || '').trim();
+    const faltaPaso0 = citaCategoria === 'todas';
+    const faltaPaso1 = faltaPaso0 || !String(citaForm.competencia_nombre || '').trim() || !String(citaForm.rival_nombre || '').trim();
     const faltaPaso2 = !citaForm.dia_citacion || !citaForm.hora_citacion || !citaForm.hora_presentacion;
     const faltaPaso3 = !citaEditandoId && cuposCitados === 0;
-    const puedeIr = (n) => n === 1 || (n === 2 && !faltaPaso1) || (n === 3 && !faltaPaso1 && !faltaPaso2) || (n === 4 && !faltaPaso1 && !faltaPaso2 && !faltaPaso3);
+    const puedeIr = (n) => n === 0 || (n === 1 && !faltaPaso0) || (n === 2 && !faltaPaso1) || (n === 3 && !faltaPaso1 && !faltaPaso2) || (n === 4 && !faltaPaso1 && !faltaPaso2 && !faltaPaso3);
     const ir = (n) => {
       if (puedeIr(n)) { setPasoCita(n); return; }
       showToast({
-        message: faltaPaso1 ? 'Primero completa la competencia y el rival.'
+        message: faltaPaso0 ? 'Primero elige la categoría que vas a citar.'
+          : faltaPaso1 ? 'Primero completa la competencia y el rival.'
           : faltaPaso2 ? 'Primero completa el día y los horarios.'
             : 'Elige al menos una jugadora o jugador titular.',
         type: 'error',
@@ -2527,7 +2531,7 @@ function SuperAdminPanel({
       setCitacionActivaId(citacion.id);
       setSeleccionCitacion({});
       // Publicada: se pasa al control con el envío por WhatsApp ya abierto.
-      setPasoCita(1);
+      setPasoCita(0);
       setVistaCitaciones('control');
       setCitacionWhatsappId(citacion.id);
       const enBanca = convocados.filter((c) => c.rol === 'banca').length;
@@ -2548,7 +2552,7 @@ function SuperAdminPanel({
     setAutorizacionMorosos({});
     setHoraMaximaEditadaManualmente(false);
     setCitaEditandoId(null);
-    setPasoCita(1);
+    setPasoCita(0);
   };
 
   // Precarga el formulario con los datos de una citación existente para
@@ -2570,7 +2574,7 @@ function SuperAdminPanel({
       lugar_direccion: c.lugar_direccion || '',
       mensaje_adicional: c.mensaje_adicional || '',
     });
-    setPasoCita(1);
+    setPasoCita(0);
     setCitaRama(c.rama || 'todas');
     setCitaCategoria(c.categoria_base || 'todas');
     setCategoriasExtraCitacion(Array.isArray(c.categorias_apoyo) ? c.categorias_apoyo : []);
@@ -4682,6 +4686,69 @@ function SuperAdminPanel({
                 </nav>
               );
             })()}
+            {pasoCita === 0 && (
+              <>
+            <p className="pf-ayuda" style={{ marginTop: 0 }}>Elige la rama y la categoría del partido: al final solo aparecerán quienes se pueden citar.</p>
+            <div className="grid-auto-220 mb-15">
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Rama</label>
+                <select className="form-input" value={citaRama} onChange={(e) => { setCitaRama(e.target.value); setSeleccionCitacion({}); }}>
+                  <option value="todas">Todas</option>
+                  <option value="masculina">Masculina</option>
+                  <option value="femenina">Femenina</option>
+                  <option value="mixta">Mixta</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Categoría base *</label>
+                <select className="form-input" value={citaCategoria} onChange={(e) => { setCitaCategoria(e.target.value); setSeleccionCitacion({}); }}>
+                  <option value="todas">Todas</option>
+                  {categoriasUnicas.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Citar jugadoras de otras categorías (solo menores)
+              </label>
+              <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {categoriasExtraCitacionPermitidas.map((cat) => {
+                  const activa = categoriasExtraCitacion.includes(cat);
+                  return (
+                    <button
+                      key={`cat-extra-${cat}`}
+                      type="button"
+                      className="filter-chip sub-category-chip"
+                      style={{
+                        border: '1px solid rgba(0,122,255,0.24)',
+                        background: activa ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.08)',
+                        color: activa ? 'white' : 'var(--azul-electrico)',
+                        fontWeight: '800',
+                      }}
+                      onClick={() => toggleCategoriaExtraCitacion(cat)}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+              {citaCategoria === 'todas' && (
+                <p style={{ marginTop: '8px', marginBottom: 0, fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                  Selecciona primero una categoría base oficial para habilitar categorías menores.
+                </p>
+              )}
+              {citaCategoria !== 'todas' && categoriasExtraCitacionPermitidas.length === 0 && (
+                <p style={{ marginTop: '8px', marginBottom: 0, fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                  No hay categorías menores disponibles para la base seleccionada.
+                </p>
+              )}
+            </div>
+
+              </>
+            )}
             {pasoCita === 1 && (
               <>
             <div className="grid-auto-220 mb-15">
@@ -4776,64 +4843,10 @@ function SuperAdminPanel({
             )}
             {pasoCita === 3 && !citaEditandoId && (
               <>
-            <div className="grid-auto-220 mb-15">
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Rama</label>
-                <select className="form-input" value={citaRama} onChange={(e) => setCitaRama(e.target.value)}>
-                  <option value="todas">Todas</option>
-                  <option value="masculina">Masculina</option>
-                  <option value="femenina">Femenina</option>
-                  <option value="mixta">Mixta</option>
-                </select>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Categoría base</label>
-                <select className="form-input" value={citaCategoria} onChange={(e) => setCitaCategoria(e.target.value)}>
-                  <option value="todas">Todas</option>
-                  {categoriasUnicas.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '12px' }}>
-              <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Citar jugadoras de otras categorías (solo menores)
-              </label>
-              <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {categoriasExtraCitacionPermitidas.map((cat) => {
-                  const activa = categoriasExtraCitacion.includes(cat);
-                  return (
-                    <button
-                      key={`cat-extra-${cat}`}
-                      type="button"
-                      className="filter-chip sub-category-chip"
-                      style={{
-                        border: '1px solid rgba(0,122,255,0.24)',
-                        background: activa ? 'var(--azul-electrico)' : 'rgba(0,122,255,0.08)',
-                        color: activa ? 'white' : 'var(--azul-electrico)',
-                        fontWeight: '800',
-                      }}
-                      onClick={() => toggleCategoriaExtraCitacion(cat)}
-                    >
-                      {cat}
-                    </button>
-                  );
-                })}
-              </div>
-              {citaCategoria === 'todas' && (
-                <p style={{ marginTop: '8px', marginBottom: 0, fontSize: '12px', color: 'var(--texto-secundario)' }}>
-                  Selecciona primero una categoría base oficial para habilitar categorías menores.
-                </p>
-              )}
-              {citaCategoria !== 'todas' && categoriasExtraCitacionPermitidas.length === 0 && (
-                <p style={{ marginTop: '8px', marginBottom: 0, fontSize: '12px', color: 'var(--texto-secundario)' }}>
-                  No hay categorías menores disponibles para la base seleccionada.
-                </p>
-              )}
-            </div>
-
+            <p className="pf-ayuda" style={{ marginTop: 0 }}>
+              Rama <b>{citaRama}</b> · Categoría <b>{citaCategoria}</b>{categoriasExtraCitacion.length ? ` + ${categoriasExtraCitacion.join(', ')}` : ''} ·{' '}
+              <button type="button" className="btn-link" style={{ background: 'none', border: 'none', padding: 0, color: 'var(--azul-electrico)', fontWeight: 700, cursor: 'pointer' }} onClick={() => setPasoCita(0)}>cambiar</button>
+            </p>
             {citaEditandoId ? (
               <p className="text-muted" style={{ fontSize: '12px', marginTop: 0 }}>
                 La nómina de convocados se administra desde "Control de Citaciones" (Agregar/Quitar de nómina) para no perder el historial de respuestas ya registradas.

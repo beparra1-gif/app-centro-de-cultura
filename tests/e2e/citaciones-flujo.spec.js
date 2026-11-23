@@ -61,9 +61,16 @@ test('el admin crea la convocatoria por pasos y la publica', async ({ page }) =>
   await iniciarSesion(page, CUENTAS.super_admin.rut);
   await page.getByRole('button', { name: /^Citaciones/ }).first().click();
 
-  // Paso 1: no deja avanzar sin competencia y rival; aún no se ven jugadores.
+  // Paso 1: primero la categoría (sin ella no se avanza); aún no se ven jugadores.
   await expect(page.getByRole('navigation', { name: 'Pasos de la convocatoria' })).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole('button', { name: 'Titular' })).toHaveCount(0);
+  await page.getByRole('button', { name: /Siguiente: Partido/ }).click();
+  await expect(page.getByText('Primero elige la categoría que vas a citar.')).toBeVisible();
+  await page.locator('select', { has: page.locator('option[value="masculina"]') }).first().selectOption('masculina');
+  await page.locator('select', { has: page.locator('option', { hasText: 'SUB-13' }) }).first().selectOption('SUB-13');
+  await page.getByRole('button', { name: /Siguiente: Partido/ }).click();
+
+  // Paso 2: no deja avanzar sin competencia y rival.
   await page.getByRole('button', { name: /Siguiente: Fecha y lugar/ }).click();
   await expect(page.getByText('Primero completa la competencia y el rival.')).toBeVisible();
   await page.getByPlaceholder('Ej: Liga ARBAM U15').fill(COMPETENCIA);
@@ -77,9 +84,9 @@ test('el admin crea la convocatoria por pasos y la publica', async ({ page }) =>
   await page.getByPlaceholder(/Ej: llevar camiseta/).fill('Llevar camiseta blanca');
   await page.getByRole('button', { name: /Siguiente: Citados/ }).click();
 
-  // Paso 3: recién aquí aparecen los jugadores.
-  await page.locator('select', { has: page.locator('option[value="masculina"]') }).first().selectOption('masculina');
-  await page.locator('select', { has: page.locator('option', { hasText: 'SUB-13' }) }).first().selectOption('SUB-13');
+  // Paso 4: recién aquí aparecen, y solo los de la categoría elegida.
+  await expect(page.getByText(/Rama masculina · Categoría SUB-13/)).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Citar a E2E HijoSocio Prueba' })).toHaveCount(0);
   for (const [nombre, rol] of [['E2E Pupilo Prueba', 'Titular'], ['E2E Segunda Prueba', 'Titular'], ['E2E Banca Prueba', 'Banca']]) {
     await page.getByRole('group', { name: `Citar a ${nombre}` }).getByRole('button', { name: rol }).click();
   }

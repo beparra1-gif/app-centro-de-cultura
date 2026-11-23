@@ -94,7 +94,12 @@ test('staff cita a un partido solo a deportistas de su categoría', async ({ pag
   await iniciarSesion(page, CUENTAS.staff.rut);
   await page.locator('.nav-item', { hasText: 'Gestión' }).click();
   await page.getByRole('button', { name: /Citaciones/ }).first().click();
-  // Creador por pasos: partido → fecha y lugar → citados → publicar.
+  // Creador por pasos: categoría → partido → fecha y lugar → citados → publicar.
+  // El staff solo tiene SUB-13 para elegir (su categoría asignada).
+  const categoria = page.locator('select', { has: page.locator('option', { hasText: 'SUB-13' }) }).first();
+  await expect(categoria.locator('option', { hasText: 'SUB-15' })).toHaveCount(0);
+  await categoria.selectOption('SUB-13');
+  await page.getByRole('button', { name: /Siguiente: Partido/ }).click();
   await page.getByPlaceholder('Ej: Liga ARBAM U15').fill('E2E Liga Staff');
   await page.getByPlaceholder('Ej: Club Deportivo X').fill('E2E Rival');
   await page.getByRole('button', { name: /Siguiente: Fecha y lugar/ }).click();
