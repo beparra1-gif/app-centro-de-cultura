@@ -2,7 +2,7 @@
 // grilla muestra cuánto falta, un abono completa los meses en orden y la
 // deuda descuenta lo ya abonado.
 import { test, expect } from '@playwright/test';
-import { CUENTAS, JUGADORES, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion } from './fixtures/cuentasPrueba.js';
+import { CUENTAS, JUGADORES, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion, abrirMiCuenta } from './fixtures/cuentasPrueba.js';
 
 const pool = crearPool();
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -25,8 +25,7 @@ const mes = (page, nombre) => grilla(page).locator('button.mes-box', { hasText: 
 
 const irAMiCuenta = async (page) => {
   await iniciarSesion(page, CUENTAS.apoderado.rut);
-  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
-  await expect(page.getByText('Panel de Pagos 2026')).toBeVisible({ timeout: 10000 });
+  await abrirMiCuenta(page);
 };
 
 test('un abono parcial no completa el mes: muestra cuánto falta y descuenta la deuda', async ({ page }) => {
@@ -35,7 +34,7 @@ test('un abono parcial no completa el mes: muestra cuánto falta y descuenta la 
   await expect(mes(page, 'Ene')).toContainText('$20.000');
   // 10 meses (ene–oct) adeudados, pero enero solo debe $20.000: 9×30.000 + 20.000.
   await expect(page.getByText('10 meses adeudados')).toBeVisible();
-  await expect(page.getByText('-$290.000')).toBeVisible();
+  await expect(page.getByText('Debes $290.000')).toBeVisible();
   // Resumen del mes en curso.
   await expect(grilla(page).locator('.resumen-mes-actual')).toContainText(/abonado \$0 de \$30\.000/);
   await expect(grilla(page).locator('.resumen-mes-actual')).toContainText('Faltan $30.000');
@@ -66,5 +65,5 @@ test('aprobado el abono: enero pagado y febrero con saldo de $10.000', async ({ 
   await expect(mes(page, 'Feb')).toHaveClass(/mes-parcial/);
   await expect(mes(page, 'Feb')).toContainText('$10.000');
   // Deuda: feb $10.000 + mar–oct 8×30.000.
-  await expect(page.getByText('-$250.000')).toBeVisible();
+  await expect(page.getByText('Debes $250.000')).toBeVisible();
 });

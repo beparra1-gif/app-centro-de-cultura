@@ -4,7 +4,7 @@
 // 2) el admin los ve en Tesorería → "Comprobantes enviados" y los aprueba;
 // 3) el apoderado vuelve a entrar y ve Ene/Feb como pagados y la deuda baja.
 import { test, expect } from '@playwright/test';
-import { CUENTAS, JUGADORES, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion } from './fixtures/cuentasPrueba.js';
+import { CUENTAS, JUGADORES, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion, abrirMiCuenta } from './fixtures/cuentasPrueba.js';
 
 const pool = crearPool();
 // PNG 1x1 válido.
@@ -24,7 +24,7 @@ const grillaPupilo = (page) => page.locator('.grid-12-meses, .lista-12-meses').l
 
 test('apoderado informa pago de Ene+Feb con comprobante', async ({ page }, testInfo) => {
   await iniciarSesion(page, CUENTAS.apoderado.rut);
-  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
+  await abrirMiCuenta(page);
   await expect(page.getByText('10 meses adeudados')).toBeVisible({ timeout: 10000 });
 
   const grilla = grillaPupilo(page);
@@ -53,7 +53,7 @@ test('apoderado informa pago de Ene+Feb con comprobante', async ({ page }, testI
 
   // Al recargar, los meses informados deben distinguirse de los impagos.
   await page.reload();
-  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
+  await abrirMiCuenta(page);
   await page.waitForTimeout(1500);
   await page.screenshot({ path: testInfo.outputPath('2-tras-envio.png'), fullPage: true });
   const ene = grillaPupilo(page).locator('button.mes-box', { hasText: 'Ene' });
@@ -81,9 +81,9 @@ test('admin aprueba los comprobantes en Tesorería', async ({ page }, testInfo) 
 
 test('apoderado ve Ene/Feb pagados y deuda de 8 meses', async ({ page }, testInfo) => {
   await iniciarSesion(page, CUENTAS.apoderado.rut);
-  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
+  await abrirMiCuenta(page);
   await expect(page.getByText('8 meses adeudados')).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText('-$240.000')).toBeVisible();
+  await expect(page.getByText('Debes $240.000')).toBeVisible();
   const grilla = grillaPupilo(page);
   await expect(grilla.locator('button.mes-box', { hasText: 'Ene' })).toHaveClass(/mes-pagado/);
   await expect(grilla.locator('button.mes-box', { hasText: 'Feb' })).toHaveClass(/mes-pagado/);
@@ -100,9 +100,10 @@ test('resumen de deuda y grilla cuentan los mismos meses (ingreso en marzo)', as
   await pool.query("UPDATE jugadores SET fecha_ingreso = '2026-03-01' WHERE rut_jugador = $1", [JUGADORES.pupilo.rut]);
   await pool.query('DELETE FROM pagos_mensualidades WHERE rut_jugador = $1', [JUGADORES.pupilo.rut]);
   await iniciarSesion(page, CUENTAS.apoderado.rut);
-  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
+  await abrirMiCuenta(page);
   const texto = await page.getByText(/\d+ mes(es)? adeudados?/).first().innerText({ timeout: 10000 });
-  const mesesResumen = Number(texto.match(/\d+/)[0]);
+  // "Debes $240.000 · 8 meses adeudados": el número que va antes de "mes".
+  const mesesResumen = Number(texto.match(/(\d+) mes/)[1]);
   const mesesGrilla = await grillaPupilo(page).locator('button.mes-box.mes-pendiente').count();
   expect(mesesGrilla, `grilla=${mesesGrilla} vs resumen=${mesesResumen}`).toBe(mesesResumen);
   // Regla del club: se cobra DESDE el mes de ingreso (marzo..octubre = 8).

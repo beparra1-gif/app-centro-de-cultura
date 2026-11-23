@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Camera, Check, ChevronDown, ChevronUp, Clock, FileText, LayoutGrid, List, Plus, Search, User, X } from 'lucide-react';
+import { Award, Camera, Check, ChevronDown, ChevronUp, Clock, FileText, LayoutGrid, List, Plus, Search, User, Wallet, X } from 'lucide-react';
 import { armarCertificado, generarPdfCertificado } from '../utils/certificadoPagos';
 import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador } from '../utils/beca';
 import { showToast } from '../utils/toast';
@@ -143,6 +143,14 @@ function PerfilTesoreriaPanel({
   const [mesesSocioSeleccionados, setMesesSocioSeleccionados] = useState(() => mesesSocioIniciales);
 
   const esVistaAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
+  // La familia ve primero su estado (al día / debe) y abre el detalle con un toque.
+  // Abierto de entrada si es Tesorería, si viene del Muro con meses ya marcados
+  // o si hay un comprobante recién enviado.
+  const [contableAbierto, setContableAbierto] = useState(() => esVistaAdmin
+    || mesesSocioIniciales.length > 0
+    || Object.values(mesesSeleccionados || {}).some((m) => m?.length > 0)
+    || Boolean(comprobanteSubido));
+  const [certificadosAbierto, setCertificadosAbierto] = useState(false);
 
   const normalizarTextoBusqueda = (texto = '') => String(texto || '')
     .trim()
@@ -288,8 +296,8 @@ function PerfilTesoreriaPanel({
     }
     : null;
   const mesesAtraso = Number(morosoActivo?.mesesDeuda || 0);
-  // "Moroso" era duro para las familias: se muestra "Con deuda".
-  const estadoCuenta = mesesAtraso > 0 ? 'Con deuda' : 'Al Día';
+  // morosoActivo.montoDeuda ya suma la cuota REAL de cada mes (0,3 UTM del corte de ese mes en el caso socio).
+  const montoDeudaTotal = Number(morosoActivo?.montoDeuda || 0);
 
   const getMesNumero = (texto = '') => {
     const token = String(texto || '')
@@ -786,27 +794,19 @@ function PerfilTesoreriaPanel({
 
       {(!esVistaAdmin || pupiloActivo || cuentaSocioActiva) ? (
         <>
+      {/* Orden de Mi Cuenta: 1) perfil, 2) deportistas a cargo, 3) panel contable
+          (estado de deuda; al abrirlo, pagar, meses y cuotas), 4) certificados. */}
       <div className="status-account-card payment-overview-card mt-15" style={{ borderRadius: 'var(--radius-lg)', boxShadow: '0 16px 34px rgba(15,23,42,0.10)' }}>
         <div className="status-header">
           <div>
-            <span style={{ fontSize: 'var(--texto-min)', color: 'rgba(255,255,255,0.78)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mensualidad / Perfil</span>
+            <span style={{ fontSize: 'var(--texto-min)', color: 'rgba(255,255,255,0.78)', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mi perfil</span>
             <h3 className="status-titular" style={{ color: 'white' }}>{titular}</h3>
-            <span className="status-rol">{esSocio ? 'Socio activo del club' : (pupilosActivos.length ? 'Apoderado' : 'Cuenta')}</span>
-            {esSocio && (
-              <span style={{ fontSize: 'var(--texto-min)', color: 'rgba(255,255,255,0.8)', fontWeight: '700', display: 'block', marginTop: '5px' }}>
-                UTM referencia ({fechaCorteTexto}): ${utmActual.toLocaleString('es-CL')} · Cuota socio (0,3 UTM): ${cuotaSocio.toLocaleString('es-CL')}
-                {cuotaDeportistas > 0 && (
-                  <> + ${cuotaDeportistas.toLocaleString('es-CL')} por deportistas a cargo = <strong style={{ color: 'white' }}>${tarifaRedondeada.toLocaleString('es-CL')}/mes</strong></>
-                )}
-              </span>
+            <span className="status-rol">{esSocio ? (pupilosActivos.length ? 'Socio y apoderado' : 'Socio activo del club') : (pupilosActivos.length ? 'Apoderado' : 'Cuenta')}</span>
+            {cuentaActual?.rut && (
+              <span style={{ fontSize: 'var(--texto-min)', color: 'rgba(255,255,255,0.8)', fontWeight: '700', display: 'block', marginTop: '5px' }}>RUT {cuentaActual.rut}</span>
             )}
           </div>
-          <div className={`status-badge ${estadoCuenta === 'Al Día' ? 'ok' : 'moroso'}`}>
-            {estadoCuenta}
-          </div>
         </div>
-        {/* El detalle de la deuda vive en una sola tarjeta ("Deuda Pendiente",
-            con desglose socio/deportista); antes se repetía aquí. */}
       </div>
 
       {pupilosActivos.length > 0 && (
@@ -842,65 +842,33 @@ function PerfilTesoreriaPanel({
         </div>
       )}
 
-      {estadoCuenta === 'Con deuda' && (
-        <div className="card fade-in mt-15 compact-debt-summary" style={{ borderLeft: '4px solid var(--rojo-alerta)', background: 'linear-gradient(180deg, rgba(255,59,48,0.08), rgba(255,59,48,0.02))', borderRadius: 'var(--radius-lg)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'center' }}>
-            <div>
-              <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', color: 'var(--rojo-alerta)', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '6px' }}><AlertTriangle size={18} color="var(--gris-secundario)" strokeWidth={1.5} /> Deuda Pendiente</h4>
-              <p style={{ margin: '0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>{mesesAtraso} {mesesAtraso === 1 ? 'mes' : 'meses'} adeudados</p>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <span style={{ fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Total Adeudado</span>
-              {/* morosoActivo.montoDeuda ya suma la cuota REAL de cada mes (0,3 UTM
-                  del corte de ese mes en el caso socio) — antes acá se aproximaba
-                  con tarifaRedondeada × mesesAtraso (la cuota de HOY repetida),
-                  que no coincidía con el total real cuando la UTM varió entre medio. */}
-              <strong style={{ fontSize: '20px', color: 'var(--rojo-alerta)', fontWeight: '900' }}>-${Number(morosoActivo?.montoDeuda ?? (tarifaRedondeada * mesesAtraso)).toLocaleString('es-CL')}</strong>
-            </div>
-          </div>
-          {morosoDeportista && morosoSocio && (
-            <div className="desglose-deuda" style={{ marginTop: '12px', display: 'grid', gap: '6px' }}>
-              {[
-                ['Mensualidad deportista', morosoDeportista],
-                ['Cuota de socio', morosoSocio],
-              ].map(([etiqueta, deuda]) => (
-                <div key={etiqueta} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', fontWeight: 700, color: 'var(--texto-principal)' }}>
-                  <span>{etiqueta} · {deuda.mesesDeuda} {Number(deuda.mesesDeuda) === 1 ? 'mes' : 'meses'}</span>
-                  <strong style={{ color: 'var(--rojo-alerta)' }}>-${Number(deuda.montoDeuda || 0).toLocaleString('es-CL')}</strong>
-                </div>
-              ))}
-            </div>
-          )}
-          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,59,48,0.15)', fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-            <span>Cuota mensual vigente: <strong style={{ color: 'var(--texto-principal)' }}>${tarifaRedondeada.toLocaleString('es-CL')}</strong></span>
-          </div>
-        </div>
-      )}
-
-      {!esVistaAdmin && <CertificadosFamilia pupilos={pupilosActivos} morosos={morososAdmin || []} />}
-
-      <div className="ptp-titulo-pagos">
-        <h3 className="section-title mt-20">Panel de Pagos 2026</h3>
+      <section className="panel-contable mt-15" aria-label="Panel contable">
         <button
           type="button"
-          className="btn-secondary tc-btn"
-          onClick={async () => {
-            try {
-              await generarPdfCertificado(armarCertificado({
-                titular: { nombre: titular, rut: cuentaActual?.rut || pupilosActivos[0]?.rut || '', esSocio, cuenta: cuentaActual || {} },
-                pupilos: pupilosActivos,
-                pagos: pagosMensualidadesAdmin || [],
-                morosos: morososAdmin || [],
-                sociosMorosos: sociosMorosos || [],
-              }));
-            } catch (error) {
-              showToast({ message: `No se pudo generar el certificado: ${error.message}`, type: 'error' });
-            }
-          }}
+          className={`card pc-cabecera ${mesesAtraso > 0 ? 'debe' : 'ok'}`}
+          aria-expanded={contableAbierto}
+          onClick={() => setContableAbierto((v) => !v)}
         >
-          <FileText size={14} /> Certificado de pagos (PDF)
+          <span className="pc-icono" aria-hidden="true"><Wallet size={22} /></span>
+          <span className="pc-texto">
+            <strong>Panel contable {anioObjetivo}</strong>
+            <span className="pc-estado">
+              {mesesAtraso > 0
+                ? `Debes $${montoDeudaTotal.toLocaleString('es-CL')} · ${mesesAtraso} ${mesesAtraso === 1 ? 'mes adeudado' : 'meses adeudados'}`
+                : 'Estás al día'}
+            </span>
+            <small>{contableAbierto ? 'Ocultar detalle' : 'Pagar, ver meses y cuota mensual'}</small>
+          </span>
+          {contableAbierto ? <ChevronUp size={20} aria-hidden="true" /> : <ChevronDown size={20} aria-hidden="true" />}
         </button>
-      </div>
+
+        {contableAbierto && (
+        <div className="pc-cuerpo fade-in">
+      <ol className="pc-pasos">
+        <li><b>Elige</b> los meses a pagar (en rojo los adeudados).</li>
+        <li><b>Revisa</b> el total a transferir.</li>
+        <li><b>Adjunta</b> el comprobante: Tesorería lo valida y el mes queda en verde.</li>
+      </ol>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         <button
@@ -1165,6 +1133,73 @@ function PerfilTesoreriaPanel({
           </div>
         )}
       </div>
+
+      <div className="card mt-15 pc-cuotas" style={{ borderRadius: 'var(--radius-lg)', padding: '14px' }}>
+        <h4 className="form-subtitle" style={{ marginBottom: '8px' }}>Cuota mensual</h4>
+        {esSocio && (
+          <div className="desglose-row">
+            <span>Cuota de socio (0,3 UTM · UTM {fechaCorteTexto} ${utmActual.toLocaleString('es-CL')})</span>
+            <strong>${cuotaSocio.toLocaleString('es-CL')}</strong>
+          </div>
+        )}
+        {pupilosActivos.map((pupilo) => (
+          <div key={`cuota-${pupilo.rut || pupilo.id}`} className="desglose-row">
+            <span>Mensualidad {construirNombrePupilo(pupilo)}</span>
+            <strong>${obtenerCuotaMensualPupilo(pupilo).toLocaleString('es-CL')}</strong>
+          </div>
+        ))}
+        <div className="desglose-row total-calc"><span>Total mensual</span><strong>${tarifaRedondeada.toLocaleString('es-CL')}</strong></div>
+        {morosoDeportista && morosoSocio && (
+          <div className="desglose-deuda" style={{ marginTop: '10px', display: 'grid', gap: '6px' }}>
+            {[
+              ['Mensualidad deportista', morosoDeportista],
+              ['Cuota de socio', morosoSocio],
+            ].map(([etiqueta, deuda]) => (
+              <div key={etiqueta} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', fontWeight: 700, color: 'var(--texto-principal)' }}>
+                <span>{etiqueta} · {deuda.mesesDeuda} {Number(deuda.mesesDeuda) === 1 ? 'mes' : 'meses'}</span>
+                <strong style={{ color: 'var(--rojo-alerta)' }}>-${Number(deuda.montoDeuda || 0).toLocaleString('es-CL')}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          className="btn-secondary tc-btn"
+          style={{ marginTop: '12px' }}
+          onClick={async () => {
+            try {
+              await generarPdfCertificado(armarCertificado({
+                titular: { nombre: titular, rut: cuentaActual?.rut || pupilosActivos[0]?.rut || '', esSocio, cuenta: cuentaActual || {} },
+                pupilos: pupilosActivos,
+                pagos: pagosMensualidadesAdmin || [],
+                morosos: morososAdmin || [],
+                sociosMorosos: sociosMorosos || [],
+              }));
+            } catch (error) {
+              showToast({ message: `No se pudo generar el certificado: ${error.message}`, type: 'error' });
+            }
+          }}
+        >
+          <FileText size={14} /> Certificado de pagos (PDF)
+        </button>
+      </div>
+        </div>
+        )}
+      </section>
+
+      {!esVistaAdmin && pupilosActivos.length > 0 && (
+        <section className="mt-15" aria-label="Certificados">
+          <button type="button" className="card pc-cabecera" aria-expanded={certificadosAbierto} onClick={() => setCertificadosAbierto((v) => !v)}>
+            <span className="pc-icono" aria-hidden="true"><Award size={22} /></span>
+            <span className="pc-texto">
+              <strong>Certificados</strong>
+              <small>Solicita uno y revisa si está en revisión, emitido o rechazado</small>
+            </span>
+            {certificadosAbierto ? <ChevronUp size={20} aria-hidden="true" /> : <ChevronDown size={20} aria-hidden="true" />}
+          </button>
+          {certificadosAbierto && <CertificadosFamilia pupilos={pupilosActivos} morosos={morososAdmin || []} />}
+        </section>
+      )}
         </>
       ) : (
         <div className="card mt-15 text-center" style={{ padding: '40px 20px', borderRadius: 'var(--radius-lg)' }}>

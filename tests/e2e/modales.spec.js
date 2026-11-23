@@ -21,7 +21,7 @@ test('modal "Cerrar sesión" bloquea el fondo y se cierra con Escape', async ({ 
   await expect(dialogo).toHaveCount(0);
   await expect(page.locator('body')).not.toHaveClass(/modal-abierto/);
   // Sigue con la sesión abierta (Escape = cancelar, no confirmar).
-  await expect(page.getByText(`${CUENTAS.apoderado.nombres} Prueba`).first()).toBeVisible();
+  await expect(page.getByTitle('Configuración y Perfil')).toBeVisible();
 });
 
 test('Configuración de un admin muestra Mi Perfil, acceso a permisos y se cierra con Escape', async ({ page }) => {

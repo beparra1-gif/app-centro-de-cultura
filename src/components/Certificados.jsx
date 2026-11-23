@@ -107,9 +107,26 @@ export function CertificadosFamilia({ pupilos = [], morosos = [] }) {
 
   if (pupilos.length === 0) return null;
   return (
-    <div className="card card-estatica mt-20" data-testid="certificados-familia">
+    <div className="card card-estatica mt-10" data-testid="certificados-familia">
       <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: 0 }}><Award size={18} /> Certificados del club</h3>
       <p className="pf-ayuda" style={{ marginTop: 0 }}>Solicítalo aquí; Secretaría lo revisa y lo firma. Cada certificado trae un código QR para comprobar que es auténtico.</p>
+      {/* Primero el estado de lo ya pedido; el formulario para pedir otro va debajo. */}
+      <h4 style={{ margin: '0 0 6px' }}>Mis solicitudes</h4>
+      {lista.length === 0 && <p className="pf-ayuda" style={{ marginTop: 0 }}>Aún no has solicitado certificados.</p>}
+      {lista.map((c) => (
+        <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid var(--borde)' }}>
+          <div>
+            <b>{tituloTipo(c.tipo)}</b> <span className="text-muted">· {c.nombre_jugador}</span>
+            {c.folio && <div className="pf-ayuda">Folio {c.folio}{c.vigencia_hasta ? ` · válido hasta ${fechaLarga(c.vigencia_hasta)}` : ''}</div>}
+            {['rechazado', 'anulado'].includes(c.estado) && c.motivo_rechazo && <div className="pf-ayuda">Motivo: {c.motivo_rechazo}</div>}
+          </div>
+          {c.estado === 'emitido'
+            ? <button type="button" className="btn-electric tc-btn" onClick={() => descargar(c)}><Download size={14} /> Descargar PDF</button>
+            : <span style={{ fontWeight: 700, color: COLOR[c.estado] }}>{ETIQUETA[c.estado] || c.estado}</span>}
+        </div>
+      ))}
+
+      <h4 style={{ margin: '16px 0 6px' }}>Solicitar un certificado</h4>
       <form onSubmit={solicitar} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
         {pupilos.length > 1 && (
           <Campo label="Deportista">
@@ -144,23 +161,6 @@ export function CertificadosFamilia({ pupilos = [], morosos = [] }) {
         </div>
       </form>
 
-      {lista.length > 0 && (
-        <div style={{ marginTop: '16px' }}>
-          <h4 style={{ margin: '0 0 6px' }}>Mis certificados</h4>
-          {lista.map((c) => (
-            <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '8px 0', borderTop: '1px solid var(--borde)' }}>
-              <div>
-                <b>{tituloTipo(c.tipo)}</b> <span className="text-muted">· {c.nombre_jugador}</span>
-                {c.folio && <div className="pf-ayuda">Folio {c.folio}{c.vigencia_hasta ? ` · válido hasta ${fechaLarga(c.vigencia_hasta)}` : ''}</div>}
-                {['rechazado', 'anulado'].includes(c.estado) && c.motivo_rechazo && <div className="pf-ayuda">Motivo: {c.motivo_rechazo}</div>}
-              </div>
-              {c.estado === 'emitido'
-                ? <button type="button" className="btn-electric tc-btn" onClick={() => descargar(c)}><Download size={14} /> Descargar PDF</button>
-                : <span style={{ fontWeight: 700, color: COLOR[c.estado] }}>{ETIQUETA[c.estado] || c.estado}</span>}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

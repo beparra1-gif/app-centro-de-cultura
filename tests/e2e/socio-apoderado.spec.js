@@ -3,7 +3,7 @@
 // (un solo comprobante), pero pagar uno nunca marca el otro.
 // También: un socio sin pupilos ve su propia grilla de cuota de socio.
 import { test, expect } from '@playwright/test';
-import { CUENTAS, JUGADORES, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion } from './fixtures/cuentasPrueba.js';
+import { CUENTAS, JUGADORES, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion, abrirMiCuenta } from './fixtures/cuentasPrueba.js';
 
 const pool = crearPool();
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -24,8 +24,7 @@ const mes = (grilla, nombre) => grilla.locator('button.mes-box', { hasText: nomb
 
 const irAMiCuenta = async (page, rol) => {
   await iniciarSesion(page, CUENTAS[rol].rut);
-  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
-  await expect(page.getByText('Panel de Pagos 2026')).toBeVisible({ timeout: 10000 });
+  await abrirMiCuenta(page);
 };
 
 const enviarComprobante = async (page) => {
@@ -56,7 +55,7 @@ test('socio+apoderado paga SOLO la cuota de socio: el pupilo no cambia', async (
   expect(pagos[0]).toMatchObject({ concepto_pago: 'Mensualidad Socio', meses_correspondientes: 'ene-2026', rut_jugador: null, estado_pago: 'pendiente' });
 
   await page.reload();
-  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
+  await abrirMiCuenta(page);
   await expect(mes(grillaSocio(page), 'Ene')).toHaveClass(/mes-en-revision/, { timeout: 10000 });
   await expect(mes(grillaHijo(page), 'Ene')).toHaveClass(/mes-pendiente/);
   await page.screenshot({ path: testInfo.outputPath('socio-ene-en-revision.png'), fullPage: true });

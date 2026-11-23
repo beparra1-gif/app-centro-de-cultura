@@ -3,7 +3,7 @@
 // cualquiera valida el QR en la página pública (anulado = deja de ser válido).
 import fs from 'node:fs';
 import { test, expect } from '@playwright/test';
-import { CUENTAS, JUGADORES, PASSWORD_PRUEBA, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion } from './fixtures/cuentasPrueba.js';
+import { CUENTAS, JUGADORES, PASSWORD_PRUEBA, crearPool, crearDatosPrueba, limpiarDatosPrueba, iniciarSesion, abrirCertificados } from './fixtures/cuentasPrueba.js';
 
 const pool = crearPool();
 const API = process.env.E2E_API_URL || 'http://localhost:3000/api';
@@ -39,7 +39,7 @@ const certDe = async (tipo) => (await pool.query('SELECT * FROM certificados WHE
 
 test('el apoderado solicita certificados desde Mi Cuenta', async ({ page }) => {
   await iniciarSesion(page, CUENTAS.apoderado.rut);
-  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
+  await abrirCertificados(page);
   const panel = page.getByTestId('certificados-familia');
   await expect(panel).toBeVisible({ timeout: 15000 });
 
@@ -217,7 +217,7 @@ test('el admin carga firmas, emite (PDF con QR) y rechaza', async ({ page, reque
 
 test('la familia descarga su certificado y ve el rechazo', async ({ page }) => {
   await iniciarSesion(page, CUENTAS.apoderado.rut);
-  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
+  await abrirCertificados(page);
   const panel = page.getByTestId('certificados-familia');
   await expect(panel.getByRole('button', { name: /Descargar PDF/ })).toHaveCount(4, { timeout: 15000 });
   await expect(panel.getByText('Motivo: Registra cuotas pendientes')).toBeVisible();

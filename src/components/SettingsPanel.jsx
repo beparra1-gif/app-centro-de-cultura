@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, KeyRound, LogOut, Save, ShieldCheck } from 'lucide-react';
+import { Check, CheckCircle, KeyRound, LogOut, RefreshCw, Save, ShieldCheck } from 'lucide-react';
 import * as api from '../api/client';
 import PushPreferenciasPanel from './PushPreferenciasPanel';
 import { MODULOS_ACCESO, normalizarRol, obtenerPermisosBasePorRol } from '../security/accessControl';
@@ -46,6 +46,9 @@ function SettingsPanel({
   onAbrirPermisos,
   onCerrarSesion,
   rutUsuario,
+  appVersionState,
+  onRevisarVersion,
+  nombreUsuario,
 }) {
   const esAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
   // Cambio de contraseña (antes el botón "Contraseña" solo decía "Próximamente").
@@ -225,7 +228,9 @@ function SettingsPanel({
 
   return (
     <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', borderRadius: 'var(--radius-lg)', background: 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,255,0.96) 100%)', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
-      <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: '900' }}>Mi Perfil</h4>
+      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '900' }}>Mi Perfil</h4>
+      {/* Antes iba bajo el logo del header; acá confirma con qué cuenta se opera sin recargar la vista inicial. */}
+      {nombreUsuario && <span style={{ margin: '-4px 0 6px', fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', fontWeight: 700 }}>{nombreUsuario}</span>}
       {rutUsuario && (
         <button type="button" className="settings-accion" aria-expanded={formClaveAbierto} onClick={() => setFormClaveAbierto((v) => !v)}>
           <KeyRound size={18} aria-hidden="true" />
@@ -281,6 +286,15 @@ function SettingsPanel({
             </span>
           </button>
         </>
+      )}
+      {typeof onRevisarVersion === 'function' && (
+        <button type="button" className="settings-accion" onClick={onRevisarVersion} disabled={appVersionState?.checking}>
+          {appVersionState?.hasUpdate ? <RefreshCw size={18} aria-hidden="true" /> : <CheckCircle size={18} aria-hidden="true" />}
+          <span>
+            <strong>{appVersionState?.checking ? 'Revisando versión…' : appVersionState?.hasUpdate ? 'Actualizar a la nueva versión' : 'App al día'}</strong>
+            <small>{appVersionState?.hasUpdate ? 'Toca para cargar la última versión' : 'Toca para buscar actualizaciones'}</small>
+          </span>
+        </button>
       )}
       {typeof onCerrarSesion === 'function' && (
         <>

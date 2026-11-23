@@ -3267,32 +3267,19 @@ function App() {
       {/* HEADER DINÁMICO E INTELIGENTE */}
       <header className="ios-header">
         <div className="header-btn-zone">
-          <button
-            className={`btn-app-update ${appVersionState.hasUpdate ? 'pending' : 'latest'}`}
-            onClick={handleUpdateAppClick}
-            title={
-              appVersionState.hasUpdate
-                ? 'Hay una nueva version disponible. Pulsa para actualizar la app.'
-                : 'Tu app esta al dia.'
-            }
-          >
-            <span className="btn-app-update-icon" aria-hidden="true">
-              {appVersionState.checking ? (
-                <Clock size={14} strokeWidth={2} />
-              ) : appVersionState.hasUpdate ? (
+          {/* Solo aparece cuando hay versión nueva; "al día" y la revisión manual viven en Configuración. */}
+          {appVersionState.hasUpdate && (
+            <button
+              className="btn-app-update pending"
+              onClick={handleUpdateAppClick}
+              title="Hay una nueva versión disponible. Pulsa para actualizar la app."
+            >
+              <span className="btn-app-update-icon" aria-hidden="true">
                 <RefreshCw size={14} strokeWidth={2} />
-              ) : (
-                <CheckCircle size={14} strokeWidth={2} />
-              )}
-            </span>
-            <span className="btn-app-update-text">
-              {appVersionState.checking
-                ? 'Revisando'
-                : appVersionState.hasUpdate
-                  ? 'Nueva version'
-                  : 'App al dia'}
-            </span>
-          </button>
+              </span>
+              <span className="btn-app-update-text">Nueva versión</span>
+            </button>
+          )}
         </div>
         <div className="logo-temporal" style={{ background: 'none', width: 'auto', flex: 1, minWidth: 0, padding: '0 10px' }}>
           {!rolUsuario
@@ -3306,9 +3293,6 @@ function App() {
               <div className="home-header-brand">
                 <img src="/logos/Club-frase.png" alt="Club Centro de Cultura Física" className="home-header-club-mark" />
                 <span className="home-header-subtitle">{getHeaderTitle()}</span>
-                <span className="home-header-usuario" style={{ fontSize: 'var(--texto-min)', color: 'rgba(255, 255, 255, 0.82)', fontWeight: '700', display: 'block', lineHeight: '1.3' }}>
-                  {nombreUsuarioActivo}
-                </span>
               </div>
             )
           }
@@ -3329,8 +3313,8 @@ function App() {
               >
                 <Bell size={24} color="var(--gris-secundario)" strokeWidth={1.5} />
                 {notificaciones.filter(n=>!n.leida).length > 0 && (
-                  <span style={{position: 'absolute', top: '-5px', right: '-5px', background: '#C62828', color: 'white', fontSize: '11px', fontWeight: '900', padding: '3px 6px', borderRadius: 'var(--radius-sm)', border: '2px solid var(--azul-marino)'}}>
-                    {notificaciones.filter(n=>!n.leida).length}
+                  <span style={{position: 'absolute', top: '-8px', right: '-12px', background: '#C62828', color: 'white', fontSize: '11px', fontWeight: '900', lineHeight: 1, padding: '2px 5px', borderRadius: 'var(--radius-pill)', border: '2px solid var(--azul-marino)'}}>
+                    {Math.min(notificaciones.filter(n=>!n.leida).length, 99)}{notificaciones.filter(n=>!n.leida).length > 99 ? '+' : ''}
                   </span>
                 )}
               </button>
@@ -3387,6 +3371,9 @@ function App() {
               setShowSettings(false);
               setShowModalSalir(true);
             }}
+            appVersionState={appVersionState}
+            nombreUsuario={nombreUsuarioActivo}
+            onRevisarVersion={handleUpdateAppClick}
             busquedaPermisos={busquedaPermisos}
             setBusquedaPermisos={setBusquedaPermisos}
             filtroRolPermisos={filtroRolPermisos}

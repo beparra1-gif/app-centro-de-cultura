@@ -111,16 +111,15 @@ export const crearDatosPrueba = async (pool) => {
 
 // Login real por la UI; devuelve ms hasta ver el menú inferior.
 export const iniciarSesion = async (page, rut) => {
-  const cuenta = Object.values(CUENTAS).find((c) => c.rut === rut);
   await page.goto('/');
   await page.getByText('Ingreso Usuarios CCF').click();
   await page.getByPlaceholder('RUT').fill(rut);
   await page.getByPlaceholder('Contraseña').fill(PASSWORD_PRUEBA);
   const t0 = Date.now();
   await page.getByRole('button', { name: /ingres|entrar|acceder/i }).click();
-  // La portada pública también tiene .nav-item: se confirma la sesión por el
-  // nombre del usuario en el encabezado.
-  await expect(page.getByText(`${cuenta?.nombres || ''} Prueba`).first()).toBeVisible({ timeout: 15000 });
+  // La portada pública también tiene .nav-item: la sesión se confirma por el
+  // engranaje de Configuración, que solo existe con sesión iniciada.
+  await expect(page.getByTitle('Configuración y Perfil')).toBeVisible({ timeout: 15000 });
   await expect(page.locator('.nav-item').first()).toBeVisible();
   return Date.now() - t0;
 };
@@ -143,4 +142,19 @@ export const ultimoCodigoPara = async (correo, desde) => {
     await new Promise((r) => setTimeout(r, 300));
   }
   throw new Error(`No llegó correo para ${correo}`);
+};
+
+// Mi Cuenta muestra el Panel contable cerrado (solo "al día" / "debes"):
+// estas pruebas necesitan las grillas de meses, así que lo abren.
+export const abrirMiCuenta = async (page) => {
+  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
+  const cabecera = page.getByRole('button', { name: /Panel contable/ });
+  await expect(cabecera).toBeVisible({ timeout: 10000 });
+  if (await cabecera.getAttribute('aria-expanded') !== 'true') await cabecera.click();
+  await expect(cabecera).toHaveAttribute('aria-expanded', 'true');
+};
+
+export const abrirCertificados = async (page) => {
+  await page.locator('.nav-item', { hasText: 'Mi Cuenta' }).click();
+  await page.getByRole('button', { name: /^Certificados/ }).click();
 };

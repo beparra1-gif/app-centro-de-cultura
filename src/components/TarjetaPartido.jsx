@@ -20,9 +20,10 @@ function Escudo({ url, nombre, tamano = 64 }) {
   const src = urlLogo(url);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1 }}>
-      <div style={{ width: tamano, height: tamano, borderRadius: '50%', background: 'var(--blanco-tarjeta)', boxShadow: '0 6px 18px rgba(15,23,42,0.14)', display: 'grid', placeItems: 'center', overflow: 'hidden', border: '2px solid rgba(0,122,255,0.18)' }}>
+      {/* Sin marco ni círculo: cada club tiene una forma de escudo distinta y el recorte la deformaba. */}
+      <div style={{ width: tamano, height: tamano, display: 'grid', placeItems: 'center' }}>
         {src && !fallo
-          ? <img src={src} alt={`Escudo de ${nombre}`} width={tamano - 8} height={tamano - 8} style={{ objectFit: 'contain' }} onError={() => setFallo(true)} />
+          ? <img src={src} alt={`Escudo de ${nombre}`} width={tamano} height={tamano} style={{ objectFit: 'contain', filter: 'drop-shadow(0 2px 4px rgba(15,23,42,0.18))' }} onError={() => setFallo(true)} />
           : <Shield size={tamano * 0.55} color="var(--azul-electrico)" strokeWidth={1.6} role="img" aria-label={`Escudo genérico de ${nombre}`} />}
       </div>
       <strong style={{ fontSize: '13px', textAlign: 'center', lineHeight: 1.2, overflowWrap: 'anywhere' }}>{nombre}</strong>

@@ -402,7 +402,8 @@ button,
   color: white; 
   padding: 15px 20px; 
   display: grid;
-  grid-template-columns: minmax(124px, auto) 1fr auto;
+  /* Laterales iguales: el logo queda centrado aunque los botones de cada lado midan distinto. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr) minmax(0, 1fr);
   align-items: center; 
   padding-top: env(safe-area-inset-top, 48px);
   border-bottom-left-radius: 30px; 
@@ -996,7 +997,6 @@ button,
 
 @media (max-width: 520px) {
   .ios-header {
-    grid-template-columns: minmax(96px, auto) 1fr auto;
     padding: 12px 14px;
   }
 
@@ -4440,3 +4440,29 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 /* Tarjetas con formularios: sin el "levantar" de .card:hover. Con el cursor en
    el borde inferior la tarjeta subía, el cursor salía, bajaba… y vibraba sin parar. */
 .card.card-estatica:hover { transform: none; }
+
+/* Mi Cuenta: cabeceras desplegables (Panel contable, Certificados). */
+.pc-cabecera {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: var(--toque-min, 48px); padding: 14px; margin: 0;
+  border: 1px solid var(--borde-suave); border-radius: var(--radius-lg);
+  text-align: left; cursor: pointer; color: var(--texto-principal); font: inherit;
+}
+.pc-cabecera.debe { border-left: 4px solid var(--rojo-alerta); }
+.pc-cabecera.ok { border-left: 4px solid var(--verde-victoria); }
+.pc-icono {
+  flex-shrink: 0; width: 42px; height: 42px; border-radius: var(--radius-md);
+  display: grid; place-items: center; background: var(--fondo-card-sutil); color: var(--azul-electrico);
+}
+.pc-texto { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pc-texto strong { font-size: 15px; font-weight: 900; }
+.pc-texto small { font-size: var(--texto-min); color: var(--texto-secundario); font-weight: 700; }
+.pc-estado { font-size: 14px; font-weight: 800; }
+.pc-cabecera.debe .pc-estado { color: var(--estado-pendiente-texto, var(--rojo-alerta)); }
+.pc-cabecera.ok .pc-estado { color: var(--estado-pagado-texto); }
+.pc-cuerpo { margin-top: 12px; }
+.pc-pasos {
+  margin: 0 0 14px; padding: 10px 12px 10px 30px; border-radius: var(--radius-md);
+  background: var(--fondo-card-sutil); border: 1px solid var(--borde-suave);
+  font-size: 13px; line-height: 1.5; color: var(--texto-principal);
+}
