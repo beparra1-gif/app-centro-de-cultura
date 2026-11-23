@@ -1125,6 +1125,11 @@ export const respaldosAPI = {
 };
 
 // Cumpleaños del mes (widget del Muro): nombre, día, categoría y foto.
+// Muro -> "Conoce a nuestro staff técnico".
+export const staffTecnicoAPI = {
+  listar: async () => handleResponse(await apiFetch(`${API_BASE_URL}/staff-tecnico`)),
+};
+
 export const cumpleanosAPI = {
   delMes: async (mes) => handleResponse(await apiFetch(`${API_BASE_URL}/cumpleanos?mes=${Number(mes)}`)),
 };

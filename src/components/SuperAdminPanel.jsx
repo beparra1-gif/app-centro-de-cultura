@@ -62,7 +62,7 @@ import ResultadosCards from './ResultadosCards';
 import { calcularResumenCitacion, esBanca } from '../utils/citaciones';
 import CitacionWhatsapp from './CitacionWhatsapp';
 import TarjetaPartido from './TarjetaPartido';
-import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
+import { MODULOS_ACCESO, obtenerPermisosBasePorRol, obtenerPermisosEfectivos, normalizarRol } from '../security/accessControl';
 import { mapearJugadorAPupilo } from '../utils/pupiloMapper';
 import { estaActivo, soloActivos } from '../utils/estadoActivo';
 import { CATEGORIAS_POR_RAMA } from '../utils/categoriasDeportivas';
@@ -167,6 +167,11 @@ function SuperAdminPanel({
   void setNominaCita;
 
   const rolActual = normalizarRol(usuarioAutenticado?.rol || usuarioAutenticado?.perfil_principal || '');
+  // Módulo Staff: solo con el permiso Gestión de Staff (base: super_admin; override guardado en la cuenta propia).
+  const puedeGestionarStaff = Boolean(obtenerPermisosEfectivos({
+    rol: rolActual,
+    override: (cuentasAdminTodas || []).find((c) => String(c.id) === String(usuarioAutenticado?.id))?.permisos_override || {},
+  }).gestion_staff);
   // Inactivos/baja fuera de todos los listados operativos (Tesorería,
   // citaciones, becas, estadísticas...). Usuarios y Cuentas y la ficha usan
   // las listas completas (…Todos/…Todas), desde ahí se reactivan.
@@ -2876,6 +2881,7 @@ function SuperAdminPanel({
 
       <UsuariosCuentasPanel
         visible={vistaAdmin === 'usuarios'}
+        puedeGestionarStaff={puedeGestionarStaff}
         esAdmin={esAdmin}
         esSuperAdmin={esSuperAdmin}
         jugadoresAdmin={jugadoresAdmin}
@@ -3199,7 +3205,7 @@ function SuperAdminPanel({
                     </label>
                   </div>
                 )}
-                {normalizarRol(cuentaAdminEdit.rol) === 'staff' && (
+                {normalizarRol(cuentaAdminEdit.rol) === 'staff' && puedeGestionarStaff && (
                   <div className="form-group">
                     <label>Categorías a cargo (staff)</label>
                     <FiltroCategorias

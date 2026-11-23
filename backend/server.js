@@ -3469,6 +3469,31 @@ app.get('/api/admin/backup-status', (req, res) => {
 // Cualquier sesión del club lo ve. Solo datos mínimos: nombre, día,
 // categoría y foto — nunca año de nacimiento, edad, RUT ni contacto. El mes
 // lo manda el navegador (hora de Chile; el servidor corre en UTC).
+// Muro -> "Conoce a nuestro staff técnico": cualquier sesión. Solo datos de
+// presentación: nombre, foto y categorías a cargo (nunca RUT ni contacto).
+app.get('/api/staff-tecnico', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, nombres, apellido_paterno, NULLIF(TRIM(foto_perfil_url), '') AS foto,
+              COALESCE(categorias_asignadas, '[]'::jsonb) AS categorias
+       FROM cuentas
+       WHERE LOWER(TRIM(COALESCE(rol, ''))) IN ('staff', 'entrenador', 'profesor')
+         AND LOWER(TRIM(COALESCE(estado, ''))) <> ALL($1)
+       ORDER BY apellido_paterno, nombres`,
+      [[...ESTADOS_PERSONA_INACTIVOS]]
+    );
+    res.json(rows.map((r) => ({
+      id: r.id,
+      nombre: `${String(r.nombres || '').trim().split(/\s+/)[0]} ${r.apellido_paterno || ''}`.trim(),
+      foto: r.foto,
+      categorias: Array.isArray(r.categorias) ? r.categorias : [],
+    })));
+  } catch (err) {
+    console.error('[GET /api/staff-tecnico]', err.message);
+    res.status(500).json({ error: 'No se pudo leer el staff técnico.' });
+  }
+});
+
 app.get('/api/cumpleanos', authenticate, async (req, res) => {
   const mes = Number(req.query.mes);
   if (!Number.isInteger(mes) || mes < 1 || mes > 12) return res.status(400).json({ error: 'Mes inválido.' });
@@ -3486,11 +3511,12 @@ app.get('/api/cumpleanos', authenticate, async (req, res) => {
        SELECT 'cuenta', REPLACE(REPLACE(UPPER(c.rut), '.', ''), '-', ''),
               TRIM(CONCAT(c.nombres, ' ', c.apellido_paterno)),
               EXTRACT(DAY FROM c.fecha_nacimiento)::int,
-              NULL, NULLIF(TRIM(c.foto_perfil_url), '')
+              'Staff técnico', NULLIF(TRIM(c.foto_perfil_url), '')
        FROM cuentas c
        WHERE c.fecha_nacimiento IS NOT NULL AND EXTRACT(MONTH FROM c.fecha_nacimiento) = $1
          AND LOWER(TRIM(COALESCE(c.estado, ''))) <> ALL($2)
-         AND LOWER(COALESCE(c.rol, '')) NOT IN ('visita', 'mesa')`,
+         -- Se celebra a deportistas y staff técnico (no a apoderados ni socios).
+         AND LOWER(TRIM(COALESCE(c.rol, ''))) IN ('staff', 'entrenador', 'profesor')`,
       [mes, INACTIVOS]
     );
     // Una persona con ficha de deportista y cuenta propia aparece una vez
@@ -5291,6 +5317,8 @@ app.put(
   authenticate,
   requireOwnerIdOrModule('id', 'admin_dashboard'),
   stripFieldsUnlessModule(CAMPOS_CUENTA_SOLO_ADMIN, 'admin_dashboard'),
+  // Las categorías del staff además requieren el permiso Gestión de Staff.
+  stripFieldsUnlessModule(['categorias_asignadas'], 'gestion_staff'),
   async (req, res) => {
   const {
     correo,

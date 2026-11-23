@@ -8,6 +8,8 @@ const MODULOS_ACCESO = [
   { id: 'scoreboard_live', etiqueta: 'Mesa / Scoreboard', categoria: 'Operación', descripcion: 'Marcador en vivo, play by play y transmisión.' },
   { id: 'kiosco', etiqueta: 'Kiosco', categoria: 'Operación', descripcion: 'Caja, inventario, fiados y POS.' },
   { id: 'admin_dashboard', etiqueta: 'Admin', categoria: 'Gestión', descripcion: 'Panel administrativo, usuarios y reportes.' },
+  // Solo super_admin por defecto; él se lo da a quien quiera desde Permisos.
+  { id: 'gestion_staff', etiqueta: 'Gestión de Staff', categoria: 'Gestión', descripcion: 'Categorías a cargo de cada entrenador.' },
   { id: 'salud', etiqueta: 'Salud', categoria: 'Gestión', descripcion: 'Estado del sistema, alertas y timeline.' },
   { id: 'auditoria', etiqueta: 'Auditoría', categoria: 'Gestión', descripcion: 'Trazabilidad de acciones y eventos.' },
   { id: 'citaciones', etiqueta: 'Citaciones', categoria: 'Gestión', descripcion: 'Convocatorias, autorizaciones y control.' },

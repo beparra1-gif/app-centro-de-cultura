@@ -10,6 +10,7 @@ import MuroCumpleanos from './MuroCumpleanos';
 import { calcularResumenCitacion, esBanca, puedeJugadorResponderPropiaCitacion } from '../utils/citaciones';
 import TarjetaPartido from './TarjetaPartido';
 import { esUrlImagen, esUrlYoutube, esUrlVimeo, esUrlVideoInterno, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
+import MuroStaffTecnico from './MuroStaffTecnico';
 
 // El post puede traer un texto libre (Anuncio) o una URL (Imagen/Video/Enlace
 // elegidos en el formulario de Publicar) — cuerpo_texto es el mismo campo en
@@ -489,6 +490,8 @@ function ComunicacionesPanel({
       )}
 
       {mostrarFormComunicaciones && formularioComunicaciones}
+
+      <MuroStaffTecnico />
 
       <MuroCumpleanos />
 

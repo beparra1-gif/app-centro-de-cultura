@@ -6,12 +6,12 @@ import { absolutizarLogoUrl } from '../utils/logoResolver';
 // Widget fijo del Muro: cumpleaños del mes del club. Los de HOY van
 // destacados con su foto de perfil; abajo, los próximos días del mes. Solo
 // con sesión (el endpoint lo exige) y con datos mínimos: nombre, día,
-// categoría y foto — nunca año ni edad.
+// categoría y foto — nunca año ni edad. Deportistas y staff técnico.
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const iniciales = (nombre = '') => nombre.split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
 
-function FotoPersona({ foto, nombre, size }) {
+export function FotoPersona({ foto, nombre, size }) {
   const [fallo, setFallo] = useState(false);
   const url = foto ? absolutizarLogoUrl(foto) : '';
   return (

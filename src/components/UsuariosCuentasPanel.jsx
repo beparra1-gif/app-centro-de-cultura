@@ -5,6 +5,7 @@ import { showToast } from '../utils/toast';
 import { confirmAction } from '../utils/confirmDialog';
 import VincularApoderadosPanel from './VincularApoderadosPanel';
 import RevisionPadronPanel from './RevisionPadronPanel';
+import StaffCategoriasPanel from './StaffCategoriasPanel';
 import AvisoWhatsappLista from './AvisoWhatsappLista';
 import ImportarJugadoresPlanilla from './ImportarJugadoresPlanilla';
 import SelectorOrden from './SelectorOrden';
@@ -30,6 +31,7 @@ export default function UsuariosCuentasPanel({
   visible,
   esAdmin,
   esSuperAdmin,
+  puedeGestionarStaff = false,
   jugadoresAdmin,
   jugadoresAdminTodos,
   cuentasAdmin,
@@ -536,6 +538,11 @@ export default function UsuariosCuentasPanel({
                 <History size={14} /> Altas y bajas
               </button>
             )}
+            {puedeGestionarStaff && (
+              <button type="button" className={`segment-btn ${vistaUsuarios === 'staff' ? 'active' : ''}`} onClick={() => setVistaUsuarios('staff')}>
+                <Users size={14} /> Staff
+              </button>
+            )}
             <button type="button" className={`segment-btn ${vistaUsuarios === 'registrar' ? 'active' : ''}`} onClick={() => setVistaUsuarios('registrar')}>
               <Plus size={14} /> Registrar nuevo
             </button>
@@ -709,6 +716,14 @@ export default function UsuariosCuentasPanel({
             </>
           )}
 
+          {vistaUsuarios === 'staff' && puedeGestionarStaff && (
+            <StaffCategoriasPanel
+              cuentas={cuentasAdminTodas || []}
+              jugadores={jugadoresAdminTodos || []}
+              onRecargar={recargarUsuariosAdmin}
+              onEditar={(c) => iniciarEdicion({ tipo: 'cuenta', raw: c })}
+            />
+          )}
           {vistaUsuarios === 'padron' && (esAdmin || esSuperAdmin) && (
             <RevisionPadronPanel
               jugadores={jugadoresAdminTodos || []}
