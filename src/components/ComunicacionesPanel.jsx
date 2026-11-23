@@ -101,6 +101,8 @@ function ComunicacionesPanel({
 
   const obtenerClaveMensaje = (comId, rut) => `${comId}-${rut}`;
 
+  // Una citación a partido nunca usa la confirmación genérica (la de reuniones/eventos).
+  const esCitacionPartido = (comunicacion) => Boolean(comunicacion.citacion_id) || /^citaci[oó]n$/i.test(String(comunicacion.TIPO_COMUNICADO || '').trim());
   const obtenerCitacion = (comunicacion) => (nominaCita || []).find((cita) => cita.id === comunicacion.citacion_id) || null;
 
   const obtenerConvocadosVisibles = (comunicacion) => {
@@ -536,9 +538,10 @@ function ComunicacionesPanel({
               <h4 className="titulo-comunicado" style={{ marginBottom: '8px', color: 'var(--texto-principal)', fontWeight: '800', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {c.TIPO_COMUNICADO === 'Evento' ? <PartyPopper size={16} /> : c.TIPO_COMUNICADO === 'Asamblea' ? <ClipboardList size={16} /> : c.TIPO_COMUNICADO === 'Suspensión' ? <AlertTriangle size={16} color="var(--naranja-aviso)" /> : <Megaphone size={16} />} {c.TITULO}
               </h4>
-              <ContenidoComunicacion texto={c.CUERPO_TEXTO} />
+              {/* En una citación de partido la tarjeta ya trae rival, fecha, horas y lugar: el texto sobraría. */}
+              {!obtenerCitacion(c) && <ContenidoComunicacion texto={c.CUERPO_TEXTO} />}
 
-              {c.solicita_asistencia && (
+              {c.solicita_asistencia && (obtenerCitacion(c) || !esCitacionPartido(c)) && (
                 <div style={{ background: 'rgba(0, 122, 255, 0.08)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '12px', marginTop: '10px' }}>
                   {(() => {
                     const cita = obtenerCitacion(c);
@@ -591,22 +594,11 @@ function ComunicacionesPanel({
                                     En banca (reserva)
                                   </div>
                                 )}
-                                <div style={{ border: '1px solid rgba(15,23,42,0.08)', borderRadius: 'var(--radius-md)', padding: '10px', background: esBanca(convocado) ? 'rgba(0,122,255,0.05)' : 'rgba(255,255,255,0.72)' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                    <div>
-                                      <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--texto-principal)' }}>{convocado.nombre}</div>
-                                      <div style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>{convocado.rama} · {convocado.categoria}{esBanca(convocado) ? ' · Banca' : ''}</div>
-                                    </div>
-                                    <span style={{ padding: '5px 10px', borderRadius: 'var(--radius-pill)', background: colores.bg, color: colores.color, fontSize: 'var(--texto-min)', fontWeight: '900' }}>
-                                      {obtenerEstadoTexto(convocado.respuesta)}
-                                    </span>
+                                {/* Solo el nombre: verde si confirmó, rojo si no asiste (el estado va en aria-label para lectores de pantalla). */}
+                                <div style={{ border: `1px solid ${convocado.respuesta === 'si' || convocado.respuesta === 'no' ? colores.color : 'rgba(15,23,42,0.08)'}`, borderRadius: 'var(--radius-md)', padding: '10px', background: convocado.respuesta === 'si' || convocado.respuesta === 'no' ? colores.bg : 'rgba(255,255,255,0.72)' }}>
+                                  <div aria-label={`${convocado.nombre}: ${obtenerEstadoTexto(convocado.respuesta)}`} style={{ fontSize: '13px', fontWeight: '800', color: convocado.respuesta === 'si' || convocado.respuesta === 'no' ? colores.color : 'var(--texto-principal)' }}>
+                                    {convocado.nombre}
                                   </div>
-
-                                  {convocado.requiere_excepcion_morosidad && !esElJugadorCitado && (esPropio || ['staff', 'admin', 'super_admin'].includes(rolUsuario)) && (
-                                    <p style={{ margin: '8px 0 0 0', fontSize: '12px', fontWeight: '800', color: '#b36200', background: 'rgba(255,149,0,0.14)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: 'var(--radius-sm)', padding: '8px 10px' }}>
-                                      Alerta tesorería: deportista moroso.
-                                    </p>
-                                  )}
 
                                   {esElJugadorCitado && !jugadorPuedeResponderPropio && (
                                     <p style={{ marginTop: '8px', fontSize: '12px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(15,23,42,0.05)', borderRadius: 'var(--radius-sm)', padding: '8px 10px' }}>
@@ -621,12 +613,6 @@ function ComunicacionesPanel({
                                     onConfirmar: () => addRSVP(c.id, convocado, 'si'),
                                     onRechazar: (justificacionDraft) => addRSVP(c.id, convocado, 'no', justificacionDraft),
                                   })}
-
-                                  {!esPropio && convocado.justificacion && (
-                                    <div style={{ marginTop: '8px', fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>
-                                      Motivo: {convocado.justificacion}
-                                    </div>
-                                  )}
                                 </div>
                                 </div>
                               );
@@ -634,7 +620,7 @@ function ComunicacionesPanel({
                           </div>
                         )}
 
-                        {!cita && (
+                        {!cita && !esCitacionPartido(c) && (
                           <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: 'var(--radius-md)', padding: '10px' }}>
                             {renderRespuestaAsistencia({
                               clave: obtenerClaveMensaje(c.id, actorId),

@@ -181,6 +181,13 @@ test('al entrar, el apoderado ve la ventana para responder y el Muro con % de ac
   await page.locator('.nav-item', { hasText: 'Muro' }).click();
   await expect(page.getByText('50% aceptadas').first()).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('En banca (reserva)').first()).toBeVisible();
+  // Lista solo con nombres (verde confirmó, rojo no asiste) y sin el texto repetido de la tarjeta.
+  await expect(page.getByLabel('E2E Segunda Prueba: Confirmado').first()).toHaveCSS('color', 'rgb(21, 128, 61)');
+  await expect(page.getByLabel('E2E Pupilo Prueba: No asiste').first()).toHaveCSS('color', 'rgb(185, 28, 28)');
+  const post = page.locator('.ios-rrss-card', { hasText: `Citación Liga: ${COMPETENCIA}` }).first();
+  await expect(post.getByTestId('tarjeta-partido')).toBeVisible();
+  await expect(post.getByText(/Convocatoria oficial vs/)).toHaveCount(0);
+  await expect(page.getByText('Información de asistencia completada').first()).toBeVisible();
 });
 
 test('el admin reemplaza con la banca a quien se bajó', async ({ page }) => {
