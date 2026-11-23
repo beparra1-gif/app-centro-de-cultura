@@ -3932,7 +3932,12 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .primer-ingreso-form .form-input { min-height: var(--toque-min); margin: 0; }
 
 /* Código de activación (Admin → Usuarios y Cuentas → "Código de acceso"). */
-.codigo-activacion-card { max-width: 420px; text-align: center; }
+.codigo-activacion-card { width: min(440px, 100%); }
+.codigo-activacion-cuerpo { display: flex; flex-direction: column; align-items: stretch; text-align: center; }
+/* Tarjeta centrada también en el teléfono (las fichas ocupan la pantalla completa). */
+.fp-fondo.codigo-activacion-fondo { padding: 16px; align-items: center; }
+.fp-ventana.codigo-activacion-card { height: auto; max-height: calc(100dvh - 32px); border-radius: var(--radius-lg); }
+.codigo-activacion-wsp { box-sizing: border-box; width: 100%; padding: 12px 16px; }
 .codigo-activacion-sub { margin: 0 0 10px; font-size: 13px; color: var(--texto-secundario); }
 .codigo-activacion-numero { margin: 6px 0 10px; font-size: 40px; font-weight: 900; letter-spacing: 10px; font-variant-numeric: tabular-nums; color: var(--azul-marino); }
 .codigo-activacion-wsp { display: flex; align-items: center; justify-content: center; min-height: var(--toque-min); text-decoration: none; background: linear-gradient(180deg, #2fd16b 0%, #25b85c 100%); }

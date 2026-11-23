@@ -5996,11 +5996,19 @@ function SuperAdminPanel({
       {codigoActivacion && (() => {
         const numeroWsp = telefonoParaWhatsApp(codigoActivacion.telefono);
         const mensaje = mensajeCodigoActivacion(codigoActivacion);
-        return (
-          <div className="modal-overlay-alert modal-animado-fondo" role="dialog" aria-modal="true" aria-label="Código de acceso" onClick={() => setCodigoActivacion(null)}>
-            <div className="modal-alert-card modal-animado codigo-activacion-card" onClick={(e) => e.stopPropagation()}>
-              <h3 style={{ margin: '0 0 4px' }}>Código de acceso</h3>
-              <p className="codigo-activacion-sub">{codigoActivacion.nombre || codigoActivacion.rut}</p>
+        // Portal a body (como la ficha): dentro del panel quedaba cortado bajo el encabezado.
+        return createPortal(
+          <div className="fp-fondo codigo-activacion-fondo" role="presentation" onClick={() => setCodigoActivacion(null)}>
+            <div className="fp-ventana codigo-activacion-card" role="dialog" aria-modal="true" aria-labelledby="codigo-titulo" onClick={(e) => e.stopPropagation()}>
+              <header className="fp-cabecera">
+                <span className="tc-avatar" aria-hidden="true"><Lock size={18} /></span>
+                <div className="fp-cabecera-texto">
+                  <h3 id="codigo-titulo">Código de acceso</h3>
+                  <p>{codigoActivacion.nombre || codigoActivacion.rut}</p>
+                </div>
+                <button type="button" className="fp-cerrar" onClick={() => setCodigoActivacion(null)} aria-label="Cerrar"><X size={20} /></button>
+              </header>
+              <div className="fp-cuerpo codigo-activacion-cuerpo">
               <div className="codigo-activacion-numero" aria-label={`Código ${codigoActivacion.codigo.split('').join(' ')}`}>{codigoActivacion.codigo}</div>
               <p className="codigo-activacion-sub">Vence en {codigoActivacion.vigencia_horas} horas · un solo uso. Solo se muestra ahora.</p>
               {numeroWsp ? (
@@ -6030,8 +6038,10 @@ function SuperAdminPanel({
                 Copiar mensaje
               </button>
               <button type="button" className="btn-volver-texto mt-10" onClick={() => setCodigoActivacion(null)}>Cerrar</button>
+              </div>
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
 
