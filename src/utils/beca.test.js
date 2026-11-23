@@ -53,9 +53,15 @@ describe('tarifas del club por familia', () => {
     expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [p()] })).toEqual({ cuotaDeportistas: 30000, cuotaReferencial: 30000 });
     expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [p(), p()] })).toEqual({ cuotaDeportistas: 50000, cuotaReferencial: 25000 });
   });
-  it('hijo de socio $15.000; 2 hijos de socio $12.000 c/u', () => {
+  it('hijo de socio $15.000; hermanos hijos de socio $15.000 c/u, sin tope', () => {
     expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [p()], esSocioApoderado: true }).cuotaDeportistas).toBe(15000);
-    expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [p(), p()], esSocioApoderado: true })).toEqual({ cuotaDeportistas: 24000, cuotaReferencial: 12000 });
+    expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [p(), p()], esSocioApoderado: true })).toEqual({ cuotaDeportistas: 30000, cuotaReferencial: 15000 });
+    expect(calcularCuotaDeportistasFamilia({ pupilosFamilia: [p(), p(), p()], esSocioApoderado: true })).toEqual({ cuotaDeportistas: 45000, cuotaReferencial: 15000 });
+  });
+  it('cuota especial por deportista: se respeta cada mes y no es beca', () => {
+    const r = calcularCuotaDeportistasFamilia({ pupilosFamilia: [p({ valor_mensualidad: 18000 })], esSocioApoderado: false });
+    expect(r.cuotaDeportistas).toBe(18000);
+    expect(obtenerCuotaJugador(p({ valor_mensualidad: 18000 }), 30000, 3)).toBe(18000);
   });
   it('un hermano con monto propio no cambia la tarifa del otro', () => {
     const r = calcularCuotaDeportistasFamilia({ pupilosFamilia: [p({ valor_mensualidad: 20000 }), p()] });
@@ -66,7 +72,7 @@ describe('tarifas del club por familia', () => {
     expect(r.cuotaDeportistas).toBe(12500);
   });
   it('tarifaPorDeportista', () => {
-    expect([tarifaPorDeportista(1), tarifaPorDeportista(3), tarifaPorDeportista(1, true), tarifaPorDeportista(2, true)]).toEqual([30000, 25000, 15000, 12000]);
+    expect([tarifaPorDeportista(1), tarifaPorDeportista(3), tarifaPorDeportista(1, true), tarifaPorDeportista(2, true)]).toEqual([30000, 25000, 15000, 15000]);
   });
 });
 

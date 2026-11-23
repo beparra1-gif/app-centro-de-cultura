@@ -329,7 +329,7 @@ export default function FichaPersonaModal({
               <Dato etiqueta="Cobra desde" valor={raw.mes_inicio_cobro} />
               <Dato
                 etiqueta="Cuota mensual"
-                valor={noDebeMensualidad(raw) ? '$0 (no paga)' : `${pesos(cuota.monto)}${Number(raw.valor_mensualidad) > 0 ? ' (monto propio)' : cuota.esSocio ? ' (hijo de socio)' : familia.length > 1 ? ' (hermanos)' : ''}`}
+                valor={noDebeMensualidad(raw) ? '$0 (no paga)' : `${pesos(cuota.monto)}${Number(raw.valor_mensualidad) > 0 ? ' (cuota especial)' : cuota.esSocio ? ' (hijo de socio)' : familia.length > 1 ? ' (hermanos)' : ''}`}
               />
               <Dato etiqueta="Correo apoderado" valor={raw.correo_apoderado} />
               <Dato etiqueta="Parentesco" valor={raw.parentesco_apoderado} />

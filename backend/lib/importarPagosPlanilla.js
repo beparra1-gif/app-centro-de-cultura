@@ -137,7 +137,7 @@ const parsearGidsPlanilla = (html = '') => {
 // Tarifas del club por deportista (igual que src/utils/beca.js):
 // 1 pupilo $30.000 · hermanos $25.000 c/u · hijo de socio $15.000 ·
 // 2 hijos de socio $12.000 c/u (desde el 3ro, tope familiar $24.000).
-const TARIFAS_POR_DEFECTO = [{ desde: '2026-01', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 12000 }];
+const TARIFAS_POR_DEFECTO = [{ desde: '2026-01', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 15000 }];
 // Tarifa vigente en un mes (historial configurable en Tesorería → Tarifas).
 const tarifaDelMes = (historial, mes) => {
   const lista = Array.isArray(historial) && historial.length ? [...historial].sort((a, b) => String(a.desde).localeCompare(String(b.desde))) : TARIFAS_POR_DEFECTO;
@@ -148,7 +148,8 @@ const tarifaDelMes = (historial, mes) => {
 };
 const tarifaPorDeportista = (cantidad = 1, esSocio = false, tarifa = TARIFAS_POR_DEFECTO[0]) => {
   const n = Math.max(1, Number(cantidad) || 1);
-  if (esSocio) return n === 1 ? Number(tarifa.hijoSocio) : (n === 2 ? Number(tarifa.dosHijosSocio) : Math.round((Number(tarifa.dosHijosSocio) * 2) / n));
+  // Hermanos hijos de socio: dosHijosSocio c/u, sin tope (igual que src/utils/beca.js).
+  if (esSocio) return n === 1 ? Number(tarifa.hijoSocio) : Number(tarifa.dosHijosSocio);
   return n === 1 ? Number(tarifa.uno) : Number(tarifa.hermanos);
 };
 // Cuota de un deportista para filas sin monto (marcadas VALIDADO): su

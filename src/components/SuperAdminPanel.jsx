@@ -81,6 +81,7 @@ import useModalAccesible from '../utils/useModalAccesible';
 import { coincideAlguna, mismoTexto, nombreCorto, unicosSinMayusculas } from '../utils/texto';
 import { mensajeCodigoActivacion, telefonoParaWhatsApp } from '../utils/codigoActivacion';
 import FiltroCategorias from './FiltroCategorias';
+import { tarifaVigente } from '../utils/beca';
 // comprobante_url llega en 2 formatos: URL relativa del backend
 // (/api/logo-assets/file/...) para imágenes subidas como archivo, o un data
 // URI base64 completo para PDF (ver convertirArchivoABase64 en
@@ -3452,7 +3453,14 @@ function SuperAdminPanel({
                   <div className="form-group"><label>Fecha de ingreso al club</label><input type="date" className="form-input" value={String(jugadorAdminEdit.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
                   <div className="form-group"><label>Mes inicio cobro</label><input className="form-input" value={jugadorAdminEdit.mes_inicio_cobro || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, mes_inicio_cobro: e.target.value }))} /></div>
                   <div className="form-group"><label>Beca</label><input className="form-input" value={jugadorAdminEdit.beca ? `${jugadorAdminEdit.beca}% — se edita desde Tesorería > Becas` : 'Sin beca — se asigna desde Tesorería > Becas'} disabled /></div>
-                  <div className="form-group"><label>Valor mensualidad</label><input type="number" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} /></div>
+                  <div className="form-group">
+                    <label>Cuota mensual especial (opcional)</label>
+                    <input type="number" min="0" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} placeholder="Vacío = tarifa del club" />
+                    <small className="pf-ayuda">
+                      Solo si este deportista paga un monto distinto cada mes (no es beca). Vacío = tarifa del club:{' '}
+                      {(() => { const t = tarifaVigente(); const $ = (n) => `$${Number(n).toLocaleString('es-CL')}`; return `${$(t.uno)} un pupilo · ${$(t.hermanos)} hermanos c/u · ${$(t.hijoSocio)} hijo de socio · ${$(t.dosHijosSocio)} hermanos hijos de socio c/u`; })()}.
+                    </small>
+                  </div>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.exento_mensualidad)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, exento_mensualidad: e.target.checked }))} /> Exento de mensualidad (no paga nada)</label>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.apoderado_socio)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; 2 hermanos $12.000 c/u)</label>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>

@@ -42,9 +42,10 @@ export const calcularCuotaFinal = (valorMensualidad, jugador = {}) => {
 // los meses anteriores pagados con $25.000 quedan completos, no parciales).
 // Se configura en Tesorería → Tarifas (GET/PUT /api/configuracion/tarifas).
 //  - uno: un solo pupilo · hermanos: c/u · hijoSocio: un hijo de socio ·
-//    dosHijosSocio: c/u con 2 (desde el 3ro, tope familiar = 2 × ese valor).
+//    dosHijosSocio: hermanos hijos de socio, c/u (sin tope: 3 hijos = 3 × ese
+//    valor). La clave conserva su nombre por el historial ya guardado.
 export const TARIFAS_POR_DEFECTO = [
-  { desde: '2026-01', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 12000 },
+  { desde: '2026-01', uno: 30000, hermanos: 25000, hijoSocio: 15000, dosHijosSocio: 15000 },
 ];
 const CLAVES_TARIFA = ['uno', 'hermanos', 'hijoSocio', 'dosHijosSocio'];
 let historialTarifas = TARIFAS_POR_DEFECTO;
@@ -78,7 +79,7 @@ const tarifaActual = () => historialTarifas[historialTarifas.length - 1];
 export const tarifaPorDeportista = (cantidadPupilos = 1, esSocio = false, mes = null) => {
   const t = tarifaVigente(mes);
   const n = Math.max(1, Number(cantidadPupilos) || 1);
-  if (esSocio) return n === 1 ? t.hijoSocio : (n === 2 ? t.dosHijosSocio : Math.round((t.dosHijosSocio * 2) / n));
+  if (esSocio) return n === 1 ? t.hijoSocio : t.dosHijosSocio;
   return n === 1 ? t.uno : t.hermanos;
 };
 

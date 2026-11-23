@@ -16,7 +16,7 @@ const CAMPOS = [
   ['uno', 'Un pupilo'],
   ['hermanos', 'Hermanos (c/u)'],
   ['hijoSocio', 'Hijo de socio'],
-  ['dosHijosSocio', '2 hijos de socio (c/u)'],
+  ['dosHijosSocio', 'Hermanos hijos de socio (c/u)'],
 ];
 const nombreMes = (desde) => {
   const [anio, mes] = String(desde).split('-').map(Number);
