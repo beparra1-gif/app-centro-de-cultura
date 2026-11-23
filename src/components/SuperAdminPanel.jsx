@@ -176,7 +176,6 @@ function SuperAdminPanel({
   // citaciones, becas, estadísticas...). Usuarios y Cuentas y la ficha usan
   // las listas completas (…Todos/…Todas), desde ahí se reactivan.
   const jugadoresAdmin = useMemo(() => soloActivos(jugadoresAdminTodos), [jugadoresAdminTodos]);
-  const categoriasDeJugadores = useMemo(() => unicosSinMayusculas((jugadoresAdmin || []).map((j) => j.categoria)).sort(), [jugadoresAdmin]);
   const cuentasAdmin = useMemo(() => soloActivos(cuentasAdminTodas), [cuentasAdminTodas]);
   const esStaff = rolActual === 'staff';
   const esAdmin = rolActual === 'admin';
@@ -3208,12 +3207,15 @@ function SuperAdminPanel({
                 {normalizarRol(cuentaAdminEdit.rol) === 'staff' && puedeGestionarStaff && (
                   <div className="form-group">
                     <label>Categorías a cargo (staff)</label>
-                    <FiltroCategorias
-                      opciones={unicosSinMayusculas([...categoriasDeJugadores, ...(cuentaAdminEdit.categorias_asignadas || [])]).sort()}
-                      valor={Array.isArray(cuentaAdminEdit.categorias_asignadas) ? cuentaAdminEdit.categorias_asignadas : []}
-                      onCambiar={(v) => setCuentaAdminEdit((p) => ({ ...p, categorias_asignadas: v }))}
+                    {/* Se asignan por rama en Usuarios y Cuentas → Staff (pares "RAMA|CATEGORÍA"). */}
+                    <input
+                      className="form-input"
+                      disabled
+                      value={(Array.isArray(cuentaAdminEdit.categorias_asignadas) && cuentaAdminEdit.categorias_asignadas.length)
+                        ? cuentaAdminEdit.categorias_asignadas.map((c) => String(c).replace('|', ' ')).join(', ')
+                        : 'Todas (sin restricción)'}
                     />
-                    <small className="pf-ayuda">En Pasar Lista y Evaluar verá solo estas categorías. "Todas" = sin restricción.</small>
+                    <small className="pf-ayuda">Se cambian por rama en Usuarios y Cuentas → Staff.</small>
                   </div>
                 )}
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>

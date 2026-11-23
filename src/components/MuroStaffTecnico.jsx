@@ -10,6 +10,8 @@ import { FotoPersona } from './MuroCumpleanos';
 // y las categorías que tienen a cargo (las de Usuarios y Cuentas → Staff).
 // Se carga al abrir, no en cada visita al Muro.
 
+const titulo = (t = '') => String(t).charAt(0).toUpperCase() + String(t).slice(1).toLowerCase();
+
 function VentanaStaff({ onCerrar }) {
   useModalAccesible(true, onCerrar);
   const [staff, setStaff] = useState(null);
@@ -43,10 +45,14 @@ function VentanaStaff({ onCerrar }) {
               <article key={p.id} className="ms-persona">
                 <FotoPersona foto={p.foto} nombre={p.nombre} size={64} />
                 <strong>{p.nombre}</strong>
-                {p.ramas?.length > 0 && <small className="ms-rama">{p.ramas.map((r) => r.charAt(0) + r.slice(1).toLowerCase()).join(' y ')}</small>}
+                {p.ramas?.length > 0 && <small className="ms-rama">{p.ramas.map(titulo).join(' y ')}</small>}
                 <div className="ms-categorias">
                   {p.categorias.length
-                    ? [...p.categorias].sort(ordenarCategorias).map((c) => <span key={c} className="tc-perfil">{c}</span>)
+                    // Pares "RAMA|CATEGORÍA" → "SUB-13 Femenina".
+                    ? [...p.categorias].sort((a, b) => ordenarCategorias(a.split('|').pop(), b.split('|').pop())).map((c) => {
+                      const [rama, cat] = c.includes('|') ? c.split('|') : ['', c];
+                      return <span key={c} className="tc-perfil">{cat}{rama ? ` ${titulo(rama)}` : ''}</span>;
+                    })
                     : <span className="tc-perfil">Todas las categorías</span>}
                 </div>
               </article>

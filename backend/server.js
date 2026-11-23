@@ -1,6 +1,7 @@
 const express = require('express');
 const { asignarCategoriaPorEdad } = require('./lib/categoriaPorEdad');
 const { normalizarTelefonoChile, normalizarTelefonosBody } = require('./lib/telefonoChile');
+const { leerAlcance, sinRestriccion, enAlcance } = require('./lib/alcanceStaff');
 const {
   TIPOS_CERTIFICADO, RECURSOS_CERTIFICADO, generarCodigoVerificacion, codigoValido, enmascararRut,
   folioCertificado, sumarDias, limpiarExtraCertificado, faltaParaEmitir,
@@ -2910,8 +2911,9 @@ const academiaParaCategoriasDelStaff = ({ soloSiAcademia = false } = {}) => asyn
     // Una edición que no toca categorías (p. ej. publicar/despublicar) pasa tal cual.
     if (original === undefined && req.params.id) return next();
     const cuenta = (await pool.query('SELECT categorias_asignadas FROM cuentas WHERE id = $1', [req.actor.id])).rows[0];
-    const asignadas = (Array.isArray(cuenta?.categorias_asignadas) ? cuenta.categorias_asignadas : [])
-      .map((c) => String(c || '').trim()).filter(Boolean);
+    // Pares "RAMA|CATEGORÍA": Academia se dirige por categoría, así que se usa solo esa parte.
+    const asignadas = [...new Set((Array.isArray(cuenta?.categorias_asignadas) ? cuenta.categorias_asignadas : [])
+      .map((c) => String(c || '').trim().split('|').pop()).filter(Boolean))];
     if (!asignadas.length) return next();
     let lista = original;
     if (typeof lista === 'string') {
@@ -8569,30 +8571,25 @@ const avisarComprobanteATesoreria = async (actor, pago) => {
 // Categorías del staff en minúsculas; [] = sin restricción (o no es staff).
 // Alcance del staff: categorías y ramas en minúsculas; [] = sin restricción.
 // Un deportista entra si su categoría Y su rama están dentro.
+// Pares "RAMA|CATEGORÍA" (ver lib/alcanceStaff.js).
 const alcanceDeStaff = async (actor) => {
-  if (normalizarRol(actor?.rol) !== 'staff' || !actor?.id) return { categorias: [], ramas: [] };
+  if (normalizarRol(actor?.rol) !== 'staff' || !actor?.id) return leerAlcance({});
   const cuenta = (await pool.query('SELECT categorias_asignadas, ramas_asignadas FROM cuentas WHERE id = $1', [actor.id])).rows[0];
-  const lista = (v) => (Array.isArray(v) ? v : []).map((c) => String(c || '').trim().toLowerCase()).filter(Boolean);
-  return { categorias: lista(cuenta?.categorias_asignadas), ramas: lista(cuenta?.ramas_asignadas) };
+  return leerAlcance(cuenta || {});
 };
+// Solo las categorías (sin rama): filtro grueso para Academia y el ranking.
 const categoriasDeStaff = async (actor) => (await alcanceDeStaff(actor)).categorias;
-const enCategorias = (categorias, valor) => !categorias.length || categorias.includes(String(valor || '').trim().toLowerCase());
-const enAlcance = (alcance, j = {}) => enCategorias(alcance.categorias, j.categoria) && enCategorias(alcance.ramas, j.rama);
 
 const rutsFueraDeCategoriasStaff = async (actor, ruts) => {
-  const { categorias, ramas } = await alcanceDeStaff(actor);
+  const alcance = await alcanceDeStaff(actor);
   const lista = [...new Set((ruts || []).map((r) => normalizarRutParaComparar(r)).filter(Boolean))];
-  if ((!categorias.length && !ramas.length) || !lista.length) return [];
+  if (sinRestriccion(alcance) || !lista.length) return [];
   const result = await pool.query(
-    `SELECT rut_jugador, nombres, apellido_paterno FROM jugadores
-     WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = ANY($1)
-       AND NOT (
-         (cardinality($2::text[]) = 0 OR LOWER(TRIM(COALESCE(categoria, ''))) = ANY($2))
-         AND (cardinality($3::text[]) = 0 OR LOWER(TRIM(COALESCE(rama, ''))) = ANY($3))
-       )`,
-    [lista, categorias, ramas]
+    `SELECT rut_jugador, nombres, apellido_paterno, rama, categoria FROM jugadores
+     WHERE REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = ANY($1)`,
+    [lista]
   );
-  return result.rows;
+  return result.rows.filter((j) => !enAlcance(alcance, j));
 };
 
 // Middleware: extraerRuts(req) devuelve los RUT de deportistas que toca la acción.
@@ -9791,14 +9788,15 @@ app.get('/api/asistencia/sesiones', authenticate, requireAnyModule('citaciones',
       valores.push(hasta);
       condiciones.push(`fecha <= $${valores.length}`);
     }
-    const { categorias: categoriasStaff, ramas: ramasStaff } = await alcanceDeStaff(req.actor);
-    if (categoriasStaff.length) {
-      valores.push(categoriasStaff);
-      condiciones.push(`LOWER(TRIM(categoria)) = ANY($${valores.length}::text[])`);
-    }
-    if (ramasStaff.length) {
-      valores.push(ramasStaff);
+    const alcance = await alcanceDeStaff(req.actor);
+    if (alcance.ramas.length) {
+      valores.push(alcance.ramas);
       condiciones.push(`LOWER(TRIM(rama)) = ANY($${valores.length}::text[])`);
+    }
+    if (alcance.pares.length || alcance.solas.length) {
+      valores.push(alcance.solas, alcance.pares);
+      condiciones.push(`(LOWER(TRIM(categoria)) = ANY($${valores.length - 1}::text[])
+        OR (LOWER(TRIM(COALESCE(rama, ''))) || '|' || LOWER(TRIM(categoria))) = ANY($${valores.length}::text[]))`);
     }
     const where = condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
 
@@ -9831,8 +9829,8 @@ app.get('/api/asistencia/sesiones/:sesionId', authenticate, requireAnyModule('ci
       `SELECT * FROM asistencia WHERE sesion_id = $1 ORDER BY nombre_jugador ASC`,
       [req.params.sesionId]
     );
-    const categorias = await categoriasDeStaff(req.actor);
-    res.json(result.rows.filter((r) => enCategorias(categorias, r.categoria)));
+    const alcance = await alcanceDeStaff(req.actor);
+    res.json(result.rows.filter((r) => enAlcance(alcance, r)));
   } catch (err) {
     console.error('[GET /api/asistencia/sesiones/:sesionId]', err);
     res.status(500).json({ error: err.message });
@@ -10881,7 +10879,8 @@ app.get('/api/academia/ranking', authenticate, requireRole('staff', 'admin', 'su
       ? (listaCategorias.length ? listaCategorias.filter((c) => categoriasStaff.includes(c)) : categoriasStaff)
       : listaCategorias;
     const categoria = permitidas.length ? permitidas : (categoriasStaff.length ? ['__ninguna__'] : null);
-    const { ramas: ramasStaff } = await alcanceDeStaff(req.actor);
+    const alcanceStaff = await alcanceDeStaff(req.actor);
+    const ramasStaff = alcanceStaff.ramas;
     const result = await pool.query(
       `SELECT j.rut_jugador, j.nombres, j.apellido_paterno, j.apellido_materno, j.rama, j.categoria,
               COALESCE(SUM(gp.puntos_obtenidos), 0) AS xp_total,
@@ -10894,7 +10893,8 @@ app.get('/api/academia/ranking', authenticate, requireRole('staff', 'admin', 'su
        ORDER BY xp_total DESC, j.apellido_paterno ASC`,
       [rama, categoria, ramasStaff]
     );
-    const filas = result.rows.map((fila, idx) => ({
+    // El filtro SQL va por categoría; acá se aplica el par rama|categoría del staff.
+    const filas = result.rows.filter((fila) => enAlcance(alcanceStaff, fila)).map((fila, idx) => ({
       ...fila,
       xp_total: Number(fila.xp_total),
       posicion: idx + 1,

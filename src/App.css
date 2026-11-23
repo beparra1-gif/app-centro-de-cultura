@@ -4510,3 +4510,4 @@ button.sc-chip { border: 0; padding: 6px 12px; cursor: pointer; color: var(--tex
 }
 .settings-accion .settings-switch.on > span { left: 23px; }
 .ms-rama { font-size: 12px; font-weight: 700; color: var(--texto-secundario); }
+.sc-rama { margin: 8px 4px 0; font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; color: var(--texto-secundario); }

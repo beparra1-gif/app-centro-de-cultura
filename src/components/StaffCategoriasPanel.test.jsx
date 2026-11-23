@@ -2,42 +2,54 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { vi } from 'vitest';
 import * as api from '../api/client';
 import StaffCategoriasPanel from './StaffCategoriasPanel';
+import { enAlcanceStaff } from '../utils/categoriasStaff';
 
 const cuentas = [
-  { id: 1, nombres: 'Ana', apellido_paterno: 'Soto', rol: 'staff', categorias_asignadas: ['SUB-13', 'SUB-15'], ramas_asignadas: [] },
-  { id: 2, nombres: 'Beto', apellido_paterno: 'Paz', rol: 'staff', categorias_asignadas: ['SUB-13'], ramas_asignadas: ['MASCULINA'] },
+  { id: 1, nombres: 'Ana', apellido_paterno: 'Soto', rol: 'staff', categorias_asignadas: ['SUB-13'] },
+  { id: 2, nombres: 'Beto', apellido_paterno: 'Paz', rol: 'staff', categorias_asignadas: ['MASCULINA|SUB-13'] },
   { id: 3, nombres: 'Caro', apellido_paterno: 'Ruiz', rol: 'staff', categorias_asignadas: [] },
   { id: 4, nombres: 'Dani', apellido_paterno: 'Mora', rol: 'apoderado' },
 ];
 const jugadores = [
-  { categoria: 'SUB-13', rama: 'MASCULINA' }, { categoria: 'SUB-15', rama: 'FEMENINA' }, { categoria: 'SUB-17', rama: 'FEMENINA' },
+  { categoria: 'SUB-13', rama: 'MASCULINA' }, { categoria: 'SUB-13', rama: 'FEMENINA' },
+  { categoria: 'SUB-15', rama: 'FEMENINA' }, { categoria: 'SUB-17', rama: 'FEMENINA' },
 ];
 
 describe('StaffCategoriasPanel', () => {
-  it('al elegir un entrenador abre la ventana con rama y categorías, y guarda', async () => {
+  it('asigna 1 categoría de hombres y 3 de mujeres en la ventana', async () => {
     const update = vi.spyOn(api.cuentasAPI, 'update').mockResolvedValue({});
     render(<StaffCategoriasPanel cuentas={cuentas} jugadores={jugadores} onRecargar={vi.fn()} />);
-
     expect(screen.queryByText('Dani Mora')).toBeNull();
-    expect(screen.getByText('Masculina · SUB-13')).toBeInTheDocument();
+    expect(screen.getByText('Masculina: SUB-13')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Ana Soto/ }));
-    const ventana = screen.getByRole('dialog', { name: 'Ana Soto' });
-    expect(within(ventana).getByText(/Hoy: Todas las ramas · SUB-13, SUB-15/)).toBeInTheDocument();
-    fireEvent.click(within(ventana).getByLabelText('Femenina'));
-    fireEvent.click(within(ventana).getByLabelText('SUB-17'));
-    expect(within(ventana).getByText(/Femenina · SUB-13, SUB-15, SUB-17/)).toBeInTheDocument();
-    fireEvent.click(within(ventana).getByRole('button', { name: 'Guardar' }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith(1, { ramas_asignadas: ['FEMENINA'], categorias_asignadas: ['SUB-13', 'SUB-15', 'SUB-17'] }));
+    fireEvent.click(screen.getByRole('button', { name: /Caro Ruiz/ }));
+    const v = screen.getByRole('dialog', { name: 'Caro Ruiz' });
+    fireEvent.click(within(v).getByLabelText('SUB-13 Masculina'));
+    ['SUB-13', 'SUB-15', 'SUB-17'].forEach((c) => fireEvent.click(within(v).getByLabelText(`${c} Femenina`)));
+    expect(within(v).getByText('Femenina: SUB-13, SUB-15, SUB-17 · Masculina: SUB-13', { exact: false })).toBeInTheDocument();
+    fireEvent.click(within(v).getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(3, {
+      categorias_asignadas: ['MASCULINA|SUB-13', 'FEMENINA|SUB-13', 'FEMENINA|SUB-15', 'FEMENINA|SUB-17'],
+      ramas_asignadas: [],
+    }));
     update.mockRestore();
   });
 
-  it('por categoría: varios entrenadores y agregar uno', async () => {
-    const update = vi.spyOn(api.cuentasAPI, 'update').mockResolvedValue({});
+  it('una asignación antigua (solo categoría) aparece marcada en ambas ramas', () => {
     render(<StaffCategoriasPanel cuentas={cuentas} jugadores={jugadores} onRecargar={vi.fn()} />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Por categoría' }));
-    fireEvent.change(screen.getByLabelText('Agregar entrenador a SUB-17'), { target: { value: '2' } });
-    await waitFor(() => expect(update).toHaveBeenCalledWith(2, { ramas_asignadas: ['MASCULINA'], categorias_asignadas: ['SUB-13', 'SUB-17'] }));
-    update.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: /Ana Soto/ }));
+    const v = screen.getByRole('dialog', { name: 'Ana Soto' });
+    expect(within(v).getByLabelText('SUB-13 Masculina')).toBeChecked();
+    expect(within(v).getByLabelText('SUB-13 Femenina')).toBeChecked();
+    expect(within(v).getByLabelText('SUB-15 Femenina')).not.toBeChecked();
+  });
+});
+
+describe('enAlcanceStaff', () => {
+  it('pares rama|categoría sin distinguir mayúsculas', () => {
+    const c = { categorias_asignadas: ['MASCULINA|SUB-13', 'FEMENINA|SUB-15'] };
+    expect(enAlcanceStaff(c, { rama: 'masculina', categoria: 'sub-13' })).toBe(true);
+    expect(enAlcanceStaff(c, { rama: 'FEMENINA', categoria: 'SUB-13' })).toBe(false);
+    expect(enAlcanceStaff({}, { rama: 'FEMENINA', categoria: 'SUB-13' })).toBe(true);
   });
 });

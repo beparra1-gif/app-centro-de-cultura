@@ -48,28 +48,25 @@ const nombre = (j) => `${j.nombres} ${j.apellido}`;
 // Pasar lista y nóminas muestran primer nombre + primer apellido (pupilo e hijoSocio quedan iguales: "E2E Prueba").
 const corto = (j) => `${j.nombres.split(' ')[0]} ${j.apellido}`;
 
-test('super admin asigna categorías a un staff desde Editar cuenta', async ({ page, request }) => {
+test('super admin asigna SUB-13 masculino a un staff desde Usuarios y Cuentas → Staff', async ({ page, request }) => {
   await iniciarSesion(page, CUENTAS.super_admin.rut);
   await page.getByRole('button', { name: 'Usuarios y Cuentas' }).first().click();
-  await page.getByRole('button', { name: /^Cuentas/ }).click();
-  await page.getByPlaceholder('Nombre, correo, RUT o rol').fill('E2E Staff');
-  await page.getByRole('button', { name: 'Modificar' }).first().click();
-  const editor = page.getByRole('dialog', { name: 'Editar cuenta' });
-  await expect(editor.getByText('Categorías a cargo (staff)')).toBeVisible();
-  await editor.getByLabel(/^Categorías:/).click();
-  await editor.getByRole('group', { name: 'Categorías' }).getByLabel('SUB-13', { exact: true }).check();
-  await editor.getByRole('button', { name: 'Guardar cambios' }).click();
-  await expect(page.getByText('Cuenta actualizada correctamente.')).toBeVisible({ timeout: 10000 });
+  await page.getByRole('button', { name: 'Staff', exact: true }).click();
+  await page.getByRole('button', { name: /E2E Staff/ }).click();
+  const ventana = page.getByRole('dialog', { name: /E2E Staff/ });
+  await ventana.getByLabel('SUB-13 Masculina', { exact: true }).check();
+  await ventana.getByRole('button', { name: 'Guardar' }).click();
+  await expect(ventana).toBeHidden({ timeout: 10000 });
 
   const { rows: [c] } = await pool.query('SELECT categorias_asignadas, rol FROM cuentas WHERE rut = $1', [CUENTAS.staff.rut]);
-  expect(c).toEqual({ categorias_asignadas: ['SUB-13'], rol: 'staff' });
+  expect(c).toEqual({ categorias_asignadas: ['MASCULINA|SUB-13'], rol: 'staff' });
 
   // El staff no puede asignarse categorías a sí mismo (campo solo admin).
   const token = await tokenDe(request, CUENTAS.staff.rut);
   const { rows: [{ id }] } = await pool.query('SELECT id FROM cuentas WHERE rut = $1', [CUENTAS.staff.rut]);
   await request.put(`${API}/cuentas/${id}`, { headers: { Authorization: `Bearer ${token}` }, data: { categorias_asignadas: [] } });
   const { rows: [c2] } = await pool.query('SELECT categorias_asignadas FROM cuentas WHERE rut = $1', [CUENTAS.staff.rut]);
-  expect(c2.categorias_asignadas).toEqual(['SUB-13']);
+  expect(c2.categorias_asignadas).toEqual(['MASCULINA|SUB-13']);
 });
 
 test('staff pasa lista solo con su categoría y la asistencia se guarda', async ({ page }) => {
