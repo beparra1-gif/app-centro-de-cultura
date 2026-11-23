@@ -7,7 +7,8 @@ import LogoAvatar from './LogoAvatar';
 import ResultadosCards from './ResultadosCards';
 import MuroHorarioEntrenamientos from './MuroHorarioEntrenamientos';
 import MuroCumpleanos from './MuroCumpleanos';
-import { calcularResumenCitacion, puedeJugadorResponderPropiaCitacion } from '../utils/citaciones';
+import { calcularResumenCitacion, esBanca, puedeJugadorResponderPropiaCitacion } from '../utils/citaciones';
+import TarjetaPartido from './TarjetaPartido';
 import { esUrlImagen, esUrlYoutube, esUrlVimeo, esUrlVideoInterno, obtenerIdYoutube, obtenerIdVimeo } from '../utils/contenidoMultimedia';
 
 // El post puede traer un texto libre (Anuncio) o una URL (Imagen/Video/Enlace
@@ -125,8 +126,9 @@ function ComunicacionesPanel({
 
   const obtenerEstadoTexto = (respuesta) => {
     if (respuesta === 'si') return 'Confirmado';
-    if (respuesta === 'no') return 'Inasistente';
-    return 'Pendiente';
+    if (respuesta === 'no') return 'No asiste';
+    // Recién publicada nadie ha respondido: se muestra así, nunca como inasistente.
+    return 'Sin responder';
   };
 
   const obtenerColorEstado = (respuesta) => {
@@ -157,7 +159,7 @@ function ComunicacionesPanel({
     // El backend autoriza por titularidad (rut_apoderado del jugador), no por
     // el rol de la cuenta. Lo único que bloquea es que el propio deportista
     // citado (coincide por su propio RUT) intente responder por sí mismo —
-    // salvo que ya tenga 13+ años, ver puedeJugadorResponderPropiaCitacion.
+    // salvo que el club lo marcó autogestionado, ver puedeJugadorResponderPropiaCitacion.
     const esElJugadorCitado = Boolean(rutUsuario) && String(convocado?.rut_jugador || '').trim() === rutUsuario;
     const claveMensaje = obtenerClaveMensaje(comId, convocado?.rut_jugador || actorId);
     const justificacion = respuesta === 'no'
@@ -542,7 +544,10 @@ function ComunicacionesPanel({
                     const cita = obtenerCitacion(c);
                     const propios = obtenerConvocadosPropios(c);
                     const convocados = obtenerConvocadosVisibles(c);
-                    const { confirmados, justificados, automaticos, pendientes, progreso } = calcularResumenCitacion(convocados);
+                    const { confirmados, justificados, automaticos, pendientes, progreso, aceptadas, banca } = calcularResumenCitacion(convocados);
+                    // Titulares primero y luego la banca (reserva), con su propio título.
+                    const ordenados = [...convocados.filter((x) => !esBanca(x)), ...convocados.filter(esBanca)];
+                    const primeroDeBanca = ordenados.findIndex(esBanca);
                     const rutUsuario = String(usuarioAutenticado?.rut || pupiloActivo?.rut || '').trim();
                     const correoUsuario = String(usuarioAutenticado?.correo || pupiloActivo?.correo_apoderado || '').trim().toLowerCase();
                     const actorId = rutUsuario || correoUsuario || 'anon';
@@ -552,47 +557,48 @@ function ComunicacionesPanel({
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {cita && (
                           <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: 'var(--radius-md)', padding: '10px' }}>
-                            <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--texto-principal)' }}>
-                              {cita.tipo_competencia} · {cita.competencia_nombre} · vs {cita.rival_nombre}
-                            </div>
-                            <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
-                              Día {cita.dia_citacion} · Citación {cita.hora_citacion} · Presentación {cita.hora_presentacion}
-                            </div>
-                            <div style={{ marginTop: '4px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
+                            <TarjetaPartido cita={cita} />
+                            <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
                               Responsable: {cita.responsable_nombre || c.responsable_nombre || 'Administración CCF'}
                             </div>
                             <div className="recaud-bar" style={{ marginTop: '10px' }}>
                               <div className="recaud-bar-fill" style={{ width: `${progreso}%`, background: 'linear-gradient(90deg, var(--azul-electrico), var(--verde-victoria))' }} />
                             </div>
                             <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                              {progreso}% respondida · Confirmados {confirmados} · Rechazados {justificados + automaticos}{automaticos > 0 ? ` (${automaticos} sin justificar, venció plazo)` : ''} · Pendientes {pendientes}
+                              <b style={{ color: 'var(--verde-victoria)' }}>{aceptadas}% aceptadas</b> · {progreso}% respondida · Confirmados {confirmados} · No asisten {justificados + automaticos}{automaticos > 0 ? ` (${automaticos} sin responder a tiempo)` : ''} · Pendientes {pendientes}{banca > 0 ? ` · En banca ${banca}` : ''}
                             </div>
                           </div>
                         )}
 
                         {convocados.length > 0 && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {(convocados || []).map((convocado) => {
+                            {ordenados.map((convocado, indice) => {
                               const esPropio = propios.some((item) => item.rut_jugador === convocado.rut_jugador);
                               // El backend autoriza el RSVP por titularidad (rut_apoderado del
                               // jugador), no por el rol de la cuenta — un "socio" o "directiva"
                               // puede ser apoderado igual que un rol "apoderado" literal. El
                               // propio deportista citado (coincide por su propio RUT, no por
-                              // correo de apoderado) solo puede responder si ya tiene 13+ años
-                              // (puedeJugadorResponderPropiaCitacion) — bajo esa edad, solo su
-                              // apoderado puede hacerlo. El apoderado nunca pierde su capacidad
-                              // de responder aunque el jugador ya califique por edad.
+                              // correo de apoderado) solo puede responder si el club lo marcó
+                              // autogestionado (puedeJugadorResponderPropiaCitacion); si no, solo
+                              // ve que fue citado y responde su apoderado. El apoderado nunca
+                              // pierde su capacidad de responder.
                               const esElJugadorCitado = Boolean(rutUsuario) && String(convocado.rut_jugador || '').trim() === rutUsuario;
                               const jugadorPuedeResponderPropio = esElJugadorCitado && puedeJugadorResponderPropiaCitacion(convocado);
                               const puedeResponder = (esPropio && !esElJugadorCitado) || jugadorPuedeResponderPropio;
                               const colores = obtenerColorEstado(convocado.respuesta);
                               const claveMensaje = obtenerClaveMensaje(c.id, convocado.rut_jugador);
                               return (
-                                <div key={`${c.id}-${convocado.rut_jugador}`} style={{ border: '1px solid rgba(15,23,42,0.08)', borderRadius: 'var(--radius-md)', padding: '10px', background: 'rgba(255,255,255,0.72)' }}>
+                                <div key={`${c.id}-${convocado.rut_jugador}`}>
+                                {indice === primeroDeBanca && (
+                                  <div style={{ fontSize: '11px', fontWeight: '900', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '6px 0' }}>
+                                    En banca (reserva)
+                                  </div>
+                                )}
+                                <div style={{ border: '1px solid rgba(15,23,42,0.08)', borderRadius: 'var(--radius-md)', padding: '10px', background: esBanca(convocado) ? 'rgba(0,122,255,0.05)' : 'rgba(255,255,255,0.72)' }}>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                     <div>
                                       <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--texto-principal)' }}>{convocado.nombre}</div>
-                                      <div style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>{convocado.rama} · {convocado.categoria}</div>
+                                      <div style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>{convocado.rama} · {convocado.categoria}{esBanca(convocado) ? ' · Banca' : ''}</div>
                                     </div>
                                     <span style={{ padding: '5px 10px', borderRadius: 'var(--radius-pill)', background: colores.bg, color: colores.color, fontSize: 'var(--texto-min)', fontWeight: '900' }}>
                                       {obtenerEstadoTexto(convocado.respuesta)}
@@ -607,7 +613,7 @@ function ComunicacionesPanel({
 
                                   {esElJugadorCitado && !jugadorPuedeResponderPropio && (
                                     <p style={{ marginTop: '8px', fontSize: '12px', fontWeight: '700', color: 'var(--texto-secundario)', background: 'rgba(15,23,42,0.05)', borderRadius: 'var(--radius-sm)', padding: '8px 10px' }}>
-                                      Fuiste citado a este partido. Solo tu apoderado puede confirmar o rechazar la asistencia.
+                                      {esBanca(convocado) ? 'Estás en la banca (reserva) de este partido.' : 'Fuiste citado a este partido.'} Solo tu apoderado puede confirmar o rechazar la asistencia.
                                     </p>
                                   )}
 
@@ -621,9 +627,10 @@ function ComunicacionesPanel({
 
                                   {!esPropio && convocado.justificacion && (
                                     <div style={{ marginTop: '8px', fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)' }}>
-                                      Justificación: {convocado.justificacion}
+                                      Motivo: {convocado.justificacion}
                                     </div>
                                   )}
+                                </div>
                                 </div>
                               );
                             })}

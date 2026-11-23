@@ -324,11 +324,11 @@ const calcularEdad = (fechaNacimiento) => {
   return edad;
 };
 
-const EDAD_MINIMA_RESPUESTA_PROPIA = 13;
-
 // Autoriza el RSVP de una citación a: (a) el apoderado registrado del
-// deportista (como siempre), o (b) el propio deportista si ya tiene 13 años
-// o más (regla de negocio: bajo esa edad, solo responde el apoderado).
+// deportista, o (b) el propio deportista SOLO si el club lo marcó
+// autogestionable (cuenta con permisos_override.perfil = true, ver
+// POST /api/jugadores/:rut/autogestionable). Pedido del club: los demás
+// deportistas solo ven si están citados; confirma su apoderado.
 const requireApoderadoDeJugador = (pool) => (req, res, next) => {
   const actor = req.actor;
   if (!actor) {
@@ -341,23 +341,22 @@ const requireApoderadoDeJugador = (pool) => (req, res, next) => {
     return res.status(403).json({ error: 'No tienes acceso a este recurso.' });
   }
 
-  pool.query('SELECT rut_apoderado, fecha_nacimiento FROM jugadores WHERE rut_jugador = $1', [rutJugador])
-    .then((result) => {
-      const fila = result.rows[0] || {};
-      const rutApoderadoRegistrado = normalizarRutParaComparar(fila.rut_apoderado || '');
+  pool.query('SELECT rut_apoderado FROM jugadores WHERE rut_jugador = $1', [rutJugador])
+    .then(async (result) => {
+      const rutApoderadoRegistrado = normalizarRutParaComparar(result.rows[0]?.rut_apoderado || '');
       if (rutApoderadoRegistrado && rutApoderadoRegistrado === rutActor) {
         return next();
       }
 
-      const esElPropioJugador = normalizarRutParaComparar(rutJugador) === rutActor;
-      if (esElPropioJugador) {
-        const edad = calcularEdad(fila.fecha_nacimiento);
-        if (edad !== null && edad >= EDAD_MINIMA_RESPUESTA_PROPIA) {
-          return next();
-        }
+      if (normalizarRutParaComparar(rutJugador) === rutActor) {
+        const cuenta = (await pool.query(
+          "SELECT permisos_override FROM cuentas WHERE REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = $1 LIMIT 1",
+          [rutActor]
+        )).rows[0];
+        if (cuenta?.permisos_override?.perfil === true) return next();
       }
 
-      return res.status(403).json({ error: 'Solo el apoderado del deportista puede confirmar o rechazar esta citación.' });
+      return res.status(403).json({ error: 'Solo el apoderado (o el deportista autogestionado) puede confirmar o rechazar esta citación.' });
     })
     .catch((err) => res.status(500).json({ error: err.message }));
 };

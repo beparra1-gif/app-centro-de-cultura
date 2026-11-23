@@ -59,7 +59,9 @@ import { detectarPagosMalClasificados } from '../utils/pagosMalClasificados';
 import { construirCuentasQuePagan, normalizarRutTesoreria } from '../utils/tesoreriaCuentas';
 import QrScanner from './QrScanner';
 import ResultadosCards from './ResultadosCards';
-import { calcularResumenCitacion } from '../utils/citaciones';
+import { calcularResumenCitacion, esBanca } from '../utils/citaciones';
+import CitacionWhatsapp from './CitacionWhatsapp';
+import TarjetaPartido from './TarjetaPartido';
 import { MODULOS_ACCESO, obtenerPermisosBasePorRol, normalizarRol } from '../security/accessControl';
 import { mapearJugadorAPupilo } from '../utils/pupiloMapper';
 import { estaActivo, soloActivos } from '../utils/estadoActivo';
@@ -542,19 +544,58 @@ function SuperAdminPanel({
   const [citacionEscaneandoId, setCitacionEscaneandoId] = useState(null);
   const [convocadoAAgregarPorCitacion, setConvocadoAAgregarPorCitacion] = useState({});
   const [vistaCitaciones, setVistaCitaciones] = useState('crear');
+  // Citación cuyo panel de WhatsApp está abierto (se abre solo al publicar una nueva).
+  const [citacionWhatsappId, setCitacionWhatsappId] = useState(null);
+  // Creador por pasos: 1 Partido, 2 Fecha y lugar, 3 Citados, 4 Revisar y publicar.
+  // No se avanza sin lo esencial del paso anterior (los citados van al final).
+  const [pasoCita, setPasoCita] = useState(1);
+  const pasosCitacion = () => {
+    const pasos = [
+      { n: 1, titulo: 'Partido' },
+      { n: 2, titulo: 'Fecha y lugar' },
+      ...(citaEditandoId ? [] : [{ n: 3, titulo: 'Citados' }]),
+      { n: 4, titulo: citaEditandoId ? 'Guardar' : 'Revisar y publicar' },
+    ];
+    const faltaPaso1 = !String(citaForm.competencia_nombre || '').trim() || !String(citaForm.rival_nombre || '').trim();
+    const faltaPaso2 = !citaForm.dia_citacion || !citaForm.hora_citacion || !citaForm.hora_presentacion;
+    const faltaPaso3 = !citaEditandoId && cuposCitados === 0;
+    const puedeIr = (n) => n === 1 || (n === 2 && !faltaPaso1) || (n === 3 && !faltaPaso1 && !faltaPaso2) || (n === 4 && !faltaPaso1 && !faltaPaso2 && !faltaPaso3);
+    const ir = (n) => {
+      if (puedeIr(n)) { setPasoCita(n); return; }
+      showToast({
+        message: faltaPaso1 ? 'Primero completa la competencia y el rival.'
+          : faltaPaso2 ? 'Primero completa el día y los horarios.'
+            : 'Elige al menos una jugadora o jugador titular.',
+        type: 'error',
+      });
+    };
+    const indice = pasos.findIndex((x) => x.n === pasoCita);
+    return { pasos, ir, anterior: pasos[indice - 1], siguiente: pasos[indice + 1] };
+  };
+  // Titular o banca al agregar a alguien a una nómina ya publicada.
+  const [rolAAgregarPorCitacion, setRolAAgregarPorCitacion] = useState({});
   const [horaMaximaEditadaManualmente, setHoraMaximaEditadaManualmente] = useState(false);
   const [citaEditandoId, setCitaEditandoId] = useState(null);
   // Sugerencia por defecto para "hora máxima de confirmación": el día
   // anterior a la citación a las 22:00, editable libremente por el profesor
   // (ej. si necesita más margen para citar a alguien más).
-  const calcularSugerenciaHoraMaxima = (diaCitacionStr) => {
+  // Plazo sugerido: el día anterior a las 22:00. Si eso ya pasó (citación
+  // para hoy o mañana temprano), 2 horas antes de la citación, y nunca antes
+  // de una hora desde ahora: un plazo vencido marcaba a todos "no asiste".
+  const calcularSugerenciaHoraMaxima = (diaCitacionStr, horaCitacion = '16:00') => {
     if (!diaCitacionStr) return '';
     const [y, m, d] = diaCitacionStr.split('-').map(Number);
     if (!y || !m || !d) return '';
-    const fecha = new Date(y, m - 1, d);
-    fecha.setDate(fecha.getDate() - 1);
     const pad = (n) => String(n).padStart(2, '0');
-    return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T22:00`;
+    const aTexto = (f) => `${f.getFullYear()}-${pad(f.getMonth() + 1)}-${pad(f.getDate())}T${pad(f.getHours())}:${pad(f.getMinutes())}`;
+    const ahora = new Date();
+    const diaAnterior = new Date(y, m - 1, d - 1, 22, 0);
+    if (diaAnterior > ahora) return aTexto(diaAnterior);
+    const [hh, mm] = String(horaCitacion || '16:00').split(':').map(Number);
+    const antesDeCitar = new Date(y, m - 1, d, (hh || 16) - 2, mm || 0);
+    const enUnaHora = new Date(ahora.getTime() + 60 * 60 * 1000);
+    enUnaHora.setSeconds(0, 0);
+    return aTexto(antesDeCitar > enUnaHora ? antesDeCitar : enUnaHora);
   };
   const crearCitaFormInicial = () => {
     const diaCitacionInicial = hoyLocalISO();
@@ -568,6 +609,9 @@ function SuperAdminPanel({
       hora_maxima_confirmacion: calcularSugerenciaHoraMaxima(diaCitacionInicial),
       rival_nombre: '',
       rival_logo_url: '',
+      lugar_nombre: '',
+      lugar_direccion: '',
+      mensaje_adicional: '',
     };
   };
   const [citaForm, setCitaForm] = useState(crearCitaFormInicial);
@@ -1166,7 +1210,26 @@ function SuperAdminPanel({
     });
   }, [jugadoresCitables, citaRama, citaCategoria, categoriasExtraCitacion, rutsConAusenciaActiva]);
 
-  const cuposCitados = Object.values(seleccionCitacion).filter(Boolean).length;
+  // seleccionCitacion[rut] = 'titular' | 'banca'. El tope de 12 es solo para titulares.
+  const cuposCitados = Object.values(seleccionCitacion).filter((v) => v === 'titular').length;
+  const bancaCitados = Object.values(seleccionCitacion).filter((v) => v === 'banca').length;
+  const elegirRolCitacion = (rut, rol) => setSeleccionCitacion((prev) => {
+    const siguiente = { ...prev };
+    if (prev[rut] === rol) delete siguiente[rut]; else siguiente[rut] = rol;
+    return siguiente;
+  });
+  // Cita rápido a toda la lista: los primeros 12 (sin morosos sin autorizar) como titulares, el resto a la banca.
+  const citarTodaLaLista = (listado, autorizados) => {
+    const siguiente = {};
+    let titulares = 0;
+    listado.forEach((j) => {
+      const moroso = (morososAdmin || []).some((m) => m.rut === j.rut_jugador);
+      if (moroso && !autorizados[j.rut_jugador]) return;
+      siguiente[j.rut_jugador] = titulares < 12 ? 'titular' : 'banca';
+      if (titulares < 12) titulares += 1;
+    });
+    setSeleccionCitacion(siguiente);
+  };
 
 
   const cuentaPupilosActiva = cuentaAdminEdit || null;
@@ -2268,10 +2331,11 @@ function SuperAdminPanel({
     hora_presentacion: normalizarHora(cita?.hora_presentacion),
   });
 
-  const agregarConvocadoACitacion = async (cita, jugador) => {
+  const agregarConvocadoACitacion = async (cita, jugador, rol = 'titular') => {
     if (!cita || !jugador) return;
 
     const nuevoConvocado = {
+      rol,
       rut_jugador: jugador.rut_jugador,
       nombre: `${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim(),
       categoria: jugador.categoria || 'Sin categoría',
@@ -2293,9 +2357,24 @@ function SuperAdminPanel({
 
       setNominaCita((prev) => (prev || []).map((item) => (item.id === cita.id ? citaActualizada : item)));
       sincronizarComunicacionDesdeCitacion(citaActualizada);
-      showToast({ message: `${nuevoConvocado.nombre || 'Deportista'} agregado a la nómina.`, type: 'success' });
+      showToast({ message: `${nuevoConvocado.nombre || 'Deportista'} agregado ${rol === 'banca' ? 'a la banca' : 'a la nómina'}.`, type: 'success' });
     } catch (error) {
       showToast({ message: error.message || 'No se pudo agregar el deportista a la nómina.', type: 'error' });
+    }
+  };
+
+  // Reemplazo: alguien de la banca pasa a titular (queda pendiente de confirmar
+  // y su apoderado recibe el aviso).
+  const promoverDesdeBanca = async (cita, conv) => {
+    try {
+      await api.citacionesAPI.promoverDesdeBanca(cita.id, conv.rut_jugador);
+      const citaActualizada = normalizarCitacion(await api.citacionesAPI.getById(cita.id));
+      setNominaCita((prev) => (prev || []).map((item) => (item.id === cita.id ? citaActualizada : item)));
+      sincronizarComunicacionDesdeCitacion(citaActualizada);
+      showToast({ message: `${conv.nombre} pasó a titular. Avísale por WhatsApp para que confirme.`, type: 'success' });
+      setCitacionWhatsappId(cita.id);
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo subir a titular.', type: 'error' });
     }
   };
 
@@ -2370,6 +2449,7 @@ function SuperAdminPanel({
     const convocados = jugadorasCitacion
       .filter((j) => Boolean(seleccionCitacion[j.rut_jugador]))
       .map((j) => ({
+        rol: seleccionCitacion[j.rut_jugador] === 'banca' ? 'banca' : 'titular',
         rut_jugador: j.rut_jugador,
         nombre: `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim(),
         categoria: j.categoria || 'Sin categoría',
@@ -2393,7 +2473,10 @@ function SuperAdminPanel({
         hora_presentacion: citaForm.hora_presentacion,
         hora_maxima_confirmacion: citaForm.hora_maxima_confirmacion || null,
         rival_nombre: citaForm.rival_nombre,
-        rival_logo_url: citaForm.rival_logo_url || '/logos/club-logo.png',
+        rival_logo_url: citaForm.rival_logo_url || '',
+        lugar_nombre: citaForm.lugar_nombre,
+        lugar_direccion: citaForm.lugar_direccion,
+        mensaje_adicional: citaForm.mensaje_adicional,
         rama: citaRama,
         categoria_base: citaCategoria,
         categorias_apoyo: categoriasExtraCitacion,
@@ -2405,7 +2488,7 @@ function SuperAdminPanel({
       // dispositivo también vea la tarjeta de confirmar/rechazar.
       const comunicacionCreada = await api.comunicacionesAPI.create({
         titulo: `Citación ${citaForm.tipo_competencia}: ${citaForm.competencia_nombre}`,
-        cuerpo_texto: `Convocatoria oficial vs ${citaForm.rival_nombre}. Día ${citaForm.dia_citacion}, citación ${citaForm.hora_citacion}, presentación ${citaForm.hora_presentacion}.`,
+        cuerpo_texto: `Convocatoria oficial vs ${citaForm.rival_nombre}. Día ${citaForm.dia_citacion}, citación (llegada) ${citaForm.hora_presentacion}, partido ${citaForm.hora_citacion}.${citaForm.lugar_nombre ? ` Lugar: ${citaForm.lugar_nombre}.` : ''}`,
         tipo: 'Citación',
         rama: citaRama === 'todas' ? 'General' : citaRama,
         categoria: citaCategoria === 'todas' ? 'General' : citaCategoria,
@@ -2443,7 +2526,12 @@ function SuperAdminPanel({
       setComunicaciones([nuevaComunicacionCitacion, ...(comunicaciones || [])]);
       setCitacionActivaId(citacion.id);
       setSeleccionCitacion({});
-      showToast({ message: `Citación creada y enviada para ${convocados.length} convocados. Los apoderados y deportistas citados ya fueron notificados.`, type: 'success' });
+      // Publicada: se pasa al control con el envío por WhatsApp ya abierto.
+      setPasoCita(1);
+      setVistaCitaciones('control');
+      setCitacionWhatsappId(citacion.id);
+      const enBanca = convocados.filter((c) => c.rol === 'banca').length;
+      showToast({ message: `Citación publicada: ${convocados.length - enBanca} titulares${enBanca ? ` y ${enBanca} en banca` : ''}, notificados en la app. Ahora envía el enlace por WhatsApp.`, type: 'success' });
     } catch (error) {
       showToast({ message: error.message || 'No se pudo crear la citación.', type: 'error' });
     }
@@ -2460,6 +2548,7 @@ function SuperAdminPanel({
     setAutorizacionMorosos({});
     setHoraMaximaEditadaManualmente(false);
     setCitaEditandoId(null);
+    setPasoCita(1);
   };
 
   // Precarga el formulario con los datos de una citación existente para
@@ -2477,7 +2566,11 @@ function SuperAdminPanel({
       hora_maxima_confirmacion: c.hora_maxima_confirmacion || '',
       rival_nombre: c.rival_nombre || '',
       rival_logo_url: c.rival_logo_url || '',
+      lugar_nombre: c.lugar_nombre || '',
+      lugar_direccion: c.lugar_direccion || '',
+      mensaje_adicional: c.mensaje_adicional || '',
     });
+    setPasoCita(1);
     setCitaRama(c.rama || 'todas');
     setCitaCategoria(c.categoria_base || 'todas');
     setCategoriasExtraCitacion(Array.isArray(c.categorias_apoyo) ? c.categorias_apoyo : []);
@@ -2509,7 +2602,10 @@ function SuperAdminPanel({
         hora_presentacion: citaForm.hora_presentacion,
         hora_maxima_confirmacion: citaForm.hora_maxima_confirmacion || null,
         rival_nombre: citaForm.rival_nombre,
-        rival_logo_url: citaForm.rival_logo_url || '/logos/club-logo.png',
+        rival_logo_url: citaForm.rival_logo_url || '',
+        lugar_nombre: citaForm.lugar_nombre,
+        lugar_direccion: citaForm.lugar_direccion,
+        mensaje_adicional: citaForm.mensaje_adicional,
         rama: citaRama,
         categoria_base: citaCategoria,
         categorias_apoyo: categoriasExtraCitacion,
@@ -2523,7 +2619,7 @@ function SuperAdminPanel({
       const comunicacionVinculada = (comunicaciones || []).find((c) => c.citacion_id === citaEditandoId);
       if (comunicacionVinculada) {
         const nuevoTitulo = `Citación ${citaForm.tipo_competencia}: ${citaForm.competencia_nombre}`;
-        const nuevoCuerpo = `Convocatoria oficial vs ${citaForm.rival_nombre}. Día ${citaForm.dia_citacion}, citación ${citaForm.hora_citacion}, presentación ${citaForm.hora_presentacion}.`;
+        const nuevoCuerpo = `Convocatoria oficial vs ${citaForm.rival_nombre}. Día ${citaForm.dia_citacion}, citación (llegada) ${citaForm.hora_presentacion}, partido ${citaForm.hora_citacion}.${citaForm.lugar_nombre ? ` Lugar: ${citaForm.lugar_nombre}.` : ''}`;
         await api.comunicacionesAPI.update(comunicacionVinculada.id, { titulo: nuevoTitulo, cuerpo_texto: nuevoCuerpo });
         setComunicaciones((prev) => (prev || []).map((c) => (c.id === comunicacionVinculada.id ? { ...c, TITULO: nuevoTitulo, CUERPO_TEXTO: nuevoCuerpo } : c)));
       }
@@ -4558,17 +4654,36 @@ function SuperAdminPanel({
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '15px' }}>
-              <h4 className="form-subtitle" style={{ margin: 0 }}>{citaEditandoId ? 'Datos de la citación' : 'Nómina FIBA (Tope 12)'}</h4>
+              <h4 className="form-subtitle" style={{ margin: 0 }}>{citaEditandoId ? 'Editar citación' : 'Nueva convocatoria'}</h4>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {!citaEditandoId && (
-                  <span style={{ background: cuposCitados >= 12 ? 'var(--rojo-alerta)' : 'var(--verde-victoria)', color: 'white', padding: '6px 12px', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: '900' }}>
-                    {cuposCitados}/12 Cupos
-                  </span>
+                {!citaEditandoId && pasoCita >= 3 && (
+                  <>
+                    <span style={{ background: cuposCitados >= 12 ? 'var(--rojo-alerta)' : 'var(--verde-victoria)', color: 'white', padding: '6px 12px', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: '900' }}>
+                      {cuposCitados}/12 titulares
+                    </span>
+                    <span style={{ background: 'rgba(0,122,255,0.12)', color: 'var(--azul-electrico)', padding: '6px 12px', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: '900' }}>
+                      {bancaCitados} en banca
+                    </span>
+                  </>
                 )}
-                <button type="button" className="btn-secondary" style={{ width: 'auto', padding: '7px 12px' }} onClick={resetFormularioCitacion}>Limpiar filtros</button>
+                <button type="button" className="btn-secondary" style={{ width: 'auto', padding: '7px 12px' }} onClick={resetFormularioCitacion}>Empezar de nuevo</button>
               </div>
             </div>
 
+            {(() => {
+              const { pasos, ir } = pasosCitacion();
+              return (
+                <nav className="segment-control mb-15" aria-label="Pasos de la convocatoria" style={{ gap: '4px' }}>
+                  {pasos.map((x, i) => (
+                    <button key={x.n} type="button" className={`segment-btn ${pasoCita === x.n ? 'active' : ''}`} aria-current={pasoCita === x.n ? 'step' : undefined} onClick={() => ir(x.n)}>
+                      {i + 1}. {x.titulo}
+                    </button>
+                  ))}
+                </nav>
+              );
+            })()}
+            {pasoCita === 1 && (
+              <>
             <div className="grid-auto-220 mb-15">
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Tipo de competencia</label>
@@ -4589,6 +4704,22 @@ function SuperAdminPanel({
                 placeholder="Ej: Liga ARBAM U15"
                 extraOptions={opcionesLogosResultados}
               />
+              <LogoPicker
+                label="Equipo rival"
+                nombre={citaForm.rival_nombre}
+                onNombre={(v) => setCitaForm((p) => ({ ...p, rival_nombre: v }))}
+                logoUrl={citaForm.rival_logo_url}
+                onLogoUrl={(v) => setCitaForm((p) => ({ ...p, rival_logo_url: v }))}
+                tipo="club"
+                placeholder="Ej: Club Deportivo X"
+                extraOptions={opcionesLogosResultados}
+              />
+            </div>
+              </>
+            )}
+            {pasoCita === 2 && (
+              <>
+            <div className="grid-auto-220 mb-15">
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Día citación</label>
                 <input
@@ -4600,18 +4731,18 @@ function SuperAdminPanel({
                     setCitaForm((p) => ({
                       ...p,
                       dia_citacion: nuevoDia,
-                      hora_maxima_confirmacion: horaMaximaEditadaManualmente ? p.hora_maxima_confirmacion : calcularSugerenciaHoraMaxima(nuevoDia),
+                      hora_maxima_confirmacion: horaMaximaEditadaManualmente ? p.hora_maxima_confirmacion : calcularSugerenciaHoraMaxima(nuevoDia, p.hora_citacion),
                     }));
                   }}
                 />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Hora citación</label>
-                <input type="time" className="form-input" value={citaForm.hora_citacion} onChange={(e) => setCitaForm((p) => ({ ...p, hora_citacion: e.target.value }))} />
+                <label>Horario de citación (llegada)</label>
+                <input type="time" className="form-input" value={citaForm.hora_presentacion} onChange={(e) => setCitaForm((p) => ({ ...p, hora_presentacion: e.target.value }))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Hora presentación / llegada</label>
-                <input type="time" className="form-input" value={citaForm.hora_presentacion} onChange={(e) => setCitaForm((p) => ({ ...p, hora_presentacion: e.target.value }))} />
+                <label>Horario del partido</label>
+                <input type="time" className="form-input" value={citaForm.hora_citacion} onChange={(e) => setCitaForm((p) => ({ ...p, hora_citacion: e.target.value }))} />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Hora máxima de confirmación</label>
@@ -4628,18 +4759,23 @@ function SuperAdminPanel({
                   Sugerido: día anterior 22:00 — puedes cambiarlo. Pasada esta hora, quien no respondió queda como "no asiste".
                 </p>
               </div>
-              <LogoPicker
-                label="Equipo rival"
-                nombre={citaForm.rival_nombre}
-                onNombre={(v) => setCitaForm((p) => ({ ...p, rival_nombre: v }))}
-                logoUrl={citaForm.rival_logo_url}
-                onLogoUrl={(v) => setCitaForm((p) => ({ ...p, rival_logo_url: v }))}
-                tipo="club"
-                placeholder="Ej: Club Deportivo X"
-                extraOptions={opcionesLogosResultados}
-              />
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Lugar / recinto</label>
+                <input className="form-input" maxLength={255} value={citaForm.lugar_nombre || ''} onChange={(e) => setCitaForm((p) => ({ ...p, lugar_nombre: e.target.value }))} placeholder="Ej: Gimnasio Polideportivo" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Dirección (para Google Maps y Waze)</label>
+                <input className="form-input" maxLength={255} value={citaForm.lugar_direccion || ''} onChange={(e) => setCitaForm((p) => ({ ...p, lugar_direccion: e.target.value }))} placeholder="Ej: Av. Libertad 123, Viña del Mar" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
+                <label>Mensaje adicional para las familias (opcional)</label>
+                <textarea className="form-input" rows={2} maxLength={1000} value={citaForm.mensaje_adicional || ''} onChange={(e) => setCitaForm((p) => ({ ...p, mensaje_adicional: e.target.value }))} placeholder="Ej: llevar camiseta blanca y azul, colación y botella de agua" />
+              </div>
             </div>
-
+              </>
+            )}
+            {pasoCita === 3 && !citaEditandoId && (
+              <>
             <div className="grid-auto-220 mb-15">
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Rama</label>
@@ -4698,31 +4834,18 @@ function SuperAdminPanel({
               )}
             </div>
 
-            <div className="card" style={{ marginBottom: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <LogoAvatar nombre={citaForm.competencia_nombre || 'Competencia'} logoUrl={citaForm.competencia_logo_url || '/logos/club-logo.png'} size={30} borderRadius="999px" />
-                  <span style={{ fontWeight: '800', fontSize: '12px' }}>{citaForm.tipo_competencia}: {citaForm.competencia_nombre || 'Sin definir'}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <LogoAvatar nombre={citaForm.rival_nombre || 'Rival'} logoUrl={citaForm.rival_logo_url || '/logos/club-logo.png'} size={30} borderRadius="999px" />
-                  <span style={{ fontWeight: '800', fontSize: '12px' }}>vs {citaForm.rival_nombre || 'Sin rival'}</span>
-                </div>
-              </div>
-              <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                Día {citaForm.dia_citacion} · Citación {citaForm.hora_citacion} · Presentación {citaForm.hora_presentacion} · Rama {citaRama} · Base {citaCategoria}
-              </div>
-            </div>
-
             {citaEditandoId ? (
               <p className="text-muted" style={{ fontSize: '12px', marginTop: 0 }}>
                 La nómina de convocados se administra desde "Control de Citaciones" (Agregar/Quitar de nómina) para no perder el historial de respuestas ya registradas.
               </p>
             ) : (
               <>
-                <button className="btn-secondary mb-15" style={{ fontSize: '13px', padding: '12px' }}>
-                  <User size={16} /> Lista conectada a datos actuales
-                </button>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  <button type="button" className="btn-secondary tc-btn" disabled={jugadorasCitacion.length === 0} onClick={() => citarTodaLaLista(jugadorasCitacion, autorizacionMorosos)}>
+                    <User size={14} /> Citar a toda la lista (12 titulares, resto en banca)
+                  </button>
+                  <button type="button" className="btn-secondary tc-btn" disabled={cuposCitados + bancaCitados === 0} onClick={() => setSeleccionCitacion({})}>Quitar selección</button>
+                </div>
 
                 {jugadorasCitacion.length === 0 && (
                   <p className="text-muted text-center italic mt-20">No hay jugadoras/jugadores para los filtros seleccionados.</p>
@@ -4760,33 +4883,66 @@ function SuperAdminPanel({
                       )}
                     </div>
 
-                    <input
-                      type="checkbox"
-                      style={{ width: '24px', height: '24px', accentColor: 'var(--azul-electrico)' }}
-                      checked={Boolean(seleccionCitacion[jugador.rut_jugador])}
-                      disabled={
-                        (!seleccionCitacion[jugador.rut_jugador] && cuposCitados >= 12)
-                        || (requiereAutorizacion && !autorizado)
-                      }
-                      onChange={() => {
-                        setSeleccionCitacion((prev) => ({
-                          ...prev,
-                          [jugador.rut_jugador]: !prev[jugador.rut_jugador],
-                        }));
-                      }}
-                    />
+                    <div className="segment-control" role="group" aria-label={`Citar a ${`${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim()}`} style={{ gap: '4px', flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        className={`segment-btn ${seleccionCitacion[jugador.rut_jugador] === 'titular' ? 'active' : ''}`}
+                        aria-pressed={seleccionCitacion[jugador.rut_jugador] === 'titular'}
+                        disabled={(seleccionCitacion[jugador.rut_jugador] !== 'titular' && cuposCitados >= 12) || (requiereAutorizacion && !autorizado)}
+                        onClick={() => elegirRolCitacion(jugador.rut_jugador, 'titular')}
+                      >
+                        Titular
+                      </button>
+                      <button
+                        type="button"
+                        className={`segment-btn ${seleccionCitacion[jugador.rut_jugador] === 'banca' ? 'active' : ''}`}
+                        aria-pressed={seleccionCitacion[jugador.rut_jugador] === 'banca'}
+                        disabled={requiereAutorizacion && !autorizado}
+                        onClick={() => elegirRolCitacion(jugador.rut_jugador, 'banca')}
+                      >
+                        Banca
+                      </button>
+                    </div>
                   </div>
                 );})}
               </>
             )}
-            <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
+              </>
+            )}
+            {pasoCita === 4 && (
+              <div>
+                <TarjetaPartido cita={{ ...citaForm }} />
+                {!citaEditandoId && (
+                  <div style={{ marginTop: '12px', fontSize: '13px' }}>
+                    <b>{cuposCitados} titulares</b>{bancaCitados ? ` y ${bancaCitados} en banca` : ''} · Rama {citaRama} · Categoría {citaCategoria}
+                    <div className="pf-ayuda">
+                      {jugadorasCitacion.filter((j) => seleccionCitacion[j.rut_jugador] === 'titular').map((j) => `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()).join(', ') || 'Aún no eliges titulares (paso 3).'}
+                    </div>
+                    {bancaCitados > 0 && (
+                      <div className="pf-ayuda">Banca: {jugadorasCitacion.filter((j) => seleccionCitacion[j.rut_jugador] === 'banca').map((j) => `${j.nombres || ''} ${j.apellido_paterno || ''}`.trim()).join(', ')}</div>
+                    )}
+                    <p className="pf-ayuda">Al publicar se avisa en la app (y en el teléfono a quien activó los avisos) a cada apoderado, y se abre el envío por WhatsApp con el enlace para confirmar.</p>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
               <button className="btn-electric" onClick={citaEditandoId ? actualizarCitacion : crearCitacion}>
-                {citaEditandoId ? 'GUARDAR CAMBIOS' : 'CONFIRMAR Y CITAR'}
+                {citaEditandoId ? 'GUARDAR CAMBIOS' : 'PUBLICAR Y NOTIFICAR'}
               </button>
               {citaEditandoId && (
                 <button className="btn-secondary" style={{ width: 'auto', padding: '12px 16px' }} onClick={resetFormularioCitacion}>Cancelar</button>
               )}
             </div>
+              </div>
+            )}
+            {(() => {
+              const { anterior, siguiente, ir } = pasosCitacion();
+              return (
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '16px' }}>
+                  {anterior ? <button type="button" className="btn-secondary tc-btn" onClick={() => setPasoCita(anterior.n)}>← {anterior.titulo}</button> : <span />}
+                  {siguiente && <button type="button" className="btn-electric tc-btn" onClick={() => ir(siguiente.n)}>Siguiente: {siguiente.titulo} →</button>}
+                </div>
+              );
+            })()}
           </div>
           )}
 
@@ -4802,7 +4958,7 @@ function SuperAdminPanel({
               <p className="text-muted text-center italic mt-20">Todavía no hay citaciones para mostrar.</p>
             )}
               {citacionesVisiblesParaControl.map((cita) => {
-                const { total, confirmados, justificados, automaticos, pendientes, progreso } = calcularResumenCitacion(cita.convocados || []);
+                const { total, confirmados, justificados, automaticos, pendientes, progreso, aceptadas, banca, bancaDisponible } = calcularResumenCitacion(cita.convocados || []);
                 const abierta = citacionActivaId === cita.id;
 
                 return (
@@ -4810,6 +4966,11 @@ function SuperAdminPanel({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <strong style={{ fontSize: '13px' }}>{cita.tipo_competencia} · {cita.competencia_nombre} · vs {cita.rival_nombre}</strong>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {puedeEditarNominaCitacion(cita) && (
+                          <button className="btn-secondary" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => setCitacionWhatsappId(citacionWhatsappId === cita.id ? null : cita.id)}>
+                            WhatsApp
+                          </button>
+                        )}
                         <button className="btn-secondary" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => setCitacionEscaneandoId(cita.id)}>
                           <QrCode size={14} /> Escanear asistencia
                         </button>
@@ -4840,8 +5001,10 @@ function SuperAdminPanel({
                     </div>
                     <div className="recaud-bar mt-10"><div className="recaud-bar-fill" style={{ width: `${progreso}%`, background: 'linear-gradient(90deg, var(--azul-electrico), var(--verde-victoria))' }} /></div>
                     <div style={{ marginTop: '6px', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                      {progreso}% respondida de {total} · Confirmados {confirmados} · Rechazados con justificación {justificados} · Rechazados sin justificar (venció plazo) {automaticos} · Pendientes {pendientes}
+                      <b style={{ color: 'var(--verde-victoria)' }}>{aceptadas}% aceptadas</b> · {progreso}% respondida de {total} titulares · Confirmados {confirmados} · No asisten (con motivo) {justificados} · Sin respuesta al plazo {automaticos} · Pendientes {pendientes}
+                      {banca > 0 && ` · Banca ${banca} (${bancaDisponible} disponible${bancaDisponible === 1 ? '' : 's'})`}
                     </div>
+                    {citacionWhatsappId === cita.id && puedeEditarNominaCitacion(cita) && <CitacionWhatsapp cita={cita} />}
 
                     {citacionEscaneandoId === cita.id && (
                       <QrScanner
@@ -4880,12 +5043,22 @@ function SuperAdminPanel({
                               showToast({ message: 'No se encontró el deportista seleccionado.', type: 'error' });
                               return;
                             }
-                            agregarConvocadoACitacion(cita, jugador);
+                            agregarConvocadoACitacion(cita, jugador, rolAAgregarPorCitacion[cita.id] || 'titular');
                             setConvocadoAAgregarPorCitacion((prev) => ({ ...prev, [cita.id]: '' }));
                           }}
                         >
                           Agregar a nómina
                         </button>
+                        <select
+                          className="form-input"
+                          aria-label="Agregar como"
+                          style={{ margin: 0, width: 'auto' }}
+                          value={rolAAgregarPorCitacion[cita.id] || 'titular'}
+                          onChange={(e) => setRolAAgregarPorCitacion((prev) => ({ ...prev, [cita.id]: e.target.value }))}
+                        >
+                          <option value="titular">como titular</option>
+                          <option value="banca">en banca</option>
+                        </select>
                       </div>
                     )}
 
@@ -4896,8 +5069,11 @@ function SuperAdminPanel({
                       // pendiente. Pedido del usuario: separar ambos grupos y
                       // colorear las tarjetas de respuestas recibidas en
                       // verde (asiste) / rojo (no asiste).
-                      const recibidas = convocados.filter((conv) => conv.respuesta === 'si' || conv.respuesta === 'no');
-                      const pendientes = convocados.filter((conv) => conv.respuesta !== 'si' && conv.respuesta !== 'no');
+                      const titulares = convocados.filter((conv) => !esBanca(conv));
+                      const enBanca = convocados.filter(esBanca);
+                      const recibidas = titulares.filter((conv) => conv.respuesta === 'si' || conv.respuesta === 'no');
+                      const pendientes = titulares.filter((conv) => conv.respuesta !== 'si' && conv.respuesta !== 'no');
+                      const titularesActivos = titulares.filter((conv) => conv.respuesta !== 'no').length;
 
                       const renderTarjetaConvocado = (conv) => {
                         // requiere_excepcion_morosidad es una FOTO tomada al momento de
@@ -4917,7 +5093,7 @@ function SuperAdminPanel({
                             <div style={{ fontSize: '12px', fontWeight: '800' }}>{conv.nombre} · {conv.rama} · {conv.categoria}</div>
                             <div style={{ fontSize: '11px', color: 'var(--texto-secundario)' }}>{conv.correo_apoderado || 'Sin correo apoderado'}</div>
                             <div style={{ marginTop: '4px', fontSize: '11px', color: 'var(--texto-secundario)', fontWeight: '700' }}>
-                              Estado de respuesta: {conv.respuesta === 'si' ? 'Confirmado' : conv.respuesta === 'no' ? 'Inasistente' : 'Pendiente'}
+                              Estado: {conv.respuesta === 'si' ? (esBanca(conv) ? 'Disponible' : 'Confirmado') : conv.respuesta === 'no' ? 'No asiste' : 'Sin responder'}{conv.respondido_por === 'enlace' ? ' · respondió por enlace' : ''}
                               {conv.asistio_evento && (
                                 <span style={{ marginLeft: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--verde-victoria)' }}>
                                   <Check size={12} /> Presente (QR)
@@ -4965,11 +5141,23 @@ function SuperAdminPanel({
                             )}
                             {conv.justificacion && (
                               <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--texto-secundario)' }}>
-                                Justificación: {conv.justificacion}
+                                Motivo: {conv.justificacion}
                               </div>
                             )}
                             {puedeEditarNominaCitacion(cita) && (
-                              <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                              <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end', gap: '6px', flexWrap: 'wrap' }}>
+                                {esBanca(conv) && (
+                                  <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    style={{ width: 'auto', padding: '7px 10px', borderColor: 'rgba(52,199,89,0.45)', color: '#15803d' }}
+                                    disabled={titularesActivos >= 12}
+                                    title={titularesActivos >= 12 ? 'Hay 12 titulares activos: sube a alguien cuando una citada se baje.' : undefined}
+                                    onClick={() => promoverDesdeBanca(cita, conv)}
+                                  >
+                                    Subir a titular
+                                  </button>
+                                )}
                                 <button
                                   className="btn-secondary"
                                   style={{ width: 'auto', padding: '7px 10px', borderColor: 'rgba(255,59,48,0.35)', color: '#b91c1c' }}
@@ -5002,7 +5190,7 @@ function SuperAdminPanel({
                           </div>
                           <div>
                             <div style={{ fontSize: '11px', fontWeight: '900', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
-                              Pendientes ({pendientes.length})
+                              Sin responder ({pendientes.length})
                             </div>
                             {pendientes.length === 0 ? (
                               <p className="text-muted" style={{ fontSize: '12px', fontStyle: 'italic', margin: 0 }}>Todos respondieron.</p>
@@ -5010,6 +5198,25 @@ function SuperAdminPanel({
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                 {pendientes.map(renderTarjetaConvocado)}
                               </div>
+                            )}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '11px', fontWeight: '900', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                              En banca ({enBanca.length})
+                            </div>
+                            {enBanca.length === 0 ? (
+                              <p className="text-muted" style={{ fontSize: '12px', fontStyle: 'italic', margin: 0 }}>Sin reservas. Agrega a alguien "en banca" para tener reemplazos.</p>
+                            ) : (
+                              <>
+                                {titularesActivos < 12 && titulares.some((conv) => conv.respuesta === 'no') && (
+                                  <p style={{ fontSize: '12px', fontWeight: 700, color: '#8A4B00', margin: '0 0 8px' }}>
+                                    Quedan {12 - titularesActivos} cupo{12 - titularesActivos === 1 ? '' : 's'} de titular: sube a alguien de la banca para reemplazar.
+                                  </p>
+                                )}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  {enBanca.map(renderTarjetaConvocado)}
+                                </div>
+                              </>
                             )}
                           </div>
                         </div>

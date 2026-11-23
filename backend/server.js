@@ -10,6 +10,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const webpush = require('web-push');
 const compression = require('compression');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -2632,6 +2633,22 @@ const ensureCitacionesTables = async () => {
   // llegar sin haber confirmado.
   await pool.query(`ALTER TABLE citacion_convocados ADD COLUMN IF NOT EXISTS asistio_evento BOOLEAN`);
   await pool.query(`ALTER TABLE citacion_convocados ADD COLUMN IF NOT EXISTS hora_asistencia_marcada TIMESTAMP`);
+  // Banca: reservas que no cuentan en el tope de 12 titulares y reemplazan a
+  // quien se baja (POST .../promover).
+  await pool.query(`ALTER TABLE citacion_convocados ADD COLUMN IF NOT EXISTS rol_convocatoria VARCHAR(10) NOT NULL DEFAULT 'titular'`);
+  // Enlace directo de respuesta (va por WhatsApp al apoderado): permite
+  // confirmar o rechazar ESA convocatoria sin iniciar sesión. Expresión sin
+  // extensiones para que funcione en cualquier versión de PostgreSQL.
+  await pool.query(`ALTER TABLE citacion_convocados ADD COLUMN IF NOT EXISTS token_respuesta VARCHAR(40) DEFAULT md5(random()::text || clock_timestamp()::text || random()::text)`);
+  await pool.query(`UPDATE citacion_convocados SET token_respuesta = md5(random()::text || clock_timestamp()::text || random()::text || id::text) WHERE token_respuesta IS NULL`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_citacion_convocados_token ON citacion_convocados (token_respuesta)`);
+  // 'app' o 'enlace': por dónde llegó la respuesta (para el control).
+  await pool.query(`ALTER TABLE citacion_convocados ADD COLUMN IF NOT EXISTS respondido_por VARCHAR(10)`);
+  // Dónde se juega (con enlaces a Google Maps / Waze) y un mensaje del
+  // responsable para las familias (qué llevar, uniforme, etc.).
+  await pool.query(`ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS lugar_nombre VARCHAR(255)`);
+  await pool.query(`ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS lugar_direccion VARCHAR(255)`);
+  await pool.query(`ALTER TABLE citaciones ADD COLUMN IF NOT EXISTS mensaje_adicional TEXT`);
 
   console.log('📋 Tablas de citaciones verificadas');
 };
@@ -8491,8 +8508,118 @@ const crearNotificacionApp = async ({ rut, tipo, titulo, cuerpo, referenciaTipo,
     );
   } catch (err) {
     console.error('❌ Error creando notificación in-app:', err.message);
+    return;
+  }
+  // Además, aviso nativo en los teléfonos donde la persona activó las
+  // notificaciones. Sin await: un push lento no debe frenar a quien la creó.
+  void enviarPushARut(rutLimpio, { titulo, cuerpo, tipo });
+};
+
+// ==========================================
+// NOTIFICACIONES NATIVAS (Web Push)
+// ==========================================
+// Las claves VAPID se generan solas la primera vez y quedan en
+// configuracion_sistema: no hay que configurar variables de entorno.
+let vapidListo = null;
+const obtenerVapid = () => {
+  vapidListo = vapidListo || (async () => {
+    await asegurarTablaConfiguracion();
+    let fila = (await pool.query("SELECT valor FROM configuracion_sistema WHERE clave = 'webpush_vapid'")).rows[0];
+    if (!fila?.valor?.publicKey) {
+      const claves = webpush.generateVAPIDKeys();
+      await pool.query(
+        `INSERT INTO configuracion_sistema (clave, valor, updated_at) VALUES ('webpush_vapid', $1, NOW())
+         ON CONFLICT (clave) DO NOTHING`,
+        [JSON.stringify(claves)]
+      );
+      fila = (await pool.query("SELECT valor FROM configuracion_sistema WHERE clave = 'webpush_vapid'")).rows[0];
+    }
+    const { publicKey, privateKey } = fila.valor;
+    webpush.setVapidDetails(`mailto:${process.env.PUSH_CONTACTO || 'cdculturafisica702@gmail.com'}`, publicKey, privateKey);
+    return { publicKey };
+  })().catch((e) => { vapidListo = null; throw e; });
+  return vapidListo;
+};
+
+const ensurePushSuscripcionesTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS push_suscripciones (
+      id SERIAL PRIMARY KEY,
+      rut_norm VARCHAR(20) NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      creado_en TIMESTAMP DEFAULT NOW(),
+      ultimo_envio TIMESTAMP
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_push_suscripciones_rut ON push_suscripciones (rut_norm)');
+};
+
+// Adónde abre el aviso al tocarlo: las citaciones van al Muro (ahí aparece la
+// ventana para confirmar); el resto abre la app.
+const urlDePush = (tipo = '') => (String(tipo).startsWith('citacion') ? '/?abrir=citaciones' : '/');
+
+const enviarPushARut = async (rut, { titulo, cuerpo, tipo }) => {
+  try {
+    const rutNorm = normalizarRutParaComparar(rut);
+    const { rows } = await pool.query('SELECT id, endpoint, p256dh, auth FROM push_suscripciones WHERE rut_norm = $1', [rutNorm]);
+    if (!rows.length) return;
+    await obtenerVapid();
+    const payload = JSON.stringify({ titulo, cuerpo, url: urlDePush(tipo), tag: tipo || 'ccf' });
+    await Promise.all(rows.map(async (s) => {
+      try {
+        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 60 * 60 * 24 });
+        await pool.query('UPDATE push_suscripciones SET ultimo_envio = NOW() WHERE id = $1', [s.id]);
+      } catch (err) {
+        // 404/410: el teléfono anuló el permiso o desinstaló la app.
+        if ([404, 410].includes(err.statusCode)) await pool.query('DELETE FROM push_suscripciones WHERE id = $1', [s.id]);
+        else console.error('[push]', err.statusCode || '', err.message);
+      }
+    }));
+  } catch (err) {
+    console.error('[enviarPushARut]', err.message);
   }
 };
+
+app.get('/api/push/clave-publica', async (_req, res) => {
+  try {
+    res.json(await obtenerVapid());
+  } catch (err) {
+    console.error('[GET /api/push/clave-publica]', err);
+    res.status(500).json({ error: 'Notificaciones no disponibles.' });
+  }
+});
+
+app.post('/api/push/suscribir', authenticate, async (req, res) => {
+  const sub = req.body?.suscripcion || {};
+  const endpoint = String(sub.endpoint || '');
+  const p256dh = String(sub.keys?.p256dh || '');
+  const auth = String(sub.keys?.auth || '');
+  if (!/^https:\/\//.test(endpoint) || endpoint.length > 1000 || !p256dh || !auth) {
+    return res.status(400).json({ error: 'Suscripción inválida.' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO push_suscripciones (rut_norm, endpoint, p256dh, auth) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (endpoint) DO UPDATE SET rut_norm = EXCLUDED.rut_norm, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth`,
+      [normalizarRutParaComparar(req.actor.rut), endpoint, p256dh.slice(0, 200), auth.slice(0, 100)]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/push/suscribir]', err);
+    res.status(500).json({ error: 'No se pudo activar las notificaciones.' });
+  }
+});
+
+app.delete('/api/push/suscribir', authenticate, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM push_suscripciones WHERE endpoint = $1 AND rut_norm = $2', [String(req.body?.endpoint || ''), normalizarRutParaComparar(req.actor.rut)]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Resuelve los RUT a notificar por cada convocado: el apoderado registrado
 // (por rut_apoderado, con correo_apoderado como respaldo) y la cuenta propia
@@ -8568,6 +8695,11 @@ const notificarExcepcionMorosidadPendiente = async (morosos, citacion, responsab
 // dejaron de estar 'pendiente'. Se llama desde un cron (cada 5 min) y además
 // al inicio de los GET de citaciones, para que la vista se vea correcta al
 // instante aunque el cron no haya corrido todavía.
+// La hora máxima llega del formulario como hora de Chile ("AAAA-MM-DDTHH:MM").
+const ahoraChileISO = () => new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+}).format(new Date()).replace(' ', 'T');
+
 const barrerCitacionesVencidas = async () => {
   const result = await pool.query(`
     UPDATE citacion_convocados cc
@@ -8575,8 +8707,9 @@ const barrerCitacionesVencidas = async () => {
     FROM citaciones c
     WHERE cc.citacion_id = c.id
       AND cc.respuesta = 'pendiente'
+      AND COALESCE(cc.rol_convocatoria, 'titular') = 'titular'
       AND c.hora_maxima_confirmacion IS NOT NULL
-      AND c.hora_maxima_confirmacion <= NOW()
+      AND c.hora_maxima_confirmacion <= (NOW() AT TIME ZONE 'America/Santiago')
     RETURNING cc.id, cc.citacion_id, cc.nombre, c.responsable_rut, c.tipo_competencia, c.competencia_nombre, c.rival_nombre, c.dia_citacion
   `);
   if (result.rows.length === 0) return;
@@ -8687,9 +8820,43 @@ const CITACION_COLUMNAS_SQL = `
   dia_citacion, hora_citacion, hora_presentacion,
   rival_nombre, rival_logo_url, rama, categoria_base, categorias_apoyo,
   responsable_nombre, responsable_rut, responsable_correo, responsable_rol,
-  estado, creado_en, updated_at,
+  estado, creado_en, updated_at, lugar_nombre, lugar_direccion, mensaje_adicional,
   to_char(hora_maxima_confirmacion, 'YYYY-MM-DD"T"HH24:MI') AS hora_maxima_confirmacion
 `;
+
+// Convocados con lo que necesita cada vista: rut_apoderado (autoriza el
+// RSVP), autogestionado (el propio deportista puede responder solo si el club
+// lo marcó autogestionable) y, para quien gestiona la citación, nombre y
+// teléfono del apoderado para avisar por WhatsApp.
+const CONVOCADOS_SELECT_SQL = `
+  SELECT cc.*, j.rut_apoderado, j.fecha_nacimiento,
+         COALESCE((ca.permisos_override->>'perfil') = 'true', false) AS autogestionado,
+         NULLIF(TRIM(CONCAT(ap.nombres, ' ', ap.apellido_paterno)), '') AS apoderado_nombre,
+         COALESCE(NULLIF(TRIM(ap.telefono), ''), NULLIF(TRIM(j.num_emergencia), '')) AS apoderado_telefono
+  FROM citacion_convocados cc
+  LEFT JOIN jugadores j ON j.rut_jugador = cc.rut_jugador
+  LEFT JOIN LATERAL (
+    SELECT permisos_override FROM cuentas
+    WHERE REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = REPLACE(REPLACE(UPPER(cc.rut_jugador), '.', ''), '-', '')
+    LIMIT 1
+  ) ca ON true
+  LEFT JOIN LATERAL (
+    SELECT nombres, apellido_paterno, telefono FROM cuentas
+    WHERE j.rut_apoderado IS NOT NULL
+      AND REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = REPLACE(REPLACE(UPPER(j.rut_apoderado), '.', ''), '-', '')
+    LIMIT 1
+  ) ap ON true`;
+
+// Las familias no reciben enlaces ni teléfonos de otros apoderados.
+const CAMPOS_CONVOCADO_SOLO_GESTION = ['token_respuesta', 'apoderado_telefono', 'apoderado_nombre'];
+const citacionParaFamilia = (citacion) => ({
+  ...citacion,
+  convocados: (citacion.convocados || []).map((c) => {
+    const limpio = { ...c };
+    CAMPOS_CONVOCADO_SOLO_GESTION.forEach((campo) => { delete limpio[campo]; });
+    return limpio;
+  }),
+});
 
 const cargarCitacionConConvocados = async (id) => {
   const citacionRes = await pool.query(`SELECT ${CITACION_COLUMNAS_SQL} FROM citaciones WHERE id = $1`, [id]);
@@ -8700,11 +8867,9 @@ const cargarCitacionConConvocados = async (id) => {
   // fecha_nacimiento se agrega para la regla sub-13: a partir de esa edad el
   // propio jugador también puede responder su citación (ver ComunicacionesPanel).
   const convocadosRes = await pool.query(
-    `SELECT cc.*, j.rut_apoderado, j.fecha_nacimiento
-     FROM citacion_convocados cc
-     LEFT JOIN jugadores j ON j.rut_jugador = cc.rut_jugador
+    `${CONVOCADOS_SELECT_SQL}
      WHERE cc.citacion_id = $1
-     ORDER BY cc.nombre ASC`,
+     ORDER BY cc.rol_convocatoria DESC, cc.nombre ASC`,
     [id]
   );
   return { ...citacionRes.rows[0], convocados: convocadosRes.rows };
@@ -8712,6 +8877,8 @@ const cargarCitacionConConvocados = async (id) => {
 
 // POST: crear citación con su nómina inicial de convocados. Notifica al
 // apoderado y, si existe, a la cuenta propia del jugador de cada convocado.
+const textoCitacion = (v, max) => (String(v ?? '').trim().slice(0, max) || null);
+
 app.post('/api/citaciones', authenticate, requireModule('citaciones'), soloCategoriasDelStaff((req) => (Array.isArray(req.body?.convocados) ? req.body.convocados.map((c) => c?.rut_jugador) : [])), async (req, res) => {
   const {
     tipo_competencia, competencia_nombre, competencia_logo_url,
@@ -8727,6 +8894,16 @@ app.post('/api/citaciones', authenticate, requireModule('citaciones'), soloCateg
   if (!Array.isArray(convocados) || convocados.length === 0) {
     return res.status(400).json({ error: 'Selecciona al menos un deportista para la citación.' });
   }
+  if (hora_maxima_confirmacion && String(hora_maxima_confirmacion).slice(0, 16) <= ahoraChileISO()) {
+    return res.status(400).json({ error: 'La hora máxima de confirmación ya pasó: elige una fecha y hora futura.' });
+  }
+  const rolDe = (c) => (c?.rol === 'banca' ? 'banca' : 'titular');
+  if (convocados.filter((c) => rolDe(c) === 'titular').length > MAX_TITULARES_CITACION) {
+    return res.status(400).json({ error: `Máximo ${MAX_TITULARES_CITACION} titulares por citación; el resto puede ir en banca.` });
+  }
+  if (!convocados.some((c) => rolDe(c) === 'titular')) {
+    return res.status(400).json({ error: 'Debe haber al menos un titular; la banca es solo de reserva.' });
+  }
 
   const client = await pool.connect();
   try {
@@ -8740,8 +8917,9 @@ app.post('/api/citaciones', authenticate, requireModule('citaciones'), soloCateg
         (tipo_competencia, competencia_nombre, competencia_logo_url, dia_citacion, hora_citacion, hora_presentacion,
          hora_maxima_confirmacion,
          rival_nombre, rival_logo_url, rama, categoria_base, categorias_apoyo,
-         responsable_nombre, responsable_rut, responsable_correo, responsable_rol)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         responsable_nombre, responsable_rut, responsable_correo, responsable_rol,
+         lugar_nombre, lugar_direccion, mensaje_adicional)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING ${CITACION_COLUMNAS_SQL}`,
       [
         tipo_competencia || null, competencia_nombre, competencia_logo_url || null,
@@ -8750,6 +8928,7 @@ app.post('/api/citaciones', authenticate, requireModule('citaciones'), soloCateg
         rival_nombre, rival_logo_url || null, rama || 'todas', categoria_base || 'todas',
         JSON.stringify(Array.isArray(categorias_apoyo) ? categorias_apoyo : []),
         responsableNombre, req.actor.rut, actorCuenta.correo || null, actorCuenta.rol || req.actor.rol,
+        textoCitacion(req.body?.lugar_nombre, 255), textoCitacion(req.body?.lugar_direccion, 255), textoCitacion(req.body?.mensaje_adicional, 1000),
       ]
     );
     const citacion = citacionRes.rows[0];
@@ -8758,24 +8937,20 @@ app.post('/api/citaciones', authenticate, requireModule('citaciones'), soloCateg
       if (!String(conv.rut_jugador || '').trim()) continue;
       await client.query(
         `INSERT INTO citacion_convocados
-          (citacion_id, rut_jugador, nombre, rama, categoria, correo_apoderado, requiere_excepcion_morosidad, estado_excepcion)
-         VALUES ($1,$2,$3,$4,$5,$6,$7, CASE WHEN $7 THEN 'solicitada' ELSE 'no_requiere' END)
+          (citacion_id, rut_jugador, nombre, rama, categoria, correo_apoderado, requiere_excepcion_morosidad, estado_excepcion, rol_convocatoria)
+         VALUES ($1,$2,$3,$4,$5,$6,$7, CASE WHEN $7 THEN 'solicitada' ELSE 'no_requiere' END, $8)
          ON CONFLICT (citacion_id, rut_jugador) DO NOTHING`,
         [
           citacion.id, conv.rut_jugador, conv.nombre || '', conv.rama || '', conv.categoria || '',
-          conv.correo_apoderado || null, Boolean(conv.requiere_excepcion_morosidad),
+          conv.correo_apoderado || null, Boolean(conv.requiere_excepcion_morosidad), rolDe(conv),
         ]
       );
     }
 
     await client.query('COMMIT');
 
-    const destinatarios = await resolverDestinatariosCitacion(convocados);
-    const titulo = `Citación ${citacion.tipo_competencia || ''}: ${citacion.competencia_nombre}`.trim();
-    const cuerpo = `Convocatoria vs ${citacion.rival_nombre}. Día ${formatearFechaCitacion(citacion.dia_citacion)}, presentación ${citacion.hora_presentacion || '-'}.`;
-    await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
-      rut, tipo: 'citacion', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: citacion.id,
-    })));
+    await notificarConvocatoria(citacion, convocados.filter((c) => rolDe(c) === 'titular'), 'titular');
+    await notificarConvocatoria(citacion, convocados.filter((c) => rolDe(c) === 'banca'), 'banca');
 
     await notificarExcepcionMorosidadPendiente(
       convocados.filter((c) => c.requiere_excepcion_morosidad),
@@ -8803,12 +8978,7 @@ app.get('/api/citaciones', authenticate, async (req, res) => {
     await barrerCitacionesVencidas();
 
     const citacionesRes = await pool.query(`SELECT ${CITACION_COLUMNAS_SQL} FROM citaciones ORDER BY dia_citacion DESC NULLS LAST, hora_citacion ASC`);
-    const convocadosRes = await pool.query(
-      `SELECT cc.*, j.rut_apoderado, j.fecha_nacimiento
-       FROM citacion_convocados cc
-       LEFT JOIN jugadores j ON j.rut_jugador = cc.rut_jugador
-       ORDER BY cc.nombre ASC`
-    );
+    const convocadosRes = await pool.query(`${CONVOCADOS_SELECT_SQL} ORDER BY cc.rol_convocatoria DESC, cc.nombre ASC`);
     const convocadosPorCitacion = new Map();
     convocadosRes.rows.forEach((c) => {
       const lista = convocadosPorCitacion.get(c.citacion_id) || [];
@@ -8829,7 +8999,7 @@ app.get('/api/citaciones', authenticate, async (req, res) => {
 
     const pupilos = await obtenerPupilosDeActor(req.actor);
     const visibles = citaciones.filter((c) => citacionEsVisibleParaPupilos(c, pupilos));
-    res.json(visibles);
+    res.json(visibles.map(citacionParaFamilia));
   } catch (err) {
     console.error('[GET /api/citaciones]', err);
     res.status(500).json({ error: err.message });
@@ -8861,7 +9031,7 @@ app.get('/api/citaciones/:id', authenticate, async (req, res) => {
     if (!citacionEsVisibleParaPupilos(citacion, pupilos)) {
       return res.status(403).json({ error: 'No tienes acceso a esta citación.' });
     }
-    res.json(citacion);
+    res.json(citacionParaFamilia(citacion));
   } catch (err) {
     console.error('[GET /api/citaciones/:id]', err);
     res.status(500).json({ error: err.message });
@@ -8903,6 +9073,9 @@ app.put('/api/citaciones/:id', authenticate, requireModule('citaciones'), async 
            rama = COALESCE($10, rama),
            categoria_base = COALESCE($11, categoria_base),
            categorias_apoyo = COALESCE($12, categorias_apoyo),
+           lugar_nombre = CASE WHEN $14 THEN $15 ELSE lugar_nombre END,
+           lugar_direccion = CASE WHEN $14 THEN $16 ELSE lugar_direccion END,
+           mensaje_adicional = CASE WHEN $14 THEN $17 ELSE mensaje_adicional END,
            updated_at = NOW()
        WHERE id = $13`,
       [
@@ -8913,6 +9086,9 @@ app.put('/api/citaciones/:id', authenticate, requireModule('citaciones'), async 
         rama || null, categoria_base || null,
         Array.isArray(categorias_apoyo) ? JSON.stringify(categorias_apoyo) : null,
         req.params.id,
+        // Solo se tocan si el formulario los envía (se pueden borrar dejándolos vacíos).
+        ['lugar_nombre', 'lugar_direccion', 'mensaje_adicional'].some((c) => req.body?.[c] !== undefined),
+        textoCitacion(req.body?.lugar_nombre, 255), textoCitacion(req.body?.lugar_direccion, 255), textoCitacion(req.body?.mensaje_adicional, 1000),
       ]
     );
 
@@ -8958,29 +9134,28 @@ app.delete('/api/citaciones/:id', authenticate, requireModule('citaciones'), asy
 // POST: agrega un convocado a una citación existente y lo notifica.
 app.post('/api/citaciones/:id/convocados', authenticate, requireModule('citaciones'), soloCategoriasDelStaff((req) => [req.body?.rut_jugador]), async (req, res) => {
   const { rut_jugador, nombre, rama, categoria, correo_apoderado, requiere_excepcion_morosidad } = req.body;
+  const rol = req.body?.rol === 'banca' ? 'banca' : 'titular';
   if (!String(rut_jugador || '').trim()) {
     return res.status(400).json({ error: 'Falta el RUT del deportista.' });
   }
   try {
+    if (rol === 'titular' && (await contarTitularesActivos(req.params.id)) >= MAX_TITULARES_CITACION) {
+      return res.status(409).json({ error: `Ya hay ${MAX_TITULARES_CITACION} titulares: agrégalo en banca o reemplaza a alguien que se bajó.` });
+    }
     const result = await pool.query(
       `INSERT INTO citacion_convocados
-        (citacion_id, rut_jugador, nombre, rama, categoria, correo_apoderado, requiere_excepcion_morosidad, estado_excepcion)
-       VALUES ($1,$2,$3,$4,$5,$6,$7, CASE WHEN $7 THEN 'solicitada' ELSE 'no_requiere' END)
+        (citacion_id, rut_jugador, nombre, rama, categoria, correo_apoderado, requiere_excepcion_morosidad, estado_excepcion, rol_convocatoria)
+       VALUES ($1,$2,$3,$4,$5,$6,$7, CASE WHEN $7 THEN 'solicitada' ELSE 'no_requiere' END, $8)
        ON CONFLICT (citacion_id, rut_jugador) DO NOTHING
        RETURNING *`,
-      [req.params.id, rut_jugador, nombre || '', rama || '', categoria || '', correo_apoderado || null, Boolean(requiere_excepcion_morosidad)]
+      [req.params.id, rut_jugador, nombre || '', rama || '', categoria || '', correo_apoderado || null, Boolean(requiere_excepcion_morosidad), rol]
     );
     if (result.rows.length === 0) {
       return res.status(409).json({ error: 'Ese deportista ya está en la nómina.' });
     }
 
-    const citacion = await pool.query('SELECT tipo_competencia, competencia_nombre, rival_nombre, dia_citacion, hora_presentacion FROM citaciones WHERE id = $1', [req.params.id]);
-    const destinatarios = await resolverDestinatariosCitacion([{ rut_jugador, correo_apoderado }]);
-    const titulo = `Citación ${citacion.rows[0]?.tipo_competencia || ''}: ${citacion.rows[0]?.competencia_nombre || ''}`.trim();
-    const cuerpo = `Convocatoria vs ${citacion.rows[0]?.rival_nombre || ''}. Día ${formatearFechaCitacion(citacion.rows[0]?.dia_citacion)}, presentación ${citacion.rows[0]?.hora_presentacion || '-'}.`;
-    await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
-      rut, tipo: 'citacion', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: Number(req.params.id),
-    })));
+    const citacion = await pool.query('SELECT id, tipo_competencia, competencia_nombre, rival_nombre, dia_citacion, hora_presentacion FROM citaciones WHERE id = $1', [req.params.id]);
+    await notificarConvocatoria(citacion.rows[0], [{ rut_jugador, correo_apoderado }], rol);
 
     if (requiere_excepcion_morosidad) {
       const actorRow = await pool.query('SELECT nombres, apellido_paterno, correo FROM cuentas WHERE rut = $1', [req.actor.rut]);
@@ -9098,6 +9273,164 @@ app.patch('/api/citaciones/:id/convocados/:rut/asistencia', authenticate, requir
 // deportista puede responder (ni admin ni staff responden en su lugar).
 // respuesta es opcional: el apoderado puede guardar solo un mensaje al
 // profesor (o corregir la justificación) sin volver a confirmar/rechazar.
+const MAX_TITULARES_CITACION = 12;
+
+const contarTitularesActivos = async (citacionId) => Number((await pool.query(
+  `SELECT COUNT(*)::int AS n FROM citacion_convocados
+   WHERE citacion_id = $1 AND COALESCE(rol_convocatoria, 'titular') = 'titular' AND respuesta <> 'no'`,
+  [citacionId]
+)).rows[0].n);
+
+// Aviso in-app al apoderado (y a la cuenta propia del deportista) de cada
+// convocado: titular ("confirma o rechaza") o banca ("quedó de reserva").
+const notificarConvocatoria = async (citacion, convocados, rol) => {
+  if (!citacion || !convocados.length) return;
+  const destinatarios = await resolverDestinatariosCitacion(convocados);
+  const partido = `${citacion.tipo_competencia || ''} ${citacion.competencia_nombre || ''} vs ${citacion.rival_nombre || ''}`.replace(/\s+/g, ' ').trim();
+  const cuando = `Día ${formatearFechaCitacion(citacion.dia_citacion)}, presentación ${citacion.hora_presentacion || '-'}.`;
+  const [titulo, cuerpo] = rol === 'banca'
+    ? [`En banca: ${partido}`, `Quedó en la banca (reserva) para ${partido}. ${cuando} Si se libera un cupo te avisaremos para confirmar.`]
+    : [`Citación ${citacion.tipo_competencia || ''}: ${citacion.competencia_nombre || ''}`.trim(), `Convocatoria vs ${citacion.rival_nombre || ''}. ${cuando} Confirma o indica el motivo si no asiste.`];
+  await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
+    rut, tipo: 'citacion', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: Number(citacion.id),
+  })));
+};
+
+// Registra sí/no de un convocado (desde la app o desde el enlace directo) y
+// avisa al responsable y a los admins. Si se baja un titular y hay banca
+// disponible, el aviso lo dice para que reemplacen rápido.
+const registrarRespuestaCitacion = async ({ citacionId, rut, respuesta, justificacion, mensajeProfesor, excepcionSolicitada = null, origen }) => {
+  const hayRespuesta = respuesta !== undefined && respuesta !== null;
+  const result = await pool.query(
+    `UPDATE citacion_convocados SET
+      respuesta = COALESCE($1, respuesta),
+      justificacion = CASE WHEN $1 = 'si' THEN NULL ELSE COALESCE($2, justificacion) END,
+      mensaje_profesor = COALESCE($3, mensaje_profesor),
+      excepcion_solicitada = COALESCE($4, excepcion_solicitada),
+      estado_excepcion = CASE WHEN $4 THEN 'solicitada' ELSE estado_excepcion END,
+      respondido_automaticamente = CASE WHEN $1 IS NOT NULL THEN false ELSE respondido_automaticamente END,
+      respondido_por = CASE WHEN $1 IS NOT NULL THEN $7 ELSE respondido_por END,
+      actualizado_en = NOW()
+     WHERE citacion_id = $5 AND rut_jugador = $6
+     RETURNING *`,
+    [hayRespuesta ? respuesta : null, justificacion || null, mensajeProfesor || null, excepcionSolicitada, citacionId, rut, origen || 'app']
+  );
+  const convocado = result.rows[0];
+  if (!convocado || !hayRespuesta) return convocado || null;
+
+  const info = (await pool.query(
+    'SELECT responsable_rut, tipo_competencia, competencia_nombre, rival_nombre, dia_citacion FROM citaciones WHERE id = $1',
+    [citacionId]
+  )).rows[0];
+  let estado = convocado.respuesta === 'si'
+    ? 'confirmó asistencia'
+    : `no asistirá${convocado.justificacion ? ` (motivo: ${convocado.justificacion})` : ''}`;
+  if (convocado.respuesta === 'no' && (convocado.rol_convocatoria || 'titular') === 'titular') {
+    const banca = Number((await pool.query(
+      "SELECT COUNT(*)::int AS n FROM citacion_convocados WHERE citacion_id = $1 AND rol_convocatoria = 'banca' AND respuesta <> 'no'",
+      [citacionId]
+    )).rows[0].n);
+    if (banca > 0) estado += `. Hay ${banca} en banca para reemplazar`;
+  }
+  const destinatarios = await resolverDestinatariosRSVP(info?.responsable_rut);
+  const titulo = `Respuesta de citación: ${convocado.nombre || rut}`;
+  const cuerpo = `${convocado.nombre || 'El deportista'} ${estado} — ${info?.tipo_competencia || ''} ${info?.competencia_nombre || ''} vs ${info?.rival_nombre || ''} (${formatearFechaCitacion(info?.dia_citacion)}).`;
+  await Promise.all([...destinatarios].map((r) => crearNotificacionApp({
+    rut: r, tipo: 'citacion_rsvp', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: Number(citacionId),
+  })));
+  return convocado;
+};
+
+// Banca → titular (reemplazo de quien se bajó): queda pendiente de confirmar
+// y se avisa a su apoderado. Mismo permiso que agregar a la nómina.
+app.post('/api/citaciones/:id/convocados/:rut/promover', authenticate, requireModule('citaciones'), soloCategoriasDelStaff((req) => [req.params.rut]), async (req, res) => {
+  try {
+    if ((await contarTitularesActivos(req.params.id)) >= MAX_TITULARES_CITACION) {
+      return res.status(409).json({ error: `Ya hay ${MAX_TITULARES_CITACION} titulares activos. Primero debe bajarse alguien.` });
+    }
+    const { rows: [conv] } = await pool.query(
+      `UPDATE citacion_convocados SET rol_convocatoria = 'titular', respuesta = 'pendiente', justificacion = NULL,
+         respondido_automaticamente = false, respondido_por = NULL, actualizado_en = NOW()
+       WHERE citacion_id = $1 AND rut_jugador = $2 AND rol_convocatoria = 'banca'
+       RETURNING *`,
+      [req.params.id, req.params.rut]
+    );
+    if (!conv) return res.status(404).json({ error: 'Ese deportista no está en la banca de esta citación.' });
+    const citacion = (await pool.query('SELECT id, tipo_competencia, competencia_nombre, rival_nombre, dia_citacion, hora_presentacion FROM citaciones WHERE id = $1', [req.params.id])).rows[0];
+    await notificarConvocatoria(citacion, [conv], 'titular');
+    res.json(conv);
+  } catch (err) {
+    console.error('[POST /api/citaciones/:id/convocados/:rut/promover]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Enlace directo (WhatsApp) para responder sin iniciar sesión. El token es
+// aleatorio y único por convocado; solo muestra y cambia ESA convocatoria.
+const TOKEN_CITACION = /^[a-f0-9]{32}$/;
+const citacionPorTokenRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Espera unos minutos.' },
+});
+const cargarConvocadoPorToken = async (token) => {
+  if (!TOKEN_CITACION.test(String(token || ''))) return null;
+  const { rows: [fila] } = await pool.query(
+    `SELECT cc.citacion_id, cc.rut_jugador, cc.nombre, cc.rol_convocatoria, cc.respuesta, cc.justificacion,
+            cc.respondido_automaticamente, c.tipo_competencia, c.competencia_nombre, c.rival_nombre,
+            to_char(c.dia_citacion, 'YYYY-MM-DD') AS dia_citacion, c.hora_citacion, c.hora_presentacion, c.estado,
+            c.lugar_nombre, c.lugar_direccion, c.mensaje_adicional, c.competencia_logo_url, c.rival_logo_url,
+            to_char(c.hora_maxima_confirmacion, 'YYYY-MM-DD"T"HH24:MI') AS hora_maxima_confirmacion,
+            (c.hora_maxima_confirmacion IS NOT NULL AND c.hora_maxima_confirmacion <= (NOW() AT TIME ZONE 'America/Santiago')) AS plazo_vencido
+     FROM citacion_convocados cc JOIN citaciones c ON c.id = cc.citacion_id
+     WHERE cc.token_respuesta = $1`,
+    [token]
+  );
+  return fila || null;
+};
+const vistaPublicaConvocado = (f) => ({
+  deportista: f.nombre, rol: f.rol_convocatoria || 'titular', respuesta: f.respuesta, justificacion: f.justificacion,
+  respondido_automaticamente: f.respondido_automaticamente, tipo_competencia: f.tipo_competencia,
+  competencia_nombre: f.competencia_nombre, rival_nombre: f.rival_nombre, dia_citacion: f.dia_citacion,
+  hora_citacion: f.hora_citacion, hora_presentacion: f.hora_presentacion,
+  hora_maxima_confirmacion: f.hora_maxima_confirmacion, plazo_vencido: f.plazo_vencido,
+  lugar_nombre: f.lugar_nombre, lugar_direccion: f.lugar_direccion, mensaje_adicional: f.mensaje_adicional,
+  competencia_logo_url: f.competencia_logo_url, rival_logo_url: f.rival_logo_url,
+});
+
+app.get('/api/citaciones/responder/:token', citacionPorTokenRateLimiter, async (req, res) => {
+  try {
+    await barrerCitacionesVencidas();
+    const fila = await cargarConvocadoPorToken(req.params.token);
+    if (!fila) return res.status(404).json({ error: 'El enlace no es válido o la citación ya no existe.' });
+    res.json(vistaPublicaConvocado(fila));
+  } catch (err) {
+    console.error('[GET /api/citaciones/responder]', err);
+    res.status(500).json({ error: 'No se pudo cargar la citación.' });
+  }
+});
+
+app.post('/api/citaciones/responder/:token', citacionPorTokenRateLimiter, async (req, res) => {
+  const respuesta = req.body?.respuesta;
+  const justificacion = String(req.body?.justificacion || '').trim().slice(0, 500);
+  if (!['si', 'no'].includes(respuesta)) return res.status(400).json({ error: 'Elige si asiste o no.' });
+  if (respuesta === 'no' && !justificacion) return res.status(400).json({ error: 'Indica el motivo de la inasistencia.' });
+  try {
+    const fila = await cargarConvocadoPorToken(req.params.token);
+    if (!fila) return res.status(404).json({ error: 'El enlace no es válido o la citación ya no existe.' });
+    if (fila.plazo_vencido) return res.status(409).json({ error: 'El plazo para responder ya venció. Escríbele al responsable de la citación.' });
+    await registrarRespuestaCitacion({
+      citacionId: fila.citacion_id, rut: fila.rut_jugador, respuesta, justificacion, origen: 'enlace',
+    });
+    res.json(vistaPublicaConvocado(await cargarConvocadoPorToken(req.params.token)));
+  } catch (err) {
+    console.error('[POST /api/citaciones/responder]', err);
+    res.status(500).json({ error: 'No se pudo guardar la respuesta.' });
+  }
+});
+
 app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireApoderadoDeJugador(pool), async (req, res) => {
   const { respuesta, justificacion, mensaje_profesor, excepcion_solicitada } = req.body;
   const hayRespuesta = respuesta !== undefined && respuesta !== null;
@@ -9117,41 +9450,12 @@ app.patch('/api/citaciones/:id/convocados/:rut/rsvp', authenticate, requireApode
     : Boolean(excepcion_solicitada);
 
   try {
-    const result = await pool.query(
-      `UPDATE citacion_convocados SET
-        respuesta = COALESCE($1, respuesta),
-        justificacion = COALESCE($2, justificacion),
-        mensaje_profesor = COALESCE($3, mensaje_profesor),
-        excepcion_solicitada = COALESCE($4, excepcion_solicitada),
-        estado_excepcion = CASE WHEN $4 THEN 'solicitada' ELSE estado_excepcion END,
-        respondido_automaticamente = CASE WHEN $1 IS NOT NULL THEN false ELSE respondido_automaticamente END,
-        actualizado_en = NOW()
-       WHERE citacion_id = $5 AND rut_jugador = $6
-       RETURNING *`,
-      [hayRespuesta ? respuesta : null, justificacion || null, mensaje_profesor || null, excepcionProvista, req.params.id, req.params.rut]
-    );
-    if (result.rows.length === 0) {
+    const convocado = await registrarRespuestaCitacion({
+      citacionId: req.params.id, rut: req.params.rut, respuesta: hayRespuesta ? respuesta : null,
+      justificacion, mensajeProfesor: mensaje_profesor, excepcionSolicitada: excepcionProvista, origen: 'app',
+    });
+    if (!convocado) {
       return res.status(404).json({ error: 'No se encontró ese convocado en la citación.' });
-    }
-    const convocado = result.rows[0];
-
-    // Notifica al profesor que creó la citación y a todo admin/superadmin —
-    // solo cuando esta llamada realmente cambió sí/no (no en un guardado de
-    // solo mensaje_profesor).
-    if (hayRespuesta) {
-      const citacionInfo = (await pool.query(
-        'SELECT responsable_rut, tipo_competencia, competencia_nombre, rival_nombre, dia_citacion FROM citaciones WHERE id = $1',
-        [req.params.id]
-      )).rows[0];
-      const destinatarios = await resolverDestinatariosRSVP(citacionInfo?.responsable_rut);
-      const estado = convocado.respuesta === 'si'
-        ? 'confirmó asistencia'
-        : `rechazó la citación (${convocado.justificacion ? 'con justificación' : 'sin justificación'})`;
-      const titulo = `Respuesta de citación: ${convocado.nombre || req.params.rut}`;
-      const cuerpo = `${convocado.nombre || 'El deportista'} ${estado} — ${citacionInfo?.tipo_competencia || ''} ${citacionInfo?.competencia_nombre || ''} vs ${citacionInfo?.rival_nombre || ''} (${formatearFechaCitacion(citacionInfo?.dia_citacion)}).`;
-      await Promise.all([...destinatarios].map((rut) => crearNotificacionApp({
-        rut, tipo: 'citacion_rsvp', titulo, cuerpo, referenciaTipo: 'citacion', referenciaId: Number(req.params.id),
-      })));
     }
 
     res.json(convocado);
@@ -12681,6 +12985,10 @@ app.listen(PORT, () => {
 
   ensureCitacionesTables().catch((error) => {
     console.error('❌ Error verificando tablas de citaciones:', error.message);
+  });
+
+  ensurePushSuscripcionesTable().catch((error) => {
+    console.error('❌ Error verificando tabla push_suscripciones:', error.message);
   });
 
   ensureNotificacionesAppTable().catch((error) => {

@@ -20,6 +20,8 @@ export default defineConfig({
         // cargan con import() recién al exportar.
         globIgnores: ['**/ort*.wasm', '**/ort*.mjs', '**/ort.*.js', '**/jspdf*.js', '**/html2canvas*.js', '**/purify*.js'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        // Avisos nativos (push) y qué abrir al tocarlos: public/push-sw.js.
+        importScripts: ['push-sw.js'],
       },
       manifest: {
         name: 'Centro de Cultura Física Viña del Mar',

@@ -94,14 +94,20 @@ test('staff cita a un partido solo a deportistas de su categoría', async ({ pag
   await iniciarSesion(page, CUENTAS.staff.rut);
   await page.locator('.nav-item', { hasText: 'Gestión' }).click();
   await page.getByRole('button', { name: /Citaciones/ }).first().click();
+  // Creador por pasos: partido → fecha y lugar → citados → publicar.
   await page.getByPlaceholder('Ej: Liga ARBAM U15').fill('E2E Liga Staff');
   await page.getByPlaceholder('Ej: Club Deportivo X').fill('E2E Rival');
+  await page.getByRole('button', { name: /Siguiente: Fecha y lugar/ }).click();
+  const f = new Date(); f.setDate(f.getDate() + 3);
+  await page.locator('input[type=date]').first().fill(f.toISOString().slice(0, 10));
+  await page.getByRole('button', { name: /Siguiente: Citados/ }).click();
   const pupilo = nombre(JUGADORES.pupilo);
-  const fila = page.locator('div', { has: page.getByText(new RegExp(pupilo)) }).filter({ has: page.locator('input[type=checkbox]') }).last();
-  await expect(fila).toBeVisible({ timeout: 15000 });
+  const grupo = page.getByRole('group', { name: `Citar a ${pupilo}` });
+  await expect(grupo).toBeVisible({ timeout: 15000 });
   await expect(page.getByText(new RegExp(nombre(JUGADORES.hijoSocio)))).toHaveCount(0);
-  await fila.locator('input[type=checkbox]').check();
-  await page.getByRole('button', { name: 'CONFIRMAR Y CITAR' }).click();
+  await grupo.getByRole('button', { name: 'Titular' }).click();
+  await page.getByRole('button', { name: /Siguiente: Revisar y publicar/ }).click();
+  await page.getByRole('button', { name: 'PUBLICAR Y NOTIFICAR' }).click();
   await expect.poll(async () => (await pool.query(
     `SELECT cc.rut_jugador FROM citaciones c JOIN citacion_convocados cc ON cc.citacion_id = c.id WHERE c.competencia_nombre = 'E2E Liga Staff'`
   )).rows.map((r) => r.rut_jugador), { timeout: 10000 }).toEqual([JUGADORES.pupilo.rut]);

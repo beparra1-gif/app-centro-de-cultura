@@ -23,6 +23,7 @@ import SkeletonLoaderPanel from './components/SkeletonLoaderPanel';
 import ApiStatusBanner from './components/ApiStatusBanner';
 import ToastContainer from './components/ToastContainer';
 import ConfirmDialog from './components/ConfirmDialog';
+import CitacionesPendientesModal from './components/CitacionesPendientesModal';
 import { showToast } from './utils/toast';
 import { confirmAction } from './utils/confirmDialog';
 import { esNuestroClub } from './utils/logoResolver';
@@ -606,6 +607,17 @@ function App() {
   }, [rolUsuario, usuarioAutenticado, pantallaActiva, sesionToken, sesionHidratada, SESSION_STORAGE_KEY, isOnboarding]);
 
   const [nominaCita, setNominaCita] = useState([]);
+  // ?abrir=citaciones: llega desde el aviso nativo de una citación (ver
+  // public/push-sw.js): abre el Muro y la ventana para responder.
+  const [abrirCitaciones] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('abrir') !== 'citaciones') return false;
+      params.delete('abrir');
+      window.history.replaceState(null, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}`);
+      return true;
+    } catch { return false; }
+  });
 
   // ==========================================
   // 3. LÓGICA BASE Y EFECTOS
@@ -3390,6 +3402,15 @@ function App() {
       {/* TOASTS Y CONFIRMACIONES (reemplazo de alert()/confirm() nativos) */}
       <ToastContainer />
       <ConfirmDialog />
+      {usuarioAutenticado && (esPerfilFamiliar || esJugadorAutenticado) && (
+        <CitacionesPendientesModal
+          citaciones={nominaCita}
+          rutsPupilos={esPerfilFamiliar ? pupilosDisponibles.map((p) => p.rut) : []}
+          rutPropio={usuarioAutenticado?.rut}
+          forzarApertura={abrirCitaciones}
+          onActualizar={setNominaCita}
+        />
+      )}
       <PrimerIngresoModal
         paso={pasoPrimerIngreso}
         onConsentimientoAceptado={({ version, autoriza_imagen }) => {

@@ -798,6 +798,17 @@ export const ausenciasAPI = {
   },
 };
 
+// ========== AVISOS NATIVOS (Web Push) ==========
+
+export const pushAPI = {
+  clavePublica: async () => handleResponse(await fetch(`${API_BASE_URL}/push/clave-publica`)),
+  suscribir: async (suscripcion) => handleResponse(await apiFetch(`${API_BASE_URL}/push/suscribir`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ suscripcion }),
+  })),
+};
+
 // ========== CERTIFICADOS DEL CLUB (apoderado solicita, admin emite) ==========
 
 const postJson = async (url, datos) => handleResponse(await apiFetch(url, {
@@ -1058,6 +1069,18 @@ export const citacionesAPI = {
     });
     return handleResponse(response);
   },
+  // Banca → titular (reemplazo de quien se bajó).
+  promoverDesdeBanca: async (citacionId, rutJugador) => {
+    const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados/${rutJugador}/promover`, { method: 'POST' });
+    return handleResponse(response);
+  },
+  // Enlace directo de WhatsApp: sin sesión (el token identifica la convocatoria).
+  verPorEnlace: async (token) => handleResponse(await fetch(`${API_BASE_URL}/citaciones/responder/${encodeURIComponent(token)}`)),
+  responderPorEnlace: async (token, datos) => handleResponse(await fetch(`${API_BASE_URL}/citaciones/responder/${encodeURIComponent(token)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  })),
   resolverExcepcionMorosidad: async (citacionId, rutJugador, aprobar) => {
     const response = await apiFetch(`${API_BASE_URL}/citaciones/${citacionId}/convocados/${rutJugador}/resolver-excepcion`, {
       method: 'POST',
