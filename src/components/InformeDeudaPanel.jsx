@@ -47,7 +47,12 @@ export default function InformeDeudaPanel({ jugadores = [], cuentas = [], moroso
   // Filtros, orden y agrupación se recuerdan en este dispositivo (no la búsqueda).
   const [filtrosGuardados, setFiltrosGuardados] = usePreferenciaLocal('informeDeuda.filtros', FILTROS_INICIALES, (v) => v && typeof v === 'object');
   const [texto, setTexto] = useState('');
-  const filtros = useMemo(() => ({ ...FILTROS_INICIALES, ...filtrosGuardados, texto }), [filtrosGuardados, texto]);
+  const filtros = useMemo(() => {
+    const f = { ...FILTROS_INICIALES, ...filtrosGuardados, texto };
+    // Antes la categoría se guardaba como texto ('todas' o una sola): pasarla a lista.
+    if (!Array.isArray(f.categoria)) f.categoria = f.categoria && f.categoria !== 'todas' ? [String(f.categoria)] : [];
+    return f;
+  }, [filtrosGuardados, texto]);
   const setFiltros = (cambio) => {
     const nuevo = typeof cambio === 'function' ? cambio(filtros) : cambio;
     const { texto: textoNuevo = '', ...resto } = nuevo;

@@ -183,6 +183,16 @@ test('informe por categoría: filtra y descarga la imagen', async ({ page }, tes
   await expect(tabla.locator('tr', { hasText: 'E2E SocioApoderado' })).toBeVisible();
 });
 
+test('informe: un filtro de categoría guardado con la forma antigua (texto) no rompe la pantalla', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('ccf.pref.informeDeuda.filtros', JSON.stringify({ rama: 'todas', categoria: 'todas', estado: 'todos', mes: 'todos' }));
+  });
+  await irATesoreria(page);
+  await page.getByRole('tab', { name: /Informes/ }).click();
+  await expect(page.getByRole('heading', { name: /Informe de deuda/ })).toBeVisible();
+  await expect(page.getByLabel(/^Categorías:/).first()).toBeVisible();
+});
+
 test('las pestañas separan Validar pagos y Resumen', async ({ page }) => {
   await irATesoreria(page);
   await page.getByRole('tab', { name: /Validar pagos/ }).click();
