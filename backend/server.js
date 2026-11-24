@@ -4943,7 +4943,7 @@ app.put('/api/comentarios/:comentId/like', authenticate, requireModule('comunica
 // ==========================================
 
 // GET: Pagos por usuario
-app.get('/api/pagos/usuario/:usuarioId', authenticate, requireOwnerIdOrModule('usuarioId', 'validacion_pagos'), async (req, res) => {
+app.get('/api/pagos/usuario/:usuarioId', authenticate, requireOwnerIdOrModule('usuarioId', 'validacion_pagos'), requireAnyModule('perfil', 'validacion_pagos'), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM pagos 
@@ -7237,6 +7237,10 @@ app.get('/api/pagos-mensualidades', authenticate, async (req, res) => {
     if (permisos.validacion_pagos || permisos.admin_dashboard) {
       return res.json(result.rows);
     }
+    // Sin 'perfil' (Mi Cuenta) no se ve ningún pago, ni propio: p. ej. el
+    // deportista que el club no marcó autogestionable. Lista vacía y no 403
+    // porque la app la pide en la carga inicial para todas las sesiones.
+    if (!permisos.perfil) return res.json([]);
     const [pupilos, cuentaActor] = await Promise.all([
       obtenerPupilosDeActor(req.actor),
       pool.query('SELECT correo FROM cuentas WHERE rut = $1', [req.actor.rut]),
@@ -8189,6 +8193,9 @@ app.get('/api/pagos-mensualidades/:id', authenticate, async (req, res) => {
 
     const permisos = await resolverPermisosDeActor(req.actor);
     if (!permisos.validacion_pagos && !permisos.admin_dashboard) {
+      if (!permisos.perfil) {
+        return res.status(403).json({ error: 'No tienes acceso a este pago.' });
+      }
       const [pupilos, cuentaActor] = await Promise.all([
         obtenerPupilosDeActor(req.actor),
         pool.query('SELECT correo FROM cuentas WHERE rut = $1', [req.actor.rut]),
