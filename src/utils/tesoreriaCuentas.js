@@ -167,6 +167,44 @@ export const construirCuentasQuePagan = ({ cuentas = [], jugadores = [], morosos
     });
   });
 
+  // Familia vinculada (cuentas.grupo_familiar, ej. ambos padres socios): una
+  // sola fila con la cuota de socio de cada uno y todos los pupilos.
+  const filaPorFamilia = new Map();
+  for (let i = filas.length - 1; i >= 0; i -= 1) {
+    const f = filas[i];
+    const grupo = String(f.cuenta?.grupo_familiar || '').trim();
+    if (!grupo) continue;
+    if (!filaPorFamilia.has(grupo)) { filaPorFamilia.set(grupo, []); }
+    filaPorFamilia.get(grupo).unshift(f);
+    filas.splice(i, 1);
+  }
+  filaPorFamilia.forEach((miembros) => {
+    const [base, ...resto] = miembros;
+    const pupilos = miembros.flatMap((m) => m.pupilos);
+    const deApoderado = pupilos.filter((p) => !p.autogestionado).length;
+    const perfiles = [...new Set(miembros.flatMap((m) => m.perfiles).filter((p) => !p.startsWith('Apoderado de')))];
+    if (deApoderado > 0) perfiles.push(deApoderado === 1 ? 'Apoderado de 1' : `Apoderado de ${deApoderado}`);
+    if (resto.length) perfiles.push('Familia vinculada');
+    filas.push({
+      ...base,
+      nombre: miembros.map((m) => m.nombre).join(' y '),
+      nombreTitular: base.nombre,
+      perfiles,
+      esSocio: miembros.some((m) => m.esSocio),
+      esApoderado: deApoderado > 0,
+      autogestionado: miembros.some((m) => m.autogestionado),
+      // Cuota de socio de las demás cuentas de la familia (cada una se paga a su RUT).
+      otrosSocios: resto.filter((m) => m.socio).map((m) => ({ ...m.socio, rut: m.rut, nombre: m.nombre })),
+      cuentasFamilia: miembros.map((m) => m.cuenta),
+      pupilos,
+      telefono: miembros.map((m) => m.telefono).find(Boolean) || '',
+      correo: miembros.map((m) => m.correo).find(Boolean) || '',
+      deudaTotal: miembros.reduce((s, m) => s + m.deudaTotal, 0),
+      mesesDeudaTotal: miembros.reduce((s, m) => s + m.mesesDeudaTotal, 0),
+      textoBusqueda: miembros.map((m) => m.textoBusqueda).join(' '),
+    });
+  });
+
   // Deportistas sin ninguna cuenta que pague por ellos: se muestran igual
   // (su deuda existe) con la alerta de que falta vincular al responsable.
   // Hermanos sin responsable: una sola fila por familia.

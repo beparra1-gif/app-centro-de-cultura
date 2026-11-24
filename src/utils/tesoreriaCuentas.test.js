@@ -128,3 +128,33 @@ describe('hermanos marcados a mano (grupo_familiar)', () => {
     expect(r.some((f) => f.tipo === 'sin_responsable' && f.nombre.includes('Rojas'))).toBe(false);
   });
 });
+
+describe('familia vinculada (ambos padres socios)', () => {
+  const cuentasFam = [
+    { rut: '81.111.111-1', nombres: 'Ana', apellido_paterno: 'Madre', es_socio: true, grupo_familiar: 'fam-1', telefono: '' },
+    { rut: '82.222.222-2', nombres: 'Juan', apellido_paterno: 'Padre', es_socio: true, grupo_familiar: 'fam-1', telefono: '922222222' },
+  ];
+  const hijas = [
+    { rut_jugador: '83.000.001-1', nombres: 'Hija', apellido_paterno: 'Uno', rut_apoderado: '81111111-1' },
+    { rut_jugador: '83.000.002-2', nombres: 'Hija', apellido_paterno: 'Dos', rut_apoderado: '82222222-2' },
+  ];
+  const filasFam = construirCuentasQuePagan({
+    cuentas: cuentasFam,
+    jugadores: hijas,
+    morosos: [{ rut: '83.000.002-2', montoDeuda: 12000, mesesDeuda: 1, mesesMorosos: ['Oct'] }],
+    sociosMorosos: [{ rut: '81111111-1', montoDeuda: 21500, mesesDeuda: 1 }, { rut: '82222222-2', montoDeuda: 21500, mesesDeuda: 1 }],
+  });
+
+  it('una sola fila con las dos cuotas de socio y las dos hijas', () => {
+    expect(filasFam).toHaveLength(1);
+    const [f] = filasFam;
+    expect(f.nombre).toBe('Ana Madre y Juan Padre');
+    expect(f.socio.deuda).toBe(21500);
+    expect(f.otrosSocios).toEqual([expect.objectContaining({ rut: '82.222.222-2', deuda: 21500 })]);
+    expect(f.pupilos.map((p) => p.rut)).toEqual(['83.000.001-1', '83.000.002-2']);
+    expect(f.deudaTotal).toBe(21500 * 2 + 12000);
+    expect(f.telefono).toBe('+56922222222');
+    expect(f.perfiles).toContain('Familia vinculada');
+    expect(f.perfiles).toContain('Apoderado de 2');
+  });
+});

@@ -202,13 +202,23 @@ export default function TesoreriaCuentasPanel({
             <div className="tc-lineas">
               {f.socio && (
                 <LineaConcepto
-                  titulo="Cuota de socio"
+                  titulo={f.otrosSocios?.length ? `Cuota de socio · ${f.nombreTitular}` : 'Cuota de socio'}
                   deuda={f.socio.deuda}
                   mesesMorosos={f.socio.mesesMorosos}
                   puedePagar={puedeRegistrarPago}
                   onPagar={() => onRegistrarPago?.({ modoPago: 'socio', rut: f.rut })}
                 />
               )}
+              {(f.otrosSocios || []).map((s) => (
+                <LineaConcepto
+                  key={s.clave}
+                  titulo={`Cuota de socio · ${s.nombre}`}
+                  deuda={s.deuda}
+                  mesesMorosos={s.mesesMorosos}
+                  puedePagar={puedeRegistrarPago}
+                  onPagar={() => onRegistrarPago?.({ modoPago: 'socio', rut: s.rut })}
+                />
+              ))}
               {f.pupilos.map((p) => {
                 const chips = [];
                 if (p.exento) chips.push('Exento');

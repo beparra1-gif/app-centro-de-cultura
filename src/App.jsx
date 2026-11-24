@@ -3132,6 +3132,8 @@ function App() {
 
     if (esPerfilFamiliar) {
       return pupilosDisponiblesBase.filter((j) => {
+        // Pupilos de la cuenta vinculada como familia (ej. el otro padre): el backend los marca.
+        if (j.es_pupilo_propio && normalizarRutComparacion(j.rut) !== rutUsuarioAutenticado) return true;
         const rutApoderado = normalizarRutComparacion(j.rut_apoderado || '');
         if (rutApoderado && rutUsuarioAutenticado && rutApoderado === rutUsuarioAutenticado) return true;
 

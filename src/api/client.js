@@ -377,6 +377,20 @@ export const cuentasAPI = {
     return handleResponse(response);
   },
 
+  // Familia vinculada (ej. ambos padres): ven y pagan a los pupilos de la otra cuenta.
+  vincularFamilia: async (rut, rutOtraCuenta) => {
+    const response = await apiFetch(`${API_BASE_URL}/cuentas/${encodeURIComponent(rut)}/familia`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rut_otra_cuenta: rutOtraCuenta }),
+    });
+    return handleResponse(response);
+  },
+  desvincularFamilia: async (rut) => {
+    const response = await apiFetch(`${API_BASE_URL}/cuentas/${encodeURIComponent(rut)}/familia`, { method: 'DELETE' });
+    return handleResponse(response);
+  },
+
   // Obtener incompletas
   getIncompletas: async () => {
     const response = await apiFetch(`${API_BASE_URL}/cuentas/incompletas`);

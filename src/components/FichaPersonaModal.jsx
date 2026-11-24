@@ -155,6 +155,58 @@ export default function FichaPersonaModal({
       .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es'));
   }, [esJugador, raw, hermanos, jugadores]);
 
+  // Familia vinculada (cuentas.grupo_familiar, ej. ambos padres socios).
+  const [cuentaFamiliaNueva, setCuentaFamiliaNueva] = useState('');
+  const [guardandoFamilia, setGuardandoFamilia] = useState(false);
+  const grupoCuenta = esJugador ? '' : normGrupoFamiliar(raw.grupo_familiar);
+  const cuentasFamilia = useMemo(() => (grupoCuenta
+    ? cuentas.filter((c) => norm(c.rut) !== norm(raw.rut) && normGrupoFamiliar(c.grupo_familiar) === grupoCuenta)
+    : []), [grupoCuenta, cuentas, raw]);
+  const candidatosFamilia = useMemo(() => {
+    if (esJugador) return [];
+    const yaEstan = new Set([norm(raw.rut), ...cuentasFamilia.map((c) => norm(c.rut))]);
+    return cuentas
+      .filter((c) => norm(c.rut) && !yaEstan.has(norm(c.rut)))
+      .map((c) => ({ c, etiqueta: `${c.apellido_paterno || ''}, ${c.nombres || ''}`.replace(/^, |, $/g, '').trim() || c.rut }))
+      .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es'));
+  }, [esJugador, raw, cuentasFamilia, cuentas]);
+  const nombreDeCuenta = (c) => `${c?.nombres || ''} ${c?.apellido_paterno || ''}`.trim() || c?.rut || '';
+
+  const vincularFamilia = async () => {
+    const otra = cuentas.find((c) => norm(c.rut) === norm(cuentaFamiliaNueva));
+    if (!otra) return;
+    setGuardandoFamilia(true);
+    try {
+      await api.cuentasAPI.vincularFamilia(raw.rut, otra.rut);
+      showToast({ message: `${nombreDeCuenta(raw)} y ${nombreDeCuenta(otra)} quedaron vinculados como familia.`, type: 'success' });
+      setCuentaFamiliaNueva('');
+      await onHermanosCambiados?.();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo vincular la familia.', type: 'error' });
+    } finally {
+      setGuardandoFamilia(false);
+    }
+  };
+
+  const desvincularFamilia = async (cuenta) => {
+    const confirmado = await confirmAction({
+      title: 'Desvincular familia',
+      message: `${nombreDeCuenta(cuenta)} dejará de ver y pagar a los pupilos de esta familia, y saldrá de su fila en Tesorería. Los deportistas siguen siendo hermanos.`,
+      confirmText: 'Desvincular',
+    });
+    if (!confirmado) return;
+    setGuardandoFamilia(true);
+    try {
+      await api.cuentasAPI.desvincularFamilia(cuenta.rut);
+      showToast({ message: `${nombreDeCuenta(cuenta)} salió de la familia.`, type: 'success' });
+      await onHermanosCambiados?.();
+    } catch (error) {
+      showToast({ message: error.message || 'No se pudo desvincular.', type: 'error' });
+    } finally {
+      setGuardandoFamilia(false);
+    }
+  };
+
   const cambiarEstado = async () => {
     const activo = estaActivo(raw);
     const nombreCorto = raw.nombres || raw.rut_jugador || raw.rut || 'esta persona';
@@ -438,6 +490,36 @@ export default function FichaPersonaModal({
                   <User size={15} /> {`${p.nombres || ''} ${p.apellido_paterno || ''}`.trim()} · {p.rut_jugador} · {[p.rama, p.categoria].filter(Boolean).join(' ')}
                 </button>
               )) : <p className="fp-ayuda">Esta cuenta no tiene pupilos vinculados.</p>}
+              <h4 className="fp-subtitulo">Familia vinculada</h4>
+              {cuentasFamilia.length ? cuentasFamilia.map((c) => (
+                <div key={c.rut} className="fp-hermano">
+                  <button type="button" className="fp-vinculo" onClick={() => onAbrir({ tipo: 'cuenta', raw: c })}>
+                    <Users size={15} /> {nombreDeCuenta(c)} · {c.rut}{c.es_socio ? ' · Socio/a' : ''}
+                  </button>
+                  {puedeEditarHermanos && (
+                    <button type="button" className="btn-secondary tc-btn" disabled={guardandoFamilia} onClick={() => desvincularFamilia(c)} aria-label={`Desvincular a ${nombreDeCuenta(c)} de la familia`}>
+                      <X size={13} /> Quitar
+                    </button>
+                  )}
+                </div>
+              )) : <p className="fp-ayuda">Sin otra cuenta vinculada.</p>}
+              {puedeEditarHermanos && (
+                <div className="fp-agregar-hermano">
+                  <label htmlFor="fp-familia-nueva">Vincular con otra cuenta de la familia (ej. el otro padre o madre)</label>
+                  <div className="fp-agregar-hermano-fila">
+                    <select id="fp-familia-nueva" className="form-input" value={cuentaFamiliaNueva} onChange={(e) => setCuentaFamiliaNueva(e.target.value)}>
+                      <option value="">Elegir cuenta…</option>
+                      {candidatosFamilia.map(({ c, etiqueta }) => (
+                        <option key={c.rut} value={c.rut}>{etiqueta} · {c.rut}</option>
+                      ))}
+                    </select>
+                    <button type="button" className="btn-electric tc-btn" disabled={!cuentaFamiliaNueva || guardandoFamilia} onClick={vincularFamilia}>
+                      <Plus size={14} /> {guardandoFamilia ? 'Guardando…' : 'Vincular'}
+                    </button>
+                  </div>
+                  <small className="fp-ayuda">Ambas cuentas ven y pagan a los pupilos de la otra, Tesorería las muestra en una sola fila y los deportistas quedan como hermanos.</small>
+                </div>
+              )}
             </div>
           ))}
         </div>

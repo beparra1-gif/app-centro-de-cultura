@@ -258,6 +258,24 @@ const stripFieldsUnlessModule = (fields, moduloId) => async (req, res, next) => 
 
 const normalizarRutParaComparar = (rut = '') => String(rut || '').replace(/\./g, '').replace(/-/g, '').trim().toUpperCase();
 
+// ¿Las cuentas de estos dos RUT están vinculadas como una misma familia
+// (cuentas.grupo_familiar, ej. ambos padres)? Así el otro padre responde y
+// edita a los pupilos igual que el apoderado registrado.
+const sonMismaFamilia = async (pool, rutA, rutB) => {
+  const a = normalizarRutParaComparar(rutA);
+  const b = normalizarRutParaComparar(rutB);
+  if (!a || !b || a === b) return false;
+  const r = await pool.query(
+    `SELECT 1 FROM cuentas
+     WHERE NULLIF(TRIM(grupo_familiar), '') IS NOT NULL
+       AND REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = ANY($1)
+     GROUP BY TRIM(grupo_familiar)
+     HAVING COUNT(DISTINCT REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '')) = 2`,
+    [[a, b]]
+  );
+  return r.rows.length > 0;
+};
+
 // Permite el acceso a /api/jugadores/:rut si el actor tiene el módulo admin dado,
 // o si su RUT coincide con el rut_apoderado registrado del jugador (apoderado
 // editando el perfil de su propio pupilo). Consulta la tabla en cada request
@@ -291,9 +309,9 @@ const requireApoderadoDeJugadorOModule = (pool, moduloId, { permitirPropioJugado
   }
 
   pool.query('SELECT rut_apoderado FROM jugadores WHERE rut_jugador = $1', [rutJugador])
-    .then((result) => {
+    .then(async (result) => {
       const rutApoderadoRegistrado = normalizarRutParaComparar(result.rows[0]?.rut_apoderado || '');
-      if (rutApoderadoRegistrado && rutApoderadoRegistrado === rutActor) {
+      if (rutApoderadoRegistrado && (rutApoderadoRegistrado === rutActor || await sonMismaFamilia(pool, rutApoderadoRegistrado, rutActor))) {
         req.esApoderadoDueno = true;
         return next();
       }
@@ -344,7 +362,7 @@ const requireApoderadoDeJugador = (pool) => (req, res, next) => {
   pool.query('SELECT rut_apoderado FROM jugadores WHERE rut_jugador = $1', [rutJugador])
     .then(async (result) => {
       const rutApoderadoRegistrado = normalizarRutParaComparar(result.rows[0]?.rut_apoderado || '');
-      if (rutApoderadoRegistrado && rutApoderadoRegistrado === rutActor) {
+      if (rutApoderadoRegistrado && (rutApoderadoRegistrado === rutActor || await sonMismaFamilia(pool, rutApoderadoRegistrado, rutActor))) {
         return next();
       }
 
@@ -378,6 +396,7 @@ module.exports = {
   stripFieldsUnlessModule,
   isBcryptHash,
   normalizarRutParaComparar,
+  sonMismaFamilia,
   setPool,
   resolverPermisosDeActor,
 };

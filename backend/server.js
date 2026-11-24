@@ -1901,6 +1901,9 @@ const ensureCuentasExtendedColumns = async () => {
     `ALTER TABLE jugadores ADD COLUMN IF NOT EXISTS cuotas_por_mes JSONB DEFAULT '{}'::jsonb`,
     // Nivel de entrenador oficial (texto libre, ej. "Nivel 2 FEB"): ficha del Muro.
     `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS nivel_entrenador TEXT`,
+    // Cuentas de una misma familia (ej. ambos padres): ven y pagan a los
+    // pupilos de la otra y Tesorería las muestra en una sola fila.
+    `ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS grupo_familiar TEXT`,
   ];
 
   for (const statement of ddl) {
@@ -5502,6 +5505,74 @@ app.put(
 });
 
 // DELETE: Borrar cuenta definitivamente (solo super admin)
+// Vincular familia: dos cuentas (ej. ambos padres socios) quedan en el mismo
+// cuentas.grupo_familiar. Ambas ven y pagan a los pupilos de la otra,
+// Tesorería las muestra en una sola fila, y los pupilos de las dos quedan
+// como hermanos (jugadores.grupo_familiar) para la tarifa de hermanos.
+const RUT_SQL = (col) => `REPLACE(REPLACE(UPPER(${col}), '.', ''), '-', '')`;
+app.post('/api/cuentas/:rut/familia', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  const rutA = normalizarRutParaComparar(req.params.rut);
+  const rutB = normalizarRutParaComparar(req.body?.rut_otra_cuenta);
+  if (!rutA || !rutB || rutA === rutB) return res.status(400).json({ error: 'Elige otra cuenta para vincular.' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const cuentas = (await client.query(
+      `SELECT rut, correo, grupo_familiar FROM cuentas WHERE ${RUT_SQL('rut')} = ANY($1)`, [[rutA, rutB]]
+    )).rows;
+    if (cuentas.length < 2) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'No se encontró una de las cuentas.' });
+    }
+    const previos = [...new Set(cuentas.map((c) => String(c.grupo_familiar || '').trim()).filter(Boolean))];
+    const grupo = previos[0] || `fam-${rutA}`;
+    // Une también a quienes ya estaban en la familia de cualquiera de las dos.
+    const familia = (await client.query(
+      `UPDATE cuentas SET grupo_familiar = $1, updated_at = NOW()
+       WHERE ${RUT_SQL('rut')} = ANY($2) OR TRIM(grupo_familiar) = ANY($3)
+       RETURNING rut, correo`,
+      [grupo, [rutA, rutB], previos]
+    )).rows;
+    const ruts = familia.map((c) => normalizarRutParaComparar(c.rut));
+    const correos = familia.map((c) => String(c.correo || '').trim().toLowerCase()).filter(Boolean);
+    const pupilos = (await client.query(
+      `SELECT rut_jugador, grupo_familiar FROM jugadores
+       WHERE ${RUT_SQL('rut_apoderado')} = ANY($1) OR LOWER(TRIM(correo_apoderado)) = ANY($2)`,
+      [ruts, correos]
+    )).rows;
+    const gruposHermanos = [...new Set(pupilos.map((j) => String(j.grupo_familiar || '').trim()).filter(Boolean))];
+    await client.query(
+      `UPDATE jugadores SET grupo_familiar = $1
+       WHERE rut_jugador = ANY($2) OR TRIM(grupo_familiar) = ANY($3)`,
+      [grupo, pupilos.map((j) => j.rut_jugador), gruposHermanos]
+    );
+    await client.query('COMMIT');
+    res.json({ grupo, cuentas: ruts, pupilos: pupilos.length });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[POST /api/cuentas/:rut/familia]', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Desvincular: la cuenta sale de la familia. Los pupilos siguen siendo
+// hermanos entre sí (eso se deshace aparte, en Agrupar hermanos).
+app.delete('/api/cuentas/:rut/familia', authenticate, requireModule('admin_dashboard'), async (req, res) => {
+  try {
+    const rut = normalizarRutParaComparar(req.params.rut);
+    const r = await pool.query(
+      `UPDATE cuentas SET grupo_familiar = NULL, updated_at = NOW() WHERE ${RUT_SQL('rut')} = $1 RETURNING rut`, [rut]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Cuenta no encontrada.' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/cuentas/:rut/familia]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.delete('/api/cuentas/:id', authenticate, requireRole('super_admin'), async (req, res) => {
   const actor = req.actor;
 
@@ -5900,14 +5971,17 @@ app.get('/api/jugadores', authenticate, async (req, res) => {
       // Perfil familiar con un módulo de plantel por excepción: sin motivo_baja (interno) salvo que tenga Admin.
       const ocultarInterno = ROLES_JUGADORES_ACOTADOS.includes(normalizarRol(req.actor.rol))
         && !(await resolverPermisosDeActor(req.actor)).admin_dashboard;
-      return res.json(ocultarInterno ? visibles.map(({ motivo_baja: _interno, ...j }) => j) : visibles);
+      if (!ocultarInterno) return res.json(visibles);
+      // es_pupilo_propio: la app separa sus pupilos (incluidos los del otro padre) del resto del plantel.
+      const propios = new Set((await obtenerPupilosDeActor(req.actor)).map((p) => normalizarRutParaComparar(p.rut_jugador)));
+      return res.json(visibles.map(({ motivo_baja: _interno, ...j }) => ({ ...j, es_pupilo_propio: propios.has(normalizarRutParaComparar(j.rut_jugador)) })));
     }
     const pupilos = await obtenerPupilosDeActor(req.actor);
     const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
     // motivo_baja es interno del club: las familias no lo reciben.
     res.json(filas
       .filter((j) => rutsPupilos.has(normalizarRutParaComparar(j.rut_jugador)))
-      .map(({ motivo_baja: _interno, ...j }) => j));
+      .map(({ motivo_baja: _interno, ...j }) => ({ ...j, es_pupilo_propio: true })));
   } catch (err) {
     console.error('[GET /api/jugadores]', err);
     res.status(500).json({ error: err.message });
@@ -8899,12 +8973,23 @@ const obtenerPupilosDeActor = async (actor) => {
   const cuentaActor = await pool.query('SELECT correo FROM cuentas WHERE rut = $1', [actor.rut]);
   const correoActor = String(cuentaActor.rows[0]?.correo || '').trim().toLowerCase();
 
+  // Familia vinculada (cuentas.grupo_familiar, ej. ambos padres): los
+  // pupilos de la otra cuenta también son suyos.
+  const familia = await pool.query(
+    `SELECT rut, correo FROM cuentas
+     WHERE NULLIF(TRIM(grupo_familiar), '') IS NOT NULL
+       AND TRIM(grupo_familiar) = (SELECT TRIM(grupo_familiar) FROM cuentas WHERE rut = $1 LIMIT 1)`,
+    [actor.rut]
+  );
+  const ruts = [rutActor, ...familia.rows.map((c) => normalizarRutParaComparar(c.rut))].filter(Boolean);
+  const correos = [correoActor, ...familia.rows.map((c) => String(c.correo || '').trim().toLowerCase())].filter(Boolean);
+
   const result = await pool.query(
     `SELECT rut_jugador, rama, categoria FROM jugadores
-     WHERE REPLACE(REPLACE(UPPER(rut_apoderado), '.', ''), '-', '') = $1
-        OR REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = $1
-        OR ($2 <> '' AND LOWER(TRIM(correo_apoderado)) = $2)`,
-    [rutActor, correoActor]
+     WHERE REPLACE(REPLACE(UPPER(rut_apoderado), '.', ''), '-', '') = ANY($1)
+        OR REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') = $2
+        OR LOWER(TRIM(correo_apoderado)) = ANY($3)`,
+    [ruts, rutActor, correos]
   );
   return result.rows;
 };
