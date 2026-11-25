@@ -5205,6 +5205,7 @@ app.get('/api/cuentas/:id', authenticate, requireOwnerIdOrModule('id', 'admin_da
       ...omitPassword(cuenta),
       rut: cuenta.rut ? formatearRut(cuenta.rut) : cuenta.rut,
       campos_faltantes: detectarCamposFaltantesCuenta(cuenta),
+      familia_vinculada: cuenta.rut ? await cuentasFamiliaVinculada(cuenta.rut) : [],
     });
   } catch (err) {
     console.error('[GET /api/cuentas/:id]', err);
@@ -7290,9 +7291,26 @@ app.delete('/api/jugadores/:rut', authenticate, requireRole('super_admin'), asyn
 // Un pago "pertenece" al actor si él fue quien pagó (rut_pagos, o su correo
 // si el rut no quedó registrado) o si es de uno de sus propios pupilos —
 // mismo criterio de pertenencia que ya usa /api/jugadores.
-const pagoEsDelActor = (pago, actor, rutsPupilos, correoActor) => {
+// Las otras cuentas de la familia vinculada (cuentas.grupo_familiar, ej. ambos
+// padres socios): cada padre ve y paga la cuota de socio del otro en Mi Cuenta.
+const cuentasFamiliaVinculada = async (rut) => {
+  const { rows } = await pool.query(
+    `SELECT id, rut, nombres, apellido_paterno, correo, es_socio, fecha_ingreso_socio, mes_inicio_cobro,
+            monto_mensual_base, utm_valor_referencia, estado, grupo_familiar
+     FROM cuentas
+     WHERE NULLIF(TRIM(grupo_familiar), '') IS NOT NULL
+       AND TRIM(grupo_familiar) = (SELECT TRIM(grupo_familiar) FROM cuentas WHERE rut = $1 LIMIT 1)
+       AND REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') <> REPLACE(REPLACE(UPPER($1), '.', ''), '-', '')
+       AND LOWER(TRIM(COALESCE(estado, 'activo'))) = 'activo'`,
+    [rut]
+  );
+  return rows;
+};
+
+const pagoEsDelActor = (pago, actor, rutsPupilos, correoActor, rutsFamilia = new Set()) => {
   const rutActor = normalizarRutParaComparar(actor.rut);
   if (rutActor && normalizarRutParaComparar(pago.rut_pagos) === rutActor) return true;
+  if (rutsFamilia.has(normalizarRutParaComparar(pago.rut_pagos))) return true;
   if (correoActor && String(pago.correo_apoderado || '').trim().toLowerCase() === correoActor) return true;
   if (pago.rut_jugador && rutsPupilos.has(normalizarRutParaComparar(pago.rut_jugador))) return true;
   // Pagos legacy sin rut_jugador poblado (solo rut_pagos, ej. de antes del
@@ -7338,13 +7356,15 @@ app.get('/api/pagos-mensualidades', authenticate, async (req, res) => {
     // deportista que el club no marcó autogestionable. Lista vacía y no 403
     // porque la app la pide en la carga inicial para todas las sesiones.
     if (!permisos.perfil) return res.json([]);
-    const [pupilos, cuentaActor] = await Promise.all([
+    const [pupilos, cuentaActor, familia] = await Promise.all([
       obtenerPupilosDeActor(req.actor),
       pool.query('SELECT correo FROM cuentas WHERE rut = $1', [req.actor.rut]),
+      cuentasFamiliaVinculada(req.actor.rut),
     ]);
     const rutsPupilos = new Set(pupilos.map((p) => normalizarRutParaComparar(p.rut_jugador)));
     const correoActor = String(cuentaActor.rows[0]?.correo || '').trim().toLowerCase();
-    res.json(result.rows.filter((pago) => pagoEsDelActor(pago, req.actor, rutsPupilos, correoActor)));
+    const rutsFamilia = new Set(familia.map((c) => normalizarRutParaComparar(c.rut)));
+    res.json(result.rows.filter((pago) => pagoEsDelActor(pago, req.actor, rutsPupilos, correoActor, rutsFamilia)));
   } catch (err) {
     console.error('[GET /api/pagos-mensualidades]', err);
     res.status(500).json({ error: err.message });

@@ -171,6 +171,16 @@ export default function FichaPersonaModal({
       .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es'));
   }, [esJugador, raw, cuentasFamilia, cuentas]);
   const nombreDeCuenta = (c) => `${c?.nombres || ''} ${c?.apellido_paterno || ''}`.trim() || c?.rut || '';
+  // Para pagos: también los deportistas a cargo del otro padre/madre vinculado.
+  const pupilosConFamilia = useMemo(() => {
+    if (!cuentasFamilia.length) return pupilos;
+    const vistos = new Set(pupilos.map((p) => norm(p.rut_jugador)));
+    const extra = jugadores.filter((j) => !vistos.has(norm(j.rut_jugador)) && cuentasFamilia.some((c) => (
+      (norm(j.rut_apoderado) && norm(j.rut_apoderado) === norm(c.rut))
+      || (correo(c.correo).includes('@') && correo(j.correo_apoderado) === correo(c.correo))
+    )));
+    return [...pupilos, ...extra];
+  }, [pupilos, cuentasFamilia, jugadores]);
 
   const vincularFamilia = async () => {
     const otra = cuentas.find((c) => norm(c.rut) === norm(cuentaFamiliaNueva));
@@ -310,19 +320,22 @@ export default function FichaPersonaModal({
     if (!persona) return [];
     if (esJugador) return construirInformeDeportistas({ jugadores: [raw], morosos, pagos });
     const filas = [];
-    if (raw.es_socio) filas.push({ titulo: 'Cuota de socio', fila: construirInformeSocios({ cuentas: [raw], sociosMorosos, pagos })[0] });
-    construirInformeDeportistas({ jugadores: pupilos, morosos, pagos }).forEach((f) => filas.push({ titulo: `Mensualidad · ${f.nombre}`, fila: f }));
+    if (raw.es_socio) filas.push({ titulo: cuentasFamilia.some((c) => c.es_socio) ? `Cuota de socio · ${nombreDeCuenta(raw)}` : 'Cuota de socio', fila: construirInformeSocios({ cuentas: [raw], sociosMorosos, pagos })[0] });
+    // Familia vinculada: la cuota de socio del otro padre/madre también se revisa aquí.
+    cuentasFamilia.filter((c) => c.es_socio).forEach((c) => filas.push({ titulo: `Cuota de socio · ${nombreDeCuenta(c)}`, fila: construirInformeSocios({ cuentas: [c], sociosMorosos, pagos })[0] }));
+    construirInformeDeportistas({ jugadores: pupilosConFamilia, morosos, pagos }).forEach((f) => filas.push({ titulo: `Mensualidad · ${f.nombre}`, fila: f }));
     return filas;
-  }, [persona, esJugador, raw, morosos, sociosMorosos, pagos, pupilos]);
+  }, [persona, esJugador, raw, morosos, sociosMorosos, pagos, pupilosConFamilia, cuentasFamilia]);
 
   const pagosPersona = useMemo(() => {
-    const ruts = new Set(esJugador ? [norm(raw.rut_jugador)] : [norm(raw.rut), ...pupilos.map((p) => norm(p.rut_jugador))]);
+    const ruts = new Set(esJugador ? [norm(raw.rut_jugador)] : [norm(raw.rut), ...pupilosConFamilia.map((p) => norm(p.rut_jugador))]);
+    const rutsCuentas = new Set(esJugador ? [] : [norm(raw.rut), ...cuentasFamilia.map((c) => norm(c.rut))]);
     return pagos
       // Pagos antiguos sin rut_jugador (solo rut_pagos) también saldan meses en la deuda: se listan.
       .filter((p) => ruts.has(norm(p.rut_jugador)) || (!p.rut_jugador && ruts.has(norm(p.rut_pagos)))
-        || (!esJugador && norm(p.rut_pagos) === norm(raw.rut)))
+        || rutsCuentas.has(norm(p.rut_pagos)))
       .sort((a, b) => Number(b.id) - Number(a.id));
-  }, [pagos, esJugador, raw, pupilos]);
+  }, [pagos, esJugador, raw, pupilosConFamilia, cuentasFamilia]);
 
   if (!persona) return null;
 

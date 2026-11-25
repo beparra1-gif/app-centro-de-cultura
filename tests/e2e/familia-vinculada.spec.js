@@ -73,6 +73,43 @@ test('Tesorería muestra a la familia en una sola fila con las dos cuotas de soc
   await expect(fila.getByText('E2E HijaPadre Prueba')).toBeVisible();
 });
 
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+
+test('la ficha de la cuenta muestra la cuota de socio de ambos padres', async ({ page }) => {
+  await iniciarSesion(page, CUENTAS.super_admin.rut);
+  await page.getByRole('button', { name: 'Usuarios y Cuentas' }).first().click();
+  await page.getByPlaceholder('Nombre, RUT, rama o categoría').fill('E2E HijoSocio');
+  await page.getByRole('button', { name: /Ver ficha/ }).first().click();
+  const ficha = page.getByRole('dialog');
+  await ficha.getByRole('tab', { name: /Apoderado/ }).click();
+  await ficha.getByRole('button', { name: /E2E SocioApoderado/ }).click();
+  await ficha.getByRole('tab', { name: /Pagos/ }).click();
+  await expect(ficha.getByText(/Cuota de socio · E2E SocioApoderado/)).toBeVisible();
+  await expect(ficha.getByText(/Cuota de socio · E2E Socio Prueba/)).toBeVisible();
+  await expect(ficha.getByText(/Mensualidad · E2E HijaPadre/)).toBeVisible();
+});
+
+test('la madre paga en un solo comprobante su cuota, la del padre y la mensualidad de una hija', async ({ page }) => {
+  await pool.query('DELETE FROM pagos_mensualidades WHERE rut_pagos = ANY($1)', [[MADRE.rut, PADRE.rut]]);
+  await iniciarSesion(page, MADRE.rut);
+  await abrirMiCuenta(page);
+  const grillaDe = (titulo) => page.locator('.mb-20, .mb-15', { has: page.getByRole('heading', { name: titulo }) }).locator('.grid-12-meses, .lista-12-meses');
+  await grillaDe(/1\. Cuotas de Socio/).locator('button.mes-box', { hasText: 'Ene' }).click();
+  await grillaDe(/Cuota de Socio · E2E Socio/).locator('button.mes-box', { hasText: 'Ene' }).click();
+  await grillaDe(/Mensualidad Deportista: E2E/).first().locator('button.mes-box', { hasText: 'Ene' }).click();
+  const cuentaSocios = page.getByRole('region', { name: 'Cuenta para cuota de socio' });
+  await expect(cuentaSocios).toContainText('Transfiere');
+  await page.locator('input[type="file"]').last().setInputFiles({ name: 'comprobante.png', mimeType: 'image/png', buffer: PNG });
+  await expect(page.getByText(/ha recibido tu comprobante/i)).toBeVisible({ timeout: 15000 });
+  const { rows } = await pool.query(
+    `SELECT rut_pagos, concepto_pago, comprobante_url FROM pagos_mensualidades WHERE rut_pagos = ANY($1) AND meses_correspondientes = 'ene-2026' ORDER BY concepto_pago, rut_pagos`,
+    [[MADRE.rut, PADRE.rut]]
+  );
+  expect(rows.filter((r) => r.concepto_pago === 'Mensualidad Socio').map((r) => r.rut_pagos).sort()).toEqual([MADRE.rut, PADRE.rut].sort());
+  expect(rows.some((r) => r.concepto_pago === 'Mensualidad')).toBe(true);
+  expect(new Set(rows.map((r) => r.comprobante_url)).size).toBe(1);
+});
+
 for (const [quien, cuenta] of [['el padre', PADRE], ['la madre', MADRE]]) {
   test(`${quien} ve a las dos hijas como sus pupilos`, async ({ page }) => {
     const respuesta = page.waitForResponse((r) => r.url().endsWith('/api/jugadores') && r.request().method() === 'GET');

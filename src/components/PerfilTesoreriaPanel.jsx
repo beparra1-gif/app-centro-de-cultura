@@ -12,6 +12,7 @@ import { CertificadosFamilia } from './Certificados';
 import { normalizarRol } from '../security/accessControl';
 import { partesFechaCalendario } from '../utils/fechas';
 import { asignarAbonoEnOrden, esPagoMatricula, resumirAbonosMes } from '../utils/abonosMes';
+import { estaActivo } from '../utils/estadoActivo';
 
 // Pago de cuota de socio (concepto "Mensualidad Socio"); todo lo demás es
 // mensualidad de deportista. Mismo criterio que App.jsx y SuperAdminPanel.
@@ -143,6 +144,8 @@ function PerfilTesoreriaPanel({
   // pupilo; la de Cuota Socio es independiente para que el socio/apoderado
   // pueda pagar solo una, solo la otra, o ambas.
   const [mesesSocioSeleccionados, setMesesSocioSeleccionados] = useState(() => mesesSocioIniciales);
+  // Cuota de socio de las otras cuentas de la familia vinculada: { [rut]: number[] }.
+  const [mesesOtrosSocios, setMesesOtrosSocios] = useState({});
 
   const esVistaAdmin = rolUsuario === 'admin' || rolUsuario === 'super_admin';
   // La familia ve primero su estado (al día / debe) y abre el detalle con un toque.
@@ -239,19 +242,27 @@ function PerfilTesoreriaPanel({
       return Boolean(correoCuenta && correoApoderado && correoCuenta === correoApoderado);
     }) || null
     : null);
+  // Familia vinculada (cuentas.grupo_familiar, ej. ambos padres socios): sus
+  // pupilos y su cuota de socio se ven y pagan aquí mismo, con un solo comprobante.
+  const grupoFamiliar = String(cuentaActual?.grupo_familiar || '').trim();
+  const familiaVinculada = esVistaAdmin
+    ? (grupoFamiliar ? (cuentasAdmin || []).filter((c) => String(c.grupo_familiar || '').trim() === grupoFamiliar
+      && normalizarRutCuenta(c.rut) !== normalizarRutCuenta(cuentaActual?.rut) && estaActivo(c)) : [])
+    : (Array.isArray(cuentaActual?.familia_vinculada) ? cuentaActual.familia_vinculada : []);
+  const otrosSocios = familiaVinculada.filter((c) => c.es_socio);
   // Admin: al revisar una cuenta se ven TODOS sus pupilos (antes solo el
   // deportista buscado: una socia con 2 hijos solo mostraba a uno). El
   // vínculo es el mismo del backend: rut o correo del apoderado, o la cuenta
   // propia del deportista que se autogestiona.
   const pupilosDeCuentaAdmin = (esVistaAdmin && cuentaActual && Array.isArray(pupilosDisponibles))
-    ? pupilosDisponibles.filter((p) => {
-      const rutCuenta = normalizarRutCuenta(cuentaActual.rut || '');
-      const correoCuenta = String(cuentaActual.correo || '').trim().toLowerCase();
+    ? pupilosDisponibles.filter((p) => [cuentaActual, ...familiaVinculada].some((c) => {
+      const rutCuenta = normalizarRutCuenta(c.rut || '');
+      const correoCuenta = String(c.correo || '').trim().toLowerCase();
       if (!rutCuenta) return false;
       if (normalizarRutCuenta(p.rut_apoderado || '') === rutCuenta) return true;
       if (normalizarRutCuenta(p.rut || '') === rutCuenta) return true;
       return Boolean(correoCuenta && String(p.correo_apoderado || '').trim().toLowerCase() === correoCuenta);
-    })
+    }))
     : [];
   const pupilosActivos = esVistaAdmin
     ? (pupilosDeCuentaAdmin.length > 0 ? pupilosDeCuentaAdmin : (pupiloActivo ? [pupiloActivo] : []))
@@ -408,17 +419,18 @@ function PerfilTesoreriaPanel({
   // Inicio de cobro de la cuota de socio: el de la CUENTA (mes_inicio_cobro o
   // fecha_ingreso_socio), no la fecha de ingreso del hijo como antes. Misma
   // regla que getMesIngresoSocio en App.jsx.
-  const inicioCobroSocio = (() => {
-    const mesDesdeCampo = getMesNumero(cuentaActual?.mes_inicio_cobro || '');
+  const inicioCobroSocioDe = (cuenta) => {
+    const mesDesdeCampo = getMesNumero(cuenta?.mes_inicio_cobro || '');
     if (mesDesdeCampo) return mesDesdeCampo;
-    const partes = partesFechaCalendario(cuentaActual?.fecha_ingreso_socio);
+    const partes = partesFechaCalendario(cuenta?.fecha_ingreso_socio);
     if (partes) {
       if (partes.anio > anioObjetivo) return 13;
       if (partes.anio < anioObjetivo) return 1;
       return partes.mes;
     }
     return 1;
-  })();
+  };
+  const inicioCobroSocio = inicioCobroSocioDe(cuentaActual);
 
   const now = new Date();
   const fechaCorte = new Date(now.getFullYear(), now.getMonth(), 0);
@@ -499,18 +511,35 @@ function PerfilTesoreriaPanel({
     };
   };
   const mesesVisuales = mesesBase.map((mes, idx) => ({ id: idx + 1, mes, ...resumenMesSocio(idx + 1) }));
+
+  // Mismo cálculo que resumenMesSocio, para la cuota de socio de otra cuenta de la familia.
+  const resumenMesOtroSocio = (cuenta, mesNumero) => {
+    const rut = normalizarRutComparacion(cuenta.rut);
+    const pagosMes = (pagosMensualidadesAdmin || [])
+      .filter((p) => !esPagoInvalidoLegacy(p) && esPagoCuotaSocio(p) && normalizarRutComparacion(p.rut_pagos) === rut && monthFromPago(p) === mesNumero)
+      .map((p) => ({ estado: p.estado_pago, monto: p.monto_total_pagado }));
+    const base = Number(cuenta.monto_mensual_base || 0);
+    const utmCuenta = Number(cuenta.utm_valor_referencia || 0);
+    const cuota = base > 0 ? base : Math.round((utmCuenta || Number(utmHistorico?.[mesNumero]) || Number(utmVigente?.valor) || 71649) * 0.3);
+    const resumen = resumirAbonosMes(pagosMes, cuota);
+    return { ...resumen, estado: resolverEstadoMes({ resumen, sinCargo: false, mesNumero, inicioCobro: inicioCobroSocioDe(cuenta), limiteMesDeuda }) };
+  };
+  const totalOtrosSociosSeleccionado = otrosSocios.reduce((acc, c) => (
+    acc + (mesesOtrosSocios[c.rut] || []).reduce((suma, mesNum) => suma + resumenMesOtroSocio(c, mesNum).faltante, 0)
+  ), 0);
+  const totalMesesOtrosSocios = otrosSocios.reduce((acc, c) => acc + (mesesOtrosSocios[c.rut] || []).length, 0);
   const nombreMesActual = NOMBRES_MESES_COMPLETOS[mesActual - 1];
 
   const tarifaRedondeada = Math.round(tarifaMensual);
-  const totalSocioSeleccionado = esSocio
+  const totalSocioSeleccionado = (esSocio
     ? mesesSocioSeleccionados.reduce((suma, mesNum) => suma + resumenMesSocio(mesNum).faltante, 0)
-    : 0;
+    : 0) + totalOtrosSociosSeleccionado;
   const totalMesesJugadorSeleccionados = pupilosActivos.reduce((acc, p) => acc + (mesesSeleccionados[p.rut] || []).length, 0);
   const totalJugadorSeleccionado = pupilosActivos.reduce((acc, p) => (
     acc + (mesesSeleccionados[p.rut] || []).reduce((suma, mesNum) => suma + resumenMesPupilo(p, mesNum).faltante, 0)
   ), 0);
   const totalSeleccionado = totalSocioSeleccionado + totalJugadorSeleccionado;
-  const totalMesesSeleccionados = mesesSocioSeleccionados.length + totalMesesJugadorSeleccionados;
+  const totalMesesSeleccionados = mesesSocioSeleccionados.length + totalMesesOtrosSocios + totalMesesJugadorSeleccionados;
   const totalFinalPagar = tipoPago === 'completo' ? totalSeleccionado : (Number(montoAbono) || 0);
   // Con la barra fija de pago visible se agrega espacio al final de
   // .ios-main para que no tape el resumen ni el botón de abajo.
@@ -542,6 +571,8 @@ function PerfilTesoreriaPanel({
   };
 
   const toggleMesSocio = (idMes, estado) => toggleMesEnLista(idMes, estado, mesesSocioSeleccionados, setMesesSocioSeleccionados);
+  const toggleMesOtroSocio = (rut, idMes, estado) => toggleMesEnLista(idMes, estado, mesesOtrosSocios[rut] || [],
+    (lista) => setMesesOtrosSocios((prev) => ({ ...prev, [rut]: lista })));
 
   // Cada pupilo tiene su propio arreglo de meses dentro de mesesSeleccionados
   // (clave = rut del pupilo) — así marcar un mes en la tarjeta de un hermano
@@ -641,6 +672,11 @@ function PerfilTesoreriaPanel({
           clave: `socio-${mesNumero}`, mesNumero, orden: mesNumero * 10, concepto: 'Mensualidad Socio', rutJugador: null,
           faltante: resumenMesSocio(mesNumero).faltante,
         })),
+        // Cuota de socio del otro padre/madre vinculado: se registra a SU rut.
+        ...otrosSocios.flatMap((c) => (mesesOtrosSocios[c.rut] || []).map((mesNumero) => ({
+          clave: `socio-${c.rut}-${mesNumero}`, mesNumero, orden: mesNumero * 10, concepto: 'Mensualidad Socio', rutJugador: null,
+          rutPagos: c.rut, correo: c.correo, faltante: resumenMesOtroSocio(c, mesNumero).faltante,
+        }))),
         ...pupilosActivos.flatMap((pupilo, idxPupilo) => (mesesSeleccionados[pupilo.rut] || []).map((mesNumero) => ({
           clave: `${pupilo.rut}-${mesNumero}`, mesNumero, orden: mesNumero * 10 + idxPupilo + 1, concepto: 'Mensualidad', rutJugador: pupilo.rut,
           faltante: resumenMesPupilo(pupilo, mesNumero).faltante,
@@ -660,6 +696,7 @@ function PerfilTesoreriaPanel({
         const mesTexto = String(mesesBase[item.mesNumero - 1] || '').toLowerCase();
         const pagoCreado = await api.pagosMensualidadesAPI.create({
           ...payloadBase,
+          ...(item.rutPagos ? { rut_pagos: item.rutPagos, correo_apoderado: item.correo || payloadBase.correo_apoderado } : {}),
           rut_jugador: item.rutJugador,
           concepto_pago: item.concepto,
           meses_correspondientes: `${mesTexto}-${anioObjetivo}`,
@@ -930,6 +967,31 @@ function PerfilTesoreriaPanel({
           </div>
         )}
 
+        {otrosSocios.map((c) => {
+          const meses = mesesBase.map((mes, idx) => ({ id: idx + 1, mes, ...resumenMesOtroSocio(c, idx + 1) }));
+          return (
+            <div key={`socio-${c.rut}`} className="mb-20">
+              <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: 'var(--texto-heading)', fontWeight: '800' }}>
+                1. Cuota de Socio · {`${c.nombres || ''} ${c.apellido_paterno || ''}`.trim() || c.rut} <span className="payment-chip">Familia vinculada</span>
+              </h4>
+              <div className={pagoViewMode === 'grid' ? 'grid-12-meses' : 'lista-12-meses'}>
+                {meses.map((item) => (
+                  <MesBox
+                    key={item.id}
+                    mesNumero={item.id}
+                    nombre={item.mes}
+                    estado={item.estado}
+                    seleccionado={(mesesOtrosSocios[c.rut] || []).includes(item.id)}
+                    esActual={item.id === mesActual}
+                    faltante={item.faltante}
+                    onClick={() => toggleMesOtroSocio(c.rut, item.id, item.estado)}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
         {esVistaAdmin && cuentaActual && pupilosActivos.length === 0 && (
           <p style={{ margin: '0 0 15px 0', fontSize: '12px', color: 'var(--texto-secundario)', fontWeight: '700', fontStyle: 'italic' }}>
             Este socio no tiene deportistas asociados — solo aplica la Cuota de Socio de arriba.
@@ -1072,7 +1134,7 @@ function PerfilTesoreriaPanel({
             {pupilosActivos.length > 0 && (
               <CuentaTransferencia cuenta={CUENTA_DEPORTISTAS} monto={tipoPago === 'completo' ? totalJugadorSeleccionado : 0} />
             )}
-            {esSocio && cuotaSocioAplicada > 0 && (
+            {((esSocio && cuotaSocioAplicada > 0) || otrosSocios.length > 0) && (
               <CuentaTransferencia cuenta={CUENTA_SOCIOS} monto={tipoPago === 'completo' ? totalSocioSeleccionado : 0} />
             )}
             <div style={{ marginTop: '10px', border: '1px solid rgba(0,122,255,0.2)', borderRadius: 'var(--radius-md)', padding: '12px', background: 'linear-gradient(180deg, rgba(0,122,255,0.07), rgba(0,122,255,0.02))' }}>
@@ -1138,7 +1200,7 @@ function PerfilTesoreriaPanel({
             <Clock size={40} color="var(--gris-secundario)" strokeWidth={1.5} style={{ margin: '0 auto' }} />
             <h3 style={{ color: '#FF9500', margin: '15px 0 10px 0', fontSize: '20px', fontWeight: '900' }}>Pago en Revisión</h3>
             <p style={{ fontSize: '14px', margin: 0, color: 'var(--texto-secundario)', lineHeight: '1.5' }}>Tesorería ha recibido tu comprobante. Será validado a la brevedad y recibirás una notificación.</p>
-            <button className="btn-secondary mt-20" style={{ color: '#FF9500', background: 'rgba(255,149,0,0.1)' }} onClick={() => { setComprobanteSubido(false); setMesesSeleccionados({}); setMesesSocioSeleccionados([]); setMontoAbono(''); setArchivoComprobante(null); setErrorComprobante(''); }}>
+            <button className="btn-secondary mt-20" style={{ color: '#FF9500', background: 'rgba(255,149,0,0.1)' }} onClick={() => { setComprobanteSubido(false); setMesesSeleccionados({}); setMesesSocioSeleccionados([]); setMesesOtrosSocios({}); setMontoAbono(''); setArchivoComprobante(null); setErrorComprobante(''); }}>
               Entendido, volver
             </button>
           </div>
