@@ -54,7 +54,7 @@ export default function MuroCumpleanos() {
         <div className="mc-hoy">
           {deHoy.map((c) => (
             <div key={c.id} className="mc-hoy-persona">
-              <FotoPersona foto={c.foto} nombre={c.nombre} size={72} />
+              <FotoPersona foto={c.foto} nombre={c.nombre} size={110} />
               <div>
                 <span className="mc-hoy-etiqueta">¡Hoy está de cumpleaños!</span>
                 <strong>{c.nombre}</strong>
@@ -71,7 +71,7 @@ export default function MuroCumpleanos() {
           <div className="mc-tira">
             {tira.map((c) => (
               <div key={c.id} className={`mc-persona ${c.dia < diaHoy ? 'pasado' : ''}`}>
-                <FotoPersona foto={c.foto} nombre={c.nombre} size={48} />
+                <FotoPersona foto={c.foto} nombre={c.nombre} size={76} />
                 <strong>{c.nombre.split(' ')[0]}</strong>
                 <small>{c.dia} de {MESES[mes - 1].slice(0, 3)}</small>
               </div>

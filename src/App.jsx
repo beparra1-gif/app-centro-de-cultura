@@ -640,7 +640,7 @@ function App() {
   // 3. LÓGICA BASE Y EFECTOS
   // ==========================================
 
-  const construirMorososDesdePagos = (pagos = [], jugadoresTodos = [], cuentas = []) => {
+  const construirMorososDesdePagos = (pagos = [], jugadoresTodos = [], cuentas = [], cuentaPorDefecto = null) => {
     // Inactivos/baja no deben ni aparecer como deudores ni contar como
     // hermanos para la tarifa familiar.
     const jugadores = soloActivos(jugadoresTodos);
@@ -794,7 +794,11 @@ function App() {
       const cuentaFamilia = pupilosFamilia
         .map((p) => cuentaPorRut.get(normalizarRutComparacion(p.rut_apoderado))
           || cuentaPorCorreo.get(normalizarCorreo(p.correo_apoderado)))
-        .find(Boolean);
+        .find(Boolean)
+        // Vista familia: todos sus pupilos son de su cuenta aunque la ficha
+        // apunte al otro padre o a otro correo (antes perdía la tarifa rebajada
+        // y salía con deuda lo que en Tesorería estaba pagado).
+        || cuentaPorDefecto;
       const perfilPrincipalFamilia = String(cuentaFamilia?.perfil_principal || cuentaFamilia?.rol || '').toLowerCase();
       const parametrosFamilia = {
         pupilosFamilia,
@@ -2207,7 +2211,7 @@ function App() {
     // La cuota del deportista también depende de la cuenta de la familia
     // (socio+apoderado paga tarifa rebajada, monto acordado, etc.).
     setMorososAdmin(construirMorososDesdePagos(
-      pagosMensualidadesAdmin || [], jugadoresAdminRef.current, [cuentaPropia]
+      pagosMensualidadesAdmin || [], jugadoresAdminRef.current, [cuentaPropia], cuentaPropia
     ));
     setSociosMorosos(construirSociosMorosos(
       pagosMensualidadesAdmin || [], [cuentaPropia], utmVigenteRef.current, utmHistoricoRef.current
