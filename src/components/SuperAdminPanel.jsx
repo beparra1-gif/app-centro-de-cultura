@@ -34,6 +34,8 @@ import {
   Video,
   X,
   XSquare,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import * as api from '../api/client';
 import { showToast } from '../utils/toast';
@@ -515,6 +517,7 @@ function SuperAdminPanel({
   });
   const [torneosDisponibles, setTorneosDisponibles] = useState([]);
   const [comprobanteEnVista, setComprobanteEnVista] = useState(null); // { url, esImagen } | null
+  const [zoomComprobante, setZoomComprobante] = useState(1);
   useModalAccesible(Boolean(comprobanteEnVista), () => setComprobanteEnVista(null));
 
   // Categorías disponibles según rama (catálogo compartido, ver src/utils/categoriasDeportivas.js)
@@ -3745,7 +3748,7 @@ function SuperAdminPanel({
                   return esImagen ? (
                     <button
                       type="button"
-                      onClick={() => setComprobanteEnVista({ url: urlComprobante, esImagen: true })}
+                      onClick={() => { setZoomComprobante(1); setComprobanteEnVista({ url: urlComprobante, esImagen: true }); }}
                       className="mb-15"
                       style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: 'rgba(0,122,255,0.05)', border: '1px solid rgba(0,122,255,0.2)', borderRadius: 'var(--radius-md)', cursor: 'pointer', width: '100%', textAlign: 'left' }}
                     >
@@ -3755,7 +3758,7 @@ function SuperAdminPanel({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setComprobanteEnVista({ url: urlComprobante, esImagen: false })}
+                      onClick={() => { setZoomComprobante(1); setComprobanteEnVista({ url: urlComprobante, esImagen: false }); }}
                       className="foto-upload-box mb-15"
                       style={{ padding: '15px', background: 'rgba(0,122,255,0.05)', borderColor: 'rgba(0,122,255,0.2)', cursor: 'pointer', width: '100%' }}
                     >
@@ -6053,34 +6056,38 @@ function SuperAdminPanel({
         );
       })()}
 
-      {comprobanteEnVista && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Comprobante de pago"
-          className="modal-animado-fondo"
-          style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.75)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-          onClick={() => setComprobanteEnVista(null)}
-        >
-          <div
-            className="modal-animado"
-            style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '16px', maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: '0 20px 50px rgba(0,0,0,0.4)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong style={{ fontSize: '14px' }}>Comprobante de pago</strong>
-              <button onClick={() => setComprobanteEnVista(null)} style={{ background: 'rgba(120,120,128,0.10)', border: 'none', cursor: 'pointer', width: '34px', height: '34px', borderRadius: 'var(--radius-pill)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Cerrar"><X size={16} /></button>
+      {/* Portal: dentro de .ios-main el position:fixed quedaba recortado. */}
+      {comprobanteEnVista && createPortal(
+        <div className="cv-fondo" role="presentation" onClick={() => setComprobanteEnVista(null)}>
+          <div className="cv-ventana" role="dialog" aria-modal="true" aria-label="Comprobante de pago" onClick={(e) => e.stopPropagation()}>
+            <div className="cv-barra">
+              <strong>Comprobante de pago</strong>
+              {comprobanteEnVista.esImagen && (
+                <div className="cv-zoom" role="group" aria-label="Zoom">
+                  <button type="button" onClick={() => setZoomComprobante((z) => Math.max(1, z - 0.5))} disabled={zoomComprobante <= 1} aria-label="Alejar"><ZoomOut size={16} /></button>
+                  <button type="button" onClick={() => setZoomComprobante(1)} aria-label="Ajustar a la ventana">{Math.round(zoomComprobante * 100)}%</button>
+                  <button type="button" onClick={() => setZoomComprobante((z) => Math.min(4, z + 0.5))} disabled={zoomComprobante >= 4} aria-label="Acercar"><ZoomIn size={16} /></button>
+                </div>
+              )}
+              <button type="button" className="cv-cerrar" onClick={() => setComprobanteEnVista(null)} aria-label="Cerrar"><X size={16} /></button>
             </div>
-            {comprobanteEnVista.esImagen ? (
-              <img src={comprobanteEnVista.url} alt="Comprobante de pago" style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain', borderRadius: 'var(--radius-sm)' }} />
-            ) : (
-              <iframe src={comprobanteEnVista.url} title="Comprobante de pago" style={{ width: '80vw', height: '75vh', border: 'none', borderRadius: 'var(--radius-sm)' }} />
-            )}
-            <a href={comprobanteEnVista.url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--azul-electrico)', textAlign: 'center', fontWeight: '700' }}>
-              Abrir en una pestaña nueva
-            </a>
+            <div className="cv-lienzo">
+              {comprobanteEnVista.esImagen ? (
+                <img
+                  src={comprobanteEnVista.url}
+                  alt="Comprobante de pago"
+                  className={zoomComprobante > 1 ? 'con-zoom' : ''}
+                  style={zoomComprobante > 1 ? { width: `${zoomComprobante * 100}%` } : undefined}
+                  onClick={() => setZoomComprobante((z) => (z > 1 ? 1 : 2))}
+                />
+              ) : (
+                <iframe src={comprobanteEnVista.url} title="Comprobante de pago" />
+              )}
+            </div>
+            <a href={comprobanteEnVista.url} target="_blank" rel="noreferrer" className="cv-pestana">Abrir en una pestaña nueva</a>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
