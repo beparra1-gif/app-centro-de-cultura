@@ -6,6 +6,8 @@ import { calcularCuotaDeportistasFamilia, noDebeMensualidad, obtenerCuotaJugador
 import { showToast } from '../utils/toast';
 import * as api from '../api/client';
 import LogoAvatar from './LogoAvatar';
+import CuentaTransferencia from './CuentaTransferencia';
+import { CUENTA_DEPORTISTAS, CUENTA_SOCIOS } from '../legal/cuentasBancarias';
 import { CertificadosFamilia } from './Certificados';
 import { normalizarRol } from '../security/accessControl';
 import { partesFechaCalendario } from '../utils/fechas';
@@ -1066,6 +1068,13 @@ function PerfilTesoreriaPanel({
               <span>Monto a Transferir</span>
               <h2 style={{ fontSize: '38px' }}>${totalFinalPagar.toLocaleString('es-CL')}</h2>
             </div>
+            {/* Mensualidad y cuota de socio van a cuentas distintas: cada una con su monto. */}
+            {pupilosActivos.length > 0 && (
+              <CuentaTransferencia cuenta={CUENTA_DEPORTISTAS} monto={tipoPago === 'completo' ? totalJugadorSeleccionado : 0} />
+            )}
+            {esSocio && cuotaSocioAplicada > 0 && (
+              <CuentaTransferencia cuenta={CUENTA_SOCIOS} monto={tipoPago === 'completo' ? totalSocioSeleccionado : 0} />
+            )}
             <div style={{ marginTop: '10px', border: '1px solid rgba(0,122,255,0.2)', borderRadius: 'var(--radius-md)', padding: '12px', background: 'linear-gradient(180deg, rgba(0,122,255,0.07), rgba(0,122,255,0.02))' }}>
               {/* Un solo botón: al tocarlo abre el selector nativo de archivos
                   (galería/cámara/PDF), y apenas se elige uno se envía solo —
