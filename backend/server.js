@@ -3517,7 +3517,8 @@ app.get('/api/cumpleanos', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT 'jugador' AS tipo, REPLACE(REPLACE(UPPER(rut_jugador), '.', ''), '-', '') AS clave,
-              TRIM(CONCAT(nombres, ' ', apellido_paterno)) AS nombre,
+              -- Primer nombre + primer apellido (las fichas traen todos los nombres de pila).
+              TRIM(CONCAT(SPLIT_PART(TRIM(nombres), ' ', 1), ' ', apellido_paterno)) AS nombre,
               EXTRACT(DAY FROM fecha_nacimiento)::int AS dia,
               categoria, NULLIF(TRIM(foto_jugador), '') AS foto
        FROM jugadores
@@ -3525,7 +3526,7 @@ app.get('/api/cumpleanos', authenticate, async (req, res) => {
          AND LOWER(TRIM(COALESCE(estado, ''))) <> ALL($2)
        UNION ALL
        SELECT 'cuenta', REPLACE(REPLACE(UPPER(c.rut), '.', ''), '-', ''),
-              TRIM(CONCAT(c.nombres, ' ', c.apellido_paterno)),
+              TRIM(CONCAT(SPLIT_PART(TRIM(c.nombres), ' ', 1), ' ', c.apellido_paterno)),
               EXTRACT(DAY FROM c.fecha_nacimiento)::int,
               'Staff técnico', NULLIF(TRIM(c.foto_perfil_url), '')
        FROM cuentas c

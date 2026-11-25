@@ -11,11 +11,12 @@ import { absolutizarLogoUrl } from '../utils/logoResolver';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const iniciales = (nombre = '') => nombre.split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
 
-export function FotoPersona({ foto, nombre, size }) {
+// rectangular: formato retrato (alto = 1,3 × ancho) para que la foto se vea completa.
+export function FotoPersona({ foto, nombre, size, rectangular = false }) {
   const [fallo, setFallo] = useState(false);
   const url = foto ? absolutizarLogoUrl(foto) : '';
   return (
-    <span className="mc-foto" style={{ width: size, height: size, fontSize: Math.round(size / 2.8) }} aria-hidden="true">
+    <span className={`mc-foto ${rectangular ? 'rect' : ''}`} style={{ width: size, height: rectangular ? Math.round(size * 1.3) : size, fontSize: Math.round(size / 2.8) }} aria-hidden="true">
       {url && !fallo ? <img src={url} alt="" loading="lazy" onError={() => setFallo(true)} /> : iniciales(nombre)}
     </span>
   );
@@ -54,7 +55,7 @@ export default function MuroCumpleanos() {
         <div className="mc-hoy">
           {deHoy.map((c) => (
             <div key={c.id} className="mc-hoy-persona">
-              <FotoPersona foto={c.foto} nombre={c.nombre} size={110} />
+              <FotoPersona foto={c.foto} nombre={c.nombre} size={110} rectangular />
               <div>
                 <span className="mc-hoy-etiqueta">¡Hoy está de cumpleaños!</span>
                 <strong>{c.nombre}</strong>
@@ -71,8 +72,9 @@ export default function MuroCumpleanos() {
           <div className="mc-tira">
             {tira.map((c) => (
               <div key={c.id} className={`mc-persona ${c.dia < diaHoy ? 'pasado' : ''}`}>
-                <FotoPersona foto={c.foto} nombre={c.nombre} size={76} />
-                <strong>{c.nombre.split(' ')[0]}</strong>
+                <FotoPersona foto={c.foto} nombre={c.nombre} size={88} rectangular />
+                <strong>{c.nombre}</strong>
+                {c.categoria && <small className="mc-categoria">{c.categoria}</small>}
                 <small>{c.dia} de {MESES[mes - 1].slice(0, 3)}</small>
               </div>
             ))}

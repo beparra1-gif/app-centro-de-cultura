@@ -4200,6 +4200,8 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .mc-cabecera svg { color: var(--azul-electrico); }
 .mc-foto { flex-shrink: 0; display: inline-grid; place-items: center; overflow: hidden; border-radius: 50%; background: linear-gradient(135deg, rgba(0,122,255,0.14), rgba(52,199,89,0.14)); color: var(--azul-electrico); font-weight: 900; border: 2px solid var(--blanco-tarjeta); box-shadow: 0 0 0 2px var(--borde-suave); }
 .mc-foto img { width: 100%; height: 100%; object-fit: cover; }
+.mc-foto.rect { border-radius: var(--radius-md); }
+.mc-persona .mc-categoria { font-weight: 700; color: var(--azul-electrico); }
 .mc-hoy { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .mc-hoy-persona { display: flex; align-items: center; gap: 14px; padding: 12px; border-radius: var(--radius-md); background: linear-gradient(135deg, rgba(0,122,255,0.08), rgba(255,149,0,0.10)); }
 .mc-hoy-persona .mc-foto { box-shadow: 0 0 0 3px var(--azul-electrico); }
@@ -4209,8 +4211,8 @@ body.con-barra-pago .ios-main { padding-bottom: 190px !important; }
 .mc-hoy-persona small { font-size: 12px; color: var(--texto-secundario); }
 .mc-subtitulo { margin: 12px 0 6px; font-size: 12px; font-weight: 800; color: var(--texto-secundario); }
 .mc-tira { display: flex; gap: 12px; overflow-x: auto; padding: 2px 2px 6px; scroll-snap-type: x proximity; }
-.mc-persona { flex: 0 0 96px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; scroll-snap-align: start; }
-.mc-persona strong { font-size: 13px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--texto-principal); }
+.mc-persona { flex: 0 0 104px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; scroll-snap-align: start; }
+.mc-persona strong { font-size: 13px; max-width: 104px; line-height: 1.2; overflow-wrap: anywhere; color: var(--texto-principal); }
 .mc-persona small { font-size: 12px; color: var(--texto-secundario); }
 .mc-persona.pasado { opacity: 0.6; }
 .mc-ver-todos { margin-top: 6px; display: inline-flex; align-items: center; gap: 4px; min-height: var(--toque-min); padding: 6px 4px; background: none; border: none; color: var(--azul-electrico); font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
