@@ -76,7 +76,7 @@ import SettingsPanel from './SettingsPanel';
 import CampoCategoria from './CampoCategoria';
 import { useJugadoresDeCategoriasAsignadas } from '../utils/categoriasStaff';
 import { categoriaEfectiva } from '../utils/categoriaPorEdad';
-import { absolutizarLogoUrl } from '../utils/logoResolver';
+import { absolutizarLogoUrl, esNuestroClub } from '../utils/logoResolver';
 import { fechaLocalISO, hoyLocalISO } from '../utils/fechas';
 import useModalAccesible from '../utils/useModalAccesible';
 
@@ -1689,6 +1689,9 @@ function SuperAdminPanel({
     setPartidoEditandoId(null);
   };
 
+  // Nuestro club lleva su logo sea local o visita, aunque el campo esté vacío.
+  const logoEquipo = (nombre, url) => url || (esNuestroClub(nombre) ? '/logos/club-logo.png' : '');
+
   const esPartidoPrueba = (partido) => {
     const texto = [
       partido?.equipo_local,
@@ -1714,8 +1717,9 @@ function SuperAdminPanel({
       const payload = {
         equipo_local,
         equipo_visitante,
-        logo_local_url: logo_local_url || null,
-        logo_visitante_url: logo_visitante_url || null,
+        // El club puede jugar de local o de visita: su logo se completa en cualquiera de los dos lados.
+        logo_local_url: logo_local_url || (esNuestroClub(equipo_local) ? '/logos/club-logo.png' : null),
+        logo_visitante_url: logo_visitante_url || (esNuestroClub(equipo_visitante) ? '/logos/club-logo.png' : null),
         torneo_nombre: torneo_nombre || null,
         torneo_logo_url: torneo_logo_url || null,
         id_torneo: id_torneo || null,
@@ -5644,7 +5648,7 @@ function SuperAdminPanel({
               )}
               {/* Local */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flex: 1, textAlign: 'center' }}>
-                <LogoAvatar nombre={formResultado.equipo_local || 'Local'} logoUrl={formResultado.logo_local_url} size={52} borderRadius="14px" />
+                <LogoAvatar nombre={formResultado.equipo_local || 'Local'} logoUrl={logoEquipo(formResultado.equipo_local, formResultado.logo_local_url)} size={52} borderRadius="14px" />
                 <span style={{ fontSize: '12px', fontWeight: '800', opacity: 0.9 }}>{formResultado.equipo_local || 'Equipo Local'}</span>
               </div>
               {/* Marcador */}
@@ -5664,7 +5668,7 @@ function SuperAdminPanel({
               </div>
               {/* Visitante */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flex: 1, textAlign: 'center' }}>
-                <LogoAvatar nombre={formResultado.equipo_visitante || 'Visitante'} logoUrl={formResultado.logo_visitante_url} size={52} borderRadius="14px" />
+                <LogoAvatar nombre={formResultado.equipo_visitante || 'Visitante'} logoUrl={logoEquipo(formResultado.equipo_visitante, formResultado.logo_visitante_url)} size={52} borderRadius="14px" />
                 <span style={{ fontSize: '12px', fontWeight: '800', opacity: 0.9 }}>{formResultado.equipo_visitante || 'Equipo Visitante'}</span>
               </div>
             </div>
@@ -5678,17 +5682,34 @@ function SuperAdminPanel({
                 label="Equipo local"
                 nombre={formResultado.equipo_local}
                 onNombre={(v) => setFormResultado((p) => ({ ...p, equipo_local: v }))}
-                logoUrl={formResultado.logo_local_url}
+                logoUrl={logoEquipo(formResultado.equipo_local, formResultado.logo_local_url)}
                 onLogoUrl={(v) => setFormResultado((p) => ({ ...p, logo_local_url: v }))}
                 tipo="club"
                 placeholder="Nombre equipo local"
                 extraOptions={opcionesLogosResultados}
               />
+              <div className="form-group rs-intercambiar">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setFormResultado((p) => ({
+                    ...p,
+                    equipo_local: p.equipo_visitante,
+                    equipo_visitante: p.equipo_local,
+                    logo_local_url: p.logo_visitante_url,
+                    logo_visitante_url: p.logo_local_url,
+                    pts_local: p.pts_visitante,
+                    pts_visitante: p.pts_local,
+                  }))}
+                >
+                  ⇄ Intercambiar local / visita
+                </button>
+              </div>
               <LogoPicker
                 label="Equipo visitante *"
                 nombre={formResultado.equipo_visitante}
                 onNombre={(v) => setFormResultado((p) => ({ ...p, equipo_visitante: v }))}
-                logoUrl={formResultado.logo_visitante_url}
+                logoUrl={logoEquipo(formResultado.equipo_visitante, formResultado.logo_visitante_url)}
                 onLogoUrl={(v) => setFormResultado((p) => ({ ...p, logo_visitante_url: v }))}
                 tipo="club"
                 placeholder="Nombre equipo visitante"

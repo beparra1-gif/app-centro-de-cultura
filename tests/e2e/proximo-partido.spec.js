@@ -6,11 +6,12 @@ import { CUENTAS, JUGADORES, PASSWORD_PRUEBA, crearPool, crearDatosPrueba, limpi
 const pool = crearPool();
 const API = process.env.E2E_API_URL || 'http://localhost:3000/api';
 const RIVAL = 'E2E Rival Próximo';
+const LOCAL_RIVAL = 'E2E Local Rival';
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(120000);
 test.beforeAll(async () => { await crearDatosPrueba(pool); });
 test.afterAll(async () => {
-  await pool.query('DELETE FROM partidos_live WHERE equipo_visitante = $1', [RIVAL]);
+  await pool.query('DELETE FROM partidos_live WHERE equipo_visitante = $1 OR equipo_local = $2', [RIVAL, LOCAL_RIVAL]);
   await limpiarDatosPrueba(pool);
   await pool.end();
 });
@@ -66,4 +67,20 @@ test('después se carga el resultado sobre el mismo partido', async ({ request }
   const [fin] = await rivales(request, await token(request, CUENTAS.apoderado.rut));
   expect(fin).toMatchObject({ estado_juego: 'finalizado', pts_local: 61, audiencia: { tipo: 'categoria' } });
   expect(JUGADORES.pupilo.categoria).toBe('SUB-13');
+});
+
+test('el club puede jugar de visita: intercambiar deja nuestro logo del lado visita', async ({ page }) => {
+  await iniciarSesion(page, CUENTAS.super_admin.rut);
+  await page.getByRole('button', { name: 'Resultados' }).first().click();
+  await page.getByPlaceholder('Nombre equipo visitante').fill(LOCAL_RIVAL);
+  await page.getByRole('button', { name: /Intercambiar local \/ visita/ }).click();
+  await expect(page.getByPlaceholder('Nombre equipo local')).toHaveValue(LOCAL_RIVAL);
+  await expect(page.getByPlaceholder('Nombre equipo visitante')).toHaveValue('Centro de Cultura Física');
+  await page.locator('input[type="date"]').first().fill('2099-11-28');
+  await page.getByRole('radio', { name: /Todo el club/ }).check();
+  await page.getByRole('button', { name: 'Publicar próximo partido' }).click();
+  await expect(page.getByText(/Próximo partido publicado/)).toBeVisible({ timeout: 10000 });
+  const { rows } = await pool.query('SELECT equipo_visitante, logo_visitante_url FROM partidos_live WHERE equipo_local = $1', [LOCAL_RIVAL]);
+  expect(rows[0]).toMatchObject({ equipo_visitante: 'Centro de Cultura Física' });
+  expect(rows[0].logo_visitante_url).toContain('club-logo.png');
 });

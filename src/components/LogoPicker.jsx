@@ -140,7 +140,8 @@ function LogoPicker({
 
   const seleccionar = (opcion) => {
     onNombre(opcion.nombre);
-    onLogoUrl(absolutizarLogoUrl(opcion.logoUrl || ''));
+    // Nuestro club siempre con su logo, aunque la entrada del directorio no lo tenga.
+    onLogoUrl(absolutizarLogoUrl(opcion.logoUrl || (esNuestroClub(opcion.nombre) ? '/logos/club-logo.png' : '')));
     if (onColorHex && opcion.colorHex) onColorHex(opcion.colorHex);
     setMostrarSugerencias(false);
   };
