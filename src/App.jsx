@@ -29,7 +29,7 @@ import { confirmAction } from './utils/confirmDialog';
 import { esNuestroClub } from './utils/logoResolver';
 import { cuentasDemo } from './data/demoAccounts';
 import { hoyLocalISO, partesFechaCalendario } from './utils/fechas';
-import { resumirAbonosMes } from './utils/abonosMes';
+import { esPagoMatricula, resumirAbonosMes } from './utils/abonosMes';
 import useIntervaloVisible from './utils/useIntervaloVisible';
 import useModalAccesible from './utils/useModalAccesible';
 import { soloActivos } from './utils/estadoActivo';
@@ -756,6 +756,7 @@ function App() {
       // un pago "Mensualidad Socio" guardado con el RUT del hijo saldaba
       // también la mensualidad del deportista de ese mes.
       if (String(pago.concepto_pago || '').trim().toLowerCase().startsWith('mensualidad socio')) return;
+      if (esPagoMatricula(pago)) return;
       const rutPagoJugador = normalizarRutComparacion(pago.rut_jugador || '');
       const rutPagoPagador = normalizarRutComparacion(pago.rut_pagos || '');
       const rutPago = rutPagoJugador || rutPagoPagador;
@@ -2176,8 +2177,12 @@ function App() {
   useIntervaloVisible(() => {
     if (!api.getAuthToken()) return;
     void cargarCitacionesYNotificaciones();
-    void recargarJugadoresLigero();
   }, 20000);
+  // El plantel cambia poco y cada guardado propio ya lo recarga: basta cada 5 min.
+  useIntervaloVisible(() => {
+    if (!api.getAuthToken()) return;
+    void recargarJugadoresLigero();
+  }, 5 * 60 * 1000);
 
   // Refresca los permisos_override de la PROPIA cuenta — sin esto, un módulo
   // que el super_admin le activa a otro usuario nunca se reflejaba para ese

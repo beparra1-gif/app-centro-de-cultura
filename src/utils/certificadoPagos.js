@@ -3,6 +3,7 @@
 // pagado y si está al día. Usa los mismos estados que Tesorería → Informes.
 
 import { DATOS_CLUB } from '../legal/avisoPrivacidad';
+import { esPagoMatricula } from './abonosMes';
 import { ANIO_INFORME, MESES_INFORME, construirInformeDeportistas, construirInformeSocios } from './informeDeuda';
 
 const norm = (rut = '') => String(rut || '').replace(/[.\s-]/g, '').trim().toUpperCase();
@@ -31,12 +32,15 @@ export const armarCertificado = ({ titular = {}, pupilos = [], pagos = [], moros
     const fila = construirInformeDeportistas({
       jugadores: [{ ...p, rut_jugador: p.rut, nombres: p.nombre, apellido_paterno: '' }], morosos, pagos, hoy,
     })[0];
-    const pagado = pagos.filter((x) => !esCuotaSocio(x) && aprobado(x) && anioDe(x) === ANIO_INFORME && norm(x.rut_jugador) === norm(p.rut))
-      .reduce((s, x) => s + (Number(x.monto_total_pagado) || 0), 0);
-    if (fila) secciones.push({ titulo: `Mensualidad · ${p.nombre}`, estados: fila.estados, deuda: fila.montoDeuda, pagado });
+    const delPupilo = pagos.filter((x) => !esCuotaSocio(x) && aprobado(x) && anioDe(x) === ANIO_INFORME && norm(x.rut_jugador) === norm(p.rut));
+    const suma = (lista) => lista.reduce((s, x) => s + (Number(x.monto_total_pagado) || 0), 0);
+    // La matrícula (una vez al año) va aparte: no es parte de la mensualidad.
+    const matricula = suma(delPupilo.filter(esPagoMatricula));
+    const pagado = suma(delPupilo.filter((x) => !esPagoMatricula(x)));
+    if (fila) secciones.push({ titulo: `Mensualidad · ${p.nombre}`, estados: fila.estados, deuda: fila.montoDeuda, pagado, matricula });
   });
   const deuda = secciones.reduce((s, x) => s + x.deuda, 0);
-  return { titular, secciones, deuda, pagado: secciones.reduce((s, x) => s + x.pagado, 0), alDia: deuda <= 0, emitido: hoy };
+  return { titular, secciones, deuda, pagado: secciones.reduce((s, x) => s + x.pagado + (x.matricula || 0), 0), alDia: deuda <= 0, emitido: hoy };
 };
 
 export const generarPdfCertificado = async (cert) => {
@@ -102,6 +106,13 @@ export const generarPdfCertificado = async (cert) => {
       doc.text(ETIQUETA_CORTA[estado] || '', x + anchoMes / 2, y + 26, { align: 'center' });
     });
     y += 54;
+    if (sec.matricula > 0) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(19, 122, 57);
+      doc.text(`Matrícula ${ANIO_INFORME}: pagada (${pesos(sec.matricula)})`, mx, y - 8);
+      y += 12;
+    }
   });
 
   if (y > 700) { doc.addPage(); y = 60; }

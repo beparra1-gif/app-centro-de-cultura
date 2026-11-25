@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resumirAbonosMes, asignarAbonoEnOrden } from './abonosMes';
+import { resumirAbonosMes, asignarAbonoEnOrden, esPagoMatricula } from './abonosMes';
 
 describe('resumirAbonosMes', () => {
   it('un abono parcial aprobado NO completa el mes y calcula lo que falta', () => {
@@ -46,5 +46,14 @@ describe('asignarAbonoEnOrden', () => {
       .toEqual([{ clave: 'mar', monto: 10000 }]);
     expect(asignarAbonoEnOrden(70000, [{ clave: 'mar', faltante: 30000 }, { clave: 'abr', faltante: 30000 }]))
       .toEqual([{ clave: 'mar', monto: 30000 }, { clave: 'abr', monto: 40000 }]);
+  });
+});
+
+describe('esPagoMatricula', () => {
+  it('reconoce la matrícula con o sin tilde y no confunde mensualidades', () => {
+    expect(esPagoMatricula({ concepto_pago: 'Matrícula' })).toBe(true);
+    expect(esPagoMatricula({ concepto_pago: 'MATRICULA 2026' })).toBe(true);
+    expect(esPagoMatricula({ concepto_pago: 'Mensualidad' })).toBe(false);
+    expect(esPagoMatricula({ concepto_pago: 'Mensualidad Socio' })).toBe(false);
   });
 });

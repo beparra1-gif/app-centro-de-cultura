@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Upload, Search, ClipboardList, Check, Pin, Lightbulb } from 'lucide-react';
 import * as api from '../api/client.js';
 import { calcularCuotaDeportistasFamilia, calcularCuotaFinal, obtenerCuotaJugador } from '../utils/beca';
 import { hermanosDe } from '../utils/hermanos';
-import { asignarAbonoEnOrden, resumirAbonosMes } from '../utils/abonosMes';
+import { asignarAbonoEnOrden, esPagoMatricula, resumirAbonosMes } from '../utils/abonosMes';
 import { confirmAction } from '../utils/confirmDialog';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -57,7 +57,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
   const [formData, setFormData] = useState({
     rut_jugador: pago?.rut_jugador || (objetivoInicial?.modoPago === 'deportista' ? objetivoInicial.rut : ''),
     correo_apoderado: pago?.correo_apoderado || '',
-    concepto_pago: pago?.concepto_pago || 'Mensualidad',
+    concepto_pago: pago?.concepto_pago || (objetivoInicial?.modoPago === 'socio' ? 'Mensualidad Socio' : 'Mensualidad'),
     cantidad_meses_pagados: pago?.cantidad_meses_pagados || 1,
     meses_correspondientes: pago?.meses_correspondientes || '',
     monto_total_pagado: pago?.monto_total_pagado || '',
@@ -175,6 +175,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
     if (!rutNormalizado) return resultado;
     (pagosExistentes || []).forEach((p) => {
       if (pago?.id && p.id === pago.id) return; // editando: no contarse a sí mismo
+      if (esPagoMatricula(p)) return;
       const deSocio = esPagoCuotaSocio(p);
       let corresponde;
       if (modoPago === 'socio') {
@@ -206,8 +207,15 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
     return resumen && resumen.parcial ? resumen.faltante : cuotaSugeridaDelMes(mesNum);
   };
 
+  // La app refresca jugadores/cuentas cada pocos segundos: la selección de
+  // meses solo se reinicia cuando cambia de verdad el deportista o el socio.
+  const rutJugadorPrevio = useRef(formData.rut_jugador);
+  const socioPrevio = useRef(`${modoPago}|${rutCuentaSocio}`);
+
   // Actualizar cuando se selecciona un deportista
   useEffect(() => {
+    const cambioJugador = rutJugadorPrevio.current !== formData.rut_jugador;
+    rutJugadorPrevio.current = formData.rut_jugador;
     if (formData.rut_jugador) {
       const jugador = jugadores.find(j => j.rut_jugador === formData.rut_jugador);
       if (jugador) {
@@ -235,16 +243,12 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
         // mensualidad del HIJO se guardaba como "Mensualidad Socio": se
         // contaba como cuota de socio del apoderado y el deportista seguía
         // moroso. La cuota de socio se registra aparte (modo "Socio").
-        const conceptoAuto = jugador.matricula_pagada ? 'Mensualidad' : 'Matrícula';
-
-        setFormData(prev => ({
-          ...prev,
-          concepto_pago: conceptoAuto
-        }));
-
-        // Resetear selección de meses
-        setMesesSeleccionados([]);
-        setMontosPorMes({});
+        // La matrícula (una vez al año) se elige a mano: por defecto, Mensualidad.
+        if (cambioJugador) {
+          setFormData(prev => ({ ...prev, concepto_pago: 'Mensualidad' }));
+          setMesesSeleccionados([]);
+          setMontosPorMes({});
+        }
       }
     }
   }, [formData.rut_jugador, jugadores, cuentas]);
@@ -253,17 +257,18 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
   // "solo cuota de socio") — mismo patrón que el efecto de arriba, pero sin
   // depender de una ficha de jugador (no existe valor_mensualidad propio).
   useEffect(() => {
+    const claveSocio = `${modoPago}|${rutCuentaSocio}`;
+    const cambioSocio = socioPrevio.current !== claveSocio;
+    socioPrevio.current = claveSocio;
     if (modoPago !== 'socio' || !rutCuentaSocio) return;
     const cuentaSocio = cuentas.find(c => c.rut === rutCuentaSocio);
     if (!cuentaSocio) return;
 
     const mesActual = new Date().getMonth() + 1;
     setValorMensualidad(obtenerCuotaSocioSugeridaDelMes(mesActual, cuentaSocio));
-    setFormData(prev => ({
-      ...prev,
-      correo_apoderado: cuentaSocio.correo || '',
-      concepto_pago: 'Mensualidad Socio',
-    }));
+    setFormData(prev => ({ ...prev, correo_apoderado: cuentaSocio.correo || '' }));
+    if (!cambioSocio) return;
+    setFormData(prev => ({ ...prev, concepto_pago: 'Mensualidad Socio' }));
     setMesesSeleccionados([]);
     setMontosPorMes({});
     // obtenerCuotaSocioSugeridaDelMes se redefine cada render (lee utmVigente/

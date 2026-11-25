@@ -63,3 +63,7 @@ export const asignarAbonoEnOrden = (montoAbono = 0, items = []) => {
   });
   return asignaciones;
 };
+
+// La matrícula se paga una vez al año: es un ítem aparte y nunca abona a la mensualidad de un mes.
+export const esPagoMatricula = (pago = {}) => String(pago.concepto_pago || '').trim().toLowerCase()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '').startsWith('matricula');

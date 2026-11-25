@@ -9,7 +9,7 @@ import LogoAvatar from './LogoAvatar';
 import { CertificadosFamilia } from './Certificados';
 import { normalizarRol } from '../security/accessControl';
 import { partesFechaCalendario } from '../utils/fechas';
-import { asignarAbonoEnOrden, resumirAbonosMes } from '../utils/abonosMes';
+import { asignarAbonoEnOrden, esPagoMatricula, resumirAbonosMes } from '../utils/abonosMes';
 
 // Pago de cuota de socio (concepto "Mensualidad Socio"); todo lo demás es
 // mensualidad de deportista. Mismo criterio que App.jsx y SuperAdminPanel.
@@ -472,6 +472,7 @@ function PerfilTesoreriaPanel({
     return (pagosMensualidadesAdmin || []).filter((p) => (
       !esPagoInvalidoLegacy(p)
       && !esPagoCuotaSocio(p) // la cuota de socio tiene su propia grilla
+      && !esPagoMatricula(p)
       && (normalizarRutComparacion(p.rut_jugador) === rut || normalizarRutComparacion(p.rut_pagos) === rut)
     ));
   };

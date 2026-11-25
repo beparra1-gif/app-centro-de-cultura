@@ -24,6 +24,20 @@ describe('armarCertificado', () => {
     expect(cert).toMatchObject({ deuda: 21600, pagado: 36500, alDia: false });
   });
 
+  it('la matrícula se informa aparte y no se suma a la mensualidad', () => {
+    const cert = armarCertificado({
+      titular: { nombre: 'X', rut: '1-9' },
+      pupilos: [{ rut: '2-7', nombre: 'Y', fecha_ingreso: '2026-11-01' }],
+      pagos: [
+        { rut_jugador: '2-7', concepto_pago: 'Matrícula', meses_correspondientes: 'marzo-2026', monto_total_pagado: 20000, estado_pago: 'aprobado' },
+        { rut_jugador: '2-7', concepto_pago: 'Mensualidad', meses_correspondientes: 'noviembre-2026', monto_total_pagado: 30000, estado_pago: 'aprobado' },
+      ],
+      hoy: HOY,
+    });
+    expect(cert.secciones[0]).toMatchObject({ pagado: 30000, matricula: 20000 });
+    expect(cert.pagado).toBe(50000);
+  });
+
   it('sin deuda: al día', () => {
     const cert = armarCertificado({ titular: { nombre: 'X', rut: '1-9' }, pupilos: [{ rut: '2-7', nombre: 'Y', fecha_ingreso: '2026-11-01' }], hoy: HOY });
     expect(cert.alDia).toBe(true);
