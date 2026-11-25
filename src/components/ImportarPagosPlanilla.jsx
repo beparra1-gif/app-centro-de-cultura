@@ -81,7 +81,7 @@ export default function ImportarPagosPlanilla({ onAplicado }) {
     const r = plan.resumen;
     const confirmado = await confirmAction({
       title: 'Aplicar importación de pagos',
-      message: `Se crearán ${r.crearDeportistas || 0} fichas de deportistas, se completarán ${r.actualizarFichas || 0} fichas existentes (pupilo de socio / correo del apoderado), se agregarán ${r.agregarDeportistas + r.agregarSocios} pagos (${r.agregarDeportistas} de deportistas y ${r.agregarSocios} de socios) como APROBADOS y se borrarán ${r.duplicadosBorrar} pagos duplicados importados. Los pagos registrados desde la app no se tocan. ¿Continuar?`,
+      message: `Se crearán ${r.crearDeportistas || 0} fichas de deportistas, se completarán ${r.actualizarFichas || 0} fichas existentes (hijo de socio / correo del apoderado), se agregarán ${r.agregarDeportistas + r.agregarSocios} pagos (${r.agregarDeportistas} de deportistas y ${r.agregarSocios} de socios) como APROBADOS y se borrarán ${r.duplicadosBorrar} pagos duplicados importados. Los pagos registrados desde la app no se tocan. ¿Continuar?`,
       confirmText: 'Aplicar',
     });
     if (!confirmado) return;

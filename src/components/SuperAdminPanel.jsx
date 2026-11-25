@@ -578,7 +578,7 @@ function SuperAdminPanel({
         message: faltaPaso0 ? 'Primero elige la categoría que vas a citar.'
           : faltaPaso1 ? 'Primero completa la competencia y el rival.'
           : faltaPaso2 ? 'Primero completa el día y los horarios.'
-            : 'Elige al menos una jugadora o jugador titular.',
+            : 'Elige al menos un deportista titular.',
         type: 'error',
       });
     };
@@ -823,7 +823,7 @@ function SuperAdminPanel({
         fecha_inicio: formBeca.fechaInicio,
         fecha_fin: formBeca.sinFechaFin ? null : formBeca.fechaFin,
       });
-      showToast({ message: `Beca de ${jugadorBecaObjetivo.nombres || 'el jugador'} guardada.`, type: 'success' });
+      showToast({ message: `Beca de ${jugadorBecaObjetivo.nombres || 'el deportista'} guardada.`, type: 'success' });
       setMostrarModalBeca(false);
       await cargarBecasAdmin();
     } catch (error) {
@@ -1451,7 +1451,7 @@ function SuperAdminPanel({
   const asignarPupiloACuenta = async (jugador) => {
     const correoCuenta = String(cuentaPupilosActiva?.correo || '').trim();
     if (!correoCuenta) {
-      showToast({ message: 'Debes guardar un correo válido en la cuenta antes de asignar pupilos.', type: 'error' });
+      showToast({ message: 'Debes guardar un correo válido en la cuenta antes de asignar deportistas.', type: 'error' });
       return;
     }
     const rutCuenta = String(cuentaPupilosActiva?.rut || '').trim();
@@ -1459,9 +1459,9 @@ function SuperAdminPanel({
     try {
       setProcesandoPupiloRut(jugador.rut_jugador || '');
       await guardarJugadorAdmin({ ...jugador, correo_apoderado: correoCuenta, rut_apoderado: rutCuenta || null }, jugador.rut_jugador);
-      showToast({ message: `Pupilo asignado a ${correoCuenta}.`, type: 'success' });
+      showToast({ message: `Deportista asignado a ${correoCuenta}.`, type: 'success' });
     } catch (error) {
-      showToast({ message: `No se pudo asignar el pupilo: ${error.message}`, type: 'error' });
+      showToast({ message: `No se pudo asignar el deportista: ${error.message}`, type: 'error' });
     } finally {
       setProcesandoPupiloRut('');
     }
@@ -1479,9 +1479,9 @@ function SuperAdminPanel({
     try {
       setProcesandoPupiloRut(jugador.rut_jugador || '');
       await guardarJugadorAdmin({ ...jugador, correo_apoderado: '', rut_apoderado: '' }, jugador.rut_jugador);
-      showToast({ message: 'Pupilo desasignado correctamente.', type: 'success' });
+      showToast({ message: 'Deportista desasignado correctamente.', type: 'success' });
     } catch (error) {
-      showToast({ message: `No se pudo quitar el pupilo: ${error.message}`, type: 'error' });
+      showToast({ message: `No se pudo quitar el deportista: ${error.message}`, type: 'error' });
     } finally {
       setProcesandoPupiloRut('');
     }
@@ -1490,7 +1490,7 @@ function SuperAdminPanel({
   const moverPupiloAOtroApoderado = async (jugador, correoDestino) => {
     const destino = String(correoDestino || '').trim();
     if (!destino) {
-      showToast({ message: 'Selecciona un apoderado destino para mover el pupilo.', type: 'error' });
+      showToast({ message: 'Selecciona un apoderado destino para mover el deportista.', type: 'error' });
       return;
     }
     const rutDestino = String(cuentasApoderadoDisponibles.find((c) => c.correo === destino)?.rut || '').trim();
@@ -1499,9 +1499,9 @@ function SuperAdminPanel({
       setProcesandoPupiloRut(jugador.rut_jugador || '');
       await guardarJugadorAdmin({ ...jugador, correo_apoderado: destino, rut_apoderado: rutDestino || null }, jugador.rut_jugador);
       setDestinoApoderadoPorRut((prev) => ({ ...prev, [jugador.rut_jugador]: '' }));
-      showToast({ message: `Pupilo movido a ${destino}.`, type: 'success' });
+      showToast({ message: `Deportista movido a ${destino}.`, type: 'success' });
     } catch (error) {
-      showToast({ message: `No se pudo mover el pupilo: ${error.message}`, type: 'error' });
+      showToast({ message: `No se pudo mover el deportista: ${error.message}`, type: 'error' });
     } finally {
       setProcesandoPupiloRut('');
     }
@@ -1825,7 +1825,7 @@ function SuperAdminPanel({
             cuentaAsociadaJugadorEdit.id,
           );
         }
-        showToast({ message: 'Jugador actualizado correctamente.', type: 'success' });
+        showToast({ message: 'Deportista actualizado correctamente.', type: 'success' });
       }
 
       setEditandoTipo(null);
@@ -1936,7 +1936,7 @@ function SuperAdminPanel({
           estado: 'ACTIVO',
           foto_jugador: '',
         });
-        showToast({ message: 'Jugador creado correctamente.', type: 'success' });
+        showToast({ message: 'Deportista creado correctamente.', type: 'success' });
       }
     } catch (error) {
       showToast({ message: `No se pudo crear: ${error.message}`, type: 'error' });
@@ -1947,7 +1947,7 @@ function SuperAdminPanel({
 
   const guardarNuevoJugadorVisita = async () => {
     if (!nuevoJugadorVisita.rut_visita || !nuevoJugadorVisita.nombres || !nuevoJugadorVisita.apellido_paterno) {
-      showToast({ message: 'Completa RUT, nombres y apellido paterno para registrar jugador invitado.', type: 'error' });
+      showToast({ message: 'Completa RUT, nombres y apellido paterno para registrar deportista invitado.', type: 'error' });
       return;
     }
 
@@ -1967,7 +1967,7 @@ function SuperAdminPanel({
         contacto_apoderado: '',
         telefono_contacto: '',
       });
-      showToast({ message: 'Jugador invitado registrado correctamente.', type: 'success' });
+      showToast({ message: 'Deportista invitado registrado correctamente.', type: 'success' });
     } catch (error) {
       showToast({ message: `No se pudo registrar: ${error.message}`, type: 'error' });
     } finally {
@@ -2496,7 +2496,7 @@ function SuperAdminPanel({
       }));
 
     if (convocados.length === 0) {
-      showToast({ message: 'Selecciona al menos una jugadora o jugador para crear la citación.', type: 'error' });
+      showToast({ message: 'Selecciona al menos un deportista para crear la citación.', type: 'error' });
       return;
     }
 
@@ -2734,7 +2734,7 @@ function SuperAdminPanel({
               { key: 'lista', Icon: Users, titulo: 'Pasar lista', desc: 'Asistencia a entrenamientos', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('asistencia_staff') },
               { key: 'citaciones', Icon: UserPlus, titulo: 'Citaciones', desc: 'Convocatorias a partidos y torneos', ver: puedeAdminCompleto || puedeVerCitaciones, ir: () => setVistaAdmin('citaciones') },
               { key: 'jugador', Icon: UserPlus, titulo: 'Fichas deportivas', desc: 'Perfil, tarjeta y evaluaciones de cada deportista', ver: puedeAdminCompleto, ir: () => onNavegarPantalla?.('jugador') },
-              { key: 'invitados', Icon: Users, titulo: 'Invitados', desc: 'Visitas y jugadores de prueba', ver: puedeAdminCompleto, ir: () => setVistaAdmin('invitados') },
+              { key: 'invitados', Icon: Users, titulo: 'Invitados', desc: 'Visitas y deportistas de prueba', ver: puedeAdminCompleto, ir: () => setVistaAdmin('invitados') },
             ],
           },
           {
@@ -3045,7 +3045,7 @@ function SuperAdminPanel({
                 <div className="grid-auto-220">
                   <div className="form-group"><label>Fecha de ingreso al club</label><input type="date" className="form-input" value={String(nuevoJugador.fecha_ingreso || '').slice(0, 10)} onChange={(e) => setNuevoJugador((p) => ({ ...p, fecha_ingreso: e.target.value }))} /></div>
                   <div className="form-group"><label>Estado</label><select className="form-input" value={nuevoJugador.estado || 'ACTIVO'} onChange={(e) => setNuevoJugador((p) => ({ ...p, estado: e.target.value }))}><option value="ACTIVO">Activo</option><option value="INACTIVO">Inactivo</option></select></div>
-                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.apoderado_socio)} onChange={(e) => setNuevoJugador((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; hermanos $12.000 c/u)</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.apoderado_socio)} onChange={(e) => setNuevoJugador((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Hijo de socio (tarifa $15.000; hermanos $12.000 c/u)</label>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.matricula_pagada)} onChange={(e) => setNuevoJugador((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(nuevoJugador.derechos_imagen)} onChange={(e) => setNuevoJugador((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
                 </div>
@@ -3229,7 +3229,7 @@ function SuperAdminPanel({
                 )}
                 <div className="form-group"><label>Cargo directiva</label><select className="form-input" value={cuentaAdminEdit.cargo_directiva || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, cargo_directiva: e.target.value }))}>{CARGO_DIRECTIVA_OPTIONS.map((opt) => <option key={`directiva-edit-${opt.value || 'none'}`} value={opt.value}>{opt.label}</option>)}</select></div>
                 <div className="form-group"><label>Estado de la cuenta</label><select className="form-input" value={estaActivo(cuentaAdminEdit) ? 'activo' : 'inactivo'} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, estado: e.target.value }))}><option value="activo">Activo</option><option value="inactivo">Inactivo (no ingresa, sale de cobros y listados)</option></select></div>
-                {!estaActivo(cuentaAdminEdit) && <div className="form-group"><label>Motivo de baja (interno)</label><input className="form-input" maxLength={300} value={cuentaAdminEdit.motivo_baja || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, motivo_baja: e.target.value }))} placeholder="Ej: ya no tiene pupilos en el club" /></div>}
+                {!estaActivo(cuentaAdminEdit) && <div className="form-group"><label>Motivo de baja (interno)</label><input className="form-input" maxLength={300} value={cuentaAdminEdit.motivo_baja || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, motivo_baja: e.target.value }))} placeholder="Ej: ya no tiene deportistas en el club" /></div>}
                 <div className="form-group"><label>Valor UTM referencia (override opcional, se completa solo)</label><input type="number" min="1" className="form-input" value={cuentaAdminEdit.utm_valor_referencia || utmVigente?.valor || 68000} onChange={(e) => actualizarCuentaAdminEdit({ utm_valor_referencia: e.target.value })} /></div>
                 <div className="form-group"><label>Mensualidad base automática (0,3 UTM, se recalcula sola cada mes)</label><input type="number" className="form-input" value={esCuentaCatalogadaSocio(cuentaAdminEdit) ? (Number(cuentaAdminEdit.monto_mensual_base) > 0 ? cuentaAdminEdit.monto_mensual_base : calcularMensualidadSocio(cuentaAdminEdit.utm_valor_referencia || utmVigente?.valor)) : 0} disabled /></div>
                 <div className="form-group"><label>Mensualidad deportistas acordada (opcional)</label><input type="number" className="form-input" value={cuentaAdminEdit.monto_mensual_override || ''} onChange={(e) => setCuentaAdminEdit((p) => ({ ...p, monto_mensual_override: e.target.value }))} placeholder="Ej: 18000" /></div>
@@ -3284,19 +3284,19 @@ function SuperAdminPanel({
               </div>
 
               <div className="card" style={{ marginTop: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
-                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><Users size={15} /> Pupilos del apoderado</h4>
+                <h4 className="form-subtitle" style={{ marginBottom: '8px' }}><Users size={15} /> Deportistas del apoderado</h4>
                 <p style={{ fontSize: '12px', color: 'var(--texto-secundario)', marginTop: 0 }}>
-                  Asigna o corrige manualmente los hijos/pupilos para esta cuenta usando el correo del apoderado.
+                  Asigna o corrige manualmente los deportistas de esta cuenta usando el correo del apoderado.
                 </p>
 
                 {!String(cuentaPupilosActiva?.correo || '').trim() && (
                   <div style={{ fontSize: '12px', color: '#8A4B00', fontWeight: '800', background: 'rgba(255,149,0,0.12)', border: '1px solid rgba(255,149,0,0.35)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', marginBottom: '10px' }}>
-                    Guarda un correo válido en la cuenta antes de asignar pupilos.
+                    Guarda un correo válido en la cuenta antes de asignar deportistas.
                   </div>
                 )}
 
                 <div style={{ marginBottom: '10px' }}>
-                  <strong style={{ fontSize: '12px' }}>Pupilos actualmente asociados ({pupilosAsignadosCuenta.length})</strong>
+                  <strong style={{ fontSize: '12px' }}>Deportistas actualmente asociados ({pupilosAsignadosCuenta.length})</strong>
                   <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {pupilosAsignadosCuenta.map((j) => (
                       <div key={`pupilo-asig-${j.rut_jugador}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: 'rgba(0,122,255,0.07)', border: '1px solid rgba(0,122,255,0.14)', borderRadius: 'var(--radius-sm)', padding: '8px' }}>
@@ -3338,12 +3338,12 @@ function SuperAdminPanel({
                         </div>
                       </div>
                     ))}
-                    {pupilosAsignadosCuenta.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin pupilos asociados.</span>}
+                    {pupilosAsignadosCuenta.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Sin deportistas asociados.</span>}
                   </div>
                 </div>
 
                 <div>
-                  <strong style={{ fontSize: '12px' }}>Buscar y asignar pupilo</strong>
+                  <strong style={{ fontSize: '12px' }}>Buscar y asignar deportista</strong>
                   <input
                     className="form-input"
                     placeholder="Buscar por nombre, RUT, rama o categoría"
@@ -3369,7 +3369,7 @@ function SuperAdminPanel({
                         </button>
                       </div>
                     ))}
-                    {jugadoresDisponiblesAsignacion.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>No hay jugadores disponibles con el filtro actual.</span>}
+                    {jugadoresDisponiblesAsignacion.length === 0 && <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>No hay deportistas disponibles con el filtro actual.</span>}
                   </div>
                 </div>
               </div>
@@ -3384,7 +3384,7 @@ function SuperAdminPanel({
             <div className="fp-ventana uc-editor" role="dialog" aria-modal="true" aria-label="Editar deportista">
             <div ref={edicionJugadorRef} className="card">
 <div className="uc-editor-titulo">
-                <h4 className="form-subtitle">Editar Jugador {jugadorAdminEdit.rut_jugador}</h4>
+                <h4 className="form-subtitle">Editar Deportista {jugadorAdminEdit.rut_jugador}</h4>
                 <button type="button" className="btn-secondary tc-btn" onClick={() => setFichaPersona({ tipo: 'jugador', raw: jugadorAdminEdit, pestana: 'pagos' })}>
                   Ver pagos
                 </button>
@@ -3462,7 +3462,7 @@ function SuperAdminPanel({
                     <input type="number" min="0" className="form-input" value={jugadorAdminEdit.valor_mensualidad || ''} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, valor_mensualidad: e.target.value }))} placeholder="Vacío = tarifa del club" />
                     <small className="pf-ayuda">
                       Solo si este deportista paga siempre un monto distinto (no es beca). Vacío = tarifa del club:{' '}
-                      {(() => { const t = tarifaVigente(); const $ = (n) => `$${Number(n).toLocaleString('es-CL')}`; return `${$(t.uno)} un pupilo · ${$(t.hermanos)} hermanos c/u · ${$(t.hijoSocio)} hijo de socio · ${$(t.dosHijosSocio)} hermanos hijos de socio c/u`; })()}.
+                      {(() => { const t = tarifaVigente(); const $ = (n) => `$${Number(n).toLocaleString('es-CL')}`; return `${$(t.uno)} un deportista · ${$(t.hermanos)} hermanos c/u · ${$(t.hijoSocio)} hijo de socio · ${$(t.dosHijosSocio)} hermanos hijos de socio c/u`; })()}.
                     </small>
                   </div>
                   <div className="cpm-fila">
@@ -3473,7 +3473,7 @@ function SuperAdminPanel({
                     />
                   </div>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.exento_mensualidad)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, exento_mensualidad: e.target.checked }))} /> Exento de mensualidad (no paga nada)</label>
-                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.apoderado_socio)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Pupilo de socio (tarifa $15.000; hermanos $12.000 c/u)</label>
+                  <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.apoderado_socio)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, apoderado_socio: e.target.checked }))} /> Hijo de socio (tarifa $15.000; hermanos $12.000 c/u)</label>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.matricula_pagada)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, matricula_pagada: e.target.checked }))} /> Matrícula pagada</label>
                   <label className="checkbox-label-row"><input type="checkbox" checked={Boolean(jugadorAdminEdit.derechos_imagen)} onChange={(e) => setJugadorAdminEdit((p) => ({ ...p, derechos_imagen: e.target.checked }))} /> Autoriza derechos de imagen</label>
                 </div>
@@ -3503,8 +3503,8 @@ function SuperAdminPanel({
               {renderPermisosCuenta({
                 cuenta: cuentaAsociadaJugadorEdit,
                 titulo: 'Permisos y accesos de la cuenta asociada',
-                descripcion: 'Si este jugador depende de una cuenta/apoderado, puedes gestionar aquí los módulos que tendrá disponibles esa cuenta.',
-                emptyMessage: 'Este jugador no tiene una cuenta asociada por correo_apoderado. Guarda o corrige esa relación para poder administrar permisos desde aquí.',
+                descripcion: 'Si este deportista depende de una cuenta/apoderado, puedes gestionar aquí los módulos que tendrá disponibles esa cuenta.',
+                emptyMessage: 'Este deportista no tiene una cuenta asociada por correo_apoderado. Guarda o corrige esa relación para poder administrar permisos desde aquí.',
               })}
 
               <div className="card" style={{ marginTop: '12px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(0,122,255,0.16)' }}>
@@ -3533,7 +3533,7 @@ function SuperAdminPanel({
                     onClick={() => eliminarUsuarioDefinitivo({ id: `jugador-${jugadorAdminEdit.rut_jugador}`, tipo: 'jugador', raw: jugadorAdminEdit, nombre: `${jugadorAdminEdit.nombres || ''} ${jugadorAdminEdit.apellido_paterno || ''}`.trim() })}
                     disabled={eliminandoUsuarioId === `jugador-${jugadorAdminEdit.rut_jugador}`}
                   >
-                    {eliminandoUsuarioId === `jugador-${jugadorAdminEdit.rut_jugador}` ? 'Borrando...' : 'Borrar jugador definitivo'}
+                    {eliminandoUsuarioId === `jugador-${jugadorAdminEdit.rut_jugador}` ? 'Borrando...' : 'Borrar deportista definitivo'}
                   </button>
                 )}
               </div>
@@ -4206,7 +4206,7 @@ function SuperAdminPanel({
               <div ref={cuentaFamiliaTesoreriaRef} style={{ scrollMarginTop: '80px' }}>
           <h3 className="section-title mt-20">Cuenta de la familia</h3>
           <p style={{ fontSize: 'var(--texto-min)', color: 'var(--texto-secundario)', marginTop: '-6px', marginBottom: '12px' }}>
-            Toca “Ver cuenta” en la lista o busca aquí: verás la cuota de socio y la mensualidad de cada pupilo por separado, mes a mes, tal como la ve la familia.
+            Toca “Ver cuenta” en la lista o busca aquí: verás la cuota de socio y la mensualidad de cada deportista por separado, mes a mes, tal como la ve la familia.
           </p>
           <PerfilTesoreriaPanel
             pupiloActivo={pupiloTesoreriaAdmin}
@@ -4594,12 +4594,12 @@ function SuperAdminPanel({
                 </div>
                 <div style={{ fontSize: '12px', color: '#8a4f00', fontWeight: '700', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span>Perfiles de cuentas incompletos: {cuentasIncompletas.length}</span>
-                  <span>Perfiles de jugadores incompletos: {jugadoresIncompletos.length}</span>
+                  <span>Fichas de deportistas incompletas: {jugadoresIncompletos.length}</span>
                   <span>Pagos en revisión/corrección: {pagosConCorreccion.length}</span>
                 </div>
                 <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar cuentas</button>
-                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar jugadores</button>
+                  <button className="btn-secondary" onClick={() => setVistaAdmin('usuarios')}>Completar deportistas</button>
                   <button className="btn-secondary" onClick={() => setVistaAdmin('pagos')}>Revisar pagos</button>
                 </div>
               </div>
@@ -4635,8 +4635,8 @@ function SuperAdminPanel({
                 <h5 className="form-subtitle" style={{ marginBottom: '8px', fontSize: '12px' }}>Calidad de datos (último sync)</h5>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
                   {[
-                    { label: 'Jugadores con datos clave faltantes', valor: syncSheetsResult.qualitySummary.jugadores?.faltantesClave },
-                    { label: 'Jugadores con RUT mal formateado', valor: syncSheetsResult.qualitySummary.jugadores?.rutFormatoInvalido },
+                    { label: 'Deportistas con datos clave faltantes', valor: syncSheetsResult.qualitySummary.jugadores?.faltantesClave },
+                    { label: 'Deportistas con RUT mal formateado', valor: syncSheetsResult.qualitySummary.jugadores?.rutFormatoInvalido },
                     { label: 'Pagos sin RUT asociado', valor: syncSheetsResult.qualitySummary.pagosMensualidades?.sinRutJugador },
                     { label: 'Pagos sin meses correspondientes', valor: syncSheetsResult.qualitySummary.pagosMensualidades?.sinMeses },
                   ].map(({ label, valor }) => {
@@ -4763,7 +4763,7 @@ function SuperAdminPanel({
 
             <div style={{ marginBottom: '12px' }}>
               <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--texto-secundario)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Citar jugadoras de otras categorías (solo menores)
+                Citar deportistas de otras categorías (solo menores)
               </label>
               <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 {categoriasExtraCitacionPermitidas.map((cat) => {
@@ -4912,7 +4912,7 @@ function SuperAdminPanel({
                 </div>
 
                 {jugadorasCitacion.length === 0 && (
-                  <p className="text-muted text-center italic mt-20">No hay jugadoras/jugadores para los filtros seleccionados.</p>
+                  <p className="text-muted text-center italic mt-20">No hay deportistas para los filtros seleccionados.</p>
                 )}
 
                 {jugadorasCitacion.map((jugador) => {
@@ -5307,9 +5307,9 @@ function SuperAdminPanel({
       {vistaAdmin === 'invitados' && (
         <div className="fade-in">
           <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
-          <h3 className="section-title">Jugadores de Equipos Invitados</h3>
+          <h3 className="section-title">Deportistas de Equipos Invitados</h3>
           <div className="card" style={{ borderRadius: 'var(--radius-lg)' }}>
-            <h4 className="form-subtitle"><Plus size={16} /> Registrar jugador invitado</h4>
+            <h4 className="form-subtitle"><Plus size={16} /> Registrar deportista invitado</h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
               <div className="form-group"><label>RUT invitado *</label><input className="form-input" value={nuevoJugadorVisita.rut_visita} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, rut_visita: e.target.value }))} /></div>
               <div className="form-group"><label>Nombres *</label><input className="form-input" value={nuevoJugadorVisita.nombres} onChange={(e) => setNuevoJugadorVisita((p) => ({ ...p, nombres: e.target.value }))} /></div>
@@ -5330,7 +5330,7 @@ function SuperAdminPanel({
           <div className="card mt-15">
             <h4 className="form-subtitle">Listado de invitados ({(jugadoresVisitaAdmin || []).length})</h4>
             {(jugadoresVisitaAdmin || []).length === 0 && (
-              <p className="text-muted" style={{ fontStyle: 'italic' }}>Aún no hay jugadores invitados registrados.</p>
+              <p className="text-muted" style={{ fontStyle: 'italic' }}>Aún no hay deportistas invitados registrados.</p>
             )}
 
             {(jugadoresVisitaAdmin || []).map((j) => (

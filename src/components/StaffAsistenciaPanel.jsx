@@ -311,7 +311,7 @@ function StaffAsistenciaPanel({
 
   const guardarSesionAsistencia = async () => {
     if (rosterFiltrado.length === 0) {
-      showToast({ message: 'No hay jugadores para guardar en esta lista.', type: 'error' });
+      showToast({ message: 'No hay deportistas para guardar en esta lista.', type: 'error' });
       return;
     }
     if (!(await confirmAction({
@@ -562,7 +562,7 @@ function StaffAsistenciaPanel({
           )}
           {rosterFiltrado.length === 0 && (
             <p className="text-center text-muted" style={{ fontSize: '13px', fontStyle: 'italic', margin: '16px 0' }}>
-              No hay jugadores para los filtros seleccionados.
+              No hay deportistas para los filtros seleccionados.
             </p>
           )}
 

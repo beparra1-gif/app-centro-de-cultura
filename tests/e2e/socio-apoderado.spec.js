@@ -39,7 +39,7 @@ test('socio sin pupilos ve y paga su propia grilla de cuota de socio', async ({ 
   await expect(mes(socio, 'Mar')).toHaveClass(/mes-pendiente/);
   await expect(page.getByText(/Mensualidad Deportista/)).toHaveCount(0);
   // Sin hijos a cargo no hay pestaña "Pupilos" vacía.
-  await expect(page.locator('.nav-item', { hasText: 'Pupilos' })).toHaveCount(0);
+  await expect(page.locator('.nav-item', { hasText: 'Deportistas' })).toHaveCount(0);
 });
 
 test('socio+apoderado paga SOLO la cuota de socio: el pupilo no cambia', async ({ page }, testInfo) => {

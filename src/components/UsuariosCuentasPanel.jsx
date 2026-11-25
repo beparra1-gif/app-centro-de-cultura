@@ -693,7 +693,7 @@ export default function UsuariosCuentasPanel({
                     cantidad: cuentasUsuariosFiltradas.length,
                     archivo: `cuentas-${[filtroTipoPerfil, filtroEstadoUsuarios].filter((f) => f !== 'todos').join('-')}-${hoyLocalISO()}`,
                     armar: () => listadoCuentas(cuentasUsuariosFiltradas.map((u) => u.raw), jugadoresAdminTodos || []),
-                    titulo: 'Cuentas y pupilos',
+                    titulo: 'Cuentas y deportistas',
                     subtitulo: [filtroTipoPerfil !== 'todos' && `Perfil ${filtroTipoPerfil}`, ETIQUETA_FILTRO_ESTADO[filtroEstadoUsuarios]].filter(Boolean).join(' · '),
                   })}
                   {(esAdmin || esSuperAdmin) && (

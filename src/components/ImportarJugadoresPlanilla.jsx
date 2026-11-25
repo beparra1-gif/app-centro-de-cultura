@@ -46,15 +46,15 @@ export default function ImportarJugadoresPlanilla({ onAplicado }) {
   const aplicar = async () => {
     const r = plan.resumen;
     const confirmado = await confirmAction({
-      title: 'Importar jugadores',
-      message: `Se crearán ${r.crear} fichas de jugadores, se completarán ${r.completar} fichas existentes (solo datos vacíos) y se crearán ${r.crearApoderados} cuentas de apoderado (sin clave: activan con el código del club). ¿Continuar?`,
+      title: 'Importar deportistas',
+      message: `Se crearán ${r.crear} fichas de deportistas, se completarán ${r.completar} fichas existentes (solo datos vacíos) y se crearán ${r.crearApoderados} cuentas de apoderado (sin clave: activan con el código del club). ¿Continuar?`,
       confirmText: 'Aplicar',
     });
     if (!confirmado) return;
     setCargando(true);
     try {
       const res = await api.jugadoresAPI.importarPlanilla({ texto, rama: rama || null, aplicar: true, resumen: r });
-      showToast({ message: `Listo: ${res.creados} jugadores creados, ${res.completados} completados y ${res.apoderadosCreados} apoderados creados.`, type: 'success' });
+      showToast({ message: `Listo: ${res.creados} deportistas creados, ${res.completados} completados y ${res.apoderadosCreados} apoderados creados.`, type: 'success' });
       setPlan(null);
       setTexto('');
       await onAplicado?.();
@@ -73,8 +73,8 @@ export default function ImportarJugadoresPlanilla({ onAplicado }) {
       <button type="button" className="ip-toggle" onClick={() => setAbierto((v) => !v)} aria-expanded={abierto}>
         <UserPlus size={18} color="var(--azul-electrico)" />
         <span>
-          <strong>Importar jugadores desde una planilla</strong>
-          <small>Crea los jugadores que falten y los vincula con su apoderado (uno por RUT, aunque tenga varios hijos).</small>
+          <strong>Importar deportistas desde una planilla</strong>
+          <small>Crea los deportistas que falten y los vincula con su apoderado (uno por RUT, aunque tenga varios hijos).</small>
         </span>
       </button>
 
@@ -83,7 +83,7 @@ export default function ImportarJugadoresPlanilla({ onAplicado }) {
           <label htmlFor="ijp-texto" className="ip-label">Filas copiadas de la planilla (columnas: Nombre, RUT, Nacimiento, Ingreso, Nombre apoderado, RUT apoderado)</label>
           <textarea id="ijp-texto" className="form-input" rows={6} value={texto} onChange={(e) => { setTexto(e.target.value); setPlan(null); }} placeholder="Selecciona las celdas en Excel o Google Sheets, copia y pega aquí" />
           <div className="ip-fila-url" style={{ marginTop: 8 }}>
-            <select aria-label="Rama de los jugadores nuevos" className="form-input" value={rama} onChange={(e) => { setRama(e.target.value); setPlan(null); }}>
+            <select aria-label="Rama de los deportistas nuevos" className="form-input" value={rama} onChange={(e) => { setRama(e.target.value); setPlan(null); }}>
               <option value="">Rama de los nuevos: sin rama</option>
               {RAMAS_DISPONIBLES.map((x) => <option key={x} value={x}>Rama de los nuevos: {x}</option>)}
             </select>
@@ -91,12 +91,12 @@ export default function ImportarJugadoresPlanilla({ onAplicado }) {
               <RefreshCcw size={13} /> {cargando && !plan ? 'Revisando…' : 'Revisar'}
             </button>
           </div>
-          <p className="ip-ayuda">Los jugadores que ya existen no se sobrescriben: solo se completan fecha de nacimiento, fecha de ingreso y apoderado si están vacíos. La categoría de los nuevos se calcula por edad.</p>
+          <p className="ip-ayuda">Los deportistas que ya existen no se sobrescriben: solo se completan fecha de nacimiento, fecha de ingreso y apoderado si están vacíos. La categoría de los nuevos se calcula por edad.</p>
 
           {r && (
             <>
               <div className="ip-resumen">
-                <div><span>Jugadores nuevos</span><strong>{r.crear}</strong></div>
+                <div><span>Deportistas nuevos</span><strong>{r.crear}</strong></div>
                 <div><span>Fichas a completar</span><strong>{r.completar}</strong></div>
                 <div><span>Ya estaban</span><strong>{r.yaEstaban}</strong></div>
                 <div><span>Apoderados</span><strong>{r.apoderados}</strong></div>
@@ -105,7 +105,7 @@ export default function ImportarJugadoresPlanilla({ onAplicado }) {
               </div>
 
               <Lista
-                titulo="Jugadores que se crean"
+                titulo="Deportistas que se crean"
                 items={plan.crear}
                 abierta
                 render={(c) => <><b>{c.nombre}</b> · {c.ficha.rut_jugador} · nac. {fecha(c.ficha.fecha_nacimiento)} · ingreso {fecha(c.ficha.fecha_ingreso)} · {[c.ficha.rama, c.ficha.categoria].filter(Boolean).join(' ') || 'sin categoría'} · apoderado: {c.apoderado || 'ninguno'}{avisos(c.avisos)}</>}

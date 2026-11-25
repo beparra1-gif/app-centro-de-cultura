@@ -50,7 +50,7 @@ function BuscadorJugadorAdmin({ jugadores, pupiloActivo, onSeleccionar }) {
   return (
     <div className="card mb-15" style={{ borderRadius: 'var(--radius-md)', padding: '14px' }}>
       <label style={{ fontSize: '12px', fontWeight: '900', display: 'block', marginBottom: '8px' }}>
-        Buscar jugador
+        Buscar deportista
       </label>
       <div style={{ position: 'relative', marginBottom: '10px' }}>
         <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
@@ -58,7 +58,7 @@ function BuscadorJugadorAdmin({ jugadores, pupiloActivo, onSeleccionar }) {
           type="text"
           className="form-input"
           style={{ paddingLeft: '36px', paddingRight: busqueda ? '36px' : undefined }}
-          placeholder="Nombre del jugador..."
+          placeholder="Nombre del deportista..."
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
         />

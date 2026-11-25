@@ -39,7 +39,7 @@ test('con fecha de nacimiento la categoría es automática y se guarda', async (
   if (process.env.CAPTURAS) await page.locator('.uc-seccion', { hasText: 'Deportivo' }).first().screenshot({ path: 'test-results/registro-deportivo.png' });
   await campo(page, 'Estatura').fill('150');
   await page.getByRole('button', { name: 'Guardar nuevo usuario' }).click();
-  await expect(page.getByText('Jugador creado correctamente.')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('Deportista creado correctamente.')).toBeVisible({ timeout: 15000 });
   const fila = (await pool.query('SELECT categoria, fecha_nacimiento, estatura, estado FROM jugadores WHERE rut_jugador = $1', [CON_FECHA])).rows[0];
   expect(fila.categoria).toBe(esperada);
   expect(fila.fecha_nacimiento).toBeTruthy();
@@ -56,7 +56,7 @@ test('sin fecha se elige la categoría de la lista', async ({ page }) => {
   await expect(page.getByText(/elige la categoría/)).toBeVisible();
   await page.locator('#categoria-nuevo').selectOption('SUB-15');
   await page.getByRole('button', { name: 'Guardar nuevo usuario' }).click();
-  await expect(page.getByText('Jugador creado correctamente.')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('Deportista creado correctamente.')).toBeVisible({ timeout: 15000 });
   const fila = (await pool.query('SELECT categoria FROM jugadores WHERE rut_jugador = $1', [SIN_FECHA])).rows[0];
   expect(fila.categoria).toBe('SUB-15');
 });

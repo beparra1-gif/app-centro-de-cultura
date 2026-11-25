@@ -15,7 +15,7 @@ const FILTROS_ROL_PERMISOS = [
   { etiqueta: 'Socio', roles: ['socio'] },
   { etiqueta: 'Socio+Apoderado', roles: ['socio_apoderado'] },
   { etiqueta: 'Directiva', roles: ['directiva'] },
-  { etiqueta: 'Deportista/Jugador', roles: ['jugador', 'deportista'] },
+  { etiqueta: 'Deportista', roles: ['jugador', 'deportista'] },
   { etiqueta: 'Mesa', roles: ['mesa'] },
 ];
 
@@ -91,7 +91,7 @@ function SettingsPanel({
       if (!u.nombre.toLowerCase().includes(busquedaPermisos.toLowerCase())) return false;
       if (filtroRolPermisos === 'Todos') return true;
 
-      if (filtroRolPermisos === 'Deportista/Jugador') {
+      if (filtroRolPermisos === 'Deportista') {
         const rol = normalizarRol(u.rol);
         return rol === 'jugador' || rol === 'deportista';
       }

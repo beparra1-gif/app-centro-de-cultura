@@ -241,6 +241,8 @@ const createSchema = async () => {
     console.log('✅ Columna logo_url verificada en cuentas');
 
     await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS perfil_principal VARCHAR(50) DEFAULT 'apoderado'`);
+    // Cuenta sin perfil indicado = apoderado (igual que perfil_principal).
+    await pool.query(`ALTER TABLE cuentas ALTER COLUMN rol SET DEFAULT 'apoderado'`);
     await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS cargo_directiva VARCHAR(50)`);
     await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS socio_admin BOOLEAN DEFAULT false`);
     await pool.query(`ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS aprobado_superadmin BOOLEAN DEFAULT false`);

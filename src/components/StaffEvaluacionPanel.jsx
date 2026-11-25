@@ -120,7 +120,7 @@ function StaffEvaluacionPanel({
 
   const handleEmitirEvaluacion = async () => {
     if (!jugadorSeleccionado) {
-      showToast({ message: 'Selecciona un jugador antes de emitir la evaluación.', type: 'error' });
+      showToast({ message: 'Selecciona un deportista antes de emitir la evaluación.', type: 'error' });
       return;
     }
 
@@ -169,7 +169,7 @@ function StaffEvaluacionPanel({
   return (
     <div className="mt-20 fade-in">
       <div className="card mb-15">
-        <h4 className="form-subtitle">Selección de Jugador</h4>
+        <h4 className="form-subtitle">Selección de Deportista</h4>
         <div style={{ display: 'flex', gap: '10px' }} className="mb-10">
           <select
             className="form-input"
@@ -189,12 +189,12 @@ function StaffEvaluacionPanel({
         </div>
         <select
           className="form-input"
-          aria-label="Jugador a evaluar"
+          aria-label="Deportista a evaluar"
           style={{ background: 'rgba(0,122,255,0.05)', borderColor: 'var(--azul-electrico)', color: 'var(--texto-heading)', fontWeight: '800' }}
           value={rutJugadorSeleccionado}
           onChange={(e) => seleccionarJugador(e.target.value)}
         >
-          <option value="">Selecciona un jugador desde el roster activo</option>
+          <option value="">Selecciona un deportista desde el roster activo</option>
           {jugadoresFiltrados.map((j) => (
             <option key={j.rut_jugador} value={j.rut_jugador}>
               {j.nombres} {j.apellido_paterno} · {j.rama} {j.categoria}

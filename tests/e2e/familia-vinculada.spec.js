@@ -46,7 +46,7 @@ test('el admin vincula a los dos padres desde la ficha de la cuenta', async ({ p
   const ficha = page.getByRole('dialog');
   await ficha.getByRole('tab', { name: /Apoderado/ }).click();
   await ficha.getByRole('button', { name: /E2E SocioApoderado/ }).click();
-  await ficha.getByRole('tab', { name: /Pupilos/ }).click();
+  await ficha.getByRole('tab', { name: /Deportistas/ }).click();
   await expect(ficha.getByText('Sin otra cuenta vinculada.')).toBeVisible();
   await ficha.getByLabel(/Vincular con otra cuenta/).selectOption(PADRE.rut);
   await ficha.getByRole('button', { name: /^Vincular$/ }).click();

@@ -257,7 +257,7 @@ function TarjetaJugadorPanel({
   }, [pupiloActivo?.rut, rolUsuario]);
 
   if (!pupiloActivo) {
-    return <div className="player-screen-shell"><SkeletonLoaderPanel etiqueta="Cargando tarjeta del jugador" /></div>;
+    return <div className="player-screen-shell"><SkeletonLoaderPanel etiqueta="Cargando tarjeta del deportista" /></div>;
   }
 
   const xpActual = Number(pupiloActivo.xp ?? pupiloActivo.xp_total ?? 0);
@@ -893,7 +893,7 @@ function TarjetaJugadorPanel({
             <div className="history-summary-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
                 <div>
-                  <strong style={{ fontSize: '16px', fontWeight: '900' }}>{pupiloActivo?.nombre ? `Resumen de ${String(pupiloActivo.nombre).split(' ').slice(0, 2).join(' ')}` : 'Resumen del jugador'}</strong>
+                  <strong style={{ fontSize: '16px', fontWeight: '900' }}>{pupiloActivo?.nombre ? `Resumen de ${String(pupiloActivo.nombre).split(' ').slice(0, 2).join(' ')}` : 'Resumen del deportista'}</strong>
                 </div>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '900', padding: '6px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.16)' }}>
                   <Trophy size={14} /> Nivel {nivelActualNumero}
@@ -935,7 +935,7 @@ function TarjetaJugadorPanel({
               {puedeEditarDatosJugador && (
                 <button className="assist-cta-btn" onClick={() => setMostrarEditarJugador(true)}>
                   <ClipboardEdit size={16} />
-                  <span>{esAdminDatosJugador ? 'Editar datos del jugador' : 'Revisar / completar datos'}</span>
+                  <span>{esAdminDatosJugador ? 'Editar datos del deportista' : 'Revisar / completar datos'}</span>
                 </button>
               )}
               {puedeEditarDatosJugador && rolUsuario !== 'visita' && (
@@ -1311,7 +1311,7 @@ function TarjetaJugadorPanel({
       {esStaffJugador && rolUsuario !== 'visita' && (
         <div className="card" style={{ marginTop: '8px', borderRadius: '18px', border: '1px solid var(--borde-suave)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <div>
-            <strong style={{ fontSize: '14px', display: 'block' }}>Evaluación del jugador</strong>
+            <strong style={{ fontSize: '14px', display: 'block' }}>Evaluación del deportista</strong>
             <span style={{ fontSize: '12px', color: 'var(--texto-secundario)' }}>Abre Academia &gt; Evaluar con {nombreDisplay} ya seleccionada.</span>
           </div>
           <button className="player-action-btn alt" style={{ padding: '10px 14px' }} onClick={() => onEvaluarJugador?.(pupiloActivo?.rut)}>
@@ -1463,7 +1463,7 @@ function TarjetaJugadorPanel({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Cambiar foto del jugador"
+          aria-label="Cambiar foto del deportista"
           style={{
             position: 'fixed', inset: 0, background: 'rgba(10,15,25,0.5)', backdropFilter: 'blur(4px)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: '16px',
@@ -1488,7 +1488,7 @@ function TarjetaJugadorPanel({
             <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: 'var(--texto-secundario)' }}>
               {modoFotoObjetivo === 'perfil'
                 ? 'Elige la foto y arrastra/acerca para elegir qué parte se ve. Esta es tu foto de perfil general: no cambia la foto de la tarjeta coleccionable.'
-                : 'Elige la foto y arrastra/acerca para elegir qué parte se ve en la tarjeta. Esta foto es solo para la tarjeta: no cambia la foto de perfil del jugador.'}
+                : 'Elige la foto y arrastra/acerca para elegir qué parte se ve en la tarjeta. Esta foto es solo para la tarjeta: no cambia la foto de perfil del deportista.'}
             </p>
 
             <input

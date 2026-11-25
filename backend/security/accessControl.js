@@ -6,7 +6,7 @@ const MODULOS_ACCESO = [
   { id: 'comunicaciones', etiqueta: 'Comunicaciones', categoria: 'General', descripcion: 'Muro, noticias y publicaciones públicas.' },
   { id: 'academia', etiqueta: 'Academia', categoria: 'Formación', descripcion: 'Materiales, quiz y pizarra táctica.' },
   { id: 'perfil', etiqueta: 'Cuenta / Perfil', categoria: 'Personal', descripcion: 'Perfil, tesorería y estados de cuenta.' },
-  { id: 'jugador', etiqueta: 'Jugador / QR', categoria: 'Personal', descripcion: 'Ficha deportiva, QR y asistencia.' },
+  { id: 'jugador', etiqueta: 'Deportista / QR', categoria: 'Personal', descripcion: 'Ficha deportiva, QR y asistencia.' },
   { id: 'asistencia_staff', etiqueta: 'Asistencia Staff', categoria: 'Operación', descripcion: 'Nómina, asistencia y control de lista.' },
   { id: 'evaluacion_staff', etiqueta: 'Radar / Evaluación', categoria: 'Operación', descripcion: 'Radar biomecánico y seguimiento técnico.' },
   { id: 'scoreboard_live', etiqueta: 'Mesa / Scoreboard', categoria: 'Operación', descripcion: 'Marcador en vivo, play by play y transmisión.' },

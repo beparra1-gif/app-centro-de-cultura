@@ -13,7 +13,7 @@ import { obtenerHistorialTarifas, setHistorialTarifas } from '../utils/beca';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const CAMPOS = [
-  ['uno', 'Un pupilo'],
+  ['uno', 'Un deportista'],
   ['hermanos', 'Hermanos (c/u)'],
   ['hijoSocio', 'Hijo de socio'],
   ['dosHijosSocio', 'Hermanos hijos de socio (c/u)'],
@@ -45,7 +45,7 @@ export default function TarifasPanel({ puedeEditar = false, onGuardado }) {
     const ordenadas = [...historial].sort((a, b) => a.desde.localeCompare(b.desde));
     const confirmado = await confirmAction({
       title: 'Guardar tarifas',
-      message: `La deuda de cada mes se recalcula con la tarifa vigente ese mes. Tarifa actual: un pupilo $${Number(ordenadas.at(-1).uno).toLocaleString('es-CL')}, desde ${nombreMes(ordenadas.at(-1).desde)}.`,
+      message: `La deuda de cada mes se recalcula con la tarifa vigente ese mes. Tarifa actual: un deportista $${Number(ordenadas.at(-1).uno).toLocaleString('es-CL')}, desde ${nombreMes(ordenadas.at(-1).desde)}.`,
       confirmText: 'Guardar',
     });
     if (!confirmado) return;

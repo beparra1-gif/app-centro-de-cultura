@@ -334,7 +334,7 @@ function AcademiaPanel({
       return (
         <div className="card mt-20 text-center" role="status">
           <h4 style={{ marginTop: 0 }}>Aún no hay deportistas asociados a tu cuenta</h4>
-          <p className="text-muted" style={{ marginBottom: 0 }}>Cuando el club vincule a tu pupilo, aquí verás su material, desafíos y evaluaciones.</p>
+          <p className="text-muted" style={{ marginBottom: 0 }}>Cuando el club vincule a tu deportista, aquí verás su material, desafíos y evaluaciones.</p>
         </div>
       );
     }

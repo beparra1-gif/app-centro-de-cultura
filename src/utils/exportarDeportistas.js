@@ -29,7 +29,7 @@ const COLUMNAS_CUENTAS = [
   ['apellidos', 'Apellidos', 24, true], ['nombres', 'Nombres', 20, true], ['rut', 'RUT', 13, true],
   ['perfil', 'Perfil', 14, true], ['socio', 'Socio', 7], ['estado', 'Estado', 10, true],
   ['telefono', 'Teléfono', 16, true], ['correo', 'Correo', 28],
-  ['pupilos', 'Pupilos', 45, true], ['sigue', '¿Sigue? (Sí/No)', 12, true], ['observacion', 'Observación', 30],
+  ['pupilos', 'Deportistas', 45, true], ['sigue', '¿Sigue? (Sí/No)', 12, true], ['observacion', 'Observación', 30],
 ];
 
 export const listadoDeportistas = (jugadores = [], cuentas = []) => {

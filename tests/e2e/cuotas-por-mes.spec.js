@@ -25,7 +25,7 @@ test('personalizar la mensualidad de marzo y julio de un deportista', async ({ p
   await editor.getByLabel('Cuota de Mar 2026').scrollIntoViewIfNeeded();
   if (OUT) await page.screenshot({ path: `${OUT}/7-cuotas-por-mes.png` });
   await editor.getByRole('button', { name: 'Guardar cambios' }).click();
-  await expect(page.getByText('Jugador actualizado correctamente.')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Deportista actualizado correctamente.')).toBeVisible({ timeout: 10000 });
 
   const { rows: [j] } = await pool.query('SELECT cuotas_por_mes FROM jugadores WHERE rut_jugador = $1', [JUGADORES.pupilo.rut]);
   expect(j.cuotas_por_mes).toEqual({ '2026-03': 10000, '2026-07': 0 });

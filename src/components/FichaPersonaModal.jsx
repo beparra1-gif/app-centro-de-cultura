@@ -191,7 +191,7 @@ export default function FichaPersonaModal({
   const desvincularFamilia = async (cuenta) => {
     const confirmado = await confirmAction({
       title: 'Desvincular familia',
-      message: `${nombreDeCuenta(cuenta)} dejará de ver y pagar a los pupilos de esta familia, y saldrá de su fila en Tesorería. Los deportistas siguen siendo hermanos.`,
+      message: `${nombreDeCuenta(cuenta)} dejará de ver y pagar a los deportistas de esta familia, y saldrá de su fila en Tesorería. Los deportistas siguen siendo hermanos.`,
       confirmText: 'Desvincular',
     });
     if (!confirmado) return;
@@ -232,12 +232,12 @@ export default function FichaPersonaModal({
       if (apo && estaActivo(apo) && !apo.es_socio && normalizarRol(apo.rol || apo.perfil_principal) === 'apoderado' && !quedanActivos) {
         const tambien = await confirmAction({
           title: 'Cuenta del apoderado',
-          message: `${`${apo.nombres || ''} ${apo.apellido_paterno || ''}`.trim() || apo.rut} ya no tiene pupilos activos. ¿Desactivar también su cuenta? Si dices que no, sigue pudiendo ingresar.`,
+          message: `${`${apo.nombres || ''} ${apo.apellido_paterno || ''}`.trim() || apo.rut} ya no tiene deportistas activos. ¿Desactivar también su cuenta? Si dices que no, sigue pudiendo ingresar.`,
           confirmText: 'Desactivar cuenta',
           cancelText: 'Dejarla activa',
         });
         if (tambien) {
-          await api.cuentasAPI.update(apo.id, cambioDeEstado('cuenta', false, hoyLocalISO(), 'Sin pupilos activos'));
+          await api.cuentasAPI.update(apo.id, cambioDeEstado('cuenta', false, hoyLocalISO(), 'Sin deportistas activos'));
           showToast({ message: 'Cuenta del apoderado desactivada.', type: 'success' });
         }
       }
@@ -318,7 +318,9 @@ export default function FichaPersonaModal({
   const pagosPersona = useMemo(() => {
     const ruts = new Set(esJugador ? [norm(raw.rut_jugador)] : [norm(raw.rut), ...pupilos.map((p) => norm(p.rut_jugador))]);
     return pagos
-      .filter((p) => ruts.has(norm(p.rut_jugador)) || (!esJugador && norm(p.rut_pagos) === norm(raw.rut)))
+      // Pagos antiguos sin rut_jugador (solo rut_pagos) también saldan meses en la deuda: se listan.
+      .filter((p) => ruts.has(norm(p.rut_jugador)) || (!p.rut_jugador && ruts.has(norm(p.rut_pagos)))
+        || (!esJugador && norm(p.rut_pagos) === norm(raw.rut)))
       .sort((a, b) => Number(b.id) - Number(a.id));
   }, [pagos, esJugador, raw, pupilos]);
 
@@ -334,7 +336,7 @@ export default function FichaPersonaModal({
   const chips = esJugador
     ? [
       !estaActivo(raw) ? String(raw.estado).toUpperCase() : null,
-      raw.apoderado_socio || apoderado?.es_socio ? 'Pupilo de socio' : null,
+      raw.apoderado_socio || apoderado?.es_socio ? 'Hijo de socio' : null,
       raw.exento_mensualidad ? 'Exento' : (beca > 0 ? `Beca ${beca}%` : null),
       !apoderado ? 'Sin cuenta de apoderado' : null,
     ].filter(Boolean)
@@ -343,7 +345,7 @@ export default function FichaPersonaModal({
   const pestanas = [
     { id: 'datos', label: 'Datos' },
     { id: 'pagos', label: `Pagos${pagosPersona.length ? ` (${pagosPersona.length})` : ''}` },
-    { id: 'vinculos', label: esJugador ? 'Apoderado y hermanos' : `Pupilos (${pupilos.length})` },
+    { id: 'vinculos', label: esJugador ? 'Apoderado y hermanos' : `Deportistas (${pupilos.length})` },
   ];
 
   return createPortal(
@@ -419,7 +421,7 @@ export default function FichaPersonaModal({
               {esJugador
                 ? <GrillaMeses titulo="Mensualidad 2026" fila={filasMeses[0]} />
                 : filasMeses.map((g) => <GrillaMeses key={g.titulo} titulo={g.titulo} fila={g.fila} />)}
-              {!esJugador && filasMeses.length === 0 && <p className="tc-vacio">Esta cuenta no paga cuotas (no es socia ni tiene pupilos).</p>}
+              {!esJugador && filasMeses.length === 0 && <p className="tc-vacio">Esta cuenta no paga cuotas (no es socia ni tiene deportistas).</p>}
               <h4 className="fp-subtitulo">Historial de pagos</h4>
               <TablaPagos
                 pagos={pagosPersona}
@@ -489,7 +491,7 @@ export default function FichaPersonaModal({
                 <button key={p.rut_jugador} type="button" className="fp-vinculo" onClick={() => onAbrir({ tipo: 'jugador', raw: p })}>
                   <User size={15} /> {`${p.nombres || ''} ${p.apellido_paterno || ''}`.trim()} · {p.rut_jugador} · {[p.rama, p.categoria].filter(Boolean).join(' ')}
                 </button>
-              )) : <p className="fp-ayuda">Esta cuenta no tiene pupilos vinculados.</p>}
+              )) : <p className="fp-ayuda">Esta cuenta no tiene deportistas vinculados.</p>}
               <h4 className="fp-subtitulo">Familia vinculada</h4>
               {cuentasFamilia.length ? cuentasFamilia.map((c) => (
                 <div key={c.rut} className="fp-hermano">
@@ -517,7 +519,7 @@ export default function FichaPersonaModal({
                       <Plus size={14} /> {guardandoFamilia ? 'Guardando…' : 'Vincular'}
                     </button>
                   </div>
-                  <small className="fp-ayuda">Ambas cuentas ven y pagan a los pupilos de la otra, Tesorería las muestra en una sola fila y los deportistas quedan como hermanos.</small>
+                  <small className="fp-ayuda">Ambas cuentas ven y pagan a los deportistas de la otra, Tesorería las muestra en una sola fila y los deportistas quedan como hermanos.</small>
                 </div>
               )}
             </div>

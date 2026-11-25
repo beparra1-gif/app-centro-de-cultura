@@ -149,7 +149,7 @@ function QrScanner({ titulo = 'Escanear QR', tipoEsperado = 'asistencia_ccf', on
       </div>
       <canvas ref={canvasRef} style={{ display: 'none' }} />
       <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: '12px', marginTop: '14px', textAlign: 'center' }}>
-        Apunta la cámara al QR de la Tarjeta del jugador.
+        Apunta la cámara al QR de la Tarjeta del deportista.
       </p>
     </div>,
     document.body

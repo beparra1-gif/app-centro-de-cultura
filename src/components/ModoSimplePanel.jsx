@@ -56,12 +56,12 @@ function ModoSimplePanel({ pupiloActivo, comunicaciones, usuarioAutenticado, pue
   const [enviando, setEnviando] = useState(false);
   const inputRef = useRef(null);
 
-  const nombrePupilo = pupiloActivo?.nombre || pupiloActivo?.nombres || 'tu jugador/a';
+  const nombrePupilo = pupiloActivo?.nombre || pupiloActivo?.nombres || 'tu deportista';
   const mensualidad = Number(pupiloActivo?.valor_mensualidad || 0);
 
   const enviarComprobanteSimple = async (archivo) => {
     if (!pupiloActivo?.rut) {
-      showToast({ message: 'No encontramos a tu jugador/a asociado.', type: 'error' });
+      showToast({ message: 'No encontramos a tu deportista asociado.', type: 'error' });
       return;
     }
     setEnviando(true);
@@ -155,7 +155,7 @@ function ModoSimplePanel({ pupiloActivo, comunicaciones, usuarioAutenticado, pue
         <div>
           <BotonVolver onClick={() => setVista('home')} />
           {!pupiloActivo ? (
-            <p style={{ fontSize: '20px', color: 'var(--texto-secundario)' }}>No encontramos datos de tu jugador/a.</p>
+            <p style={{ fontSize: '20px', color: 'var(--texto-secundario)' }}>No encontramos datos de tu deportista.</p>
           ) : (
             <div style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '28px', boxShadow: '0 10px 24px rgba(15,23,42,0.1)' }}>
               <div style={{ width: '140px', height: '140px', borderRadius: '50%', overflow: 'hidden', margin: '0 auto 20px', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

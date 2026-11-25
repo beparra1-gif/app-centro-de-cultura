@@ -28,7 +28,7 @@ const CAMPOS_APODERADO = [
   { seccion: 'deportivo', campo: 'club_anterior', etiqueta: 'Club anterior' },
   { seccion: 'fisico', campo: 'talla_camiseta', etiqueta: 'Talla camiseta' },
   { seccion: 'fisico', campo: 'talla_short', etiqueta: 'Talla short' },
-  { seccion: 'deportivo', campo: 'foto_jugador', etiqueta: 'Foto del jugador (URL)' },
+  { seccion: 'deportivo', campo: 'foto_jugador', etiqueta: 'Foto del deportista (URL)' },
   { seccion: 'salud', campo: 'prevision', etiqueta: 'Previsión' },
   { seccion: 'salud', campo: 'tipo_sangre', etiqueta: 'Tipo de sangre' },
   { seccion: 'salud', campo: 'alergias', etiqueta: 'Alergias' },
@@ -48,7 +48,7 @@ const CAMPOS_APODERADO = [
 const CAMPOS_SOLO_ADMIN = [
   { campo: 'rut_apoderado', etiqueta: 'RUT apoderado (vínculo de cuenta)' },
   { campo: 'correo_apoderado', etiqueta: 'Correo apoderado' },
-  { campo: 'correo_jugador', etiqueta: 'Correo del jugador' },
+  { campo: 'correo_jugador', etiqueta: 'Correo del deportista' },
   { campo: 'forzar_clave_jugador', etiqueta: 'Forzar cambio de clave', tipo: 'checkbox' },
   { campo: 'rama', etiqueta: 'Rama' },
   { campo: 'categoria', etiqueta: 'Categoría' },
@@ -98,7 +98,7 @@ function EditarJugadorModal({ jugador, esAdmin, onClose, onSaved }) {
         payload[campo] = valor === '' ? null : valor;
       });
       const actualizado = await api.jugadoresAPI.update(jugador.rut_jugador, payload);
-      showToast({ message: 'Datos del jugador actualizados.', type: 'success' });
+      showToast({ message: 'Datos del deportista actualizados.', type: 'success' });
       onSaved?.(actualizado);
       onClose();
     } catch (err) {
@@ -150,7 +150,7 @@ function EditarJugadorModal({ jugador, esAdmin, onClose, onSaved }) {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Editar datos del jugador"
+      aria-label="Editar datos del deportista"
       style={{
         position: 'fixed', inset: 0, background: 'rgba(10,15,25,0.5)', backdropFilter: 'blur(4px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: '16px',
@@ -166,7 +166,7 @@ function EditarJugadorModal({ jugador, esAdmin, onClose, onSaved }) {
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-          <h3 style={{ margin: 0, fontSize: '17px' }}>Datos de {jugador.nombres || 'jugador'}</h3>
+          <h3 style={{ margin: 0, fontSize: '17px' }}>Datos de {jugador.nombres || 'deportista'}</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }} aria-label="Cerrar">
             <X size={20} />
           </button>
@@ -174,7 +174,7 @@ function EditarJugadorModal({ jugador, esAdmin, onClose, onSaved }) {
         <p style={{ margin: '4px 0 16px', fontSize: '12px', color: 'var(--texto-secundario)' }}>
           {esAdmin
             ? 'Puedes editar todos los campos, incluyendo los administrativos.'
-            : 'Aquí puedes actualizar los datos personales, físicos y deportivos de tu jugador. La categoría se asigna sola con la fecha de nacimiento; los datos de tesorería y el vínculo de cuenta los gestiona el club.'}
+            : 'Aquí puedes actualizar los datos personales, físicos y deportivos de tu deportista. La categoría se asigna sola con la fecha de nacimiento; los datos de tesorería y el vínculo de cuenta los gestiona el club.'}
         </p>
 
         {SECCIONES.map(([clave, titulo]) => (

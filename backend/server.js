@@ -1910,6 +1910,23 @@ const ensureCuentasExtendedColumns = async () => {
     await pool.query(statement);
   }
   console.log('🧩 Columnas extendidas de cuentas verificadas');
+
+  // Una cuenta nueva sin perfil indicado es de un apoderado: el default
+  // 'jugador' de rol (con perfil_principal 'apoderado') dejaba las dos columnas
+  // distintas y el servidor le negaba los pagos de sus pupilos.
+  await pool.query(`ALTER TABLE cuentas ALTER COLUMN rol SET DEFAULT 'apoderado'`);
+  // Cuentas que ya quedaron así y no son de un deportista: rol = su perfil.
+  const alineadas = await pool.query(
+    `UPDATE cuentas c SET rol = LOWER(TRIM(c.perfil_principal)), updated_at = NOW()
+     WHERE (c.rol IS NULL OR LOWER(TRIM(c.rol)) IN ('', 'jugador', 'deportista'))
+       AND LOWER(TRIM(COALESCE(c.perfil_principal, ''))) IN ('apoderado', 'socio', 'socio_apoderado', 'directiva')
+       AND NOT EXISTS (
+         SELECT 1 FROM jugadores j
+         WHERE REPLACE(REPLACE(UPPER(j.rut_jugador), '.', ''), '-', '') = REPLACE(REPLACE(UPPER(c.rut), '.', ''), '-', '')
+       )
+     RETURNING c.id`
+  );
+  if (alineadas.rowCount) console.log(`🧩 Cuentas con rol "jugador" y perfil de familia alineadas: ${alineadas.rowCount}`);
 };
 
 // El post que anuncia una citación en el Muro (comunicaciones) solo vivía en

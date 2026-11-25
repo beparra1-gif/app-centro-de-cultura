@@ -889,7 +889,7 @@ function App() {
       morosos.push({
         id: rutJugadorNorm,
         rut: jugador.rut_jugador || rutJugadorNorm,
-        nombre: `${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim() || `Jugador ${jugador.rut_jugador || ''}`,
+        nombre: `${jugador.nombres || ''} ${jugador.apellido_paterno || ''}`.trim() || `Deportista ${jugador.rut_jugador || ''}`,
         tipo,
         sinApoderado,
         rama: jugador.rama || '',
@@ -1659,7 +1659,7 @@ function App() {
       case 'comunicaciones': return "Muro";
       case 'academia': return "Academia";
       case 'perfil': return (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? "Tesorería" : "Mi Cuenta";
-      case 'jugador': return esPerfilFamiliarNav ? "Pupilos" : (rolUsuario === 'jugador' ? "Mi ficha" : "Fichas deportivas");
+      case 'jugador': return esPerfilFamiliarNav ? "Deportistas" : (rolUsuario === 'jugador' ? "Mi ficha" : "Fichas deportivas");
       case 'asistencia_staff': return "Asistencia";
       case 'scoreboard_live': return "Mesa FIBA Live";
       case 'torneos': return "Torneos y Tabla de Posiciones";
@@ -2385,11 +2385,11 @@ function App() {
 
   const guardarJugadorAdmin = async (payload, rutOriginal = null) => {
     if (!payload?.rut_jugador) {
-      throw new Error('RUT de jugador es obligatorio.');
+      throw new Error('RUT del deportista es obligatorio.');
     }
 
     if (!api.validarRutChileno(payload.rut_jugador)) {
-      throw new Error('RUT chileno invalido para jugador.');
+      throw new Error('RUT chileno inválido para el deportista.');
     }
 
     if (rutOriginal && String(payload.rut_jugador || '').trim().toUpperCase() !== String(rutOriginal || '').trim().toUpperCase()) {
@@ -2417,7 +2417,7 @@ function App() {
   const eliminarJugadorAdmin = async (rutJugador) => {
     const rut = String(rutJugador || '').trim();
     if (!rut) {
-      throw new Error('RUT de jugador inválido.');
+      throw new Error('RUT del deportista inválido.');
     }
 
     await api.jugadoresAPI.delete(rut, usuarioAutenticado);
@@ -3256,7 +3256,7 @@ function App() {
         return { label: (rolUsuario === 'admin' || rolUsuario === 'super_admin') ? 'Tesorería' : 'Mi Cuenta', Icon: CreditCard };
       case 'jugador':
         // "Jugador" no decía qué había adentro: son las fichas deportivas.
-        return { label: esPerfilFamiliarNav ? 'Pupilos' : (rolUsuario === 'jugador' ? 'Mi ficha' : 'Fichas'), Icon: User };
+        return { label: esPerfilFamiliarNav ? 'Deportistas' : (rolUsuario === 'jugador' ? 'Mi ficha' : 'Fichas'), Icon: User };
       case 'asistencia_staff':
         return { label: 'Asistencia', Icon: Users };
       case 'scoreboard_live':

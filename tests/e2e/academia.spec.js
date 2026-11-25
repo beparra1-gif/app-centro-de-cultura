@@ -149,7 +149,7 @@ test('staff ve el dashboard y evalúa (técnica y psicomotriz) solo su categorí
   await expect(page.getByText(/Ranking|Participación|Quiz/).first()).toBeVisible({ timeout: 10000 });
 
   await page.getByRole('button', { name: 'Evaluar', exact: true }).click();
-  const selector = page.locator('select', { has: page.locator('option', { hasText: 'Selecciona un jugador desde el roster activo' }) });
+  const selector = page.locator('select', { has: page.locator('option', { hasText: 'Selecciona un deportista desde el roster activo' }) });
   await expect(selector.locator('option', { hasText: JUGADORES.pupilo.nombres })).toHaveCount(1);
   await expect(selector.locator('option', { hasText: JUGADORES.hijoSocio.nombres })).toHaveCount(0);
   await selector.selectOption(JUGADORES.pupilo.rut);

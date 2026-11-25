@@ -706,7 +706,7 @@ function PerfilTesoreriaPanel({
       {esVistaAdmin && (
         <div className="card" style={{ borderRadius: 'var(--radius-lg)', padding: '14px', position: 'relative' }}>
           <label style={{ fontSize: '12px', fontWeight: '900', color: 'var(--texto-heading)', display: 'block', marginBottom: '8px' }}>
-            Buscar jugador, socio o apoderado
+            Buscar deportista, socio o apoderado
           </label>
           <div style={{ position: 'relative' }}>
             <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--texto-secundario)' }} />
@@ -714,7 +714,7 @@ function PerfilTesoreriaPanel({
               type="text"
               className="form-input"
               style={{ paddingLeft: '36px', paddingRight: busquedaCuenta ? '36px' : undefined }}
-              placeholder="Nombre, RUT o correo del jugador, socio o apoderado..."
+              placeholder="Nombre, RUT o correo del deportista, socio o apoderado..."
               value={busquedaCuenta}
               onChange={(e) => setBusquedaCuenta(e.target.value)}
             />
@@ -734,7 +734,7 @@ function PerfilTesoreriaPanel({
             <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '260px', overflowY: 'auto' }}>
               {resultadosBusqueda.map((r) => {
                 const esCuenta = r.tipo === 'cuenta';
-                const nombrePrincipal = esCuenta ? `${r.cuenta.nombres || ''} ${r.cuenta.apellido_paterno || ''}`.trim() || 'Socio' : (r.jugador.nombre || 'Jugador');
+                const nombrePrincipal = esCuenta ? `${r.cuenta.nombres || ''} ${r.cuenta.apellido_paterno || ''}`.trim() || 'Socio' : (r.jugador.nombre || 'Deportista');
                 const rutPrincipal = esCuenta ? (r.cuenta.rut || 'Sin RUT') : (r.jugador.rut || 'Sin RUT');
                 const detalle = esCuenta
                   ? 'Socio sin deportistas asociados'
@@ -1208,7 +1208,7 @@ function PerfilTesoreriaPanel({
           <Search size={36} color="var(--gris-secundario)" strokeWidth={1.5} style={{ margin: '0 auto' }} />
           <h3 style={{ margin: '15px 0 8px 0', fontSize: '16px', fontWeight: '900', color: 'var(--texto-heading)' }}>Busca una cuenta para revisar</h3>
           <p style={{ fontSize: '13px', margin: 0, color: 'var(--texto-secundario)', lineHeight: '1.5' }}>
-            Usa el buscador de arriba para encontrar por nombre, RUT o correo de un jugador, socio o apoderado.
+            Usa el buscador de arriba para encontrar por nombre, RUT o correo de un deportista, socio o apoderado.
           </p>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-const { normalizarRutParaComparar, hashPassword, verifyPassword } = require('./auth');
+const { normalizarRutParaComparar, hashPassword, verifyPassword, normalizarRolDeCuenta } = require('./auth');
 
 describe('normalizarRutParaComparar', () => {
   it('quita puntos y guión', () => {
@@ -48,5 +48,18 @@ describe('hashPassword / verifyPassword', () => {
     const resultado = await verifyPassword('claveVieja', 'claveVieja');
     expect(resultado.valid).toBe(true);
     expect(resultado.needsRehash).toBe(true);
+  });
+});
+
+describe('normalizarRolDeCuenta', () => {
+  it('rol jugador o vacío con perfil de familia usa el perfil (como la app)', () => {
+    expect(normalizarRolDeCuenta('jugador', 'apoderado')).toBe('apoderado');
+    expect(normalizarRolDeCuenta('', 'socio-apoderado')).toBe('socio_apoderado');
+  });
+  it('nunca sube a staff/admin ni pisa un rol real', () => {
+    expect(normalizarRolDeCuenta('jugador', 'admin')).toBe('jugador');
+    expect(normalizarRolDeCuenta('apoderado', 'admin')).toBe('apoderado');
+    expect(normalizarRolDeCuenta('superadmin', 'apoderado')).toBe('super_admin');
+    expect(normalizarRolDeCuenta('jugador', 'jugador')).toBe('jugador');
   });
 });

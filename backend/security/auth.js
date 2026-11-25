@@ -50,22 +50,30 @@ const cargarCuentaVigente = async (payload) => {
   const idNumerico = Number.parseInt(String(payload?.id ?? ''), 10);
   if (!poolRef || !Number.isFinite(idNumerico)) return { sinVerificar: true };
   const result = await poolRef.query(
-    'SELECT rol, estado, forzar_clave, permisos_override FROM cuentas WHERE id = $1',
+    'SELECT rol, perfil_principal, estado, forzar_clave, permisos_override FROM cuentas WHERE id = $1',
     [idNumerico]
   );
   return { cuenta: result.rows[0] || null };
 };
 
-const normalizarRolDeCuenta = (rolDb) => {
+const ROLES_FAMILIA = ['apoderado', 'socio', 'socio_apoderado', 'directiva'];
+
+// La app elige el perfil más alto entre rol y perfil_principal: una cuenta con
+// rol "jugador" (o vacío) y perfil "apoderado" veía su Mi Cuenta, pero aquí era
+// jugador sin 'perfil' y GET /api/pagos-mensualidades le devolvía [] (toda su
+// deuda aparecía impaga). Solo se sube a un perfil de familia, nunca a staff/admin.
+const normalizarRolDeCuenta = (rolDb, perfilPrincipal = '') => {
   const raw = String(rolDb || '').trim().toLowerCase();
   if (raw === 'superadmin') return 'super_admin';
-  return normalizarRol(raw || 'jugador');
+  const rol = normalizarRol(raw || 'jugador');
+  const perfil = normalizarRol(perfilPrincipal);
+  return rol === 'jugador' && ROLES_FAMILIA.includes(perfil) ? perfil : rol;
 };
 
 const construirActor = (payload, cuenta = null) => ({
   id: payload.id ?? null,
   rut: payload.rut || '',
-  rol: cuenta ? normalizarRolDeCuenta(cuenta.rol) : normalizarRol(payload.rol),
+  rol: cuenta ? normalizarRolDeCuenta(cuenta.rol, cuenta.perfil_principal) : normalizarRol(payload.rol),
   ...(cuenta ? { permisosOverride: cuenta.permisos_override || {} } : {}),
 });
 
@@ -399,4 +407,5 @@ module.exports = {
   sonMismaFamilia,
   setPool,
   resolverPermisosDeActor,
+  normalizarRolDeCuenta,
 };

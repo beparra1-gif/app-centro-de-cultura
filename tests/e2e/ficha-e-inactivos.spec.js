@@ -44,7 +44,7 @@ test('Ver ficha: datos, pagos y navegación deportista ↔ apoderado', async ({ 
   await page.getByRole('button', { name: /Ver ficha/ }).first().click();
   const ficha = page.getByRole('dialog');
   await expect(ficha.getByRole('heading', { name: /E2E HijoSocio/ })).toBeVisible();
-  await expect(ficha.getByText('Pupilo de socio')).toBeVisible();
+  await expect(ficha.getByText('Hijo de socio', { exact: true })).toBeVisible();
   // Hijo único de socia: $15.000.
   await expect(ficha.getByText('$15.000 (hijo de socio)')).toBeVisible();
   await ficha.getByRole('tab', { name: /Pagos/ }).click();
@@ -52,7 +52,7 @@ test('Ver ficha: datos, pagos y navegación deportista ↔ apoderado', async ({ 
   await ficha.getByRole('tab', { name: /Apoderado/ }).click();
   await ficha.getByRole('button', { name: /E2E SocioApoderado/ }).click();
   await expect(ficha.getByRole('heading', { name: /E2E SocioApoderado/ })).toBeVisible();
-  await ficha.getByRole('tab', { name: /Pupilos/ }).click();
+  await ficha.getByRole('tab', { name: /Deportistas/ }).click();
   await expect(ficha.getByRole('button', { name: /E2E HijoSocio/ })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
