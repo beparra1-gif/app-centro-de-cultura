@@ -4545,3 +4545,6 @@ button.sc-chip { border: 0; padding: 6px 12px; cursor: pointer; color: var(--tex
 .cv-lienzo img.con-zoom { max-width: none; max-height: none; margin: 0; cursor: zoom-out; }
 .cv-lienzo iframe { width: 100%; height: 100%; border: none; }
 .cv-pestana { font-size: 12px; font-weight: 700; color: var(--azul-electrico); text-align: center; }
+.pf-cuota-mes { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--fondo-input); font-size: 13px; }
+.pf-cuota-mes strong { font-size: 16px; color: var(--texto-principal); }
+.pf-cuota-mes small { flex-basis: 100%; font-size: 12px; color: var(--texto-secundario); }

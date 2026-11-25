@@ -307,24 +307,6 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
     setError('');
   };
 
-  // Actualizar monto automáticamente cuando cambia valor_mensualidad o cantidad de meses
-  const handleValorMensualidadChange = (e) => {
-    const nuevoValor = Number(e.target.value) || 0;
-    setValorMensualidad(nuevoValor);
-
-    // Aplica el nuevo valor unitario a cada mes seleccionado — el admin puede
-    // seguir ajustando el monto de un mes puntual después de esto.
-    if (mesesSeleccionados.length > 0) {
-      setMontosPorMes(
-        Object.fromEntries(mesesSeleccionados.map((idx) => [idx, nuevoValor]))
-      );
-      if (mesesSeleccionados.length === 1) {
-        setFormData(prev => ({ ...prev, monto_total_pagado: nuevoValor }));
-      }
-    }
-    setError('');
-  };
-
   const actualizarMontoMes = (idx, valor) => {
     const numero = valor === '' ? '' : Number(valor);
     setMontosPorMes(prev => ({ ...prev, [idx]: numero }));
@@ -971,33 +953,23 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                   el monto real de cada uno se edita más abajo en "Monto
                   pagado por mes"; mostrar acá un "valor unitario" único
                   invitaba a asumir que todos los meses valen lo mismo y a
-                  pisarlos sin querer (handleValorMensualidadChange
-                  sobrescribía TODOS los meses seleccionados al mismo valor
-                  apenas se tocaba este campo). */}
-              {mesesSeleccionados.length <= 1 ? (
-                <div>
-                  <label style={{ fontWeight: '600', fontSize: '12px', display: 'block', marginBottom: '6px' }}>
-                    Valor unitario ($) *
-                  </label>
-                  <input
-                    type="number"
-                    value={valorMensualidad}
-                    onChange={handleValorMensualidadChange}
-                    min="0"
-                    step="1"
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--borde)',
-                      fontSize: '13px',
-                      boxSizing: 'border-box',
-                      fontWeight: '600',
-                      color: 'var(--verde-victoria)'
-                    }}
-                  />
-                </div>
-              ) : (
+                  pisarlos sin querer. */}
+              {mesesSeleccionados.length <= 1 ? (() => {
+                // Cuota vigente del mes elegido (o del mes actual), no la
+                // valor_mensualidad antigua de la ficha: así cuadra con el resumen.
+                const mesNum = mesesSeleccionados.length === 1 ? mesesSeleccionados[0] + 1 : new Date().getMonth() + 1;
+                const resumenMes = estadoMeses.get(mesNum);
+                const cuotaMes = resumenMes?.cuota ?? cuotaSugeridaDelMes(mesNum);
+                return (
+                  <div className="pf-cuota-mes">
+                    <span>Cuota de {MESES[mesNum - 1]} {anioSeleccionado}</span>
+                    <strong>${Number(cuotaMes || 0).toLocaleString('es-CL')}</strong>
+                    {resumenMes?.parcial && (
+                      <small>Ya abonado ${resumenMes.abonado.toLocaleString('es-CL')} · falta <b>${resumenMes.faltante.toLocaleString('es-CL')}</b></small>
+                    )}
+                  </div>
+                );
+              })() : (
                 <div style={{
                   fontSize: '12px',
                   color: 'var(--gris-secundario)',
@@ -1108,7 +1080,7 @@ export default function PagoForm({ pago = null, jugadores = [], cuentas = [], pa
                 alignItems: 'center',
                 gap: '4px'
               }}>
-                <Lightbulb size={12} /> Sugerencia: ${valorMensualidad.toLocaleString()}
+                <Lightbulb size={12} /> Sugerencia: ${montoSugeridoMes(mesesSeleccionados[0] + 1).toLocaleString('es-CL')}
               </div>
             </div>
           )}
