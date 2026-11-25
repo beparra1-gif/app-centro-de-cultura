@@ -4550,3 +4550,42 @@ button.sc-chip { border: 0; padding: 6px 12px; cursor: pointer; color: var(--tex
 .pf-cuota-mes { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--fondo-input); font-size: 13px; }
 .pf-cuota-mes strong { font-size: 16px; color: var(--texto-principal); }
 .pf-cuota-mes small { flex-basis: 100%; font-size: 12px; color: var(--texto-secundario); }
+
+/* Datos de transferencia (Mi Cuenta): una tarjeta por cuenta del club. */
+.ct-cuenta { margin-top: 10px; padding: 12px; border: 1px solid var(--borde-suave); border-radius: var(--radius-md); background: var(--blanco-tarjeta); }
+.ct-cabecera { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin-bottom: 8px; }
+.ct-cabecera strong { font-size: 14px; color: var(--texto-heading); }
+.ct-monto { font-size: 13px; font-weight: 800; color: var(--azul-electrico); }
+.ct-cuenta dl { margin: 0; display: grid; gap: 4px; }
+.ct-cuenta dl div { display: flex; gap: 10px; font-size: 13px; }
+.ct-cuenta dt { flex: 0 0 82px; color: var(--texto-secundario); }
+.ct-cuenta dd { margin: 0; font-weight: 700; color: var(--texto-principal); overflow-wrap: anywhere; user-select: all; }
+.ct-copiar { margin-top: 10px; width: 100%; min-height: var(--toque-min); display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--azul-electrico); border-radius: var(--radius-md); background: rgba(0, 122, 255, 0.08); color: var(--azul-electrico); font-family: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
+
+/* Resultados: próximo partido (antes del juego) y a quién va dirigido. */
+.pp-card { margin-bottom: 16px; padding: 14px; border-radius: var(--radius-lg); background: linear-gradient(160deg, #0b1d3a 0%, #1c3a6b 100%); color: #fff; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15); }
+.pp-cabecera { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 10px; }
+.pp-etiqueta { padding: 4px 10px; border-radius: var(--radius-pill); background: #ff9500; color: #1a1a1a; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.4px; }
+.pp-torneo { font-size: 12px; font-weight: 700; opacity: 0.9; }
+.pp-afiche { display: block; width: 100%; max-height: 520px; object-fit: contain; border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.06); margin-bottom: 12px; }
+.pp-equipos { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: center; }
+.pp-equipos > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.pp-equipos strong { font-size: 13px; overflow-wrap: anywhere; }
+.pp-vs { font-size: 24px; font-weight: 900; color: #ff9500; }
+.pp-datos { list-style: none; margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid rgba(255, 255, 255, 0.18); display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; font-weight: 700; }
+.pp-datos li { display: inline-flex; align-items: center; gap: 6px; }
+.pp-admin { margin-top: 12px; padding: 10px; border-radius: var(--radius-md); background: rgba(255, 255, 255, 0.1); display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.pp-admin span { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.pp-admin div { display: flex; gap: 8px; flex-wrap: wrap; }
+.rc-audiencia { margin-bottom: 10px; font-size: 12px; font-weight: 700; color: var(--texto-secundario); }
+.ap-audiencia { margin: 0 0 12px; padding: 12px; border: 1px solid var(--borde-suave); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: 8px; }
+.ap-audiencia legend { display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; font-size: 13px; font-weight: 800; }
+.ap-audiencia > label { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; min-height: var(--toque-min); }
+.ap-personas { display: flex; flex-direction: column; gap: 6px; padding-left: 4px; }
+.ap-candidato { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.ap-candidato small { color: var(--texto-secundario); }
+.ap-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ap-chips button { padding: 6px 10px; border: 1px solid var(--azul-electrico); border-radius: var(--radius-pill); background: rgba(0, 122, 255, 0.08); color: var(--azul-electrico); font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.ap-resumen { margin: 4px 0 0; padding: 8px 10px; border-radius: var(--radius-sm); background: rgba(0, 122, 255, 0.08); color: var(--azul-marino); font-size: 13px; font-weight: 800; }
+.ap-afiche-prev { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.ap-afiche-prev img { max-width: 160px; border-radius: var(--radius-sm); }

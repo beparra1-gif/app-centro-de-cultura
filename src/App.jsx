@@ -28,7 +28,7 @@ import { showToast } from './utils/toast';
 import { confirmAction } from './utils/confirmDialog';
 import { esNuestroClub } from './utils/logoResolver';
 import { cuentasDemo } from './data/demoAccounts';
-import { hoyLocalISO, partesFechaCalendario } from './utils/fechas';
+import { fechaLocalISO, hoyLocalISO, partesFechaCalendario } from './utils/fechas';
 import { esPagoMatricula, resumirAbonosMes } from './utils/abonosMes';
 import useIntervaloVisible from './utils/useIntervaloVisible';
 import useModalAccesible from './utils/useModalAccesible';
@@ -478,6 +478,12 @@ function App() {
       // publicado === false: se cargó solo para la tabla de posiciones, el
       // club decidió no destacarlo como noticia en el muro.
       .filter((p) => p.publicado !== false && (esEquipoPropio(p.equipo_local) || esEquipoPropio(p.equipo_visitante)))
+      // Un próximo partido que ya pasó y nunca se cerró no se sigue anunciando.
+      .filter((p) => p.estado_juego !== 'pendiente' || String(p.fecha_hora || '').slice(0, 10) >= fechaLocalISO(new Date(Date.now() - 86400000)))
+      // Los próximos van primero (el más cercano arriba), luego los resultados.
+      .sort((a, b) => (a.estado_juego === 'pendiente') === (b.estado_juego === 'pendiente')
+        ? (a.estado_juego === 'pendiente' ? String(a.fecha_hora).localeCompare(String(b.fecha_hora)) : 0)
+        : (a.estado_juego === 'pendiente' ? -1 : 1))
       .map((p, idx) => {
         // El bracket automático puede tocarnos jugar de local o de visita
         // según cómo cayó el cruce — "miEquipo"/"equipoLocalNombre" siempre
@@ -498,6 +504,10 @@ function App() {
           torneoLogoUrl: p.torneo_logo_url || p.logo_torneo_url || '',
           fechaISO: p.fecha_hora || null,
           fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
+          proximo: p.estado_juego === 'pendiente',
+          hora: p.hora_partido || '',
+          aficheUrl: p.afiche_url || '',
+          ubicacion: p.cancha_sede || '',
           miEquipo: Number(ptsMios || 0),
           rival: Number(ptsDelRival || 0),
           nombreRival: nombreDelRival || 'Rival',

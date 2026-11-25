@@ -2,6 +2,7 @@ const express = require('express');
 const { asignarCategoriaPorEdad } = require('./lib/categoriaPorEdad');
 const { normalizarTelefonoChile, normalizarTelefonosBody } = require('./lib/telefonoChile');
 const { leerAlcance, sinRestriccion, enAlcance } = require('./lib/alcanceStaff');
+const { partidoVisiblePara } = require('./lib/audienciaPartido');
 const {
   TIPOS_CERTIFICADO, RECURSOS_CERTIFICADO, generarCodigoVerificacion, codigoValido, enmascararRut,
   folioCertificado, sumarDias, limpiarExtraCertificado, faltaParaEmitir,
@@ -2018,6 +2019,10 @@ const ensurePartidosLiveCoreColumns = async () => {
   const ddl = [
     `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS rama VARCHAR(50) DEFAULT 'Mixta'`,
     `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS categoria VARCHAR(50) DEFAULT 'SUB-13'`,
+    // Próximo partido (antes del resultado) y a quién va dirigido: ver lib/audienciaPartido.js.
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS hora_partido VARCHAR(5)`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS afiche_url TEXT`,
+    `ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS audiencia JSONB`,
   ];
 
   for (const statement of ddl) {
@@ -10196,12 +10201,21 @@ app.delete('/api/asistencia/sesiones/:sesionId', authenticate, requireAnyModule(
 // ==========================================
 
 // GET: Partidos en vivo
-app.get('/api/partidos-live', async (req, res) => {
+app.get('/api/partidos-live', authenticateOpcional, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM partidos_live ORDER BY fecha_hora DESC`
     );
-    res.json(result.rows);
+    // Cada partido llega solo a su audiencia; quien gestiona resultados, mesa,
+    // torneos o el plantel completo (staff/admin) los ve todos.
+    if (req.actor) {
+      const permisos = await resolverPermisosDeActor(req.actor);
+      if (permisos.resultados || permisos.scoreboard_live || permisos.torneos || await tienePlantelCompleto(req.actor)) {
+        return res.json(result.rows);
+      }
+    }
+    const pupilos = req.actor ? await obtenerPupilosDeActor(req.actor) : null;
+    res.json(result.rows.filter((p) => partidoVisiblePara(p, pupilos)));
   } catch (err) {
     console.error('[GET /api/partidos-live]', err);
     res.status(500).json({ error: err.message });
@@ -10272,7 +10286,7 @@ app.post('/api/partidos-live', authenticate, requireAnyModule('scoreboard_live',
     rut_planillero, estado_juego,
     logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
     id_equipo_local, id_equipo_visitante,
-    pts_local, pts_visitante, publicado,
+    pts_local, pts_visitante, publicado, hora_partido, afiche_url, audiencia,
   } = req.body;
   try {
     // Use new rama/categoria if provided, otherwise use old categoria_rama for backward compatibility
@@ -10285,9 +10299,9 @@ app.post('/api/partidos-live', authenticate, requireAnyModule('scoreboard_live',
        (fecha_hora, cancha_sede, categoria_rama, rama, categoria, equipo_local, equipo_visitante, rut_planillero,
         estado_juego, logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
         id_equipo_local, id_equipo_visitante,
-        pts_local, pts_visitante, publicado)
+        pts_local, pts_visitante, publicado, hora_partido, afiche_url, audiencia)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9,'pendiente'), $10, $11, $12, $13, $14, $15, $16,
-        COALESCE($17, 0), COALESCE($18, 0), COALESCE($19, true))
+        COALESCE($17, 0), COALESCE($18, 0), COALESCE($19, true), $20, $21, $22)
        RETURNING *`,
       [
         fecha_hora, cancha_sede, categoria_rama_final, ramafinal, categoriafinal,
@@ -10297,6 +10311,7 @@ app.post('/api/partidos-live', authenticate, requireAnyModule('scoreboard_live',
         torneo_nombre || null, torneo_logo_url || null, id_torneo || null,
         id_equipo_local || null, id_equipo_visitante || null,
         pts_local ?? 0, pts_visitante ?? 0, publicado,
+        hora_partido || null, afiche_url || null, audiencia ? JSON.stringify(audiencia) : null,
       ]
     );
     res.json(result.rows[0]);
@@ -10328,6 +10343,9 @@ app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_liv
     id_equipo_local,
     id_equipo_visitante,
     publicado,
+    hora_partido,
+    afiche_url,
+    audiencia,
   } = req.body;
   try {
     const result = await pool.query(
@@ -10351,6 +10369,9 @@ app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_liv
            publicado = COALESCE($17, publicado),
            id_equipo_local = COALESCE($18, id_equipo_local),
            id_equipo_visitante = COALESCE($19, id_equipo_visitante),
+           hora_partido = COALESCE($21, hora_partido),
+           afiche_url = COALESCE($22, afiche_url),
+           audiencia = COALESCE($23::jsonb, audiencia),
            updated_at = NOW()
        WHERE id_partido = $20
        RETURNING *`,
@@ -10375,6 +10396,9 @@ app.put('/api/partidos-live/:id', authenticate, requireAnyModule('scoreboard_liv
         id_equipo_local,
         id_equipo_visitante,
         req.params.id,
+        hora_partido,
+        afiche_url,
+        audiencia ? JSON.stringify(audiencia) : null,
       ]
     );
     if (result.rows.length === 0) {

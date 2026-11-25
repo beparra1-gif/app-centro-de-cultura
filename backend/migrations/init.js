@@ -305,6 +305,9 @@ const createSchema = async () => {
     console.log('✅ Columnas extendidas de perfiles y mensualidad verificadas en cuentas');
 
     await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS logo_local_url VARCHAR(255)`);
+    await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS hora_partido VARCHAR(5)`);
+    await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS afiche_url TEXT`);
+    await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS audiencia JSONB`);
     await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS logo_visitante_url VARCHAR(255)`);
     await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS torneo_nombre VARCHAR(255)`);
     await pool.query(`ALTER TABLE partidos_live ADD COLUMN IF NOT EXISTS torneo_logo_url VARCHAR(255)`);

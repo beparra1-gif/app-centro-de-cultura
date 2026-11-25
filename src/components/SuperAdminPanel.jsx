@@ -85,6 +85,8 @@ import { mensajeCodigoActivacion, telefonoParaWhatsApp } from '../utils/codigoAc
 import FiltroCategorias from './FiltroCategorias';
 import { tarifaVigente } from '../utils/beca';
 import CuotasPorMes from './CuotasPorMes';
+import AudienciaPartido from './AudienciaPartido';
+import { describirAudiencia } from '../utils/audienciaPartido';
 // comprobante_url llega en 2 formatos: URL relativa del backend
 // (/api/logo-assets/file/...) para imágenes subidas como archivo, o un data
 // URI base64 completo para PDF (ver convertirArchivoABase64 en
@@ -514,7 +516,13 @@ function SuperAdminPanel({
     cancha_sede: '',
     fecha_hora: hoyLocalISO(),
     publicado: true,
+    // 'proximo': se publica antes del juego (fecha, hora, lugar, afiche) y después se edita para cargar el marcador.
+    tipo_aviso: 'proximo',
+    hora_partido: '',
+    afiche_url: '',
+    audiencia: { tipo: 'categoria' },
   });
+  const [subiendoAfiche, setSubiendoAfiche] = useState(false);
   const [torneosDisponibles, setTorneosDisponibles] = useState([]);
   const [comprobanteEnVista, setComprobanteEnVista] = useState(null); // { url, esImagen } | null
   const [zoomComprobante, setZoomComprobante] = useState(1);
@@ -1673,6 +1681,10 @@ function SuperAdminPanel({
       cancha_sede: '',
       fecha_hora: hoyLocalISO(),
       publicado: true,
+      tipo_aviso: 'proximo',
+      hora_partido: '',
+      afiche_url: '',
+      audiencia: { tipo: 'categoria' },
     });
     setPartidoEditandoId(null);
   };
@@ -1691,10 +1703,12 @@ function SuperAdminPanel({
     const {
       equipo_local, equipo_visitante,
       logo_local_url, logo_visitante_url, torneo_nombre, torneo_logo_url, id_torneo,
-      pts_local, pts_visitante, cancha_sede, fecha_hora, publicado,
+      pts_local, pts_visitante, cancha_sede, fecha_hora, publicado, tipo_aviso, hora_partido, afiche_url, audiencia,
     } = formResultado;
+    const esProximo = tipo_aviso === 'proximo';
     if (!equipo_visitante.trim()) { showToast({ message: 'Ingresa el nombre del equipo visitante.', type: 'error' }); return; }
-    if (pts_local === '' || pts_visitante === '') { showToast({ message: 'Ingresa los puntos de ambos equipos.', type: 'error' }); return; }
+    if (!esProximo && (pts_local === '' || pts_visitante === '')) { showToast({ message: 'Ingresa los puntos de ambos equipos.', type: 'error' }); return; }
+    if (audiencia?.tipo === 'personas' && !(audiencia.ruts || []).length) { showToast({ message: 'Elige al menos un deportista que verá el aviso.', type: 'error' }); return; }
     try {
       setGuardandoResultado(true);
       const payload = {
@@ -1705,14 +1719,17 @@ function SuperAdminPanel({
         torneo_nombre: torneo_nombre || null,
         torneo_logo_url: torneo_logo_url || null,
         id_torneo: id_torneo || null,
-        pts_local: Number(pts_local),
-        pts_visitante: Number(pts_visitante),
+        pts_local: esProximo ? 0 : Number(pts_local),
+        pts_visitante: esProximo ? 0 : Number(pts_visitante),
         rama: formResultado.rama,
         categoria: formResultado.categoria,
         cancha_sede,
         fecha_hora,
-        estado_juego: 'finalizado',
+        estado_juego: esProximo ? 'pendiente' : 'finalizado',
         publicado: publicado !== false,
+        hora_partido: hora_partido || '',
+        afiche_url: afiche_url || '',
+        audiencia: audiencia || { tipo: 'todos' },
       };
 
       if (partidoEditandoId) {
@@ -1726,7 +1743,7 @@ function SuperAdminPanel({
       if (typeof onPartidosChanged === 'function') {
         await onPartidosChanged();
       }
-      showToast({ message: partidoEditandoId ? 'Resultado actualizado correctamente.' : 'Resultado registrado correctamente.', type: 'success' });
+      showToast({ message: `${esProximo ? 'Próximo partido publicado' : (partidoEditandoId ? 'Resultado actualizado' : 'Resultado registrado')}. ${describirAudiencia(payload, jugadoresAdmin)}.`, type: 'success' });
     } catch (error) {
       showToast({ message: `No se pudo guardar el resultado: ${error.message}`, type: 'error' });
     } finally {
@@ -5606,10 +5623,14 @@ function SuperAdminPanel({
       {vistaAdmin === 'resultados' && (
         <div className="fade-in">
           <BotonVolverAdmin onVolver={() => setVistaAdmin('inicio')} label="Volver al Panel" />
-          <h3 className="section-title"><Trophy size={18} style={{ marginRight: '8px', verticalAlign: 'middle' }} />Registrar Resultado de Partido</h3>
-          <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '16px' }}>
-            Ingresa el marcador final y el partido quedará publicado en el fixture del club.
+          <h3 className="section-title"><Trophy size={18} style={{ marginRight: '8px', verticalAlign: 'middle' }} />Partidos y resultados</h3>
+          <p style={{ fontSize: '13px', color: 'var(--texto-secundario)', marginBottom: '12px' }}>
+            Publica el próximo partido antes del juego (fecha, hora, lugar y afiche) y, cuando termine, edítalo para cargar el resultado.
           </p>
+          <div className="segment-control mb-15" role="radiogroup" aria-label="Qué vas a publicar">
+            <button type="button" role="radio" aria-checked={formResultado.tipo_aviso === 'proximo'} className={`segment-btn ${formResultado.tipo_aviso === 'proximo' ? 'active' : ''}`} onClick={() => setFormResultado((p) => ({ ...p, tipo_aviso: 'proximo' }))}>Próximo partido</button>
+            <button type="button" role="radio" aria-checked={formResultado.tipo_aviso !== 'proximo'} className={`segment-btn ${formResultado.tipo_aviso !== 'proximo' ? 'active' : ''}`} onClick={() => setFormResultado((p) => ({ ...p, tipo_aviso: 'resultado' }))}>Resultado final</button>
+          </div>
 
           {/* Preview visual del marcador */}
           <div className="card" style={{ borderRadius: 'var(--radius-lg)', marginBottom: '16px', background: 'linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(28,44,76,0.92) 100%)', color: 'white' }}>
@@ -5628,11 +5649,15 @@ function SuperAdminPanel({
               </div>
               {/* Marcador */}
               <div style={{ textAlign: 'center', minWidth: '80px' }}>
+                {formResultado.tipo_aviso === 'proximo' ? (
+                  <div style={{ fontSize: '26px', fontWeight: '900' }}>VS{formResultado.hora_partido && <div style={{ fontSize: '15px', opacity: 0.85 }}>{formResultado.hora_partido}</div>}</div>
+                ) : (
                 <div style={{ fontSize: '32px', fontWeight: '900', letterSpacing: '4px' }}>
                   {formResultado.pts_local !== '' ? formResultado.pts_local : '–'}
                   &nbsp;:&nbsp;
                   {formResultado.pts_visitante !== '' ? formResultado.pts_visitante : '–'}
                 </div>
+                )}
                 <div style={{ fontSize: '11px', opacity: 0.7, fontWeight: '700', textTransform: 'uppercase', marginTop: '4px' }}>
                   {`${formResultado.rama} · ${formResultado.categoria}`}
                 </div>
@@ -5669,6 +5694,7 @@ function SuperAdminPanel({
                 placeholder="Nombre equipo visitante"
                 extraOptions={opcionesLogosResultados}
               />
+              {formResultado.tipo_aviso !== 'proximo' && (<>
               <div className="form-group">
                 <label>Puntos local *</label>
                 <input type="number" min="0" className="form-input" value={formResultado.pts_local} onChange={(e) => setFormResultado((p) => ({ ...p, pts_local: e.target.value }))} placeholder="0" />
@@ -5677,6 +5703,7 @@ function SuperAdminPanel({
                 <label>Puntos visitante *</label>
                 <input type="number" min="0" className="form-input" value={formResultado.pts_visitante} onChange={(e) => setFormResultado((p) => ({ ...p, pts_visitante: e.target.value }))} placeholder="0" />
               </div>
+              </>)}
               <LogoPicker
                 label="Competencia / Torneo"
                 nombre={formResultado.torneo_nombre}
@@ -5724,13 +5751,59 @@ function SuperAdminPanel({
                 <label>Fecha</label>
                 <input type="date" className="form-input" value={formResultado.fecha_hora} onChange={(e) => setFormResultado((p) => ({ ...p, fecha_hora: e.target.value }))} />
               </div>
+              <div className="form-group">
+                <label>Hora</label>
+                <input type="time" className="form-input" value={formResultado.hora_partido || ''} onChange={(e) => setFormResultado((p) => ({ ...p, hora_partido: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label>Afiche (imagen, opcional)</label>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="form-input"
+                  aria-label="Afiche del partido"
+                  disabled={subiendoAfiche}
+                  onChange={async (e) => {
+                    const archivo = e.target.files?.[0];
+                    e.target.value = '';
+                    if (!archivo) return;
+                    setSubiendoAfiche(true);
+                    try {
+                      const formData = new FormData();
+                      formData.append('nombre', `afiche-${Date.now()}`);
+                      formData.append('tipo', 'comunicacion');
+                      formData.append('archivo', archivo);
+                      const res = await api.assetsAPI.uploadLogo(formData);
+                      setFormResultado((p) => ({ ...p, afiche_url: res?.url || '' }));
+                    } catch (error) {
+                      showToast({ message: `No se pudo subir el afiche: ${error.message}`, type: 'error' });
+                    } finally {
+                      setSubiendoAfiche(false);
+                    }
+                  }}
+                />
+                {subiendoAfiche && <small>Subiendo afiche…</small>}
+                {formResultado.afiche_url && (
+                  <div className="ap-afiche-prev">
+                    <img src={absolutizarLogoUrl(formResultado.afiche_url)} alt="Afiche del partido" />
+                    <button type="button" className="btn-secondary tc-btn" onClick={() => setFormResultado((p) => ({ ...p, afiche_url: '' }))}>Quitar afiche</button>
+                  </div>
+                )}
+              </div>
             </div>
+            <AudienciaPartido
+              partido={formResultado}
+              jugadores={jugadoresAdmin}
+              onCambiar={(audiencia) => setFormResultado((p) => ({ ...p, audiencia }))}
+            />
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', cursor: 'pointer', fontSize: '13px' }}>
               <input type="checkbox" checked={formResultado.publicado !== false} onChange={(e) => setFormResultado((p) => ({ ...p, publicado: e.target.checked }))} style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
               <span>Publicar en el muro de resultados{formResultado.publicado === false ? ' (solo cuenta para la tabla de posiciones)' : ''}</span>
             </label>
             <button className="btn-electric" onClick={guardarResultado} disabled={guardandoResultado}>
-              <Trophy size={15} /> {guardandoResultado ? 'Guardando...' : (partidoEditandoId ? 'Actualizar resultado' : 'Registrar resultado')}
+              <Trophy size={15} /> {guardandoResultado ? 'Guardando...' : formResultado.tipo_aviso === 'proximo'
+                ? (partidoEditandoId ? 'Actualizar próximo partido' : 'Publicar próximo partido')
+                : (partidoEditandoId ? 'Guardar resultado' : 'Registrar resultado')}
             </button>
             {partidoEditandoId && (
               <button className="btn-secondary" onClick={resetFormResultado} style={{ marginLeft: '8px' }}>
@@ -5759,6 +5832,11 @@ function SuperAdminPanel({
                 torneoLogoUrl: p.torneo_logo_url || '',
                 fecha: p.fecha_hora ? new Date(p.fecha_hora).toLocaleDateString('es-CL') : 'Sin fecha',
                 ubicacion: p.cancha_sede || 'Cancha CCF',
+                proximo: p.estado_juego === 'pendiente',
+                fechaISO: p.fecha_hora || null,
+                hora: p.hora_partido || '',
+                aficheUrl: p.afiche_url || '',
+                audienciaTexto: describirAudiencia(p, jugadoresAdmin),
                 miEquipo: Number(p.pts_local || 0),
                 rival: Number(p.pts_visitante || 0),
                 equipoLocalNombre: p.equipo_local || 'Centro de Cultura Física',
@@ -5779,8 +5857,12 @@ function SuperAdminPanel({
                     torneo_nombre: p.torneo_nombre,
                     torneo_logo_url: p.torneo_logo_url,
                     id_torneo: p.id_torneo || '',
-                    pts_local: String(p.pts_local || ''),
-                    pts_visitante: String(p.pts_visitante || ''),
+                    pts_local: p.estado_juego === 'pendiente' ? '' : String(p.pts_local ?? ''),
+                    pts_visitante: p.estado_juego === 'pendiente' ? '' : String(p.pts_visitante ?? ''),
+                    tipo_aviso: p.estado_juego === 'pendiente' ? 'proximo' : 'resultado',
+                    hora_partido: p.hora_partido || '',
+                    afiche_url: p.afiche_url || '',
+                    audiencia: p.audiencia || { tipo: 'todos' },
                     rama: p.rama || ((p.categoria_rama || '').toLowerCase().includes('femen') ? 'Femenina' : 'Masculina'),
                     categoria: p.categoria || p.categoria_rama || 'General',
                     cancha_sede: p.cancha_sede || '',

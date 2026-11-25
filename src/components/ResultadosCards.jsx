@@ -1,6 +1,7 @@
 import { CalendarDays, Heart, Edit2, Trash2, MapPin, ThumbsUp, Frown, Check, X, Venus, Mars } from 'lucide-react';
 import { useState } from 'react';
 import LogoAvatar from './LogoAvatar';
+import ProximoPartidoCard from './ProximoPartidoCard';
 
 export default function ResultadosCards({ partidos, puedeEditar = false, onEditar, onBorrar, diseño = 'clasico' }) {
   const frasesVictoria = ['Tremendo triunfo', 'La casa se respeta', 'Que partidazo jugamos'];
@@ -24,6 +25,9 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
   const colorIcono = 'var(--gris-secundario)'; // Gris neutro
 
   return partidos.map((partido) => {
+    if (partido.proximo) {
+      return <ProximoPartidoCard key={partido.id} partido={partido} puedeEditar={puedeEditar} onEditar={onEditar} onBorrar={onBorrar} />;
+    }
     const esVictoria = partido.miEquipo > partido.rival;
     const esEmpate = partido.miEquipo === partido.rival;
     const dif = Math.abs(partido.miEquipo - partido.rival);
@@ -202,6 +206,7 @@ export default function ResultadosCards({ partidos, puedeEditar = false, onEdita
             </div>
           </div>
 
+          {puedeEditar && partido.audienciaTexto && <div className="rc-audiencia">{partido.audienciaTexto}</div>}
           {/* Info - Ubicación y Fecha */}
           <div style={{ 
             display: 'flex', 
